@@ -147,17 +147,19 @@ correctedVert = [
 correctedVertWithShift = []
 for x,y in correctedVert:
     correctedVertWithShift.append(((x- 11908.8279764855)/1000,(y+13591.106147774964)/1000))
-# Create 3D path at z=22.5
+# Create 3D path at z=22
 path_vertices = correctedVertWithShift
-Z_POSITION = 22.5
+Z_POSITION = 22
 path_3d = np.array([[x, y, Z_POSITION] for x, y in path_vertices])
 
 # Create the tube mesh
-tube_radius = 1.4
+tube_radius = 1.4*1.1
 vertices, faces = create_tube_mesh(path_3d, radius=tube_radius, n_segments=32)
 mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+if mesh.volume < 0:
+    mesh.invert()
 
-print("Tube mesh created at z=22.5")
+print("Tube mesh created at z=22")
 print(f"Mesh bounds: X:[{mesh.bounds[0][0]:.1f}, {mesh.bounds[1][0]:.1f}], "
       f"Y:[{mesh.bounds[0][1]:.1f}, {mesh.bounds[1][1]:.1f}], "
       f"Z:[{mesh.bounds[0][2]:.1f}, {mesh.bounds[1][2]:.1f}]")
@@ -535,3 +537,257 @@ def find_lifetime_for_decay_fraction(mesh, origin, target_fraction,
 # print("EXAMPLE: Finding lifetime for 1% decay in tube")
 # target_lifetime = find_lifetime_for_decay_fraction(mesh, origin, 0.01)
 # print(f"Lifetime needed for 1% decay in tube: {target_lifetime:.2f} m")
+print("\n" + "="*50)
+print("TUBE SHAPE VISUALIZATION")
+print("="*50)
+
+def plot_tube_shape(mesh, path_3d, tube_radius, origin=[0,0,0]):
+    """
+    Create a detailed 3D visualization of the tube shape
+    
+    Args:
+        mesh: Trimesh object
+        path_3d: 3D centerline path
+        tube_radius: Radius of the tube
+        origin: Origin point to show for reference
+    """
+    fig = plt.figure(figsize=(16, 12))
+    
+    # 1. Full 3D mesh view
+    ax1 = fig.add_subplot(221, projection='3d')
+    
+    # Plot the mesh faces (subsample for performance)
+    if len(mesh.faces) > 1000:
+        face_indices = np.random.choice(len(mesh.faces), 1000, replace=False)
+        sampled_faces = mesh.faces[face_indices]
+    else:
+        sampled_faces = mesh.faces
+    
+    # Plot mesh triangles
+    for face in sampled_faces:
+        triangle = mesh.vertices[face]
+        triangle = np.vstack([triangle, triangle[0]])  # Close the triangle
+        ax1.plot(triangle[:, 0], triangle[:, 1], triangle[:, 2], 
+                'b-', alpha=0.1, linewidth=0.5)
+    
+    # Plot centerline
+    ax1.plot(path_3d[:, 0], path_3d[:, 1], path_3d[:, 2], 
+            'r-', linewidth=3, label='Centerline')
+    
+    # Plot origin
+    ax1.scatter(*origin, color='green', s=200, marker='o', label='Origin (0,0,0)')
+    
+    # Add coordinate arrows at origin
+    arrow_length = 10
+    ax1.quiver(origin[0], origin[1], origin[2], arrow_length, 0, 0, 
+              color='red', arrow_length_ratio=0.1, label='X')
+    ax1.quiver(origin[0], origin[1], origin[2], 0, arrow_length, 0, 
+              color='green', arrow_length_ratio=0.1, label='Y')
+    ax1.quiver(origin[0], origin[1], origin[2], 0, 0, arrow_length, 
+              color='blue', arrow_length_ratio=0.1, label='Z')
+    
+    ax1.set_xlabel('X (m)')
+    ax1.set_ylabel('Y (m)')
+    ax1.set_zlabel('Z (m)')
+    ax1.set_title('3D Tube Mesh')
+    ax1.legend()
+    
+    # Set equal aspect ratio
+    max_range = np.array([
+        mesh.vertices[:, 0].max() - mesh.vertices[:, 0].min(),
+        mesh.vertices[:, 1].max() - mesh.vertices[:, 1].min(),
+        mesh.vertices[:, 2].max() - mesh.vertices[:, 2].min()
+    ]).max() / 2.0
+    
+    mid_x = (mesh.vertices[:, 0].max() + mesh.vertices[:, 0].min()) * 0.5
+    mid_y = (mesh.vertices[:, 1].max() + mesh.vertices[:, 1].min()) * 0.5
+    mid_z = (mesh.vertices[:, 2].max() + mesh.vertices[:, 2].min()) * 0.5
+    
+    ax1.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax1.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax1.set_zlim(0, mesh.vertices[:, 2].max() + 5)
+    
+    # 2. Top view (XY plane)
+    ax2 = fig.add_subplot(222)
+    
+    # Plot tube outline
+    theta = np.linspace(0, 2*np.pi, 50)
+    for i in range(0, len(path_3d), 5):
+        x_circle = path_3d[i, 0] + tube_radius * np.cos(theta)
+        y_circle = path_3d[i, 1] + tube_radius * np.sin(theta)
+        ax2.plot(x_circle, y_circle, 'b-', alpha=0.3, linewidth=0.5)
+    
+    # Plot centerline
+    ax2.plot(path_3d[:, 0], path_3d[:, 1], 'r-', linewidth=2, label='Centerline')
+    
+    # Plot origin
+    ax2.scatter(origin[0], origin[1], color='green', s=200, marker='o', label='Origin')
+    
+    # Draw lines from origin to tube extremes
+    tube_points = np.array([[p[0], p[1]] for p in path_3d])
+    distances = np.sqrt((tube_points[:, 0] - origin[0])**2 + 
+                       (tube_points[:, 1] - origin[1])**2)
+    nearest_idx = np.argmin(distances)
+    farthest_idx = np.argmax(distances)
+    
+    ax2.plot([origin[0], path_3d[nearest_idx, 0]], 
+            [origin[1], path_3d[nearest_idx, 1]], 
+            'g--', alpha=0.5, label=f'Nearest: {distances[nearest_idx]:.1f}m')
+    ax2.plot([origin[0], path_3d[farthest_idx, 0]], 
+            [origin[1], path_3d[farthest_idx, 1]], 
+            'r--', alpha=0.5, label=f'Farthest: {distances[farthest_idx]:.1f}m')
+    
+    ax2.set_xlabel('X (m)')
+    ax2.set_ylabel('Y (m)')
+    ax2.set_title('Top View (XY Plane)')
+    ax2.grid(True, alpha=0.3)
+    ax2.axis('equal')
+    ax2.legend()
+    
+    # 3. Side view (XZ plane)
+    ax3 = fig.add_subplot(223)
+    
+    # Plot tube profile
+    ax3.fill_between(path_3d[:, 0], 
+                    path_3d[:, 2] - tube_radius,
+                    path_3d[:, 2] + tube_radius, 
+                    alpha=0.3, color='blue', label='Tube volume')
+    
+    # Plot centerline
+    ax3.plot(path_3d[:, 0], path_3d[:, 2], 'r-', linewidth=2, label='Centerline')
+    
+    # Plot origin and height reference
+    ax3.scatter(origin[0], origin[2], color='green', s=200, marker='o', label='Origin')
+    ax3.axhline(y=origin[2], color='green', linestyle=':', alpha=0.5)
+    ax3.axhline(y=Z_POSITION, color='red', linestyle=':', alpha=0.5, label=f'z={Z_POSITION}m')
+    
+    # Add distance annotations
+    ax3.annotate(f'{Z_POSITION}m', xy=(origin[0]-5, Z_POSITION), 
+                xytext=(origin[0]-10, Z_POSITION), fontsize=10)
+    
+    ax3.set_xlabel('X (m)')
+    ax3.set_ylabel('Z (m)')
+    ax3.set_title('Side View (XZ Plane)')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend()
+    ax3.set_ylim(-5, Z_POSITION + 10)
+    
+    # 4. End view (YZ plane) - looking along X axis
+    ax4 = fig.add_subplot(224)
+    
+    # Find a few cross-sections along the tube
+    x_positions = np.linspace(mesh.bounds[0][0], mesh.bounds[1][0], 5)
+    
+    for x_pos in x_positions:
+        # Find closest path point to this x position
+        idx = np.argmin(np.abs(path_3d[:, 0] - x_pos))
+        
+        # Draw circle at this position
+        theta = np.linspace(0, 2*np.pi, 50)
+        y_circle = path_3d[idx, 1] + tube_radius * np.cos(theta)
+        z_circle = path_3d[idx, 2] + tube_radius * np.sin(theta)
+        
+        alpha = 0.3 + 0.5 * (x_pos - mesh.bounds[0][0]) / (mesh.bounds[1][0] - mesh.bounds[0][0])
+        ax4.plot(y_circle, z_circle, 'b-', alpha=alpha, linewidth=1)
+    
+    # Plot origin
+    ax4.scatter(origin[1], origin[2], color='green', s=200, marker='o', label='Origin')
+    
+    # Draw sight lines from origin
+    angles = np.linspace(0, 2*np.pi, 8)
+    for angle in angles:
+        y_end = origin[1] + 50 * np.cos(angle)
+        z_end = origin[2] + 50 * np.sin(angle)
+        ax4.plot([origin[1], y_end], [origin[2], z_end], 'g-', alpha=0.1, linewidth=0.5)
+    
+    ax4.set_xlabel('Y (m)')
+    ax4.set_ylabel('Z (m)')
+    ax4.set_title('End View (YZ Plane) - Looking Along X')
+    ax4.grid(True, alpha=0.3)
+    ax4.axis('equal')
+    ax4.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Print tube statistics
+    print("\nTube Statistics:")
+    print(f"Centerline length: {np.sum(np.linalg.norm(np.diff(path_3d, axis=0), axis=1)):.1f} m")
+    print(f"Tube radius: {tube_radius} m")
+    print(f"Tube volume: {mesh.volume:.1f} m³")
+    print(f"Tube surface area: {mesh.area:.1f} m²")
+    print(f"Height above origin: {Z_POSITION} m")
+    print(f"Horizontal distance range: {distances.min():.1f} - {distances.max():.1f} m")
+
+# Plot the tube
+plot_tube_shape(mesh, path_3d, tube_radius, origin)
+
+# Create an interactive 3D plot using matplotlib
+def plot_tube_interactive(mesh, path_3d, origin=[0,0,0]):
+    """
+    Create an interactive 3D plot of the tube that can be rotated
+    """
+    fig = plt.figure(figsize=(12, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Plot tube surface using mesh vertices
+    # Create rings at regular intervals
+    n_rings = 30
+    for i in np.linspace(0, len(path_3d)-1, n_rings, dtype=int):
+        idx = i * 32
+        if idx + 32 <= len(vertices):
+            ring = vertices[idx:idx+32]
+            ring = np.vstack([ring, ring[0]])  # Close the ring
+            ax.plot(ring[:, 0], ring[:, 1], ring[:, 2], 'b-', alpha=0.5, linewidth=1)
+    
+    # Plot longitudinal lines
+    for j in range(0, 32, 4):  # Every 4th vertex for clarity
+        long_line = []
+        for i in range(len(path_3d)):
+            idx = i * 32 + j
+            if idx < len(vertices):
+                long_line.append(vertices[idx])
+        if long_line:
+            long_line = np.array(long_line)
+            ax.plot(long_line[:, 0], long_line[:, 1], long_line[:, 2], 
+                   'b-', alpha=0.3, linewidth=0.5)
+    
+    # Plot centerline
+    ax.plot(path_3d[:, 0], path_3d[:, 1], path_3d[:, 2], 
+           'r-', linewidth=3, label='Centerline')
+    
+    # Plot origin and axes
+    ax.scatter(*origin, color='green', s=300, marker='o', 
+              edgecolors='black', linewidth=2, label='Origin')
+    
+    # Coordinate axes
+    axis_length = 15
+    ax.quiver(origin[0], origin[1], origin[2], axis_length, 0, 0, 
+             color='red', arrow_length_ratio=0.1, linewidth=2)
+    ax.quiver(origin[0], origin[1], origin[2], 0, axis_length, 0, 
+             color='green', arrow_length_ratio=0.1, linewidth=2)
+    ax.quiver(origin[0], origin[1], origin[2], 0, 0, axis_length, 
+             color='blue', arrow_length_ratio=0.1, linewidth=2)
+    
+    ax.text(origin[0] + axis_length, origin[1], origin[2], 'X', fontsize=12)
+    ax.text(origin[0], origin[1] + axis_length, origin[2], 'Y', fontsize=12)
+    ax.text(origin[0], origin[1], origin[2] + axis_length, 'Z', fontsize=12)
+    
+    # Set labels and title
+    ax.set_xlabel('X (m)', fontsize=10)
+    ax.set_ylabel('Y (m)', fontsize=10)
+    ax.set_zlabel('Z (m)', fontsize=10)
+    ax.set_title('3D Tube Visualization (Rotate with mouse)', fontsize=14)
+    
+    # Set viewing angle
+    ax.view_init(elev=20, azim=45)
+    
+    # Set aspect ratio
+    ax.set_box_aspect([1,1,0.5])
+    
+    ax.legend(fontsize=10)
+    plt.show()
+
+# Create the interactive plot
+print("\nCreating interactive 3D visualization...")
+plot_tube_interactive(mesh, path_3d, origin)
