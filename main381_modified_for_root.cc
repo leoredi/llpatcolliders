@@ -43,7 +43,7 @@ int main() {
     pythia.readString("25:onMode = 0");
     pythia.readString("25:onifAny = 54");
     pythia.readString("23:onMode = 1");
-    pythia.readString("54:all = S S 1 0 0 50. 5.");
+    pythia.readString("54:all = S S 1 0 0 50. 3.9466e-15");
     pythia.readString("25:addChannel = 1 1.0 100 54 54");
     pythia.readString("54:mayDecay = 1");
     pythia.readString("54:onMode = 0");
@@ -65,6 +65,10 @@ int main() {
     int pid;
     int MC_event;
     double x,y,z,t,energy,phi,theta,px,py,pz;
+    std::vector<int> MotherList,SisterList,DaughterListRec;
+    int list,status;
+    bool isFinal;
+    
     
     t1->Branch("energy",&energy,"energy/D");
     t1->Branch("x",&x,"x/D");
@@ -78,44 +82,39 @@ int main() {
     t1->Branch("py",&py,"py/D");
     t1->Branch("pz",&pz,"pz/D");
     t1->Branch("MC_event",&MC_event,"MC_event/I");
+    t1->Branch("MotherList",&MotherList);
+    t1->Branch("list",&list);
+    t1->Branch("status",&status);
+    t1->Branch("isFinal",&isFinal);
+    t1->Branch("SisterList",&SisterList);
+    t1->Branch("DaughterListRec",&DaughterListRec);
+    
 
     
     // Begin event loop. Generate event. Skip if error.
     for (int iEvent = 0; iEvent < nEvent; ++iEvent) {
         if (!pythia.next()) continue;
         for (int ipt = 0; ipt < pythia.event.size();ipt++){
+            pid = pythia.event[ipt].id();
+            x = pythia.event[ipt].xProd();
+            y = pythia.event[ipt].yProd();
+            z = pythia.event[ipt].zProd();
+            t = pythia.event[ipt].tProd();
+            phi = pythia.event[ipt].phi();
+            theta = pythia.event[ipt].theta();
+            energy = pythia.event[ipt].e();
+            px = pythia.event[ipt].px();
+            py = pythia.event[ipt].py();
+            pz = pythia.event[ipt].pz();
+            list = ipt;
+            SisterList = pythia.event[ipt].sisterList();
+            status = pythia.event[ipt].status();
+            MC_event = iEvent;
+            MotherList = pythia.event[ipt].motherList();
+            DaughterListRec = pythia.event[ipt].daughterListRecursive();
+            t1->Fill();
             
-            if (pythia.event[ipt].id()==54 or pythia.event[ipt].id()==25){
-                pid = pythia.event[ipt].id();
-                x = pythia.event[ipt].xProd();
-                y = pythia.event[ipt].yProd();
-                z = pythia.event[ipt].zProd();
-                t = pythia.event[ipt].tProd();
-                phi = pythia.event[ipt].phi();
-                theta = pythia.event[ipt].theta();
-                energy = pythia.event[ipt].e();
-                px = pythia.event[ipt].px();
-                py = pythia.event[ipt].py();
-                pz = pythia.event[ipt].pz();
-                MC_event = iEvent;
-                t1->Fill();
-            }
-            
-            if (pythia.event[ipt].isFinal()){
-                pid = pythia.event[ipt].id();
-                x = pythia.event[ipt].xProd();
-                y = pythia.event[ipt].yProd();
-                z = pythia.event[ipt].zProd();
-                t = pythia.event[ipt].tProd();
-                phi = pythia.event[ipt].phi();
-                theta = pythia.event[ipt].theta();
-                energy = pythia.event[ipt].e();
-                px = pythia.event[ipt].px();
-                py = pythia.event[ipt].py();
-                pz = pythia.event[ipt].pz();
-                MC_event = iEvent;
-                t1->Fill();
-            }
+
         }
         
         
@@ -126,6 +125,7 @@ int main() {
 
     // Write everything into a root file
     t1->Write();
+    outFile->Close();
     
     delete outFile;
     return 0;
