@@ -43,12 +43,13 @@ int main() {
     pythia.readString("25:onMode = 0");
     pythia.readString("25:onifAny = 54");
     pythia.readString("23:onMode = 1");
-    pythia.readString("54:all = S S 1 0 0 50. 3.9466e-15");
-    pythia.readString("25:addChannel = 1 1.0 100 54 54");
-    pythia.readString("54:mayDecay = 1");
-    pythia.readString("54:onMode = 0");
-    pythia.readString("54:onifAny = 11");
-    pythia.readString("54:addChannel = 1 1.0 100 11 -11");
+    pythia.readString("51:all = S S 1 0 0 50.");
+    pythia.readString("51:mWidth = 3.9466e-16");
+    pythia.readString("51:tau0 = 500.");
+    pythia.readString("25:addChannel = 1 1.0 100 51 51");
+    pythia.readString("51:mayDecay = 1");
+    pythia.readString("51:onMode = 0");
+    pythia.readString("51:addChannel = 1 1.0 100 11 -11");
     //pythia.readString("23:onMode = off");
     //pythia.readString("23:onIfAny = 1 2 3 4 5");
 
@@ -56,7 +57,7 @@ int main() {
     if (!pythia.init()) return 1;
     
     // Create file on which histogram(s) can be saved.
-    TFile* outFile = new TFile("first_attempt.root", "RECREATE");
+    TFile* outFile = new TFile("first_attempt_500mm.root", "RECREATE");
 
     TTree *t1 = new TTree("t1","t1");
     
@@ -112,6 +113,7 @@ int main() {
             MC_event = iEvent;
             MotherList = pythia.event[ipt].motherList();
             DaughterListRec = pythia.event[ipt].daughterListRecursive();
+            isFinal = pythia.event[ipt].isFinal();
             t1->Fill();
             
 
