@@ -1,3 +1,35 @@
-g++ main144.cc -o main144 -w\
-	  -I../include -O2 -std=c++11 -pedantic -W -Wall -Wshadow -fPIC -pthread  -L../lib -Wl,-rpath,../lib -lpythia8 -ldl\
-	 main144Dct.so -L/opt/homebrew/Cellar/root/6.30.06/lib/root -Wl,-rpath,/opt/homebrew/Cellar/root/6.30.06/lib/root -lCore -stdlib=libc++ -pthread -std=c++17 -m64 -I/opt/homebrew/Cellar/root/6.30.06/include/root -L/opt/homebrew/Cellar/root/6.30.06/lib/root -lGui -lCore -lImt -lRIO -lNet -lHist -lGraf -lGraf3d -lGpad -lROOTVecOps -lTree -lTreePlayer -lRint -lPostscript -lMatrix -lPhysics -lMathCore -lThread -lMultiProc -lROOTDataFrame -Wl,-rpath,/opt/homebrew/Cellar/root/6.30.06/lib/root -stdlib=libc++ -lpthread -lm -ldl -DPY8ROOT
+#!/bin/bash
+
+# This line ensures the script will stop if any command fails.
+set -e
+
+# --- Define path to your Pythia installation ---
+PYTHIA_DIR="../../pythia8315"
+
+#-------------------------------------------------------
+# STEP 1: Generate ROOT dictionary C++ code.
+#-------------------------------------------------------
+echo "Step 1: Generating ROOT dictionary with rootcling..."
+rootcling -f main144Dct.cc -I${PYTHIA_DIR}/include main144Dct.h
+
+#-------------------------------------------------------
+# STEP 2: Compile dictionary into a shared library.
+#-------------------------------------------------------
+echo "Step 2: Compiling dictionary into main144Dct.so..."
+g++ -shared -fPIC -o main144Dct.so main144Dct.cc \
+    -I${PYTHIA_DIR}/include \
+    `root-config --cflags --libs`
+
+#-------------------------------------------------------
+# STEP 3: Compile the main program and link everything.
+#-------------------------------------------------------
+echo "Step 3: Compiling main144.cc and linking..."
+g++ main144.cc -o main144 \
+    -I${PYTHIA_DIR}/include \
+    -L${PYTHIA_DIR}/lib -Wl,-rpath,${PYTHIA_DIR}/lib -lpythia8 \
+    main144Dct.so \
+    `root-config --cflags --libs` \
+    -DPY8ROOT
+
+echo "---"
+echo "Done! Executable 'main144' created successfully."

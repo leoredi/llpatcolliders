@@ -332,7 +332,6 @@ int main(int argc, char* argv[]) {
         // Any particle cuts can be placed here. Here, only final
         // state particles are kept.
         // if (!prt.isFinal()) continue;
-        if (!abs(prt.id()) == 6000113) continue;
         if (abs(prt.id()) == 6000113){
         myfile << iEvent << ",\t" << prt.id() << ",\t" << prt.pT() << ",\t" << prt.eta() << ",\t" << prt.phi() << ",\t" << prt.pAbs() <<  ",\t" << prt.m()<< "\n";
         }
@@ -352,8 +351,13 @@ int main(int argc, char* argv[]) {
 #ifdef PY8ROOT
   if (writeRoot) {
     tree->Print();
-    tree->Write();
-    delete file, tree, evt;
+    // Make sure to write the TTree to the file before closing.
+    file->Write();
+
+    // Now, delete the objects in the reverse order of dependency.
+    delete tree;
+    delete evt;
+    delete file; // Deleting the file also closes it.
   }
 #endif
 

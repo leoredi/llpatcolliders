@@ -1,0 +1,10 @@
+# Compiled files
+*.o
+*.so
+*.pcm
+main144
+
+# Output files
+*.root
+*.log
+*.csv
