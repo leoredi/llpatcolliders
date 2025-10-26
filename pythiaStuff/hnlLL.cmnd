@@ -1,0 +1,65 @@
+! Command file for Heavy Neutral Lepton (HNL) production and decay
+! Configuration for long-lived HNL searches at LHC
+
+! 1) Beam settings - pp collisions at 13.6 TeV
+Beams:idA = 2212                   ! first beam p = 2212
+Beams:idB = 2212                   ! second beam p = 2212
+Beams:eCM = 13600.                 ! CM energy of collision
+
+! 2) Production mechanism - W boson production for HNL
+WeakBosonAndParton:all = on        ! Enable W+jets, W+gamma processes
+WeakSingleBoson:ffbar2W = on       ! Enable W production from quark annihilation
+
+! 3) W boson decay to HNL
+! We'll force W to decay to HNL + lepton
+24:onMode = off                    ! Turn off all W+ decays
+24:onIfAny = 9900014               ! Only allow decays involving HNL
+-24:onMode = off                   ! Turn off all W- decays
+-24:onIfAny = 9900014              ! Only allow decays involving HNL
+
+! Add decay channel: W+ -> HNL + mu+
+24:addChannel = 1 1.0 0 9900014 -13
+! Add decay channel: W- -> anti-HNL + mu-
+-24:addChannel = 1 1.0 0 -9900014 13
+
+! 4) Define the HNL particle (using PDG code 9900014 for muon-type HNL)
+9900014:new = HNL_mu anti-HNL_mu 0 0 0
+9900014:m0 = 5.0                   ! HNL mass in GeV (adjustable: 1-10 GeV typical)
+9900014:mWidth = 1.973269788e-17   ! Small width for long-lived particle
+9900014:mMin = 1.0                 ! Minimum mass
+9900014:mMax = 10.0                ! Maximum mass
+9900014:tau0 = 1.0                 ! Proper lifetime will be scanned in analysis
+9900014:isResonance = off          ! Not a resonance
+9900014:mayDecay = on              ! Allow decays
+
+! 5) HNL decay channels
+! HNL can decay to leptons + quarks via mixing with SM neutrinos
+! Common channels: HNL -> l+ d dbar, HNL -> l+ s sbar, HNL -> l- u dbar
+
+! Decay to muon + down + anti-down
+9900014:addChannel = 1 0.33 0 -13 1 -1
+! Decay to muon + strange + anti-strange
+9900014:addChannel = 1 0.33 0 -13 3 -3
+! Decay to muon + up + anti-down
+9900014:addChannel = 1 0.34 0 -13 2 -1
+
+! Anti-HNL decays (charge conjugate)
+-9900014:addChannel = 1 0.33 0 13 -1 1
+-9900014:addChannel = 1 0.33 0 13 -3 3
+-9900014:addChannel = 1 0.34 0 13 -2 1
+
+! 6) Settings related to the run
+Init:showChangedSettings = on      ! list changed settings
+Init:showAllSettings = off         ! list all settings
+Init:showChangedParticleData = on  ! list changed particle data
+Init:showAllParticleData = off     ! list all particle data
+Next:numberCount = 1000            ! print message every n events
+Next:numberShowLHA = 1             ! print LHA information n times
+Next:numberShowInfo = 1            ! print event information n times
+Next:numberShowProcess = 1         ! print process record n times
+Next:numberShowEvent = 1           ! print event record n times
+Stat:showPartonLevel = on          ! additional statistics on MPI
+
+! 7) Output settings
+Main:writeLog = on                 ! Write all printed output to a log file
+Main:writeROOT = on                ! Write ROOT output
