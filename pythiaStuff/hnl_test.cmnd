@@ -1,0 +1,28 @@
+! File: hnl_test.cmnd
+! This file contains commands to be read in for a Pythia8 run.
+! Lines not beginning with a letter or digit are comments.
+! Names are case-insensitive.
+
+! 1) Settings used in the main program.
+Main:numberOfEvents = 1000             ! number of events to generate
+Main:timesAllowErrors = 3          ! how many aborts before run stops
+
+! 2) Settings related to output.
+Main:writeRoot = off
+Next:numberCount = 1000
+
+! 3) Set up the beams.
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 13000.
+
+! 4) Define HNL particle.
+9900012:new = HNL HNLbar 2 0 0 10.0 0 0 0 10.0
+9900012:mayDecay = true
+! HNL -> e- e+ nu_e
+9900012:addChannel = 1 1.0 0 11 -11 12
+
+! 5) Set up the process.
+HiggsSM:gg2H = on
+25:onMode = off
+25:addChannel = 1 1.0 0 9900012 -9900012
