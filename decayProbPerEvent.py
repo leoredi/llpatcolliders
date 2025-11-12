@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from tqdm import tqdm
 from scipy.integrate import quad
+import argparse
+import os
 
 # Speed of light in m/s
 SPEED_OF_LIGHT = 299792458.0  # m/s
@@ -70,7 +72,8 @@ def process_particle_csv(csv_file, mesh, origin, lifetime_seconds):
         DataFrame with original data plus decay probabilities and event-level statistics
     """
     # Read CSV file
-    df = pd.read_csv(csv_file)
+    df = pd.read_csv(csv_file, sep=',\s*', engine='python')
+    df.columns = df.columns.str.strip()
     
     # Ensure required columns exist
     required_columns = ['event', 'eta', 'phi', 'momentum', 'mass']
@@ -416,9 +419,12 @@ print(f"Mesh bounds: X:[{mesh.bounds[0][0]:.1f}, {mesh.bounds[1][0]:.1f}], "
 
 # Main analysis
 if __name__ == "__main__":
-    # Create sample CSV if needed
-    sample_csv = "LLP.csv"
-    # create_sample_csv(sample_csv, n_events=500)
+    parser = argparse.ArgumentParser(description='Analyze particle decay probabilities.')
+    parser.add_argument('csv_file', type=str, help='Path to the input CSV file.')
+    args = parser.parse_args()
+
+    sample_csv = args.csv_file
+    base_filename = os.path.splitext(os.path.basename(sample_csv))[0]
     
     # Set origin
     origin = [0, 0, 0]
@@ -428,7 +434,15 @@ if __name__ == "__main__":
     print("SINGLE LIFETIME ANALYSIS")
     print("="*50)
     
-    lifetime = 1e-8  # 10 nanoseconds
+    # Extract lifetime from filename
+    import re
+    match = re.search(r'_tau(\d+\.?\d*)', base_filename)
+    if match:
+        lifetime = float(match.group(1))
+    else:
+        print("Warning: Could not extract lifetime from filename, using default.")
+        lifetime = 1e-8  # 10 nanoseconds
+
     df_results = process_particle_csv(sample_csv, mesh, origin, lifetime)
     
     # Print summary statistics
@@ -452,8 +466,8 @@ if __name__ == "__main__":
     print(f"Mean P(exactly one decays): {event_stats['prob_exactly_one_decays'].mean():.6f}")
     
     # Save results
-    df_results.to_csv("particle_decay_results_with_events.csv", index=False)
-    event_stats.to_csv("event_decay_statistics.csv")
+    df_results.to_csv(f"{base_filename}_particle_decay_results.csv", index=False)
+    event_stats.to_csv(f"{base_filename}_event_decay_statistics.csv")
     print("\nDetailed results saved to CSV files")
     
     # Lifetime scan
@@ -526,12 +540,11 @@ if __name__ == "__main__":
                  color="purple", linewidth=2,label="ANUBIS")
     plt.legend()
 
-    plt.savefig('event_exclusion_vs_lifetime.png', dpi=150)
+    plt.savefig(f'{base_filename}_exclusion_vs_lifetime.png', dpi=150)
     plt.show()
     
     # Create event visualization
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-    exit()
     
     # Select a specific lifetime for visualization
     viz_lifetime = 1e-8  # 10 ns
@@ -563,7 +576,7 @@ if __name__ == "__main__":
         ax2.legend()
     
     plt.tight_layout()
-    plt.savefig('event_correlation_analysis.png', dpi=150)
+    plt.savefig(f'{base_filename}_correlation_analysis.png', dpi=150)
     plt.show()
     
     # Summary statistics as a function of lifetime
