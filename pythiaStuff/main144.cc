@@ -287,10 +287,18 @@ int main(int argc, char* argv[]) {
 #endif
 
   // Loop over events.
-  std::cout << "here" << std::endl;
   auto startAllEvents = std::chrono::high_resolution_clock::now();
   ofstream myfile;
-  myfile.open ("LLP.csv");
+
+  // Custom filename
+  string particleName = pythia.particleData.name(9900012);
+  double particleMass = pythia.particleData.m0(9900012);
+  double particleTau = pythia.particleData.tau0(9900012);
+
+  ostringstream filename;
+  filename << particleName << "_m" << particleMass << "_tau" << particleTau << "LLP.csv";
+  myfile.open(filename.str());
+
   myfile << "event,\tid,\tpt,\teta,\tphi,\tmomentum,\tmass\n";
   for ( int iEvent = 0; iEvent < nEvent; ++iEvent ) {
     auto startThisEvent = std::chrono::high_resolution_clock::now();
@@ -322,21 +330,25 @@ int main(int argc, char* argv[]) {
     if (writeHepmc) hepmc.writeNextEvent(pythia);
 #endif
 
+    // Find HNL decay products and write to CSV.
+    for (int iPrt = 0; iPrt < pythia.event.size(); ++iPrt) {
+      Particle& prt = pythia.event[iPrt];
+      if (prt.mother1() > 0) {
+        Particle& mother = pythia.event[prt.mother1()];
+        if (abs(mother.id()) == 9900012) {
+          myfile << iEvent << ",\t" << prt.id() << ",\t" << prt.pT() << ",\t"
+                 << prt.eta() << ",\t" << prt.phi() << ",\t" << prt.pAbs()
+                 << ",\t" << prt.m() << "\n";
+        }
+      }
+    }
+
     // Write to ROOT file output.
 #ifdef PY8ROOT
     if (writeRoot) {
       vector<RootParticle> prts;
       for (int iPrt = 0; iPrt < pythia.event.size(); ++iPrt) {
         Particle& prt = pythia.event[iPrt];
-
-        // Any particle cuts can be placed here. Here, only final
-        // state particles are kept.
-        // if (!prt.isFinal()) continue;
-        if (abs(prt.id()) == 6000113){
-        myfile << iEvent << ",\t" << prt.id() << ",\t" << prt.pT() << ",\t" << prt.eta() << ",\t" << prt.phi() << ",\t" << prt.pAbs() <<  ",\t" << prt.m()<< "\n";
-        }
-
-        // Push back the ROOT particle.
         prts.push_back(RootParticle(prt));
       }
       // Fill the ROOT event and tree.
