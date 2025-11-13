@@ -2,7 +2,7 @@
 ! This file contains commands to generate HNLs from Higgs decays.
 
 ! 1) Settings used in the main program.
-Main:numberOfEvents = 1000         ! number of events to generate
+Main:numberOfEvents = 20000         ! number of events to generate
 Main:timesAllowErrors = 3          ! how many aborts before run stops
 
 ! 2) Beam parameter settings.
