@@ -41,15 +41,36 @@ public:
     settings = settingsIn;
     settings->addFlag("UserHooks:doMPICut", false);
     settings->addMode("UserHooks:nMPICut", 0, true, false, 0, 0);
+    settings->addFlag("UserHooks:doVetoPartonLevel", false);  // NEW
   }
 
   // Check if parton level can be vetoed.
   bool canVetoPartonLevel() final {
-    return settings->flag("UserHooks:doMPICut");}
+    return settings->flag("UserHooks:doMPICut") ||
+           settings->flag("UserHooks:doVetoPartonLevel");
+  }
 
   // Check if parton level should be vetoed.
-  bool doVetoPartonLevel(const Event&) final {
-    return infoPtr->nMPI() < settings->mode("UserHooks:nMPICut");}
+  bool doVetoPartonLevel(const Event& process) final {
+    // Existing MPI veto
+    if (settings->flag("UserHooks:doMPICut") &&
+        infoPtr->nMPI() < settings->mode("UserHooks:nMPICut"))
+      return true;
+
+    // NEW: HNL veto - keep only events with HNL (PDG ID 9900015)
+    if (settings->flag("UserHooks:doVetoPartonLevel")) {
+      bool hasHNL = false;
+      for (int i = 0; i < process.size(); ++i) {
+        if (abs(process[i].id()) == 9900015) {
+          hasHNL = true;
+          break;
+        }
+      }
+      return !hasHNL;  // Veto if NO HNL found
+    }
+
+    return false;
+  }
 
 private:
 

@@ -1,148 +1,62 @@
 ! HNL benchmark card for 10 m proper decay length
-
 ! ------------------------------------------------
-
-! μ-like Majorana HNL produced in W → μ N,
-
-! with c*tau = 10 m and simple N → μ + jj decays.
-
-
 
 ! 1) Beam and collision setup
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 13600.
 
-Beams:idA = 2212                  ! first beam: proton
-
-Beams:idB = 2212                  ! second beam: proton
-
-Beams:eCM = 13600.                ! CM energy of collision (13.6 TeV)
-
-
-
-! 2) Physics processes: single W production as a toy example
-
-!    (sufficient for rough rate / geometry studies)
-
-WeakSingleBoson:ffbar2W = on      ! q qbar -> W±
-
-
+! 2) Physics processes: W production with better cross sections
+WeakSingleBoson:ffbar2W = on         ! q qbar -> W±
+WeakBosonAndParton:qqbar2Wg = on     ! W + gluon (better rates)
+WeakBosonAndParton:qg2Wq = on        ! W + quark (better rates)
 
 ! 3) Define the HNL (N) as a Majorana particle
-
 ! ------------------------------------------------
+9900015:new = N Nbar 2 0 0
+9900015:m0 = 15.0                    ! HNL mass = 15 GeV
+9900015:tau0 = 1E4                   ! c*tau = 10 m = 1e4 mm
+9900015:mayDecay = on
+! NO isResonance flag (defaults to off for m < 20 GeV)
 
-! PDG-like code 9900015 (arbitrary choice)
-
-9900015:new  = N N 2 0 0 0 0      ! name, anti-name, spin, charge, colType, m0, mWidth placeholders
-
-
-
-! === MASS AND LIFETIME BENCHMARKS ===
-
-! Choose ONE of these three masses per run (comment out the others).
-
-!
-
-! -- light, more "far-detector-like" --
-
-!9900015:m0   = 5.0               ! HNL mass = 5 GeV
-
-!
-
-! -- sweet spot for 10 m detector --
-
-9900015:m0   = 15.0              ! HNL mass = 15 GeV
-
-!
-
-! -- heavier, more decays before/around 10 m --
-
-!9900015:m0   = 30.0              ! HNL mass = 30 GeV
-
-
-
-! Proper decay length: c * tau = 10 m = 1e4 mm
-
-9900015:tau0 = 1E4                ! in mm
-
-
-
-! Turn off any default decays, then define simple μ + dijet modes
-
+! Turn off any default decays
 9900015:onMode = off
 
-
-
-! N -> mu- u dbar (LNC branch for W+ → mu+ N)
-
+! N -> mu- u dbar (LNC branch)
 9900015:addChannel = 1 0.5 101  13  2 -1
 
-
-
-! N -> mu+ ubar d (LNV branch for W+ → mu+ N)
-
+! N -> mu+ ubar d (LNV branch)
 9900015:addChannel = 1 0.5 101 -13 -2  1
 
-
-
-! 4) Force W± -> μ± N (100% BR in this toy)
-
+! 4) W± decays: Force ONLY HNL channel (turn off standard decays)
 ! ------------------------------------------------
-
-! W+ (PDG 24) -> mu+ (PDG -13) + N
-
+! Turn off all standard W decays
 24:onMode = off
-
-24:addChannel = 1 1.0 0 -13 9900015   ! W+ -> mu+ N
-
-
-
-! W- (PDG -24) -> mu- (PDG 13) + N
-
 -24:onMode = off
 
--24:addChannel = 1 1.0 0 13 9900015   ! W- -> mu- N
+! Add ONLY the HNL decay channel with meMode = 100 (phase space)
+24:onIfAny = 9900015
+24:addChannel = 1 1.0 100 -13 9900015
 
+-24:onIfAny = 9900015
+-24:addChannel = 1 1.0 100 13 9900015
 
-
-! 5) Run settings and printouts
-
+! 5) Run settings
 ! ------------------------------------------------
-
-Init:showChangedSettings     = on   ! list changed settings
-
-Init:showAllSettings         = off  ! do not list all settings
-
-Init:showChangedParticleData = on   ! list changed particle data
-
-Init:showAllParticleData     = off  ! do not list all particle data
-
-
-
-Next:numberCount       = 1000       ! print message every n events
-
-Next:numberShowLHA     = 1          ! show LHA info n times
-
-Next:numberShowInfo    = 1          ! show event info n times
-
-Next:numberShowProcess = 1          ! show process record n times
-
-Next:numberShowEvent   = 1          ! show event record n times
-
-
-
-Stat:showPartonLevel = on           ! additional statistics on MPI
-
-
+Init:showChangedSettings = on
+Init:showChangedParticleData = on
+Next:numberCount = 1000
+Next:numberShowLHA = 1
+Next:numberShowInfo = 1
+Next:numberShowProcess = 1
+Next:numberShowEvent = 1
+Stat:showPartonLevel = on
 
 ! 6) Output options
-
 ! ------------------------------------------------
-
-Main:writeLog  = on                 ! write all printed output to a log file
-
+Main:writeLog = on
+Main:writeRoot = on
 
 ! 7) Number of events
-
 ! ------------------------------------------------
-
-Main:numberOfEvents = 100000        ! set as needed
+Main:numberOfEvents = 100000
