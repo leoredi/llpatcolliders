@@ -22,39 +22,9 @@
 #ifdef RIVET
 #include "Pythia8Plugins/Pythia8Rivet.h"
 #endif
-#ifdef PY8ROOT
-#include "TSystem.h"
-#include "TTree.h"
-#include "TFile.h"
-#endif
 
 // Use the Pythia namespace.
 using namespace Pythia8;
-
-//==========================================================================
-
-// Define filling ROOT particle and events if using ROOT.
-
-#ifdef PY8ROOT
-#include "main144Dct.h"
-
-// Fill a ROOT particle.
-RootParticle::RootParticle(Pythia8::Particle &prt) {
-  phi = prt.phi();
-  eta = prt.eta();
-  y   = prt.y();
-  pT  = prt.pT();
-  pid = prt.id();
-}
-
-// Fill a ROOT event to a TTree.
-void RootEvent::fill(const Pythia8::Info &infoIn, vector<RootParticle> &prtsIn,
-  TTree *treeIn) {
-  weight = infoIn.weight();
-  particles = prtsIn;
-  treeIn->Fill();
-}
-#endif
 
 //==========================================================================
 
@@ -100,8 +70,7 @@ int main(int argc, char* argv[]) {
     "Additional options in cmnd file:\n"
     "\tMain:writeLog = on\n\t\tRedirect output to <-o prefix>.log.\n"
     "\tMain:writeHepMC = on \n\t\tWrite HepMC output, requires HepMC linked.\n"
-    "\tMain:writeRoot = on \n\t\tWrite a ROOT tree declared in "
-    "RootEvent.h, requires ROOT linked.\n"
+    "\tMain:writeRoot = on \n\t\tWrite an LLP CSV file (LLP.csv).\n"
     "\tMain:runRivet = on \n\t\tRun Rivet analyses, requires Rivet linked.\n"
     "\tMain:rivetAnalyses = {ANALYSIS1,ANALYSIS2,...}\n "
     "\t\tComma separated list of Rivet analyses to run.\n"
@@ -198,11 +167,11 @@ int main(int argc, char* argv[]) {
   int nError                   = pythia.mode("Main:timesAllowErrors");
   bool writeLog                = pythia.flag("Main:writeLog");
   bool writeHepmc              = pythia.flag("Main:writeHepMC");
-  bool writeRoot               = pythia.flag("Main:writeRoot");
+  bool writeRoot               = pythia.flag("Main:writeRoot"); // now controls CSV output
   bool runRivet                = pythia.flag("Main:runRivet");
   bool countErrors             = nError > 0;
 
-  // Check if Rivet, HepMC, and ROOT are requested and available.
+  // Check if Rivet and HepMC are requested and available.
   bool valid = true;
 #ifndef RIVET
   valid = valid && !runRivet && !writeHepmc;
@@ -210,11 +179,6 @@ int main(int argc, char* argv[]) {
     cout << "Option Main::runRivet = on requires the Rivet library.\n";
   if (writeHepmc)
     cout << "Option Main::writeHepMC = on requires the HepMC library.\n";
-#endif
-#ifndef PY8ROOT
-  valid = valid && !writeRoot;
-  if (writeRoot)
-    cout << "Option Main::writeRoot = on requires the ROOT library.\n";
 #endif
   if (!valid) return 1;
 
@@ -244,25 +208,6 @@ int main(int argc, char* argv[]) {
   rivet.addRunName(pythia.settings.word("Main:rivetRunName"));
 #endif
 
-  // ROOT initialization.
-#ifdef PY8ROOT
-  // Create the ROOT TFile and TTree.
-  std::cout << "here" << std::endl;
-  TFile *file;
-  TTree *tree;
-  RootEvent *evt;
-  if (writeRoot) {
-
-    // Open the ROOT file.
-    file = TFile::Open((out + ".root").c_str(), "recreate" );
-    tree = new TTree("t", "Pythia8 event tree");
-    evt  = new RootEvent();
-
-    // Set the TTree branch to the ROOT event.
-    tree->Branch("events", &evt);
-  }
-#endif
-
   // Logfile initialization.
   ofstream logBuf;
   streambuf *oldCout;
@@ -287,18 +232,10 @@ int main(int argc, char* argv[]) {
 #endif
 
   // Loop over events.
+  std::cout << "here" << std::endl;
   auto startAllEvents = std::chrono::high_resolution_clock::now();
   ofstream myfile;
-
-  // Custom filename
-  string particleName = pythia.particleData.name(9900012);
-  double particleMass = pythia.particleData.m0(9900012);
-  double particleTau = pythia.particleData.tau0(9900012);
-
-  ostringstream filename;
-  filename << particleName << "_m" << particleMass << "_tau" << particleTau << "LLP.csv";
-  myfile.open(filename.str());
-
+  myfile.open ("LLP.csv");
   myfile << "event,\tid,\tpt,\teta,\tphi,\tmomentum,\tmass\n";
   for ( int iEvent = 0; iEvent < nEvent; ++iEvent ) {
     auto startThisEvent = std::chrono::high_resolution_clock::now();
@@ -330,48 +267,28 @@ int main(int argc, char* argv[]) {
     if (writeHepmc) hepmc.writeNextEvent(pythia);
 #endif
 
-    // Find HNL decay products and write to CSV.
-    for (int iPrt = 0; iPrt < pythia.event.size(); ++iPrt) {
-      Particle& prt = pythia.event[iPrt];
-      if (prt.mother1() > 0) {
-        Particle& mother = pythia.event[prt.mother1()];
-        if (abs(mother.id()) == 9900012) {
-          myfile << iEvent << ",\t" << prt.id() << ",\t" << prt.pT() << ",\t"
-                 << prt.eta() << ",\t" << prt.phi() << ",\t" << prt.pAbs()
-                 << ",\t" << prt.m() << "\n";
-        }
-      }
-    }
-
-    // Write to ROOT file output.
-#ifdef PY8ROOT
+    // Write LLP candidates to CSV file (no ROOT needed).
     if (writeRoot) {
-      vector<RootParticle> prts;
       for (int iPrt = 0; iPrt < pythia.event.size(); ++iPrt) {
         Particle& prt = pythia.event[iPrt];
-        prts.push_back(RootParticle(prt));
+
+        // Keep only the desired LLP PDG ID.
+        if (abs(prt.id()) != 9900015) continue;
+
+        myfile << iEvent << ",\t"
+               << prt.id() << ",\t"
+               << prt.pT() << ",\t"
+               << prt.eta() << ",\t"
+               << prt.phi() << ",\t"
+               << prt.pAbs() << ",\t"
+               << prt.m() << "\n";
       }
-      // Fill the ROOT event and tree.
-      evt->fill(pythia.info, prts, tree);
     }
-#endif
   }
 
   // Finalize.
   myfile.close();
   pythia.stat();
-#ifdef PY8ROOT
-  if (writeRoot) {
-    tree->Print();
-    // Make sure to write the TTree to the file before closing.
-    file->Write();
-
-    // Now, delete the objects in the reverse order of dependency.
-    delete tree;
-    delete evt;
-    delete file; // Deleting the file also closes it.
-  }
-#endif
 
   // Print timing.
   auto stopAllEvents = std::chrono::high_resolution_clock::now();

@@ -32,7 +32,7 @@ WeakSingleBoson:ffbar2W = on      ! q qbar -> W±
 
 ! PDG-like code 9900015 (arbitrary choice)
 
-9900015:new  = N N 1 0 0 0 0      ! name, anti-name, spin, charge, colType, m0, mWidth placeholders
+9900015:new  = N N 2 0 0 0 0      ! name, anti-name, spin, charge, colType, m0, mWidth placeholders
 
 
 
