@@ -140,9 +140,6 @@ Stat:showPartonLevel = on           ! additional statistics on MPI
 
 Main:writeLog  = on                 ! write all printed output to a log file
 
-Main:writeROOT = on                 ! write ROOT output (requires ROOT build)
-
-
 
 ! 7) Number of events
 
