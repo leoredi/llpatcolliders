@@ -7,5 +7,4 @@ main144
 # Output files
 *.root
 *.log
-*.csv
 main144Dct.cc
