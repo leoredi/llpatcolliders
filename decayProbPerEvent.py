@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import trimesh
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from tqdm import tqdm
@@ -559,8 +561,8 @@ if __name__ == "__main__":
     plt.legend()
 
     plt.savefig(f'{base_filename}_exclusion_vs_lifetime.png', dpi=150)
-    plt.show()
-    
+    print(f"Saved: {base_filename}_exclusion_vs_lifetime.png")
+
     # Create event visualization
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     
@@ -595,8 +597,8 @@ if __name__ == "__main__":
     
     plt.tight_layout()
     plt.savefig(f'{base_filename}_correlation_analysis.png', dpi=150)
-    plt.show()
-    
+    print(f"Saved: {base_filename}_correlation_analysis.png")
+
     # Summary statistics as a function of lifetime
     print("\n" + "="*40)
     print("SUMMARY: Event Decay Probabilities")
