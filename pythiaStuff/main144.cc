@@ -19,6 +19,7 @@
 #include "Pythia8/HeavyIons.h"
 #include "Pythia8Plugins/InputParser.h"
 #include <chrono>
+#include <set>
 #ifdef RIVET
 #include "Pythia8Plugins/Pythia8Rivet.h"
 #endif
@@ -319,12 +320,37 @@ int main(int argc, char* argv[]) {
 
     // Write LLP candidates to CSV file (no ROOT needed).
     if (writeRoot) {
+      // For W → HNL scenario, write only 1 HNL per event
+      // For H → LLP LLP scenario, write up to 2 LLPs per event
+      int llpCount = 0;
+      const int maxLLPsPerEvent = 2;  // Configurable limit
+
       for (int iPrt = 0; iPrt < pythia.event.size(); ++iPrt) {
         Particle& prt = pythia.event[iPrt];
 
         // Keep only the desired LLP PDG ID.
         if (abs(prt.id()) != llp_pdgid) continue;
 
+        // Skip if we've already written enough LLPs for this event
+        if (llpCount >= maxLLPsPerEvent) break;
+
+        // Check if this is a duplicate of an already-written particle
+        bool isDuplicate = false;
+        for (int jPrt = 0; jPrt < iPrt; ++jPrt) {
+          Particle& prev = pythia.event[jPrt];
+          if (abs(prev.id()) != llp_pdgid) continue;
+
+          // Consider it a duplicate if kinematics are very similar
+          if (abs(prt.pT() - prev.pT()) < 0.001 * prt.pT() &&
+              abs(prt.eta() - prev.eta()) < 0.001 &&
+              abs(prt.phi() - prev.phi()) < 0.001) {
+            isDuplicate = true;
+            break;
+          }
+        }
+        if (isDuplicate) continue;
+
+        // Write this LLP
         myfile << iEvent << ",\t"
                << prt.id() << ",\t"
                << prt.pT() << ",\t"
@@ -332,6 +358,8 @@ int main(int argc, char* argv[]) {
                << prt.phi() << ",\t"
                << prt.pAbs() << ",\t"
                << prt.m() << "\n";
+
+        llpCount++;
       }
     }
   }

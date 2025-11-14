@@ -12,7 +12,7 @@ import sys
 START_MASS = 15  # GeV
 MASS_STEP = 8    # GeV
 MAX_MASS = 79    # GeV (kinematic limit from W decay)
-N_EVENTS = 1000  # Trial run with 1000 events per mass point
+N_EVENTS = 1000  # Test run to verify fix
 
 # Base configuration file
 BASE_CMND = "hnlLL.cmnd"
