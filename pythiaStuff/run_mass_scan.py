@@ -7,12 +7,14 @@ Generates PYTHIA configurations for different HNL masses and runs simulations
 import os
 import subprocess
 import sys
+from multiprocessing import Pool
+from datetime import datetime
 
 # Configuration
 START_MASS = 15  # GeV
 MASS_STEP = 8    # GeV
 MAX_MASS = 79    # GeV (kinematic limit from W decay)
-N_EVENTS = 1000  # Test run to verify fix
+N_EVENTS = 100_000  #
 
 # Base configuration file
 BASE_CMND = "hnlLL.cmnd"
@@ -46,27 +48,43 @@ def create_config_file(mass, base_file=BASE_CMND):
 
     return output_file
 
-def run_simulation(config_file, mass):
+def run_simulation(mass):
     """Run PYTHIA simulation with the given configuration"""
 
-    print(f"\n{'='*70}")
-    print(f"Running simulation for HNL mass = {mass} GeV")
-    print(f"Config file: {config_file}")
-    print(f"Events: {N_EVENTS}")
-    print(f"{'='*70}\n")
+    # Create config file
+    config_file = create_config_file(mass)
+
+    start_time = datetime.now()
+    print(f"[{start_time.strftime('%H:%M:%S')}] STARTING: HNL mass = {mass} GeV")
+    print(f"  Config: {os.path.basename(config_file)}")
+    print(f"  Events: {N_EVENTS:,}")
+    sys.stdout.flush()
 
     # Run PYTHIA from the mass_scan_hnl directory
     cmd = ['../main144', '-c', os.path.basename(config_file)]
 
     try:
         # Run in the OUTPUT_DIR so CSV files are created there
-        result = subprocess.run(cmd, check=True, capture_output=False, cwd=OUTPUT_DIR)
-        print(f"\n✓ Simulation completed successfully for m = {mass} GeV")
-        return True
+        result = subprocess.run(cmd, check=True, capture_output=True, cwd=OUTPUT_DIR, text=True)
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
+        print(f"[{end_time.strftime('%H:%M:%S')}] COMPLETED: HNL mass = {mass} GeV ({duration:.1f}s)")
+
+        # Check for output CSV
+        csv_file = os.path.join(OUTPUT_DIR, f"hnlLL_m{mass}GeVLLP.csv")
+        if os.path.exists(csv_file):
+            print(f"  Output: {os.path.basename(csv_file)}")
+
+        sys.stdout.flush()
+        return (mass, True, duration)
     except subprocess.CalledProcessError as e:
-        print(f"\n✗ Simulation failed for m = {mass} GeV")
-        print(f"Error: {e}")
-        return False
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        print(f"[{end_time.strftime('%H:%M:%S')}] FAILED: HNL mass = {mass} GeV ({duration:.1f}s)")
+        print(f"  Error: {e}")
+        sys.stdout.flush()
+        return (mass, False, duration)
 
 def main():
     """Main execution function"""
@@ -91,29 +109,31 @@ def main():
     print(f"Mass range: {START_MASS} - {MAX_MASS} GeV")
     print(f"Mass step: {MASS_STEP} GeV")
     print(f"Mass points: {masses}")
-    print(f"Events per mass: {N_EVENTS}")
+    print(f"Events per mass: {N_EVENTS:,}")
     print(f"Total mass points: {len(masses)}")
+    print(f"Parallel processes: 2")
     print(f"Output directory: {OUTPUT_DIR}/")
     print(f"{'='*70}\n")
 
-    # Run simulations for each mass
+    # Run simulations in parallel (2 at a time)
+    scan_start = datetime.now()
+    print(f"Scan started at {scan_start.strftime('%H:%M:%S')}\n")
+
+    with Pool(processes=2) as pool:
+        results = pool.map(run_simulation, masses)
+
+    scan_end = datetime.now()
+    total_duration = (scan_end - scan_start).total_seconds()
+
+    # Process results
     successful = []
     failed = []
+    total_sim_time = 0
 
-    for mass in masses:
-        # Create configuration file
-        config_file = create_config_file(mass)
-        print(f"Created config file: {config_file}")
-
-        # Run simulation
-        success = run_simulation(config_file, mass)
-
+    for mass, success, duration in results:
+        total_sim_time += duration
         if success:
             successful.append(mass)
-            # Expected output CSV file
-            csv_file = os.path.join(OUTPUT_DIR, f"hnlLL_m{mass}GeVLLP.csv")
-            if os.path.exists(csv_file):
-                print(f"✓ Output CSV: {csv_file}")
         else:
             failed.append(mass)
 
@@ -121,12 +141,16 @@ def main():
     print(f"\n{'='*70}")
     print(f"MASS SCAN SUMMARY")
     print(f"{'='*70}")
-    print(f"Successful: {len(successful)}/{len(masses)} mass points")
+    print(f"Scan completed at {scan_end.strftime('%H:%M:%S')}")
+    print(f"Wall-clock time: {total_duration/60:.1f} minutes")
+    print(f"Total simulation time: {total_sim_time/60:.1f} minutes")
+    print(f"Speedup from parallelization: {total_sim_time/total_duration:.2f}x")
+    print(f"\nSuccessful: {len(successful)}/{len(masses)} mass points")
     if successful:
-        print(f"  Masses: {successful}")
+        print(f"  Masses: {successful} GeV")
     if failed:
         print(f"Failed: {len(failed)}/{len(masses)} mass points")
-        print(f"  Masses: {failed}")
+        print(f"  Masses: {failed} GeV")
     print(f"{'='*70}\n")
 
 if __name__ == "__main__":

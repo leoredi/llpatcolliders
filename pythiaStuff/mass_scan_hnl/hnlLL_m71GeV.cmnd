@@ -59,4 +59,4 @@ Main:writeRoot = on
 
 ! 7) Number of events
 ! ------------------------------------------------
-Main:numberOfEvents = 1000
+Main:numberOfEvents = 100000
