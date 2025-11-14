@@ -1,0 +1,36 @@
+! Command file for H -> SS simulation.
+
+! 1) Settings related to the physics processes generated.
+Beams:idA = 2212                   ! first beam p = 2212
+Beams:idB = 2212                   ! second beam p = 2212
+Beams:eCM = 13600.                  ! CM energy of collision
+
+HiggsSM:all = on
+25:onMode = off
+25:m0 = 125
+
+25:addChannel = 1 1.0 100 9900025 -9900025
+
+# Long-lived scalar S
+9900025:new = S Sbar 1 0 0
+9900025:m0 = 15
+9900025:tau0 = 10000
+9900025:isResonance = on
+9900025:mayDecay = on
+9900025:oneChannel = 1  1.0 101  2 -2
+
+! 2) Settings related to the run
+Init:showChangedSettings = on      ! list changed settings
+Init:showAllSettings = off         ! list all settings
+Init:showChangedParticleData = on  ! list changed particle data
+Init:showAllParticleData = off     ! list all particle data
+Next:numberCount = 1000            ! print message every n events
+Next:numberShowLHA = 1             ! print LHA information n times
+Next:numberShowInfo = 1            ! print event information n times
+Next:numberShowProcess = 1         ! print process record n times
+Next:numberShowEvent = 1           ! print event record n times
+Stat:showPartonLevel = on          ! additional statistics on MPI
+
+! 3) Settings related to output.
+Main:writeLog = on                 ! Write all printed output to a log file.
+Main:writeRoot = on

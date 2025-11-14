@@ -8,4 +8,8 @@ main144
 *.png
 *.root
 *.log
+*.csv
 main144Dct.cc
+
+# Pythia installation
+pythia/
