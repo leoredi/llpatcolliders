@@ -44,6 +44,11 @@ public:
     settings->addFlag("UserHooks:doVetoPartonLevel", false);  // NEW
   }
 
+  // Set the LLP PDG ID to filter for
+  void setLLPPdgId(int pdgid) {
+    llp_pdgid = pdgid;
+  }
+
   // Check if parton level can be vetoed.
   bool canVetoPartonLevel() final {
     return settings->flag("UserHooks:doMPICut") ||
@@ -57,16 +62,16 @@ public:
         infoPtr->nMPI() < settings->mode("UserHooks:nMPICut"))
       return true;
 
-    // NEW: HNL veto - keep only events with HNL (PDG ID 9900015)
+    // NEW: LLP veto - keep only events with specified LLP PDG ID
     if (settings->flag("UserHooks:doVetoPartonLevel")) {
-      bool hasHNL = false;
+      bool hasLLP = false;
       for (int i = 0; i < process.size(); ++i) {
-        if (abs(process[i].id()) == 9900015) {
-          hasHNL = true;
+        if (abs(process[i].id()) == llp_pdgid) {
+          hasLLP = true;
           break;
         }
       }
-      return !hasHNL;  // Veto if NO HNL found
+      return !hasLLP;  // Veto if NO LLP found
     }
 
     return false;
@@ -75,6 +80,7 @@ public:
 private:
 
   Settings* settings{};
+  int llp_pdgid = 9900015;  // Default to HNL
 
 };
 
@@ -114,6 +120,7 @@ int main(int argc, char* argv[]) {
     {"-out"});
   ip.add("n", "-1", "Number of events. Overrides the command files.",
     {"-nevents"});
+  ip.add("p", "9900015", "PDG ID of LLP to save to CSV.", {"-pdgid"});
   ip.add("l", "false", "Silence the splash screen.");
   ip.add("t", "false", "Time event generation.", {"-time"});
   ip.add("v", "false", "Print Pythia version number and exit.", {"-version"});
@@ -144,6 +151,8 @@ int main(int argc, char* argv[]) {
   bool writeTime = ip.get<bool>("t");
   // Command line number of event, overrides the one set in input .cmnd file.
   int nev = ip.get<int>("n");
+  // PDG ID of LLP to save
+  int llp_pdgid = ip.get<int>("p");
 
   // Catch the splash screen in a buffer.
   stringstream splashBuf;
@@ -158,6 +167,7 @@ int main(int argc, char* argv[]) {
   shared_ptr<UserHooksWrapper> userHooksWrapper =
     make_shared<UserHooksWrapper>();
   userHooksWrapper->additionalSettings(&pythia.settings);
+  userHooksWrapper->setLLPPdgId(llp_pdgid);
   pythia.setUserHooksPtr(userHooksWrapper);
 
   // Some extra parameters.
@@ -313,7 +323,7 @@ int main(int argc, char* argv[]) {
         Particle& prt = pythia.event[iPrt];
 
         // Keep only the desired LLP PDG ID.
-        if (abs(prt.id()) != 9900015) continue;
+        if (abs(prt.id()) != llp_pdgid) continue;
 
         myfile << iEvent << ",\t"
                << prt.id() << ",\t"
