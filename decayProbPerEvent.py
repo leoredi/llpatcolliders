@@ -489,7 +489,7 @@ if __name__ == "__main__":
 
     # Analysis parameters
     lifetimes = np.logspace(-9.5, -4.5, 20)  # Lifetimes in seconds: 10^-9.5 to 10^-4.5 s (~0.3 ns to ~30 μs)
-    sigma_fb = 52000  # Production cross section in fb (52 pb = 52000 fb)
+    sigma_fb = 2e8  # Production cross section in fb (200 million fb)
     lumi_fb = 3000.0  # Integrated luminosity in fb^-1 (HL-LHC)
 
     print(f"Cross section: {sigma_fb} fb ({sigma_fb/1000} pb)")
