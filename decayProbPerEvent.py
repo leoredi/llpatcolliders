@@ -188,23 +188,26 @@ def calculate_event_statistics(df):
     
     return pd.DataFrame(event_stats)
 
-def analyze_decay_vs_lifetime(csv_file, mesh, origin, lifetime_range):
+def analyze_decay_vs_lifetime(csv_file, mesh, origin, lifetime_range,
+                              sigma_fb, lumi_fb=3000.0):
     """
     Analyze how decay probability varies with lifetime for particles in CSV
-    
+
     Args:
         csv_file: Path to CSV file
         mesh: Trimesh object
         origin: Origin point
         lifetime_range: Array of lifetimes to test (in seconds)
-    
+        sigma_fb: Production cross section in fb (e.g. 52000 for 52 pb)
+        lumi_fb: Integrated luminosity in fb^-1 (default: 3000 for HL-LHC)
+
     Returns:
-        Dictionary with analysis results
+        Dictionary with analysis results, including BR exclusion limits
     """
     # Read CSV once to get basic info
     df_base = pd.read_csv(csv_file)
     n_events = df_base['event'].nunique()
-    
+
     results = {
         'lifetimes': lifetime_range,
         'mean_single_particle_decay_prob': [],
@@ -212,28 +215,37 @@ def analyze_decay_vs_lifetime(csv_file, mesh, origin, lifetime_range):
         'mean_both_decay_prob': [],
         'frac_events_with_decay': [],
         'exclusion': [],
-        'total_events': n_events
+        'total_events': n_events,
+        'sigma_fb': sigma_fb,
+        'lumi_fb': lumi_fb
     }
-    
+
     # For each lifetime, calculate decay probabilities
     for lifetime in tqdm(lifetime_range, desc="Scanning lifetimes"):
         df = process_particle_csv(csv_file, mesh, origin, lifetime)
-        
+
         # Get event statistics
         event_stats = df.groupby('event').first()
-        
+
         # Calculate statistics
-        mean_single = df[df['hits_tube']]['decay_probability'].mean() if any(df['hits_tube']) else 0
+        mean_single = df[df['hits_tube']]['decay_probability'].mean() if any(df['hits_tube']) else 0.0
         mean_at_least_one = event_stats['prob_at_least_one_decays'].mean()
         mean_both = event_stats['prob_both_decay'].mean()
         frac_with_decay = (event_stats['prob_at_least_one_decays'] > 0.01).mean()  # Events with >1% decay prob
-        
+
         results['mean_single_particle_decay_prob'].append(mean_single)
         results['mean_at_least_one_decay_prob'].append(mean_at_least_one)
-        results['exclusion'].append(3/(mean_at_least_one*3000*52E3))
         results['mean_both_decay_prob'].append(mean_both)
         results['frac_events_with_decay'].append(frac_with_decay)
-    
+
+        # Exclusion: BR_limit = 3 / (epsilon * L * sigma)
+        if mean_at_least_one > 0.0:
+            br_limit = 3.0 / (mean_at_least_one * lumi_fb * sigma_fb)
+        else:
+            br_limit = np.inf
+
+        results['exclusion'].append(br_limit)
+
     return results
 
 def create_sample_csv(filename, n_events=500):
@@ -474,11 +486,17 @@ if __name__ == "__main__":
     print("\n" + "="*50)
     print("LIFETIME SCAN ANALYSIS")
     print("="*50)
-    
-    # Range of lifetimes (in seconds)
-    lifetimes = np.logspace(-9.5, -4.5, 20)  # 0.1 ns to 1 microsecond
-    
-    scan_results = analyze_decay_vs_lifetime(sample_csv, mesh, origin, lifetimes)
+
+    # Analysis parameters
+    lifetimes = np.logspace(-9.5, -4.5, 20)  # Lifetimes in seconds: 10^-9.5 to 10^-4.5 s (~0.3 ns to ~30 μs)
+    sigma_fb = 52000  # Production cross section in fb (52 pb = 52000 fb)
+    lumi_fb = 3000.0  # Integrated luminosity in fb^-1 (HL-LHC)
+
+    print(f"Cross section: {sigma_fb} fb ({sigma_fb/1000} pb)")
+    print(f"Integrated luminosity: {lumi_fb} fb^-1")
+
+    scan_results = analyze_decay_vs_lifetime(sample_csv, mesh, origin, lifetimes,
+                                            sigma_fb=sigma_fb, lumi_fb=lumi_fb)
     
     # Visualization
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
