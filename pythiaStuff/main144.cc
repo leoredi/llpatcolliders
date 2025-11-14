@@ -255,8 +255,27 @@ int main(int argc, char* argv[]) {
   // Loop over events.
   std::cout << "here" << std::endl;
   auto startAllEvents = std::chrono::high_resolution_clock::now();
+
+  // Generate output CSV filename from input cmnd file
+  string csvFilename = "LLP.csv";  // default
+  // Find first non-empty command file
+  for (size_t i = 0; i < cmnds.size(); ++i) {
+    if (!cmnds[i].empty()) {
+      string cmndFile = cmnds[i];
+      // Extract base name (remove directory path)
+      size_t lastSlash = cmndFile.find_last_of("/\\");
+      if (lastSlash != string::npos) cmndFile = cmndFile.substr(lastSlash + 1);
+      // Remove .cmnd extension if present
+      size_t dotPos = cmndFile.find_last_of(".");
+      if (dotPos != string::npos) cmndFile = cmndFile.substr(0, dotPos);
+      csvFilename = cmndFile + "LLP.csv";
+      break;
+    }
+  }
+
   ofstream myfile;
-  myfile.open ("LLP.csv");
+  myfile.open(csvFilename);
+  cout << "Writing LLP data to: " << csvFilename << endl;
   myfile << "event,\tid,\tpt,\teta,\tphi,\tmomentum,\tmass\n";
   for ( int iEvent = 0; iEvent < nEvent; ++iEvent ) {
     auto startThisEvent = std::chrono::high_resolution_clock::now();
