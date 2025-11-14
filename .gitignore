@@ -5,6 +5,7 @@
 main144
 
 # Output files
+*.png
 *.root
 *.log
 main144Dct.cc
