@@ -54,7 +54,24 @@ This is a physics research codebase for analyzing Long-Lived Particle (LLP) dete
 PYTHIA 8 Simulation (main144) → CSV particle data → decayProbPerEvent.py → Exclusion plots
 ```
 
-Particle CSV format: `event,id,pt,eta,phi,momentum,mass` (two particles per event)
+Particle CSV format: `event,id,pt,eta,phi,momentum,mass` (~1 HNL per event)
+
+### Complete Analysis Pipeline Example
+```bash
+# 1. Build PYTHIA simulation
+bash pythiaStuff/make.sh
+
+# 2. Run mass scan (generates CSV files for all mass points)
+cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py
+
+# 3. Analyze each mass point for detector sensitivity
+conda activate llpatcolliders
+for mass in 15 23 31 39 47 55 63 71 79; do
+    python decayProbPerEvent.py pythiaStuff/mass_scan_hnl/hnlLL_m${mass}GeVLLP.csv
+done
+
+# Output: Exclusion plots saved as hnlLL_m{mass}GeVLLP_exclusion_vs_lifetime.png
+```
 
 ## Dependencies and Setup
 
@@ -109,12 +126,24 @@ Available configuration files:
 
 ### Running Analysis
 
-**Post-Simulation Step** (run with conda environment activated):
+**Post-Simulation Analysis** (run with conda environment activated):
 ```bash
 conda activate llpatcolliders
-python decayProbPerEvent.py pythiaStuff/higgsLLLLP.csv    # Main post-simulation analysis
-# Calculates decay probabilities with lifetime scanning and generates exclusion plots
+
+# For a single mass point
+python decayProbPerEvent.py pythiaStuff/mass_scan_hnl/hnlLL_m15GeVLLP.csv
+
+# For all mass points (can be run in parallel)
+for mass in 15 23 31 39 47 55 63 71 79; do
+    python decayProbPerEvent.py pythiaStuff/mass_scan_hnl/hnlLL_m${mass}GeVLLP.csv
+done
 ```
+
+**Analysis outputs:**
+- `hnlLL_m{mass}GeVLLP_exclusion_vs_lifetime.png` - Main exclusion plot comparing detector sensitivity with MATHUSLA, CODEX-b, and ANUBIS
+- `hnlLL_m{mass}GeVLLP_correlation_analysis.png` - Event correlation and probability distribution plots
+- `hnlLL_m{mass}GeVLLP_event_decay_statistics.csv` - Event-level decay statistics
+- `hnlLL_m{mass}GeVLLP_particle_decay_results.csv` - Particle-level results with path lengths and decay probabilities
 
 **Additional Analysis Scripts:**
 ```bash
