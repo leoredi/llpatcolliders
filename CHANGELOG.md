@@ -1,5 +1,29 @@
 # Changelog
 
+## 2025-11-14 - Complete Mass Scan Analysis
+
+### Completed
+- **Full HNL mass scan and analysis pipeline**:
+  - Generated CSV files for all 9 mass points (15-79 GeV, 8 GeV steps)
+  - Verified no duplicate entries in any CSV files
+  - Successfully ran `decayProbPerEvent.py` for all mass points
+  - Generated 9 exclusion plots comparing detector sensitivity with MATHUSLA, CODEX-b, and ANUBIS
+  - All 9 mass points show HNL particles reaching and decaying in the detector
+  - Exclusion limits calculated as function of lifetime and branching ratio
+
+### Analysis Results
+- **CSV Statistics** (per mass point):
+  - ~104,700 HNL entries for masses 15-71 GeV (100k events)
+  - ~2,031 entries for 79 GeV (kinematic suppression near W mass limit)
+  - ~95% events with 1 HNL, ~5% with 2 HNLs (from multi-W production)
+  - Zero duplicate entries confirmed across all files
+
+- **Generated Outputs**:
+  - Exclusion plots: `hnlLL_m{mass}GeVLLP_exclusion_vs_lifetime.png` (9 files)
+  - Correlation plots: `hnlLL_m{mass}GeVLLP_correlation_analysis.png` (9 files)
+  - Event statistics: `hnlLL_m{mass}GeVLLP_event_decay_statistics.csv` (9 files)
+  - Particle results: `hnlLL_m{mass}GeVLLP_particle_decay_results.csv` (9 files)
+
 ## 2025-11-14 - Parallel Mass Scan
 
 ### Improved
