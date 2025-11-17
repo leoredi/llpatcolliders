@@ -9,3 +9,6 @@ main144
 *.root
 *.log
 main144Dct.cc
+
+# Mac files
+.DS_Store
