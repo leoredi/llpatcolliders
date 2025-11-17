@@ -1,5 +1,36 @@
 # Changelog
 
+## 2025-11-17 - Output Reorganization and Plot Improvements
+
+### Changed
+- **Output directory structure**:
+  - Created centralized `output/` directory with two subdirectories:
+    - `output/csv/` - All CSV files (simulation output and analysis results)
+    - `output/images/` - All PNG plots and visualizations
+  - Removed scattered output files from root directory and `pythiaStuff/`
+  - Removed obsolete `pythiaStuff/mass_scan_hnl/` subdirectory
+
+- **Modified scripts for new output structure**:
+  - `pythiaStuff/main144.cc`: CSV outputs now go to `../output/csv/`
+  - `decayProbPerEvent.py`:
+    - Analysis CSV results → `output/csv/`
+    - Plots → `output/images/`
+  - `pythiaStuff/run_mass_scan.py`:
+    - Simplified to use centralized output directories
+    - No longer creates `mass_scan_hnl/` subdirectory
+
+- **Plot label improvements** (`decayProbPerEvent.py`):
+  - Single-particle decay probability now explicitly labeled as "conditional on hit"
+  - Exclusion plot x-axis: "Lifetime (m)" → "cτ (m)" (proper decay length notation)
+
+### Updated
+- **CLAUDE.md**: Updated all documentation to reflect new output paths and directory structure
+
+### Benefits
+- Cleaner repository structure with organized outputs by file type
+- Easier to find and manage simulation results and plots
+- Consistent output location regardless of where scripts are run
+
 ## 2025-11-14 - Complete Mass Scan Analysis
 
 ### Completed

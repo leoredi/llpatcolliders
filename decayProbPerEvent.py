@@ -489,8 +489,8 @@ if __name__ == "__main__":
     
     # Plot 1: Single particle decay probability
     ax1 = axes[0, 0]
-    ax1.semilogx(lifetimes * 1e9, scan_results['mean_single_particle_decay_prob'], 
-                 'b-', linewidth=2, label='Single particle (hits only)')
+    ax1.semilogx(lifetimes * 1e9, scan_results['mean_single_particle_decay_prob'],
+                 'b-', linewidth=2, label='Single particle (conditional on hit)')
     ax1.set_xlabel('Lifetime (nanoseconds)')
     ax1.set_ylabel('Mean Decay Probability')
     ax1.set_title('Single Particle Decay Probability vs Lifetime')
@@ -512,7 +512,7 @@ if __name__ == "__main__":
     ax3.loglog(lifetimes * 1e9, scan_results['mean_at_least_one_decay_prob'],
                'r-', linewidth=2, label='Event decay prob')
     ax3.loglog(lifetimes * 1e9, scan_results['mean_single_particle_decay_prob'],
-               'b--', linewidth=2, label='Single particle (hits only)')
+               'b--', linewidth=2, label='Single particle (conditional on hit)')
     ax3.set_xlabel('Lifetime (nanoseconds)')
     ax3.set_ylabel('Decay Probability')
     ax3.set_title('Event vs Single Particle Decay Probabilities')
@@ -521,9 +521,9 @@ if __name__ == "__main__":
     
     # Plot 4: Exclusion
     ax4 = axes[1, 1]
-    ax4.loglog(lifetimes * 3E8, scan_results['exclusion'], 
+    ax4.loglog(lifetimes * 3E8, scan_results['exclusion'],
                  'm-', linewidth=2,label="mQ")
-    ax4.set_xlabel('Lifetime (m)')
+    ax4.set_xlabel('cτ (m)')
     ax4.set_ylabel('BR')
     # ax4.set_title('Fraction of Events with >1% Decay Probability')
     ax4.grid(True, which="both", ls="-", alpha=0.2)
