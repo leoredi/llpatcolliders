@@ -81,7 +81,7 @@ public:
 private:
 
   Settings* settings{};
-  int llp_pdgid = 9900015;  // Default to HNL
+  int llp_pdgid = 9900025;  // Default to S
 
 };
 
@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) {
     {"-out"});
   ip.add("n", "-1", "Number of events. Overrides the command files.",
     {"-nevents"});
-  ip.add("p", "9900015", "PDG ID of LLP to save to CSV.", {"-pdgid"});
+  ip.add("p", "9900025", "PDG ID of LLP to save to CSV.", {"-pdgid"});
   ip.add("l", "false", "Silence the splash screen.");
   ip.add("t", "false", "Time event generation.", {"-time"});
   ip.add("v", "false", "Print Pythia version number and exit.", {"-version"});

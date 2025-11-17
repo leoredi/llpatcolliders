@@ -7,7 +7,7 @@ set -e
 cd "$(dirname "$0")"
 
 # --- Define path to your Pythia installation ---
-PYTHIA_DIR="/Users/fredi/cernbox/Physics/llpatcolliders/pythia-install"
+PYTHIA_DIR="/app/pythia/pythia8316"
 
 #-------------------------------------------------------
 # STEP 1: Compile the main program and link everything.
