@@ -10,5 +10,16 @@ main144
 *.log
 main144Dct.cc
 
+# Auto-generated PYTHIA config files
+pythiaStuff/hnlLL_m*GeV.cmnd
+pythiaStuff/test*.cmnd
+
+# Test output CSV files
+output/csv/test*.csv
+output/csv/*LLLP*.csv
+
+# Temporary automation scripts
+auto_analyze.sh
+
 # Mac files
 .DS_Store
