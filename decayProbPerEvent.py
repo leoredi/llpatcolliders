@@ -464,9 +464,9 @@ if __name__ == "__main__":
     print(f"Mean event decay probability: {event_stats['event_decay_prob'].mean():.6f}")
     
     # Save results
-    df_results.to_csv(f"{base_filename}_particle_decay_results.csv", index=False)
-    event_stats.to_csv(f"{base_filename}_event_decay_statistics.csv")
-    print("\nDetailed results saved to CSV files")
+    df_results.to_csv(f"output/csv/{base_filename}_particle_decay_results.csv", index=False)
+    event_stats.to_csv(f"output/csv/{base_filename}_event_decay_statistics.csv")
+    print("\nDetailed results saved to output/csv/")
     
     # Lifetime scan
     print("\n" + "="*50)
@@ -542,8 +542,8 @@ if __name__ == "__main__":
                  color="purple", linewidth=2,label="ANUBIS")
     plt.legend()
 
-    plt.savefig(f'{base_filename}_exclusion_vs_lifetime.png', dpi=150)
-    print(f"Saved: {base_filename}_exclusion_vs_lifetime.png")
+    plt.savefig(f'output/images/{base_filename}_exclusion_vs_lifetime.png', dpi=150)
+    print(f"Saved: output/images/{base_filename}_exclusion_vs_lifetime.png")
 
     # Create event visualization
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
@@ -575,8 +575,8 @@ if __name__ == "__main__":
     ax2.set_xticks(range(1, particles_per_event.max()+1))
 
     plt.tight_layout()
-    plt.savefig(f'{base_filename}_correlation_analysis.png', dpi=150)
-    print(f"Saved: {base_filename}_correlation_analysis.png")
+    plt.savefig(f'output/images/{base_filename}_correlation_analysis.png', dpi=150)
+    print(f"Saved: output/images/{base_filename}_correlation_analysis.png")
 
     # Summary statistics as a function of lifetime
     print("\n" + "="*40)
