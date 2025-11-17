@@ -320,10 +320,9 @@ int main(int argc, char* argv[]) {
 
     // Write LLP candidates to CSV file (no ROOT needed).
     if (writeRoot) {
-      // For W → HNL scenario, write only 1 HNL per event
-      // For H → LLP LLP scenario, write up to 2 LLPs per event
+      // Track LLPs written per event to avoid excessive duplicates
       int llpCount = 0;
-      const int maxLLPsPerEvent = 2;  // Configurable limit
+      const int maxLLPsPerEvent = 3;  // Safety limit (typically 1-2 HNLs per event)
 
       for (int iPrt = 0; iPrt < pythia.event.size(); ++iPrt) {
         Particle& prt = pythia.event[iPrt];
@@ -331,7 +330,7 @@ int main(int argc, char* argv[]) {
         // Keep only the desired LLP PDG ID.
         if (abs(prt.id()) != llp_pdgid) continue;
 
-        // Skip if we've already written enough LLPs for this event
+        // Skip if we've already written too many LLPs for this event
         if (llpCount >= maxLLPsPerEvent) break;
 
         // Check if this is a duplicate of an already-written particle

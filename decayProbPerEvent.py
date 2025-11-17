@@ -149,45 +149,42 @@ def process_particle_csv(csv_file, mesh, origin, lifetime_seconds):
 def calculate_event_statistics(df):
     """
     Calculate event-level statistics for decay probabilities
-    
+    For W → HNL scenario: typically 1 HNL per event
+
     Args:
         df: DataFrame with particle-level data
-    
+
     Returns:
         DataFrame with event-level statistics
     """
     event_groups = df.groupby('event')
-    
+
     event_stats = []
-    
+
     for event_idx, group in event_groups:
         n_particles = len(group)
-        
-        # Get decay probabilities for particles in this event
-        p1 = group.iloc[0]['decay_probability'] if n_particles >= 1 else 0
-        p2 = group.iloc[1]['decay_probability'] if n_particles >= 2 else 0
-        
-        # Probability that at least one particle decays
-        # P(at least one) = 1 - P(none decay) = 1 - (1-p1)(1-p2)
-        p_at_least_one = 1 - (1 - p1) * (1 - p2)
-        
-        # Probability that both decay
-        p_both = p1 * p2
-        
-        # Probability that exactly one decays
-        p_exactly_one = p_at_least_one - p_both
-        
+
+        # Get decay probabilities for all particles in this event
+        decay_probs = group['decay_probability'].values
+
+        # Calculate event-level decay probability
+        # P(at least one decays) = 1 - P(all survive) = 1 - prod(1 - p_i)
+        p_all_survive = np.prod([1 - p for p in decay_probs])
+        p_at_least_one = 1 - p_all_survive
+
+        # For compatibility with old code, store individual probabilities if available
+        # (but note: most events have only 1 particle)
+        particle_probs = list(decay_probs) + [0.0] * (2 - len(decay_probs))  # Pad to length 2
+
         event_stats.append({
             'event': event_idx,
             'n_particles_in_event': n_particles,
             'n_particles_hitting_tube': group['hits_tube'].sum(),
-            'prob_at_least_one_decays': p_at_least_one,
-            'prob_both_decay': p_both,
-            'prob_exactly_one_decays': p_exactly_one,
-            'particle1_decay_prob': p1,
-            'particle2_decay_prob': p2
+            'event_decay_prob': p_at_least_one,  # Main metric for single-particle scenario
+            'particle1_decay_prob': particle_probs[0],
+            'particle2_decay_prob': particle_probs[1]
         })
-    
+
     return pd.DataFrame(event_stats)
 
 def analyze_decay_vs_lifetime(csv_file, mesh, origin, lifetime_range,
@@ -231,18 +228,17 @@ def analyze_decay_vs_lifetime(csv_file, mesh, origin, lifetime_range,
 
         # Calculate statistics
         mean_single = df[df['hits_tube']]['decay_probability'].mean() if any(df['hits_tube']) else 0.0
-        mean_at_least_one = event_stats['prob_at_least_one_decays'].mean()
-        mean_both = event_stats['prob_both_decay'].mean()
-        frac_with_decay = (event_stats['prob_at_least_one_decays'] > 0.01).mean()  # Events with >1% decay prob
+        mean_event_prob = event_stats['event_decay_prob'].mean()
+        frac_with_decay = (event_stats['event_decay_prob'] > 0.01).mean()  # Events with >1% decay prob
 
         results['mean_single_particle_decay_prob'].append(mean_single)
-        results['mean_at_least_one_decay_prob'].append(mean_at_least_one)
-        results['mean_both_decay_prob'].append(mean_both)
+        results['mean_at_least_one_decay_prob'].append(mean_event_prob)
+        results['mean_both_decay_prob'].append(0.0)  # Not applicable for single particle scenario
         results['frac_events_with_decay'].append(frac_with_decay)
 
         # Exclusion: BR_limit = 3 / (epsilon * L * sigma)
-        if mean_at_least_one > 0.0:
-            br_limit = 3.0 / (mean_at_least_one * lumi_fb * sigma_fb)
+        if mean_event_prob > 0.0:
+            br_limit = 3.0 / (mean_event_prob * lumi_fb * sigma_fb)
         else:
             br_limit = np.inf
 
@@ -253,14 +249,14 @@ def analyze_decay_vs_lifetime(csv_file, mesh, origin, lifetime_range,
 def create_sample_csv(filename, n_events=500):
     """
     Create a sample CSV file with particle data for testing
-    Two particles per event
-    
+    ONE particle per event (W → HNL scenario)
+
     Args:
         filename: Output filename
-        n_events: Number of events to generate (2 particles per event)
+        n_events: Number of events to generate (1 HNL per event)
     """
     np.random.seed(42)  # For reproducibility
-    
+
     data = {
         'event': [],
         'eta': [],
@@ -268,32 +264,22 @@ def create_sample_csv(filename, n_events=500):
         'momentum': [],
         'mass': []
     }
-    
+
     for event_idx in range(n_events):
-        # Generate two particles per event
-        for particle in range(2):
-            data['event'].append(event_idx)
-            
-            # Generate correlated eta values (particles from same decay often go in similar directions)
-            if particle == 0:
-                base_eta = np.random.uniform(-2.5, 2.5)
-                base_phi = np.random.uniform(0, 2*np.pi)
-            else:
-                # Second particle somewhat correlated with first
-                data['eta'].append(base_eta + np.random.normal(0, 0.5))
-                data['phi'].append((base_phi + np.pi + np.random.normal(0, 0.3)) % (2*np.pi))
-                continue
-            
-            data['eta'].append(base_eta)
-            data['phi'].append(base_phi)
-        
-        # Momentum and mass (same for both particles in event for simplicity)
-        momentum = np.random.lognormal(np.log(10), 0.5)
-        mass = np.random.choice([0.140, 0.494, 0.938, 1.116], p=[0.6, 0.2, 0.15, 0.05])
-        
-        data['momentum'].extend([momentum, momentum])
-        data['mass'].extend([mass, mass])
-    
+        # Generate ONE HNL per event
+        data['event'].append(event_idx)
+
+        # Generate random kinematics
+        eta = np.random.uniform(-2.5, 2.5)
+        phi = np.random.uniform(0, 2*np.pi)
+        momentum = np.random.lognormal(np.log(50), 0.8)  # Higher momentum for HNL
+        mass = 31.0  # Example HNL mass in GeV
+
+        data['eta'].append(eta)
+        data['phi'].append(phi)
+        data['momentum'].append(momentum)
+        data['mass'].append(mass)
+
     df = pd.DataFrame(data)
     df.to_csv(filename, index=False)
     print(f"Created sample CSV with {n_events} events ({len(df)} particles): {filename}")
@@ -474,10 +460,8 @@ if __name__ == "__main__":
     
     print(f"\nEvent-level statistics:")
     print(f"Events with at least one particle hitting tube: {(event_stats['n_particles_hitting_tube'] > 0).sum()}")
-    print(f"Events with both particles hitting tube: {(event_stats['n_particles_hitting_tube'] == 2).sum()}")
-    print(f"Mean P(at least one decays): {event_stats['prob_at_least_one_decays'].mean():.6f}")
-    print(f"Mean P(both decay): {event_stats['prob_both_decay'].mean():.6f}")
-    print(f"Mean P(exactly one decays): {event_stats['prob_exactly_one_decays'].mean():.6f}")
+    print(f"Events with multiple particles: {(event_stats['n_particles_in_event'] > 1).sum()}")
+    print(f"Mean event decay probability: {event_stats['event_decay_prob'].mean():.6f}")
     
     # Save results
     df_results.to_csv(f"{base_filename}_particle_decay_results.csv", index=False)
@@ -515,22 +499,20 @@ if __name__ == "__main__":
     
     # Plot 2: Event-level probabilities
     ax2 = axes[0, 1]
-    ax2.loglog(lifetimes * 1e9, scan_results['mean_at_least_one_decay_prob'], 
-               'r-', linewidth=2, label='At least one decays')
-    ax2.loglog(lifetimes * 1e9, scan_results['mean_both_decay_prob'], 
-               'g--', linewidth=2, label='Both decay')
+    ax2.loglog(lifetimes * 1e9, scan_results['mean_at_least_one_decay_prob'],
+               'r-', linewidth=2, label='Event decay probability')
     ax2.set_xlabel('Lifetime (nanoseconds)')
     ax2.set_ylabel('Event Decay Probability')
-    ax2.set_title('Event-Level Decay Probabilities vs Lifetime')
+    ax2.set_title('Event-Level Decay Probability vs Lifetime')
     ax2.grid(True, which="both", ls="-", alpha=0.2)
     ax2.legend()
     
-    # Plot 3: Comparison of single vs at-least-one
+    # Plot 3: Comparison of event vs single particle
     ax3 = axes[1, 0]
-    ax3.loglog(lifetimes * 1e9, scan_results['mean_at_least_one_decay_prob'], 
-               'r-', linewidth=2, label='P(≥1 decay per event)')
-    ax3.loglog(lifetimes * 1e9, scan_results['mean_single_particle_decay_prob'], 
-               'b--', linewidth=2, label='P(single particle decay)')
+    ax3.loglog(lifetimes * 1e9, scan_results['mean_at_least_one_decay_prob'],
+               'r-', linewidth=2, label='Event decay prob')
+    ax3.loglog(lifetimes * 1e9, scan_results['mean_single_particle_decay_prob'],
+               'b--', linewidth=2, label='Single particle (hits only)')
     ax3.set_xlabel('Lifetime (nanoseconds)')
     ax3.set_ylabel('Decay Probability')
     ax3.set_title('Event vs Single Particle Decay Probabilities')
@@ -565,36 +547,33 @@ if __name__ == "__main__":
 
     # Create event visualization
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-    
+
     # Select a specific lifetime for visualization
     viz_lifetime = 1e-8  # 10 ns
     df_viz = process_particle_csv(sample_csv, mesh, origin, viz_lifetime)
-    
-    # Plot 1: Event decay probabilities histogram
-    event_probs = df_viz.groupby('event')['prob_at_least_one_decays'].first()
-    ax1.hist(event_probs, bins=50, edgecolor='black', alpha=0.7)
-    ax1.set_xlabel('P(at least one decay)')
+
+    # Plot 1: Event decay probabilities histogram (only non-zero probabilities)
+    event_probs = df_viz.groupby('event')['event_decay_prob'].first()
+    event_probs_nonzero = event_probs[event_probs > 0]
+
+    # Create histogram with log scale
+    ax1.hist(event_probs_nonzero, bins=50, edgecolor='black', alpha=0.7)
+    ax1.set_xlabel('Event decay probability')
     ax1.set_ylabel('Number of Events')
-    ax1.set_title(f'Distribution of Event Decay Probabilities (τ = {viz_lifetime*1e9:.1f} ns)')
-    ax1.grid(True, alpha=0.3)
-    
-    # Plot 2: Correlation between two particles
-    events_both_hit = df_viz[df_viz['n_particles_hitting_tube'] == 2].groupby('event').first()
-    if len(events_both_hit) > 0:
-        ax2.scatter(events_both_hit['particle1_decay_prob'], 
-                   events_both_hit['particle2_decay_prob'], 
-                   alpha=0.5, s=20)
-        ax2.set_xlabel('Particle 1 Decay Probability')
-        ax2.set_ylabel('Particle 2 Decay Probability')
-        ax2.set_title('Correlation of Decay Probabilities within Events')
-        ax2.grid(True, alpha=0.3)
-        
-        # Add diagonal line
-        max_prob = max(events_both_hit['particle1_decay_prob'].max(), 
-                      events_both_hit['particle2_decay_prob'].max())
-        ax2.plot([0, max_prob], [0, max_prob], 'r--', alpha=0.5, label='Equal probability')
-        ax2.legend()
-    
+    ax1.set_title(f'Event Decay Probabilities (τ = {viz_lifetime*1e9:.1f} ns)\n{len(event_probs_nonzero)}/{len(event_probs)} events with non-zero probability')
+    ax1.set_yscale('log')
+    ax1.grid(True, alpha=0.3, which='both')
+
+    # Plot 2: Particles per event distribution
+    particles_per_event = df_viz.groupby('event')['n_particles_in_event'].first()
+    ax2.hist(particles_per_event, bins=range(1, particles_per_event.max()+2),
+             edgecolor='black', alpha=0.7, align='left')
+    ax2.set_xlabel('Number of HNLs per Event')
+    ax2.set_ylabel('Number of Events')
+    ax2.set_title('Distribution of HNLs per Event')
+    ax2.grid(True, alpha=0.3)
+    ax2.set_xticks(range(1, particles_per_event.max()+1))
+
     plt.tight_layout()
     plt.savefig(f'{base_filename}_correlation_analysis.png', dpi=150)
     print(f"Saved: {base_filename}_correlation_analysis.png")
@@ -603,12 +582,11 @@ if __name__ == "__main__":
     print("\n" + "="*40)
     print("SUMMARY: Event Decay Probabilities")
     print("="*40)
-    print(f"{'Lifetime (ns)':>15} | {'Mean P(≥1)':>12} | {'Mean P(both)':>12} | {'Events >1%':>12}")
-    print("-"*60)
-    
+    print(f"{'Lifetime (ns)':>15} | {'Mean Event P':>12} | {'Events >1%':>12}")
+    print("-"*50)
+
     for i in range(0, len(lifetimes), 2):  # Print every other value for brevity
         lt_ns = lifetimes[i] * 1e9
-        p_one = scan_results['mean_at_least_one_decay_prob'][i]
-        p_both = scan_results['mean_both_decay_prob'][i]
+        p_event = scan_results['mean_at_least_one_decay_prob'][i]
         frac = scan_results['frac_events_with_decay'][i]
-        print(f"{lt_ns:>15.2f} | {p_one:>12.6f} | {p_both:>12.6f} | {frac:>12.3f}")
+        print(f"{lt_ns:>15.2f} | {p_event:>12.6f} | {frac:>12.3f}")
