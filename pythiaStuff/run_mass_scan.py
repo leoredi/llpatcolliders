@@ -19,9 +19,6 @@ N_EVENTS = 100_000  #
 # Base configuration file
 BASE_CMND = "hnlLL.cmnd"
 
-# Output directory for mass scan
-OUTPUT_DIR = "mass_scan_hnl"
-
 def create_config_file(mass, base_file=BASE_CMND):
     """Create a modified configuration file for a specific mass"""
 
@@ -39,8 +36,8 @@ def create_config_file(mass, base_file=BASE_CMND):
         else:
             modified_lines.append(line)
 
-    # Create output filename in the mass scan directory
-    output_file = os.path.join(OUTPUT_DIR, f"hnlLL_m{mass}GeV.cmnd")
+    # Create output filename in the pythiaStuff directory
+    output_file = f"hnlLL_m{mass}GeV.cmnd"
 
     # Write modified configuration
     with open(output_file, 'w') as f:
@@ -56,25 +53,26 @@ def run_simulation(mass):
 
     start_time = datetime.now()
     print(f"[{start_time.strftime('%H:%M:%S')}] STARTING: HNL mass = {mass} GeV")
-    print(f"  Config: {os.path.basename(config_file)}")
+    print(f"  Config: {config_file}")
     print(f"  Events: {N_EVENTS:,}")
     sys.stdout.flush()
 
-    # Run PYTHIA from the mass_scan_hnl directory
-    cmd = ['../main144', '-c', os.path.basename(config_file)]
+    # Run PYTHIA from current directory (pythiaStuff/)
+    cmd = ['./main144', '-c', config_file]
 
     try:
-        # Run in the OUTPUT_DIR so CSV files are created there
-        result = subprocess.run(cmd, check=True, capture_output=True, cwd=OUTPUT_DIR, text=True)
+        # Run from current directory (pythiaStuff/)
+        # CSV files will be created in ../output/csv/ by main144
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
         print(f"[{end_time.strftime('%H:%M:%S')}] COMPLETED: HNL mass = {mass} GeV ({duration:.1f}s)")
 
         # Check for output CSV
-        csv_file = os.path.join(OUTPUT_DIR, f"hnlLL_m{mass}GeVLLP.csv")
+        csv_file = f"../output/csv/hnlLL_m{mass}GeVLLP.csv"
         if os.path.exists(csv_file):
-            print(f"  Output: {os.path.basename(csv_file)}")
+            print(f"  Output: ../output/csv/hnlLL_m{mass}GeVLLP.csv")
 
         sys.stdout.flush()
         return (mass, True, duration)
@@ -88,13 +86,6 @@ def run_simulation(mass):
 
 def main():
     """Main execution function"""
-
-    # Create output directory if it doesn't exist
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-        print(f"Created output directory: {OUTPUT_DIR}")
-    else:
-        print(f"Using existing output directory: {OUTPUT_DIR}")
 
     # Calculate mass points
     masses = []
@@ -112,7 +103,7 @@ def main():
     print(f"Events per mass: {N_EVENTS:,}")
     print(f"Total mass points: {len(masses)}")
     print(f"Parallel processes: 2")
-    print(f"Output directory: {OUTPUT_DIR}/")
+    print(f"CSV output directory: ../output/csv/")
     print(f"{'='*70}\n")
 
     # Run simulations in parallel (2 at a time)

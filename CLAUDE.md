@@ -13,9 +13,10 @@ This is a physics research codebase for analyzing Long-Lived Particle (LLP) dete
 │   ├── main144.cc        # C++ simulation code (with duplicate detection)
 │   ├── make.sh           # Build script
 │   ├── run_mass_scan.py  # Automated mass scan script for HNL
-│   ├── mass_scan_hnl/    # Output directory for mass scan results
-│   ├── *.cmnd            # PYTHIA configuration files
-│   └── *LLP.csv          # Output CSV files from simulation
+│   └── *.cmnd            # PYTHIA configuration files
+├── output/               # All output files organized by type
+│   ├── csv/              # CSV files from simulation and analysis
+│   └── images/           # PNG plots and visualizations
 ├── external/             # Experimental limits data (ANUBIS, CODEX, MATHUSLA)
 ├── decayProbPerEvent.py  # Main post-simulation analysis script
 ├── neutral3D.py          # 3D geometric analysis
@@ -67,10 +68,10 @@ cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py
 # 3. Analyze each mass point for detector sensitivity
 conda activate llpatcolliders
 for mass in 15 23 31 39 47 55 63 71 79; do
-    python decayProbPerEvent.py pythiaStuff/mass_scan_hnl/hnlLL_m${mass}GeVLLP.csv
+    python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
 done
 
-# Output: Exclusion plots saved as hnlLL_m{mass}GeVLLP_exclusion_vs_lifetime.png
+# Output: Exclusion plots saved in output/images/
 ```
 
 ## Dependencies and Setup
@@ -114,7 +115,7 @@ This will:
 - Generate configuration files for mass points from 15-79 GeV (9 points in 8 GeV steps)
 - Run PYTHIA for each mass point **in parallel (2 at a time)**
 - Print timestamped progress showing which masses are currently running
-- Save all outputs to `mass_scan_hnl/` subdirectory
+- Save all CSV outputs to `output/csv/` directory
 - Take ~22-27 minutes for 100k events per mass point (with 2x parallelization speedup)
 
 Available configuration files:
@@ -131,19 +132,19 @@ Available configuration files:
 conda activate llpatcolliders
 
 # For a single mass point
-python decayProbPerEvent.py pythiaStuff/mass_scan_hnl/hnlLL_m15GeVLLP.csv
+python decayProbPerEvent.py output/csv/hnlLL_m15GeVLLP.csv
 
 # For all mass points (can be run in parallel)
 for mass in 15 23 31 39 47 55 63 71 79; do
-    python decayProbPerEvent.py pythiaStuff/mass_scan_hnl/hnlLL_m${mass}GeVLLP.csv
+    python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
 done
 ```
 
 **Analysis outputs:**
-- `hnlLL_m{mass}GeVLLP_exclusion_vs_lifetime.png` - Main exclusion plot comparing detector sensitivity with MATHUSLA, CODEX-b, and ANUBIS
-- `hnlLL_m{mass}GeVLLP_correlation_analysis.png` - Event correlation and probability distribution plots
-- `hnlLL_m{mass}GeVLLP_event_decay_statistics.csv` - Event-level decay statistics
-- `hnlLL_m{mass}GeVLLP_particle_decay_results.csv` - Particle-level results with path lengths and decay probabilities
+- `output/images/hnlLL_m{mass}GeVLLP_exclusion_vs_lifetime.png` - Main exclusion plot comparing detector sensitivity with MATHUSLA, CODEX-b, and ANUBIS
+- `output/images/hnlLL_m{mass}GeVLLP_correlation_analysis.png` - Event correlation and probability distribution plots
+- `output/csv/hnlLL_m{mass}GeVLLP_event_decay_statistics.csv` - Event-level decay statistics
+- `output/csv/hnlLL_m{mass}GeVLLP_particle_decay_results.csv` - Particle-level results with path lengths and decay probabilities
 
 **Additional Analysis Scripts:**
 ```bash

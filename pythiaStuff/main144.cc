@@ -284,6 +284,9 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  // Prepend output directory path
+  csvFilename = "../output/csv/" + csvFilename;
+
   ofstream myfile;
   myfile.open(csvFilename);
   cout << "Writing LLP data to: " << csvFilename << endl;
