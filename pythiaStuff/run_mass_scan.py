@@ -13,8 +13,8 @@ from datetime import datetime
 # Configuration
 START_MASS = 15  # GeV
 MASS_STEP = 8    # GeV
-MAX_MASS = 79    # GeV (kinematic limit from W decay)
-N_EVENTS = 100_000  #
+MAX_MASS = 71    # GeV (exclude 79 GeV point)
+N_EVENTS = 1_000_000  # 1 million events per mass point
 
 # Base configuration file
 BASE_CMND = "hnlLL.cmnd"

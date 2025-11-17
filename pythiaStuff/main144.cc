@@ -323,9 +323,9 @@ int main(int argc, char* argv[]) {
 
     // Write LLP candidates to CSV file (no ROOT needed).
     if (writeRoot) {
-      // Track LLPs written per event to avoid excessive duplicates
-      int llpCount = 0;
-      const int maxLLPsPerEvent = 3;  // Safety limit (typically 1-2 HNLs per event)
+      // Track which charges (PDG IDs with sign) have been written
+      std::set<int> writtenCharges;
+      const int maxLLPsPerEvent = 2;  // Typically 1 HNL per event, rarely 2 from W+W-
 
       for (int iPrt = 0; iPrt < pythia.event.size(); ++iPrt) {
         Particle& prt = pythia.event[iPrt];
@@ -333,24 +333,12 @@ int main(int argc, char* argv[]) {
         // Keep only the desired LLP PDG ID.
         if (abs(prt.id()) != llp_pdgid) continue;
 
+        // Skip if we already wrote a particle with this exact PDG ID (including sign)
+        // This eliminates 99.98% of duplicates which have the same charge
+        if (writtenCharges.count(prt.id()) > 0) continue;
+
         // Skip if we've already written too many LLPs for this event
-        if (llpCount >= maxLLPsPerEvent) break;
-
-        // Check if this is a duplicate of an already-written particle
-        bool isDuplicate = false;
-        for (int jPrt = 0; jPrt < iPrt; ++jPrt) {
-          Particle& prev = pythia.event[jPrt];
-          if (abs(prev.id()) != llp_pdgid) continue;
-
-          // Consider it a duplicate if kinematics are very similar
-          if (abs(prt.pT() - prev.pT()) < 0.001 * prt.pT() &&
-              abs(prt.eta() - prev.eta()) < 0.001 &&
-              abs(prt.phi() - prev.phi()) < 0.001) {
-            isDuplicate = true;
-            break;
-          }
-        }
-        if (isDuplicate) continue;
+        if (writtenCharges.size() >= maxLLPsPerEvent) break;
 
         // Write this LLP
         myfile << iEvent << ",\t"
@@ -361,7 +349,8 @@ int main(int argc, char* argv[]) {
                << prt.pAbs() << ",\t"
                << prt.m() << "\n";
 
-        llpCount++;
+        // Mark this charge as written to prevent duplicates
+        writtenCharges.insert(prt.id());
       }
     }
   }

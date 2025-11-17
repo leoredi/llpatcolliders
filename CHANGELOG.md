@@ -1,5 +1,29 @@
 # Changelog
 
+## 2025-11-17 - Duplicate Detection Fix and Production Run
+
+### Fixed
+- **Duplicate particle detection in `main144.cc`**:
+  - Root cause: 99.98% of "2 HNL events" had same charge (same PDG ID)
+  - These were the same particle at different PYTHIA event record stages
+  - Old approach: Kinematic thresholds (0.1% pT, 0.001 eta/phi) - caught only 0.04% of duplicates
+  - New approach: Track written charges with `std::set<int>`, write only first occurrence of each PDG ID
+  - Result: **100% duplicate elimination** (4,792/100k events → 0/1000 test events)
+
+### Changed
+- **Mass scan configuration** (`run_mass_scan.py`):
+  - Events per mass point: 100k → **1M** (10x statistics improvement)
+  - Mass points: 15-79 GeV → **15-71 GeV** (excluded 79 GeV kinematic endpoint)
+  - Expected file size: 5.6 MB → ~56 MB per mass point
+
+### Cleaned
+- Removed obsolete test/debug files: `check_duplicates.py`, `run_all_decay_analysis.py`, test logs
+- Removed unused PYTHIA example files: `main144.C`, `main144Dct.h`
+- Updated `.gitignore` to exclude auto-generated configs, test CSVs, and temporary scripts
+
+### Analysis
+- Created `auto_analyze.sh` to automatically run `decayProbPerEvent.py` on all mass points after scan completes
+
 ## 2025-11-17 - Output Reorganization and Plot Improvements
 
 ### Changed
