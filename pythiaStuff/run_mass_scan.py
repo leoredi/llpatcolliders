@@ -2,11 +2,13 @@
 """
 Mass scan script for HNL simulation
 Generates PYTHIA configurations for different HNL masses and runs simulations
+Supports both muon-coupled (mu) and tau-coupled (tau) scenarios
 """
 
 import os
 import subprocess
 import sys
+import argparse
 from multiprocessing import Pool
 from datetime import datetime
 
@@ -14,12 +16,23 @@ from datetime import datetime
 START_MASS = 15  # GeV
 MASS_STEP = 8    # GeV
 MAX_MASS = 71    # GeV (exclude 79 GeV point)
-N_EVENTS = 1_000_000  # 1 million events per mass point
+N_EVENTS = 200_000  # 200k events per mass point
 
-# Base configuration file
-BASE_CMND = "hnlLL.cmnd"
+# Scenario configurations
+SCENARIO_CONFIG = {
+    'mu': {
+        'base_cmnd': 'hnlLL.cmnd',
+        'output_prefix': 'hnlLL',
+        'description': 'muon-coupled HNL (W → μ N)'
+    },
+    'tau': {
+        'base_cmnd': 'hnlTauLL.cmnd',
+        'output_prefix': 'hnlTauLL',
+        'description': 'tau-coupled HNL (W → τ N)'
+    }
+}
 
-def create_config_file(mass, base_file=BASE_CMND):
+def create_config_file(mass, base_file, output_prefix):
     """Create a modified configuration file for a specific mass"""
 
     # Read the base configuration
@@ -37,7 +50,7 @@ def create_config_file(mass, base_file=BASE_CMND):
             modified_lines.append(line)
 
     # Create output filename in the pythiaStuff directory
-    output_file = f"hnlLL_m{mass}GeV.cmnd"
+    output_file = f"{output_prefix}_m{mass}GeV.cmnd"
 
     # Write modified configuration
     with open(output_file, 'w') as f:
@@ -45,14 +58,18 @@ def create_config_file(mass, base_file=BASE_CMND):
 
     return output_file
 
-def run_simulation(mass):
+def run_simulation(args):
     """Run PYTHIA simulation with the given configuration"""
+    mass, scenario_cfg = args
+
+    base_file = scenario_cfg['base_cmnd']
+    output_prefix = scenario_cfg['output_prefix']
 
     # Create config file
-    config_file = create_config_file(mass)
+    config_file = create_config_file(mass, base_file, output_prefix)
 
     start_time = datetime.now()
-    print(f"[{start_time.strftime('%H:%M:%S')}] STARTING: HNL mass = {mass} GeV")
+    print(f"[{start_time.strftime('%H:%M:%S')}] STARTING: {scenario_cfg['description']} mass = {mass} GeV")
     print(f"  Config: {config_file}")
     print(f"  Events: {N_EVENTS:,}")
     sys.stdout.flush()
@@ -67,25 +84,51 @@ def run_simulation(mass):
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
-        print(f"[{end_time.strftime('%H:%M:%S')}] COMPLETED: HNL mass = {mass} GeV ({duration:.1f}s)")
+        print(f"[{end_time.strftime('%H:%M:%S')}] COMPLETED: {scenario_cfg['description']} mass = {mass} GeV ({duration:.1f}s)")
 
         # Check for output CSV
-        csv_file = f"../output/csv/hnlLL_m{mass}GeVLLP.csv"
+        csv_file = f"../output/csv/{output_prefix}_m{mass}GeVLLP.csv"
         if os.path.exists(csv_file):
-            print(f"  Output: ../output/csv/hnlLL_m{mass}GeVLLP.csv")
+            print(f"  Output: ../output/csv/{output_prefix}_m{mass}GeVLLP.csv")
 
         sys.stdout.flush()
         return (mass, True, duration)
     except subprocess.CalledProcessError as e:
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
-        print(f"[{end_time.strftime('%H:%M:%S')}] FAILED: HNL mass = {mass} GeV ({duration:.1f}s)")
+        print(f"[{end_time.strftime('%H:%M:%S')}] FAILED: {scenario_cfg['description']} mass = {mass} GeV ({duration:.1f}s)")
         print(f"  Error: {e}")
         sys.stdout.flush()
         return (mass, False, duration)
 
 def main():
     """Main execution function"""
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description='Run HNL mass scan for muon-coupled or tau-coupled scenarios',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Run muon-coupled scan (default)
+  python run_mass_scan.py
+  python run_mass_scan.py --scenario mu
+
+  # Run tau-coupled scan
+  python run_mass_scan.py --scenario tau
+        """
+    )
+    parser.add_argument(
+        '--scenario',
+        type=str,
+        choices=['mu', 'tau'],
+        default='mu',
+        help='HNL coupling scenario: mu (W→μN) or tau (W→τN). Default: mu'
+    )
+    args = parser.parse_args()
+
+    # Get scenario configuration
+    scenario_cfg = SCENARIO_CONFIG[args.scenario]
 
     # Calculate mass points
     masses = []
@@ -97,6 +140,9 @@ def main():
     print(f"\n{'='*70}")
     print(f"HNL MASS SCAN CONFIGURATION")
     print(f"{'='*70}")
+    print(f"Scenario: {scenario_cfg['description']}")
+    print(f"Base config: {scenario_cfg['base_cmnd']}")
+    print(f"Output prefix: {scenario_cfg['output_prefix']}")
     print(f"Mass range: {START_MASS} - {MAX_MASS} GeV")
     print(f"Mass step: {MASS_STEP} GeV")
     print(f"Mass points: {masses}")
@@ -110,8 +156,11 @@ def main():
     scan_start = datetime.now()
     print(f"Scan started at {scan_start.strftime('%H:%M:%S')}\n")
 
+    # Create argument tuples for run_simulation
+    sim_args = [(mass, scenario_cfg) for mass in masses]
+
     with Pool(processes=2) as pool:
-        results = pool.map(run_simulation, masses)
+        results = pool.map(run_simulation, sim_args)
 
     scan_end = datetime.now()
     total_duration = (scan_end - scan_start).total_seconds()

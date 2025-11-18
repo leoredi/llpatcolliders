@@ -1,0 +1,62 @@
+! HNL benchmark card for 10 m proper decay length (tau-coupled)
+! ------------------------------------------------
+
+! 1) Beam and collision setup
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 13600.
+
+! 2) Physics processes: W production with better cross sections
+WeakSingleBoson:ffbar2W = on         ! q qbar -> W±
+WeakBosonAndParton:qqbar2Wg = on     ! W + gluon (better rates)
+WeakBosonAndParton:qg2Wq = on        ! W + quark (better rates)
+
+! 3) Define the HNL (N) as a Majorana particle
+! ------------------------------------------------
+9900015:new = N Nbar 2 0 0
+9900015:m0 = 15.0                    ! HNL mass = 15 GeV
+9900015:tau0 = 1E4                   ! c*tau = 10 m = 1e4 mm
+9900015:mayDecay = on
+! NO isResonance flag (defaults to off for m < 20 GeV)
+
+! Turn off any default decays
+9900015:onMode = off
+
+! N -> tau- u dbar (LNC branch)
+9900015:addChannel = 1 0.5 101  15  2 -1
+
+! N -> tau+ ubar d (LNV branch)
+9900015:addChannel = 1 0.5 101 -15 -2  1
+
+! 4) W± decays: Force ONLY HNL channel (turn off standard decays)
+! ------------------------------------------------
+! Turn off all standard W decays
+24:onMode = off
+-24:onMode = off
+
+! Add ONLY the HNL decay channel with meMode = 100 (phase space)
+24:onIfAny = 9900015
+24:addChannel = 1 1.0 100 -15 9900015
+
+-24:onIfAny = 9900015
+-24:addChannel = 1 1.0 100 15 9900015
+
+! 5) Run settings
+! ------------------------------------------------
+Init:showChangedSettings = on
+Init:showChangedParticleData = on
+Next:numberCount = 1000
+Next:numberShowLHA = 1
+Next:numberShowInfo = 1
+Next:numberShowProcess = 1
+Next:numberShowEvent = 1
+Stat:showPartonLevel = on
+
+! 6) Output options
+! ------------------------------------------------
+Main:writeLog = on
+Main:writeRoot = on
+
+! 7) Number of events
+! ------------------------------------------------
+Main:numberOfEvents = 100000
