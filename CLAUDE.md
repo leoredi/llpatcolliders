@@ -11,18 +11,27 @@ This is a physics research codebase for analyzing Long-Lived Particle (LLP) dete
 .
 ├── pythiaStuff/          # PYTHIA 8 simulation code and configs
 │   ├── main144.cc        # C++ simulation code (with duplicate detection)
+│   ├── main144           # Compiled executable
 │   ├── make.sh           # Build script
 │   ├── run_mass_scan.py  # Automated mass scan script for HNL
-│   └── *.cmnd            # PYTHIA configuration files
+│   ├── higgsLL.cmnd      # Higgs → LLP pairs configuration
+│   ├── hnlLL.cmnd        # W → HNL configuration (template)
+│   └── hnlLL_m*GeV.cmnd  # Mass-specific HNL configurations (15-71 GeV)
 ├── output/               # All output files organized by type
 │   ├── csv/              # CSV files from simulation and analysis
 │   └── images/           # PNG plots and visualizations
-├── external/             # Experimental limits data (ANUBIS, CODEX, MATHUSLA)
+├── external/             # Experimental limits data
+│   ├── ANUBIS.csv        # ANUBIS experiment exclusion limits
+│   ├── CODEX.csv         # CODEX-b experiment exclusion limits
+│   └── MATHUSLA.csv      # MATHUSLA experiment exclusion limits
 ├── decayProbPerEvent.py  # Main post-simulation analysis script
 ├── neutral3D.py          # 3D geometric analysis
 ├── neutralv2.py          # 2D geometric analysis
+├── auto_analyze.sh       # Automated analysis script for all mass points
 ├── environment.yml       # Conda environment specification
-└── CHANGELOG.md          # Development log and changes
+├── CHANGELOG.md          # Development log and changes
+├── CLAUDE.md             # AI assistant guidance (this file)
+└── README.md             # Repository documentation
 ```
 
 ## Core Architecture
@@ -67,7 +76,7 @@ cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py
 
 # 3. Analyze each mass point for detector sensitivity
 conda activate llpatcolliders
-for mass in 15 23 31 39 47 55 63 71 79; do
+for mass in 15 23 31 39 47 55 63 71; do
     python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
 done
 
@@ -112,7 +121,7 @@ conda run -n llpatcolliders python run_mass_scan.py
 ```
 
 This will:
-- Generate configuration files for mass points from 15-79 GeV (9 points in 8 GeV steps)
+- Generate configuration files for mass points from 15-71 GeV (8 points in 8 GeV steps)
 - Run PYTHIA for each mass point **in parallel (2 at a time)**
 - Print timestamped progress showing which masses are currently running
 - Save all CSV outputs to `output/csv/` directory
@@ -135,7 +144,7 @@ conda activate llpatcolliders
 python decayProbPerEvent.py output/csv/hnlLL_m15GeVLLP.csv
 
 # For all mass points (can be run in parallel)
-for mass in 15 23 31 39 47 55 63 71 79; do
+for mass in 15 23 31 39 47 55 63 71; do
     python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
 done
 ```
