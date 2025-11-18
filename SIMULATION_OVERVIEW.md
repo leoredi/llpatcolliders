@@ -284,4 +284,220 @@ We compare our detector sensitivity against existing experimental limits from:
 
 ---
 
+## APPENDIX: Lifetime Configuration Investigation
+
+**Date**: 2025-11-18
+**Branch**: `diagnostic-decay-output`
+**Investigation By**: Claude Code diagnostic analysis
+
+### Problem Statement
+
+Investigation into whether HNL particles are being simulated with correct/consistent proper lifetimes across different mass points.
+
+### Key Finding: Fixed Lifetime Across All Masses
+
+**All mass points (15-71 GeV) currently use identical lifetime settings:**
+
+```bash
+# In all pythiaStuff/hnlLL_m{15,23,31,39,47,55,63,71}GeV.cmnd files:
+9900015:tau0 = 1E4                   # c*tau = 10 m = 1e4 mm
+```
+
+**Conversion to physical units:**
+- `tau0 = 1E4 mm/c` (PYTHIA units)
+- Proper lifetime: **τ = 33.36 nanoseconds**
+- Proper decay length: **c*τ = 10 meters**
+
+### Verification: Diagnostic Simulation
+
+Modified `main144.cc` to output decay information (production/decay vertices, proper decay time) and ran 10,000 event test at m = 39 GeV.
+
+**Results confirmed fixed lifetime:**
+
+```
+Proper lifetime τ (seconds):
+  Mean: 3.285e-08 s  (32.85 ns)
+  Median: 2.304e-08 s  (23.04 ns)
+  Expected from config: 3.336e-08 s (33.36 ns)  ✓ MATCHES
+
+Proper decay length c*τ (meters):
+  Mean: 9.85 m
+  Median: 6.91 m
+  Expected from config: 10 m  ✓ MATCHES
+
+Lab frame decay distance (boosted):
+  Mean: 103.68 m  (average γ ≈ 10.4)
+  Median: 27.19 m  (median γ ≈ 4.4)
+```
+
+*Note: Spread in measured τ values is physical (exponential decay distribution), not an error.*
+
+### Current Analysis Pipeline Behavior
+
+The analysis script `decayProbPerEvent.py` **does NOT use PYTHIA decay information**:
+
+1. **Reads only kinematic data**: `event, id, pt, eta, phi, momentum, mass`
+2. **Ignores PYTHIA decay times/vertices** (not even present in standard output)
+3. **Performs post-processing lifetime scan**:
+   ```python
+   lifetimes = np.logspace(-9.5, -4.5, 20)  # 0.316 ns to 31.6 μs
+   ```
+4. **Recalculates decay probabilities** for each hypothetical lifetime:
+   ```python
+   decay_length = gamma * beta * c * lifetime_hypothesis
+   p_decay = exp(-d_entry/decay_length) * (1 - exp(-d_path/decay_length))
+   ```
+
+**Interpretation:** The PYTHIA simulation provides a **kinematic template** only. The actual lifetime-dependent physics is computed in post-processing.
+
+### Implications
+
+#### What This Means for Current Results
+
+1. **All mass points have identical production kinematics** (since produced from same W → μ N process)
+2. **Only difference between mass points**: the mass value itself, affecting:
+   - Boost factor: γ = p/m
+   - Phase space in W decay
+3. **Exclusion limits are derived** by post-processing the same kinematic sample with different lifetime hypotheses
+
+#### Physics Consistency Question
+
+**For HNL phenomenology:** Lifetime depends on mass and mixing as:
+```
+τ ∝ 1 / (|U|² × m⁵)
+```
+
+For fixed mixing |U|², heavier HNLs should decay faster. Current approach with fixed lifetime across all masses is **inconsistent with specific HNL models**, but may be acceptable for **model-independent limits**.
+
+### Three Possible Approaches
+
+#### Option 1: Model-Independent Limits (Current Approach)
+
+**Justification:** Present limits as "for a particle with mass m and lifetime τ, our sensitivity is..."
+
+**Pros:**
+- Most general interpretation
+- Results applicable to any BSM scenario (not just HNLs)
+- Computationally efficient
+
+**Cons:**
+- Not directly testable against specific HNL models
+- Ignores correlations between m and τ in realistic scenarios
+
+**Validity check needed:**
+- Does fixed τ = 33 ns introduce acceptance bias?
+- Are kinematic distributions representative of the full lifetime range we scan?
+
+#### Option 2: Mass-Dependent Lifetimes (Model-Specific)
+
+**Justification:** Use theory-motivated τ(m, |U|²) relationships
+
+**Pros:**
+- Directly testable against HNL models
+- Physically consistent
+- Can present limits in mixing parameter space
+
+**Cons:**
+- Requires multiple simulations per mass point (for different |U|²)
+- Computationally expensive
+- Results specific to HNL scenario
+
+**Implementation:**
+- For each mass, scan over reasonable |U|² range (e.g., 10⁻¹⁰ to 10⁻⁵)
+- Calculate corresponding τ(m, |U|²)
+- Run simulations for 3-5 representative lifetimes per mass
+- Present limits in (m, |U|²) parameter space
+
+#### Option 3: Hybrid Approach
+
+**Justification:** Combine physics realism with computational efficiency
+
+**Pros:**
+- Balance between Options 1 and 2
+- Validate that kinematic distributions don't depend strongly on lifetime
+- Can still present model-independent limits if desired
+
+**Cons:**
+- More complex analysis pipeline
+- Requires interpolation between simulation points
+
+**Implementation:**
+- Run 3 lifetime values per mass: short (τ ~ 1 ns), medium (τ ~ 30 ns), long (τ ~ 1 μs)
+- Verify kinematic distributions are lifetime-independent
+- If independent: use any lifetime for kinematics, scan in post-processing (current approach validated)
+- If dependent: interpolate between simulated lifetime points
+
+### Technical Implementation Notes
+
+#### Modified Output Format
+
+Branch `diagnostic-decay-output` includes extended CSV output:
+
+```cpp
+// pythiaStuff/main144.cc modifications:
+myfile << "event,\tid,\tpt,\teta,\tphi,\tmomentum,\tmass,\t"
+       << "tau,\txProd,\tyProd,\tzProd,\txDec,\tyDec,\tzDec\n";
+```
+
+**New columns:**
+- `tau`: Proper decay time in mm/c (PYTHIA units)
+- `xProd, yProd, zProd`: Production vertex coordinates (mm)
+- `xDec, yDec, zDec`: Decay vertex coordinates (mm)
+
+**Purpose:** Enable verification that PYTHIA is simulating decays correctly, though currently unused by analysis.
+
+#### Diagnostic Script
+
+Created `check_tau.py` to analyze PYTHIA decay output:
+- Reads extended CSV format
+- Computes proper lifetime statistics
+- Calculates lab-frame decay distances
+- Verifies consistency with configuration files
+
+### Open Questions Requiring Decision
+
+1. **Which approach aligns with physics goals?**
+   - Model-independent limits (Option 1)?
+   - HNL-specific parameter space (Option 2)?
+   - Hybrid validation + limits (Option 3)?
+
+2. **Does lifetime affect acceptance?**
+   - Do different lifetimes change which particles make it to the detector?
+   - Are PYTHIA-level cuts applied based on decay position?
+
+3. **Does lifetime affect production kinematics?**
+   - Are there interference/resonance effects?
+   - Does W → μ N branching depend on N lifetime?
+   - (Likely answer: No, but should verify)
+
+4. **What does "cτ" on the x-axis of exclusion plots mean?**
+   - Simulated lifetime: cτ = 10 m (fixed)
+   - Analyzed lifetime: cτ = 0.1 - 10,000 m (scanned)
+   - Current plots show analyzed (hypothetical) cτ, not simulated cτ
+
+### Recommendations for Next Steps
+
+1. **Immediate:** Decide on approach (1, 2, or 3 above)
+
+2. **Validation:** Run small tests with different PYTHIA lifetimes (τ = 1, 10, 100 ns) at one mass point
+   - Compare kinematic distributions (pt, eta, phi)
+   - Check if acceptance changes significantly
+   - Verify post-processing approach validity
+
+3. **Documentation:** Clarify in papers/presentations:
+   - What lifetime is used in simulation vs analysis
+   - Whether limits are model-independent or model-specific
+   - Relationship between axes labels and simulation parameters
+
+4. **Long term:** Consider extending to model-dependent limits in (m, |U|²) space if targeting HNL phenomenology specifically
+
+### Files Modified/Created
+
+- `pythiaStuff/main144.cc`: Extended output format (branch: diagnostic-decay-output)
+- `check_tau.py`: Diagnostic analysis script
+- `output/csv/hnlLL_m39GeVLLP.csv`: Test output with 10k events, extended format
+- `SIMULATION_OVERVIEW.md`: This documentation (section added)
+
+---
+
 *This document should be updated as new simulations are completed and new physics questions arise.*

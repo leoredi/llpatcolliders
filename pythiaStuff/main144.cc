@@ -290,7 +290,7 @@ int main(int argc, char* argv[]) {
   ofstream myfile;
   myfile.open(csvFilename);
   cout << "Writing LLP data to: " << csvFilename << endl;
-  myfile << "event,\tid,\tpt,\teta,\tphi,\tmomentum,\tmass\n";
+  myfile << "event,\tid,\tpt,\teta,\tphi,\tmomentum,\tmass,\ttau,\txProd,\tyProd,\tzProd,\txDec,\tyDec,\tzDec\n";
   for ( int iEvent = 0; iEvent < nEvent; ++iEvent ) {
     auto startThisEvent = std::chrono::high_resolution_clock::now();
 
@@ -340,14 +340,21 @@ int main(int argc, char* argv[]) {
         // Skip if we've already written too many LLPs for this event
         if (writtenCharges.size() >= maxLLPsPerEvent) break;
 
-        // Write this LLP
+        // Write this LLP with decay information
         myfile << iEvent << ",\t"
                << prt.id() << ",\t"
                << prt.pT() << ",\t"
                << prt.eta() << ",\t"
                << prt.phi() << ",\t"
                << prt.pAbs() << ",\t"
-               << prt.m() << "\n";
+               << prt.m() << ",\t"
+               << prt.tau() << ",\t"           // Proper decay time in mm/c
+               << prt.xProd() << ",\t"         // Production vertex x
+               << prt.yProd() << ",\t"         // Production vertex y
+               << prt.zProd() << ",\t"         // Production vertex z
+               << prt.xDec() << ",\t"          // Decay vertex x
+               << prt.yDec() << ",\t"          // Decay vertex y
+               << prt.zDec() << "\n";
 
         // Mark this charge as written to prevent duplicates
         writtenCharges.insert(prt.id());
