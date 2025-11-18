@@ -125,7 +125,8 @@ This will:
 - Run PYTHIA for each mass point **in parallel (2 at a time)**
 - Print timestamped progress showing which masses are currently running
 - Save all CSV outputs to `output/csv/` directory
-- Take ~22-27 minutes for 100k events per mass point (with 2x parallelization speedup)
+- Default configuration: **1M events per mass point** (N_EVENTS = 1_000_000 in run_mass_scan.py)
+- Runtime: ~3.5-4.5 hours for full scan at 1M events (with 2x parallelization speedup)
 
 Available configuration files:
 - `higgsLL.cmnd`: Higgs production with decay to long-lived particle pairs
@@ -171,8 +172,9 @@ python neutralv2.py            # 2D geometric analysis
 
 **Important Implementation Notes**:
 - **Duplicate Detection**: `main144.cc` includes kinematic-based duplicate filtering to prevent writing the same particle multiple times from different stages of the PYTHIA event record
-- **Event Structure**: For W → HNL scenario, expect ~1 HNL per event (CSV has ~1000 particles for 1000 events)
+- **Event Structure**: For W → HNL scenario, expect ~1 HNL per event (CSV has ~1M particles for 1M events)
 - **Mass Scanning**: Use `run_mass_scan.py` to automate generation of multiple mass points for exclusion limit studies
+  - Currently configured for 1M events per mass point (modify N_EVENTS if different statistics needed)
   - Runs 2 simulations in parallel for 2x speedup
   - Prints real-time progress with timestamps showing which masses are running
 - **CSV Format**: One particle per line with format `event,id,pt,eta,phi,momentum,mass`
@@ -203,7 +205,7 @@ Analysis compares calculated sensitivities with existing experimental limits fro
 **Mass scan script issues**:
 - Must run from `pythiaStuff/` directory: `cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py`
 - Check that conda environment is activated: `conda activate llpatcolliders`
-- Configure N_EVENTS in `run_mass_scan.py` before running
+- Current default: N_EVENTS = 1_000_000 (modify in `run_mass_scan.py` if different statistics needed for testing)
 
 **Build errors**:
 - Ensure PYTHIA 8 is properly installed and accessible
