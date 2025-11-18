@@ -21,3 +21,4 @@ auto_analyze.sh
 
 # Mac files
 .DS_Store
+pythia/
