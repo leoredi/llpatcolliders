@@ -16,7 +16,7 @@ from datetime import datetime
 START_MASS = 15  # GeV
 MASS_STEP = 8    # GeV
 MAX_MASS = 71    # GeV (exclude 79 GeV point)
-N_EVENTS = 1_000_000  # 1 million events per mass point
+N_EVENTS = 200_000  # 200k events per mass point
 
 # Scenario configurations
 SCENARIO_CONFIG = {

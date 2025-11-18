@@ -13,10 +13,13 @@ This is a physics research codebase for analyzing Long-Lived Particle (LLP) dete
 │   ├── main144.cc        # C++ simulation code (with duplicate detection)
 │   ├── main144           # Compiled executable
 │   ├── make.sh           # Build script
-│   ├── run_mass_scan.py  # Automated mass scan script for HNL
+│   ├── run_mass_scan.py  # Automated mass scan script for HNL (supports mu/tau)
 │   ├── higgsLL.cmnd      # Higgs → LLP pairs configuration
-│   ├── hnlLL.cmnd        # W → HNL configuration (template)
-│   └── hnlLL_m*GeV.cmnd  # Mass-specific HNL configurations (15-71 GeV)
+│   ├── hnlLL.cmnd        # W → HNL (muon-coupled) configuration (template)
+│   ├── hnlTauLL.cmnd     # W → HNL (tau-coupled) configuration (template)
+│   ├── hnlTauLL_test.cmnd # Tau scenario test config (1k events, 31 GeV)
+│   ├── hnlLL_m*GeV.cmnd  # Mass-specific muon HNL configurations (15-71 GeV)
+│   └── hnlTauLL_m*GeV.cmnd # Mass-specific tau HNL configurations (15-71 GeV)
 ├── output/               # All output files organized by type
 │   ├── csv/              # CSV files from simulation and analysis
 │   └── images/           # PNG plots and visualizations
@@ -72,12 +75,25 @@ Particle CSV format: `event,id,pt,eta,phi,momentum,mass` (~1 HNL per event)
 bash pythiaStuff/make.sh
 
 # 2. Run mass scan (generates CSV files for all mass points)
-cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py
+cd pythiaStuff
+
+# For muon-coupled HNL (default)
+conda run -n llpatcolliders python run_mass_scan.py
+
+# For tau-coupled HNL
+conda run -n llpatcolliders python run_mass_scan.py --scenario tau
 
 # 3. Analyze each mass point for detector sensitivity
 conda activate llpatcolliders
+
+# For muon-coupled results
 for mass in 15 23 31 39 47 55 63 71; do
     python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
+done
+
+# For tau-coupled results
+for mass in 15 23 31 39 47 55 63 71; do
+    python decayProbPerEvent.py output/csv/hnlTauLL_m${mass}GeVLLP.csv
 done
 
 # Output: Exclusion plots saved in output/images/
@@ -117,7 +133,12 @@ bash pythiaStuff/make.sh
 **Running automated mass scans:**
 ```bash
 cd pythiaStuff
+
+# Muon-coupled HNL (default)
 conda run -n llpatcolliders python run_mass_scan.py
+
+# Tau-coupled HNL
+conda run -n llpatcolliders python run_mass_scan.py --scenario tau
 ```
 
 This will:
@@ -130,8 +151,10 @@ This will:
 
 Available configuration files:
 - `higgsLL.cmnd`: Higgs production with decay to long-lived particle pairs
-- `hnlLL.cmnd`: W boson production with decay to Heavy Neutral Leptons
-- `run_mass_scan.py`: Automated mass scanning (configurable via N_EVENTS variable)
+- `hnlLL.cmnd`: W boson production with decay to Heavy Neutral Leptons (muon-coupled)
+- `hnlTauLL.cmnd`: W boson production with decay to Heavy Neutral Leptons (tau-coupled)
+- `hnlTauLL_test.cmnd`: Quick tau scenario test (1k events, 31 GeV)
+- `run_mass_scan.py`: Automated mass scanning (configurable via N_EVENTS variable and --scenario flag)
 
 **Note on CSV output**: The code includes duplicate detection to ensure only unique particles are written. For W → HNL, expect ~1 HNL per event (some events may have 2 due to multi-W production).
 
@@ -141,20 +164,33 @@ Available configuration files:
 ```bash
 conda activate llpatcolliders
 
-# For a single mass point
+# For a single mass point (muon scenario)
 python decayProbPerEvent.py output/csv/hnlLL_m15GeVLLP.csv
 
-# For all mass points (can be run in parallel)
+# For all muon-coupled mass points (can be run in parallel)
 for mass in 15 23 31 39 47 55 63 71; do
     python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
+done
+
+# For all tau-coupled mass points (can be run in parallel)
+for mass in 15 23 31 39 47 55 63 71; do
+    python decayProbPerEvent.py output/csv/hnlTauLL_m${mass}GeVLLP.csv
 done
 ```
 
 **Analysis outputs:**
+
+For muon-coupled HNL:
 - `output/images/hnlLL_m{mass}GeVLLP_exclusion_vs_lifetime.png` - Main exclusion plot comparing detector sensitivity with MATHUSLA, CODEX-b, and ANUBIS
 - `output/images/hnlLL_m{mass}GeVLLP_correlation_analysis.png` - Event correlation and probability distribution plots
 - `output/csv/hnlLL_m{mass}GeVLLP_event_decay_statistics.csv` - Event-level decay statistics
 - `output/csv/hnlLL_m{mass}GeVLLP_particle_decay_results.csv` - Particle-level results with path lengths and decay probabilities
+
+For tau-coupled HNL:
+- `output/images/hnlTauLL_m{mass}GeVLLP_exclusion_vs_lifetime.png` - Main exclusion plot
+- `output/images/hnlTauLL_m{mass}GeVLLP_correlation_analysis.png` - Event correlation plots
+- `output/csv/hnlTauLL_m{mass}GeVLLP_event_decay_statistics.csv` - Event-level statistics
+- `output/csv/hnlTauLL_m{mass}GeVLLP_particle_decay_results.csv` - Particle-level results
 
 **Additional Analysis Scripts:**
 ```bash
@@ -185,10 +221,18 @@ The code models scenarios where:
 
 * Long-lived particles (LLPs) are produced in various processes:
   - Higgs decays to LLP pairs (higgsLL.cmnd)
-  - W boson decays to Heavy Neutral Leptons (hnlLL.cmnd)
+  - W boson decays to Heavy Neutral Leptons:
+    - Muon-coupled: W → μ N, N → μ± + jets (hnlLL.cmnd)
+    - Tau-coupled: W → τ N, N → τ± + jets (hnlTauLL.cmnd)
 * Particles travel distances before decaying in the detector
 * Decay probability depends on particle lifetime and path length through detector
 * Goal is to set exclusion limits on particle properties (decay length vs branching ratio)
+
+**Scenario comparison:**
+- Both muon and tau scenarios use the same HNL PDG ID (9900015) and physics model
+- Production differs only in the lepton coupling (PDG 13/-13 for muon, 15/-15 for tau)
+- HNL decay channels mirror production: N → μ±/τ± + jets (same quark content: u d̄, ū d)
+- Analysis framework is identical for both scenarios
 
 Analysis compares calculated sensitivities with existing experimental limits from MATHUSLA, CODEX-b, and ANUBIS experiments.
 
