@@ -1,5 +1,56 @@
 # Changelog
 
+## 2025-11-18 - Tau-Coupled HNL Simulation
+
+### Added
+- **Tau-coupled HNL scenario** (branch: `feature/hnl-tau-from-W`):
+  - New PYTHIA configuration: `pythiaStuff/hnlTauLL.cmnd`
+    - Production: W+ → τ+ N, W- → τ- N̄ (PDG IDs 15/-15)
+    - HNL decays: N → τ± + jets (same quark content as muon case)
+    - Same HNL PDG ID (9900015), mass grid (15-71 GeV), and lifetime (τ₀ = 10 m)
+  - Test configuration: `pythiaStuff/hnlTauLL_test.cmnd` (1000 events, 31 GeV for quick validation)
+
+- **Scenario selection in mass scan** (`pythiaStuff/run_mass_scan.py`):
+  - Added `--scenario {mu,tau}` command-line argument (default: `mu`)
+  - Muon scenario: Uses `hnlLL.cmnd`, outputs `hnlLL_m{mass}GeVLLP.csv`
+  - Tau scenario: Uses `hnlTauLL.cmnd`, outputs `hnlTauLL_m{mass}GeVLLP.csv`
+  - Fully backward-compatible: default behavior unchanged
+
+### Validated
+- **Sanity checks passed**:
+  - Test run: 1000 events, 31 GeV mass point
+  - CSV structure identical to muon case
+  - HNL PDG ID: 9900015 (same as muon)
+  - W→τN and N→τ±+jets decays confirmed in PYTHIA logs
+  - ~1 HNL per event (consistent with muon scenario)
+
+### Completed
+- **Full tau mass scan** (200k events per mass point):
+  - Wall-clock time: 54 minutes
+  - Speedup: 2.00x from parallel execution
+  - All 8 mass points: 15, 23, 31, 39, 47, 55, 63, 71 GeV
+  - Output CSV files: `output/csv/hnlTauLL_m{mass}GeVLLP.csv` (8 files)
+
+- **Post-simulation analysis** (parallel execution on all 8 mass points):
+  - Generated 16 analysis plots:
+    - 8 exclusion plots: `output/images/hnlTauLL_m{mass}GeVLLP_exclusion_vs_lifetime.png`
+    - 8 correlation plots: `output/images/hnlTauLL_m{mass}GeVLLP_correlation_analysis.png`
+  - All plots compare detector sensitivity with MATHUSLA, CODEX-b, and ANUBIS
+
+### Usage
+```bash
+# Muon-coupled scan (default, unchanged)
+cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py
+
+# Tau-coupled scan (new)
+cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py --scenario tau
+
+# Post-simulation analysis (same for both scenarios)
+for mass in 15 23 31 39 47 55 63 71; do
+    python decayProbPerEvent.py output/csv/hnlTauLL_m${mass}GeVLLP.csv
+done
+```
+
 ## 2025-11-17 - Duplicate Detection Fix and Production Run
 
 ### Fixed
