@@ -1,5 +1,20 @@
 # Changelog
 
+## 2025-11-19 - Documentation Update: CMS Drainage Gallery Detector
+
+### Changed
+- **Clarified detector location and context** across all documentation:
+  - Updated README.md, CLAUDE.md, and SIMULATION_OVERVIEW.md
+  - Emphasized this is a **proposed new detector** in the CMS drainage gallery
+  - Not the milliQan detector itself, but a new proposal using a similar location concept
+  - Added details about facility advantages: ~800 m³ potential volume, shielding, infrastructure
+  - Clarified position: ~22m from CMS IP, ~20m above the interaction point
+
+### Documentation
+- All references to "milliQan detector" replaced with "proposed detector in CMS drainage gallery"
+- Added context about detector location advantages and capabilities
+- Prepared for LaTeX paper describing the proposed facility
+
 ## 2025-11-19 - Coupling Plot Refinements and Sensitivity Analysis
 
 ### Fixed

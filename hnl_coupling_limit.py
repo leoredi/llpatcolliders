@@ -9,6 +9,12 @@ This script:
 1. Takes BR vs lifetime exclusion curves from decayProbPerEvent.py analysis
 2. Uses HNL physics to convert to |U_ℓ|^2 vs mass exclusion
 3. Creates the standard HNL coupling plot
+
+Cross-Section Normalization Context:
+- The BR limits from decayProbPerEvent.py use σ(pp → W± + X) ≈ 200 nb (INCLUSIVE W production)
+- This is the correct normalization: BR_limit = 3 / (ε × L × σ_W_inclusive)
+- The BR(W→ℓN) is what we constrain, NOT pre-folded into the cross-section
+- For details, see the "Cross-Section Normalization" section in CLAUDE.md
 """
 
 import numpy as np
@@ -61,13 +67,17 @@ def br_w_to_hnl(coupling_sq, m_N, lepton='mu'):
     Since BR(W → ℓ ν) ≈ 1/9 for each lepton family, we get:
     BR(W → ℓ N) ≈ (1/9) × |U_ℓ|^2 × f(m_N)
 
+    NOTE: This BR(W → ℓ N) is defined relative to ALL W decays, which is why
+    the analysis uses σ(pp → W± + X) as the inclusive W production cross-section.
+    The factor BR(W→ℓN) multiplies the total W yield to get HNL production rate.
+
     Args:
         coupling_sq: |U_ℓ|^2
         m_N: HNL mass in GeV
         lepton: 'mu' or 'tau'
 
     Returns:
-        Branching ratio BR(W → ℓ N)
+        Branching ratio BR(W → ℓ N) relative to all W decays
     """
     m_lepton = M_MU if lepton == 'mu' else M_TAU
 

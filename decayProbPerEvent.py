@@ -197,11 +197,18 @@ def analyze_decay_vs_lifetime(csv_file, mesh, origin, lifetime_range,
         mesh: Trimesh object
         origin: Origin point
         lifetime_range: Array of lifetimes to test (in seconds)
-        sigma_fb: Production cross section in fb (e.g. 52000 for 52 pb)
+        sigma_fb: INCLUSIVE W production cross section in fb (NOT pre-folded with leptonic BR)
+                  For pp → W± + X at 13.6 TeV: σ ≈ 2e8 fb (200 nb)
+                  Example: For W → HNL, use total W cross section, not σ(W→μν)
         lumi_fb: Integrated luminosity in fb^-1 (default: 3000 for HL-LHC)
 
     Returns:
         Dictionary with analysis results, including BR exclusion limits
+
+    Notes:
+        BR limit calculation: N_signal = BR(W→ℓN) × ε × L × σ(W)
+        For 95% CL (Poisson, 0 observed): BR_limit = 3 / (ε × L × σ)
+        where ε is the detector efficiency (mean event decay probability)
     """
     # Read CSV once to get basic info
     df_base = pd.read_csv(csv_file)
@@ -475,7 +482,13 @@ if __name__ == "__main__":
 
     # Analysis parameters
     lifetimes = np.logspace(-9.5, -4.5, 20)  # Lifetimes in seconds: 10^-9.5 to 10^-4.5 s (~0.3 ns to ~30 μs)
-    sigma_fb = 2e8  # Production cross section in fb (200 million fb)
+
+    # Cross section: INCLUSIVE pp → W± + X at 13.6 TeV
+    # σ(pp → W± + X) ≈ 191.5 nb from CMS measurements (σ×BR(W→μν) = 20.8 nb, BR = 10.86%)
+    # Using 200 nb ≈ 2×10⁸ fb as a round number (within 4% of measured value)
+    # NOTE: This is the TOTAL W production cross section, NOT pre-folded with leptonic BR
+    # The BR(W→μN) factor is separate and scanned over in the exclusion limit
+    sigma_fb = 2e8  # Production cross section in fb (200 million fb = 200 nb)
     lumi_fb = 3000.0  # Integrated luminosity in fb^-1 (HL-LHC)
 
     print(f"Cross section: {sigma_fb} fb ({sigma_fb/1000} pb)")

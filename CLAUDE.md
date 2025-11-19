@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is a physics research codebase for analyzing Long-Lived Particle (LLP) detection at collider experiments. It combines Monte Carlo simulation, geometric modeling, and statistical analysis to study particle decay probabilities in detector geometries.
+This is a physics research codebase for analyzing Long-Lived Particle (LLP) detection at the Large Hadron Collider. It combines Monte Carlo simulation, geometric modeling, and statistical analysis to study particle decay probabilities for a proposed detector located in the **CMS drainage gallery**, approximately 22 meters above the CMS interaction point. This location offers concrete and earth shielding from backgrounds, along with capacity for a large active detector volume (~800 m³).
 
 ### Repository Structure
 ```
@@ -119,6 +119,10 @@ After running `decayProbPerEvent.py` for all mass points, you can convert the BR
 **Physics:** For Heavy Neutral Leptons, production and decay are coupled through mixing:
 - Production: BR(W → ℓ N) ∝ |U_ℓ|² × f(m_N)  [phase space factor]
 - Decay: τ_N ∝ 1/|U_ℓ|²  [lifetime inversely proportional to coupling]
+- **Normalization**: BR(W → ℓ N) is defined relative to ALL W decays
+  - Uses σ(pp → W± + X) ≈ 200 nb (inclusive W production, see Cross-Section Normalization section)
+  - Expected signal: N = BR(W→ℓN) × ε × L × σ_W_inclusive
+  - The coupling |U_ℓ|² determines both the production BR and the decay lifetime
 
 **Scripts:**
 - `hnl_coupling_limit.py`: Main conversion script
@@ -167,6 +171,7 @@ bash create_coupling_plot.sh mu
 - These are created automatically by `decayProbPerEvent.py` (added in 2025-11-18)
 - If missing, script will print which analyses need to be run
 - **Note**: Only masses 15-39 GeV are analyzed (m ≥ 47 GeV have BR_limit > 1)
+- **Cross-section**: Uses σ(pp → W± + X) ≈ 200 nb from the BR limit analysis (see Cross-Section Normalization section)
 
 ## Dependencies and Setup
 
@@ -270,10 +275,25 @@ python neutralv2.py            # 2D geometric analysis
 ## Key Details
 
 **Detector Geometry**:
-- Tube detector at z=22m with radius ~1.54m (1.4 × 1.1 m)
+- **Location**: CMS drainage gallery, approximately 22m above the CMS interaction point (z=22m)
+- **Shape**: Cylindrical tube detector with circular cross-section, radius ~1.54m
+- **Potential volume**: Up to ~800 m³ active detector volume
+- **Shielding**: Concrete and earth overburden providing background reduction from both surface and collisional backgrounds
 - Follows a curved path defined by correctedVert coordinates
 - Geometry implemented in 3D using trimesh for ray-tube intersection calculations
 - Used for calculating decay probabilities based on path length through detector
+
+**Cross-Section Normalization**:
+- **σ(pp → W± + X) ≈ 200 nb** at √s = 13.6 TeV (inclusive W production)
+  - Based on CMS measurements: σ × BR(W→μν) ≈ 20.8 nb with BR(W→μν) = 10.86%
+  - This gives σ_inclusive ≈ 191.5 nb; using 200 nb as round number (within 4%)
+- **IMPORTANT**: This is the **INCLUSIVE W production cross-section**, NOT pre-folded with leptonic BR
+- **Why**: BR limit formula is `N_signal = BR(W→ℓN) × ε × L × σ(W)`
+  - BR(W→ℓN) is the parameter we constrain
+  - ε is detector efficiency (from simulation with forced BR=1)
+  - L = 3000 fb⁻¹ (HL-LHC integrated luminosity)
+  - σ(W) must be total W production to properly normalize
+- **Poisson limit**: For 95% CL with 0 observed events: `BR_limit = 3 / (ε × L × σ)`
 
 **Important Implementation Notes**:
 - **Duplicate Detection**: `main144.cc` includes kinematic-based duplicate filtering to prevent writing the same particle multiple times from different stages of the PYTHIA event record
