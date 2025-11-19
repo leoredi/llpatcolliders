@@ -2,12 +2,12 @@
 *.o
 *.so
 *.pcm
-main144
+main_hnl_scan
 
 # Output files
 *.root
 *.log
-main144Dct.cc
+main*Dct.cc
 
 # Auto-generated PYTHIA config files
 pythiaStuff/hnlLL_m*GeV.cmnd
