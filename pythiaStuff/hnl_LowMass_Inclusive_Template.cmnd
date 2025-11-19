@@ -1,0 +1,79 @@
+! HNL Low Mass "Inclusive Power" Card - TEMPLATE
+! This template supports electrons (11), muons (13), and taus (15)
+! Target Mass: 0.5 < m_N < 3.3 GeV (Dominant 3-body region)
+! Production: Includes B+, B0, Bs, and Lambda_b
+! ----------------------------------------------------------
+
+! 1) Beam and Collision Setup
+! ---------------------------
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 14000.
+
+! 2) Physics Process: Hard Beauty Production
+! ------------------------------------------
+! HardQCD:hardbbbar is the most efficient way to generate high-pT B-hadrons
+! required for a transverse detector.
+HardQCD:hardbbbar = on
+PhaseSpace:pTHatMin = 10.0    ! Cut to ensure B-hadrons have enough pT
+
+! Turn OFF weak bosons (negligible rate compared to bbbar)
+WeakSingleBoson:all = off
+
+! 3) Define the HNL (N)
+! ---------------------
+9900015:new = N Nbar 2 0 0
+9900015:m0 = 3.0              ! SCAN PARAMETER: Mass (GeV)
+9900015:tau0 = 1000.          ! SCAN PARAMETER: c*tau (mm)
+9900015:mayDecay = on
+
+! 4) HEAVY FLAVOR BLOCK: Forcing Inclusive Decays
+! -----------------------------------------------
+! We force the 4 major b-hadron species to decay to HNLs via the
+! dominant CKM-favored (V_cb) 3-body channels: Hb -> Hc + lepton + N
+! Note: BR is set to 1.0 for efficiency. Re-weight by |V_lN|^2 in analysis.
+! LEPTON_ID will be replaced at runtime (11=e, 13=mu, 15=tau)
+
+! --- B+ / B- (Production Fraction ~40%) ---
+521:onMode = off
+521:addChannel = 1 1.0 100 -421 -LEPTON_ID 9900015  ! B+ -> D0 l+ N
+-521:onMode = off
+-521:addChannel = 1 1.0 100 421 LEPTON_ID 9900015   ! B- -> D0bar l- N
+
+! --- B0 / B0bar (Production Fraction ~40%) ---
+511:onMode = off
+511:addChannel = 1 1.0 100 -411 -LEPTON_ID 9900015  ! B0 -> D- l+ N
+-511:onMode = off
+-511:addChannel = 1 1.0 100 411 LEPTON_ID 9900015   ! B0bar -> D+ l- N
+
+! --- Bs / Bsbar (Production Fraction ~10%) ---
+! Bs(531) decays to Ds(431)
+531:onMode = off
+531:addChannel = 1 1.0 100 -431 -LEPTON_ID 9900015  ! Bs0 -> Ds- l+ N
+-531:onMode = off
+-531:addChannel = 1 1.0 100 431 LEPTON_ID 9900015   ! Bs0bar -> Ds+ l- N
+
+! --- Lambda_b Baryons (Production Fraction ~10%) ---
+! Lambda_b0(5122) decays to Lambda_c(4122)
+5122:onMode = off
+5122:addChannel = 1 1.0 100 4122 LEPTON_ID 9900015  ! Lambda_b0 -> Lambda_c+ l- N
+-5122:onMode = off
+-5122:addChannel = 1 1.0 100 -4122 -LEPTON_ID 9900015 ! Lambda_b0bar -> Lambda_c- l+ N
+
+! 5) HNL Decay Mode
+! -----------------
+! Forcing N -> lepton pi (Golden Channel for Mass Reconstruction)
+9900015:onMode = off
+
+! LNC: N -> l- pi+
+9900015:addChannel = 1 0.5 100 LEPTON_ID 211
+
+! LNV: N -> l+ pi-
+9900015:addChannel = 1 0.5 100 -LEPTON_ID -211
+
+! 6) Run Settings
+! ---------------
+Init:showChangedSettings = on
+Next:numberCount = 1000
+Next:numberShowEvent = 1
+Main:numberOfEvents = 100000
