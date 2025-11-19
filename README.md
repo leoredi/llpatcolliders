@@ -213,7 +213,7 @@ Python packages (in `environment.yml`):
 
 ## Citation
 
-This analysis framework was developed for studying HNL detection at the HL-LHC using the milliQan detector geometry.
+This analysis framework was developed for studying HNL detection at the HL-LHC using a proposed detector in the CMS drainage gallery, located approximately 22m from the CMS interaction point.
 
 ## License
 

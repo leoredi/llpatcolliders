@@ -71,11 +71,19 @@ We compare our detector sensitivity against existing experimental limits from:
 
 ### Our Detector Geometry
 
-**Configuration**: Cylindrical tube detector
-- **Location**: z = 22 m from interaction point
-- **Radius**: ~1.54 m (elliptical cross-section 1.4 m × 1.1 m)
+**Configuration**: Proposed detector in the CMS drainage gallery
+- **Location**: z = 22 m from the CMS interaction point (~20 m above IP)
+- **Shape**: Cylindrical tube detector with radius ~1.54 m (elliptical cross-section 1.4 m × 1.1 m)
+- **Potential Volume**: Up to ~800 m³ active detector volume
 - **Geometry**: Curved path following correctedVert coordinates
+- **Shielding**: Concrete and earth overburden providing background suppression
 - **Detection**: Based on path length through detector volume
+
+**Advantages of this location**:
+- Concrete and earth shielding from surface and collisional backgrounds
+- Large capacity for active detector volume
+- Infrastructure support (power, cooling, data acquisition)
+- Proximity to CMS for timing correlation
 
 ---
 
