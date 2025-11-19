@@ -1,5 +1,59 @@
 # Changelog
 
+## 2025-11-18 - HNL Coupling Limit Analysis
+
+### Added
+- **Coupling limit analysis framework** for converting BR vs lifetime exclusions to |U_ℓ|² vs mass limits:
+  - `hnl_coupling_limit.py`: Main script implementing physics conversion
+    - Calculates BR(W → ℓ N) ∝ |U_ℓ|² × f(m_N) with phase space factor
+    - Computes HNL lifetime τ_N ∝ 1/|U_ℓ|² using calibrated decay width formula
+    - Converts exclusion curves from (BR, τ) space to coupling limits
+    - Generates "money plot": |U_ℓ|² vs mass with experimental comparisons
+  - `quick_test_coupling.py`: Test script with synthetic data for validation
+  - `create_coupling_plot.sh`: Automated pipeline script for full analysis
+
+- **Exclusion data export** in `decayProbPerEvent.py`:
+  - Now saves `{filename}_exclusion_data.csv` with columns:
+    - `lifetime_s`: HNL lifetime in seconds
+    - `ctau_m`: Decay length cτ in meters
+    - `BR_limit`: Branching ratio exclusion limit
+    - `mean_event_decay_prob`: Mean event-level decay probability
+    - `mean_single_particle_decay_prob`: Mean single-particle decay probability
+  - Enables downstream coupling limit calculations
+
+### Physics Implementation
+- **Phase space factor**: Implements f(m_N, m_W, m_ℓ) for W → ℓ N kinematics
+- **HNL lifetime formula**: Γ_N ≈ C × |U_ℓ|² × G_F² × m_N⁵ with C ≈ 1.7×10⁻³ (calibrated to CMS 2024)
+- **Production branching ratio**: BR(W → ℓ N) ≈ (1/9) × |U_ℓ|² × f(m_N)
+- **Exclusion logic**: Coupling excluded if BR(|U|²) > BR_limit(τ(|U|²))
+
+### Workflow
+```bash
+# Step 1: Run simulations (if needed)
+cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py --scenario mu
+
+# Step 2: Run analyses to generate exclusion data
+for mass in 15 23 31 39 47 55 63 71; do
+    python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
+done
+
+# Step 3: Generate coupling vs mass plot
+python hnl_coupling_limit.py --scenario mu
+# or use automated script:
+bash create_coupling_plot.sh mu
+```
+
+### Output
+- **Coupling limit plots**: `output/images/hnl_coupling_vs_mass_{scenario}.png`
+  - Shows milliQan sensitivity as |U_ℓ|² vs mass
+  - Supports both muon and tau scenarios
+  - Log-log scale from 10-100 GeV and 10⁻¹⁰-10⁻² coupling
+
+### Notes
+- Requires completed `decayProbPerEvent.py` analysis for all mass points
+- Test mode available: `python hnl_coupling_limit.py --scenario mu --test`
+- Physics constants defined: G_F, M_W, M_MU, M_TAU, ℏ, c
+
 ## 2025-11-18 - Tau-Coupled HNL Simulation
 
 ### Added
