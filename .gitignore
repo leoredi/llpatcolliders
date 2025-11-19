@@ -14,7 +14,7 @@ pythiaStuff/hnlLL_m*GeV.cmnd
 pythiaStuff/test*.cmnd
 
 # CSV files (too large for git)
-output/csv/*.csv
+*.csv
 
 # Temporary automation scripts
 auto_analyze.sh
