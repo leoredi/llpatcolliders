@@ -1,5 +1,42 @@
 # Changelog
 
+## 2025-11-19 - Coupling Plot Refinements and Sensitivity Analysis
+
+### Fixed
+- **Automatic y-axis scaling** in `hnl_coupling_limit.py`:
+  - Previously hardcoded y-axis range (10^-10 to 10^-2) caused data points to be invisible
+  - Now automatically scales based on actual coupling limits in the data
+  - Ensures all data points are visible within the plot range
+
+### Changed
+- **Mass point selection** based on detector sensitivity:
+  - Restricted analysis to masses 15, 23, 31, 39 GeV (from original 15-71 GeV range)
+  - **Rationale**: For m ≥ 47 GeV, BR_limits > 1 indicate essentially zero detector acceptance
+  - Heavy, slow HNLs at high masses rarely reach the detector tube
+  - Updated both `create_coupling_plot.sh` and `hnl_coupling_limit.py` to reflect this
+
+### Analysis Results
+- **Muon-coupled HNL sensitivity** (1M events per mass point):
+  - m15 GeV: |U_μ|² = 2.08×10⁻²
+  - m23 GeV: |U_μ|² = 2.98×10⁻²
+  - m31 GeV: |U_μ|² = 5.75×10⁻¹
+  - m39 GeV: |U_μ|² = 9.01×10⁻²
+
+- **Tau-coupled HNL sensitivity** (200k events per mass point):
+  - m15 GeV: |U_τ|² = 4.39×10⁻²
+  - m23 GeV: |U_τ|² = 1.52×10⁻¹
+  - m31, m39: No sensitivity (insufficient statistics and phase space suppression)
+
+### Regenerated
+- Re-ran tau scenario analyses with updated `decayProbPerEvent.py` (Nov 18 update added exclusion data export)
+- Generated `hnlTauLL_m{15,23,31,39}GeVLLP_exclusion_data.csv` files
+- Created final coupling limit plots with proper axis scaling
+
+### Notes
+- **Statistics impact**: Tau scenario uses 5× fewer events (200k vs 1M), resulting in weaker sensitivity
+- **Best sensitivity**: Muon-coupled at 15-23 GeV with |U_μ|² ~ 2-3×10⁻²
+- **Recommendation**: For publication-quality tau results, re-run with 1M events per mass point
+
 ## 2025-11-18 - HNL Coupling Limit Analysis
 
 ### Added

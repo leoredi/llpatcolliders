@@ -260,9 +260,29 @@ def create_coupling_mass_plot(masses, coupling_limits_mu=None, coupling_limits_t
     ax.grid(True, which='both', alpha=0.3)
     ax.legend(fontsize=12)
 
-    # Set reasonable axis limits
-    ax.set_xlim(10, 100)
-    ax.set_ylim(1e-10, 1e-2)
+    # Set axis limits based on data
+    ax.set_xlim(10, 50)  # Mass range
+
+    # Auto-scale y-axis based on actual coupling limits
+    all_limits = []
+    if coupling_limits_mu is not None:
+        valid_mu = coupling_limits_mu[np.isfinite(coupling_limits_mu) & (coupling_limits_mu > 0)]
+        if len(valid_mu) > 0:
+            all_limits.extend(valid_mu)
+    if coupling_limits_tau is not None:
+        valid_tau = coupling_limits_tau[np.isfinite(coupling_limits_tau) & (coupling_limits_tau > 0)]
+        if len(valid_tau) > 0:
+            all_limits.extend(valid_tau)
+
+    if len(all_limits) > 0:
+        min_limit = np.min(all_limits)
+        max_limit = np.max(all_limits)
+        # Add some margin in log space
+        y_min = 10**(np.floor(np.log10(min_limit)) - 0.5)
+        y_max = 10**(np.ceil(np.log10(max_limit)) + 0.5)
+        ax.set_ylim(y_min, y_max)
+    else:
+        ax.set_ylim(1e-10, 1e-2)  # Fallback
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
@@ -286,7 +306,9 @@ def main():
     args = parser.parse_args()
 
     # Define mass points to analyze
-    masses = np.array([15, 23, 31, 39, 47, 55, 63, 71])  # GeV
+    # Only include masses with meaningful sensitivity (BR_limit < 1)
+    # For m >= 47 GeV, detector has essentially zero acceptance (heavy, slow HNLs)
+    masses = np.array([15, 23, 31, 39])  # GeV
 
     print("="*60)
     print(f"HNL COUPLING LIMIT ANALYSIS ({args.scenario}-coupled)")

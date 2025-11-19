@@ -15,11 +15,9 @@ echo "=========================================="
 echo ""
 
 # Mass points to analyze (GeV)
-if [ "$SCENARIO" = "mu" ]; then
-    MASSES=(15 23 31 47 55 63 71)  # Skip 39 (no data file)
-else
-    MASSES=(15 23 31 39 47 55 63 71)  # All masses for tau
-fi
+# Only include masses with meaningful sensitivity (BR_limit < 1)
+# For m >= 47 GeV, BR_limits are >1, indicating essentially zero acceptance
+MASSES=(15 23 31 39)
 
 # Step 1: Run decayProbPerEvent.py for each mass (if not already done)
 echo "Step 1: Checking for exclusion data..."
