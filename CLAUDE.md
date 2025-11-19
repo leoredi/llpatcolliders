@@ -28,6 +28,9 @@ This is a physics research codebase for analyzing Long-Lived Particle (LLP) dete
 │   ├── CODEX.csv         # CODEX-b experiment exclusion limits
 │   └── MATHUSLA.csv      # MATHUSLA experiment exclusion limits
 ├── decayProbPerEvent.py  # Main post-simulation analysis script
+├── hnl_coupling_limit.py # HNL coupling limit calculator (BR→|U|² conversion)
+├── quick_test_coupling.py # Quick test for coupling conversion logic
+├── create_coupling_plot.sh # Automated coupling analysis pipeline
 ├── neutral3D.py          # 3D geometric analysis
 ├── neutralv2.py          # 2D geometric analysis
 ├── auto_analyze.sh       # Automated analysis script for all mass points
@@ -64,7 +67,9 @@ This is a physics research codebase for analyzing Long-Lived Particle (LLP) dete
 
 ### Workflow Summary
 ```
-PYTHIA 8 Simulation (main144) → CSV particle data → decayProbPerEvent.py → Exclusion plots
+PYTHIA 8 Simulation (main144) → CSV particle data → decayProbPerEvent.py → Exclusion plots (BR vs lifetime)
+                                                                        ↓
+                                                    hnl_coupling_limit.py → Coupling plot (|U|² vs mass)
 ```
 
 Particle CSV format: `event,id,pt,eta,phi,momentum,mass` (~1 HNL per event)
@@ -97,7 +102,56 @@ for mass in 15 23 31 39 47 55 63 71; do
 done
 
 # Output: Exclusion plots saved in output/images/
+
+# 4. Generate coupling vs mass plot (final physics result)
+python hnl_coupling_limit.py --scenario mu
+# or use automated script:
+bash create_coupling_plot.sh mu
 ```
+
+### Coupling Limit Analysis Pipeline
+
+After running `decayProbPerEvent.py` for all mass points, you can convert the BR vs lifetime exclusions into coupling limits (|U_ℓ|² vs mass) - the standard experimental result format for HNL searches.
+
+**Physics:** For Heavy Neutral Leptons, production and decay are coupled through mixing:
+- Production: BR(W → ℓ N) ∝ |U_ℓ|² × f(m_N)  [phase space factor]
+- Decay: τ_N ∝ 1/|U_ℓ|²  [lifetime inversely proportional to coupling]
+
+**Scripts:**
+- `hnl_coupling_limit.py`: Main conversion script
+  - Implements phase space factor f(m_N, m_W, m_ℓ) for W → ℓ N
+  - Calculates HNL lifetime using Γ_N ≈ C × |U_ℓ|² × G_F² × m_N⁵ (C ≈ 1.7×10⁻³)
+  - Converts each mass point's (BR, τ) exclusion to |U_ℓ|² limit
+  - Creates coupling vs mass plot with all mass points
+- `quick_test_coupling.py`: Test with synthetic data
+- `create_coupling_plot.sh`: Automated pipeline (checks for missing data, runs analysis, generates plot)
+
+**Usage:**
+```bash
+# After running decayProbPerEvent.py for all mass points:
+
+# Generate coupling plot for muon scenario
+python hnl_coupling_limit.py --scenario mu
+
+# Generate coupling plot for tau scenario
+python hnl_coupling_limit.py --scenario tau
+
+# Test mode (uses synthetic data)
+python hnl_coupling_limit.py --scenario mu --test
+
+# Or use automated script that runs missing analyses first
+bash create_coupling_plot.sh mu
+```
+
+**Outputs:**
+- `output/images/hnl_coupling_vs_mass_mu.png` - Muon-coupled HNL sensitivity
+- `output/images/hnl_coupling_vs_mass_tau.png` - Tau-coupled HNL sensitivity
+- Log-log plot showing |U_ℓ|² limits from 10⁻¹⁰ to 10⁻² over mass range 10-100 GeV
+
+**Requirements:**
+- Needs `{scenario}_m{mass}GeVLLP_exclusion_data.csv` for each mass point
+- These are created automatically by `decayProbPerEvent.py` (added in 2025-11-18)
+- If missing, script will print which analyses need to be run
 
 ## Dependencies and Setup
 

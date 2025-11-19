@@ -545,6 +545,17 @@ if __name__ == "__main__":
     plt.savefig(f'output/images/{base_filename}_exclusion_vs_lifetime.png', dpi=150)
     print(f"Saved: output/images/{base_filename}_exclusion_vs_lifetime.png")
 
+    # Save exclusion data for coupling limit analysis
+    exclusion_data = pd.DataFrame({
+        'lifetime_s': scan_results['lifetimes'],
+        'ctau_m': scan_results['lifetimes'] * SPEED_OF_LIGHT,
+        'BR_limit': scan_results['exclusion'],
+        'mean_event_decay_prob': scan_results['mean_at_least_one_decay_prob'],
+        'mean_single_particle_decay_prob': scan_results['mean_single_particle_decay_prob']
+    })
+    exclusion_data.to_csv(f'output/csv/{base_filename}_exclusion_data.csv', index=False)
+    print(f"Saved: output/csv/{base_filename}_exclusion_data.csv")
+
     # Create event visualization
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
