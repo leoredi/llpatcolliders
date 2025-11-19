@@ -77,10 +77,11 @@ conda run -n llpatcolliders python run_mass_scan.py --scenario tau
 ```
 
 **Configuration:**
-- Mass points: 15, 23, 31, 39, 47, 55, 63, 71 GeV (8 points)
-- Events per mass: 1M (configurable via `N_EVENTS` in script)
+- Mass points: 15, 23, 31, 39, 47, 55, 63, 71 GeV (8 points available)
+- **Recommended for analysis**: 15, 23, 31, 39 GeV (masses with meaningful detector sensitivity)
+- Events per mass: 1M for muon, 200k for tau (configurable via `N_EVENTS` in script)
 - Parallel execution: 2 simulations at once
-- Runtime: ~3.5-4.5 hours for full scan
+- Runtime: ~3.5-4.5 hours for full scan (1M events), ~45 minutes for tau (200k events)
 
 **Output:** CSV files with format `event,id,pt,eta,phi,momentum,mass`
 - Muon: `output/csv/hnlLL_m{mass}GeVLLP.csv`
@@ -94,10 +95,12 @@ Calculate decay probabilities in detector geometry:
 # For each mass point
 python decayProbPerEvent.py output/csv/hnlLL_m15GeVLLP.csv
 
-# Or batch process
-for mass in 15 23 31 39 47 55 63 71; do
+# Or batch process (recommended masses only)
+for mass in 15 23 31 39; do
     python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
 done
+
+# Note: Masses 47-71 GeV have BR_limit > 1 (essentially zero detector acceptance)
 ```
 
 **Analysis:**

@@ -91,15 +91,18 @@ conda run -n llpatcolliders python run_mass_scan.py --scenario tau
 # 3. Analyze each mass point for detector sensitivity
 conda activate llpatcolliders
 
-# For muon-coupled results
-for mass in 15 23 31 39 47 55 63 71; do
+# For muon-coupled results (recommended: only masses with meaningful sensitivity)
+for mass in 15 23 31 39; do
     python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
 done
 
 # For tau-coupled results
-for mass in 15 23 31 39 47 55 63 71; do
+for mass in 15 23 31 39; do
     python decayProbPerEvent.py output/csv/hnlTauLL_m${mass}GeVLLP.csv
 done
+
+# Note: Masses 47-71 GeV have BR_limit > 1, indicating essentially zero detector
+# acceptance (heavy, slow HNLs that rarely reach the tube)
 
 # Output: Exclusion plots saved in output/images/
 
@@ -146,12 +149,24 @@ bash create_coupling_plot.sh mu
 **Outputs:**
 - `output/images/hnl_coupling_vs_mass_mu.png` - Muon-coupled HNL sensitivity
 - `output/images/hnl_coupling_vs_mass_tau.png` - Tau-coupled HNL sensitivity
-- Log-log plot showing |U_ℓ|² limits from 10⁻¹⁰ to 10⁻² over mass range 10-100 GeV
+- Log-log plot with auto-scaled y-axis based on actual coupling limits
+
+**Current Sensitivity Results:**
+- **Muon-coupled** (1M events/mass, 4 points):
+  - m15 GeV: |U_μ|² = 2.08×10⁻²
+  - m23 GeV: |U_μ|² = 2.98×10⁻²
+  - m31 GeV: |U_μ|² = 5.75×10⁻¹
+  - m39 GeV: |U_μ|² = 9.01×10⁻²
+- **Tau-coupled** (200k events/mass, 2 points):
+  - m15 GeV: |U_τ|² = 4.39×10⁻²
+  - m23 GeV: |U_τ|² = 1.52×10⁻¹
+  - m31, 39 GeV: No sensitivity (limited statistics)
 
 **Requirements:**
 - Needs `{scenario}_m{mass}GeVLLP_exclusion_data.csv` for each mass point
 - These are created automatically by `decayProbPerEvent.py` (added in 2025-11-18)
 - If missing, script will print which analyses need to be run
+- **Note**: Only masses 15-39 GeV are analyzed (m ≥ 47 GeV have BR_limit > 1)
 
 ## Dependencies and Setup
 
