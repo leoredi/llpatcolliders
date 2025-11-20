@@ -1,406 +1,281 @@
-"""
-Convert BR vs lifetime exclusions to coupling^2 vs mass exclusion (the "money plot" for HNLs)
-
-For Heavy Neutral Leptons (HNLs), the production BR and lifetime are coupled:
-- BR(W → ℓ N) ∝ |U_ℓ|^2 × f(m_N/m_W)  [production]
-- τ_N ∝ 1 / |U_ℓ|^2                     [decay]
-
-This script:
-1. Takes BR vs lifetime exclusion curves from decayProbPerEvent.py analysis
-2. Uses HNL physics to convert to |U_ℓ|^2 vs mass exclusion
-3. Creates the standard HNL coupling plot
-
-Cross-Section Normalization Context:
-- The BR limits from decayProbPerEvent.py use σ(pp → W± + X) ≈ 200 nb (INCLUSIVE W production)
-- This is the correct normalization: BR_limit = 3 / (ε × L × σ_W_inclusive)
-- The BR(W→ℓN) is what we constrain, NOT pre-folded into the cross-section
-- For details, see the "Cross-Section Normalization" section in CLAUDE.md
-"""
-
+import os
+import glob
+import math
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
-import argparse
-import os
 
-# Physical constants
-HBAR_GEV_S = 6.582119569e-25  # ℏ in GeV·s
-G_F = 1.1663787e-5  # Fermi constant in GeV^-2
-M_W = 80.377  # W boson mass in GeV
-M_MU = 0.10566  # Muon mass in GeV
-M_TAU = 1.77686  # Tau mass in GeV
 SPEED_OF_LIGHT = 299792458.0  # m/s
 
-def phase_space_factor(m_N, m_W=M_W, m_lepton=M_MU):
+# ---------- MODEL-SPECIFIC PIECES (TO FILL) ----------
+# These are implemented using standard Atre/PBC-style approximations:
+#   - Total width  Γ_N ∝ G_F^2 m_N^5 |U_ℓ|^2  (neglecting hadronic threshold wiggles)
+#   - Production from W:   BR(W→ℓN) / |U_ℓ|^2 = BR(W→ℓν) × ρ_W(m_N)
+#   - Production from B:   BR(B→XℓN) / |U_ℓ|^2 ≈ BR(B→Xℓν) × ρ_B(m_N)  (very crude)
+#
+# For BC6, BC7, BC8 (one non-zero flavour at a time), this captures the correct
+# scaling of cτ and production with |U_ℓ|^2 and m_N. If you later want full
+# numerical precision, you can replace these with a table or call out to HNLCalc.
+
+
+def _normalize_flavour(flavour):
+    """Map various flavour labels to a canonical key."""
+    f = flavour.lower()
+    if f in {"e", "ele", "electron"}:
+        return "e"
+    if f in {"mu", "muon", "m"}:
+        return "mu"
+    if f in {"tau", "ta"}:
+        return "tau"
+    # Fallback: just return lowercased string
+    return f
+
+
+def ctau0_m_for_U2_eq_1(mass_GeV, flavour):
     """
-    Phase space factor for W → ℓ N decay
+    Proper decay length cτ0(m) in meters for |U_ℓ|^2 = 1.
 
-    For W → ℓ N, the phase space suppression is:
-    f(m_N, m_W, m_ℓ) = [(1 - x_N^2)^2 - x_ℓ^2(1 + x_N^2)]
-    where x_N = m_N/m_W and x_ℓ = m_ℓ/m_W
+    We use the standard approximate scaling for a Majorana HNL
+    that mixes with a *single* active flavour (BC6/7/8 pattern):
 
-    This is proportional to the partial width ratio.
+        Γ_N(m, |U_ℓ|^2=1) ≈ G_F^2 m^5 / (96 π^3)
+
+    This is the usual Atre/PBC-style expression (up to O(1) factors from
+    detailed hadronic thresholds and NC vs CC structure). See e.g.
+    Atre et al. (JHEP 05 (2009) 030) and the PBC / Drewes benchmarks.
+
+    We then compute:
+
+        c τ_0(m) = (ħ c) / Γ_N(m, |U_ℓ|^2=1)
+
+    and return it in meters.
+
+    For BC6 (e), BC7 (μ), BC8 (τ) with only one non-zero mixing,
+    the lifetime is essentially flavour-independent at this level,
+    so we ignore tiny flavour differences here.
     """
-    x_N = m_N / m_W
-    x_l = m_lepton / m_W
+    if mass_GeV <= 0:
+        raise ValueError("mass_GeV must be positive")
 
-    # Kinematic threshold
-    if m_N + m_lepton >= m_W:
-        return 0.0
+    # Constants in natural units
+    G_F = 1.1663787e-5       # GeV^-2
+    hbar_GeV_s = 6.582119569e-25  # ħ in GeV·s
 
-    # Phase space factor (proportional to decay width)
-    f = (1 - x_N**2)**2 - x_l**2 * (1 + x_N**2)
+    # Leading scaling: Γ ∝ G_F^2 m^5
+    gamma_GeV = (G_F ** 2) * (mass_GeV ** 5) / (96.0 * math.pi ** 3)
 
-    return max(f, 0.0)
+    # Lifetime and cτ
+    tau_s = hbar_GeV_s / gamma_GeV
+    ctau_m = SPEED_OF_LIGHT * tau_s
+    return ctau_m
 
-def br_w_to_hnl(coupling_sq, m_N, lepton='mu'):
+
+def f_prod(mass_GeV, flavour, production_mode):
     """
-    Calculate BR(W → ℓ N) as a function of |U_ℓ|^2 and m_N
+    Production factor f_prod(m): BR(parent→ℓN) / |U_ℓ|^2 at |U_ℓ|^2 = 1.
 
-    The branching ratio is:
-    BR(W → ℓ N) = |U_ℓ|^2 × f(m_N) / Γ_W_total
+    For BC6/BC7/BC8 we assume only one non-zero mixing |U_ℓ|^2, so:
+        BR(parent→ℓN) = |U_ℓ|^2 × f_prod(m)
 
-    For simplicity, we normalize to the W → ℓ ν branching ratio:
-    BR(W → ℓ N) / BR(W → ℓ ν) ≈ |U_ℓ|^2 × f(m_N)
+    Implementations:
 
-    Since BR(W → ℓ ν) ≈ 1/9 for each lepton family, we get:
-    BR(W → ℓ N) ≈ (1/9) × |U_ℓ|^2 × f(m_N)
+    1) production_mode in {"W", "WZ"}:
+       Use the standard relation
+           Γ(W→ℓN) = |U_ℓ|^2 Γ(W→ℓν) ρ_W(x),
+           ρ_W(x) = (1 - x)^2 (1 + x/2),  x = m_N^2 / m_W^2
+       ⇒ BR(W→ℓN) / |U_ℓ|^2 = BR(W→ℓν) × ρ_W(x).
 
-    NOTE: This BR(W → ℓ N) is defined relative to ALL W decays, which is why
-    the analysis uses σ(pp → W± + X) as the inclusive W production cross-section.
-    The factor BR(W→ℓN) multiplies the total W yield to get HNL production rate.
+       We take BR(W→ℓν) ≈ 0.108 for each lepton flavour.
 
-    Args:
-        coupling_sq: |U_ℓ|^2
-        m_N: HNL mass in GeV
-        lepton: 'mu' or 'tau'
+    2) production_mode == "B":
+       Very crude effective ansatz for inclusive B→XℓN, based on
+       measured inclusive semileptonic BRs and the same phase-space
+       factor ρ_B(x) = (1 - x)^2 (1 + x/2), x = m_N^2 / m_B^2:
 
-    Returns:
-        Branching ratio BR(W → ℓ N) relative to all W decays
+         BR(B→X e ν) ≈ BR(B→X μ ν) ≈ 0.105
+         BR(B→X τ ν) ≈ 0.025
+
+       Then:
+         BR(B→XℓN) / |U_ℓ|^2 ≈ BR(B→Xℓν) × ρ_B(x)
+
+       This is *not* a precision model for BC6/7/8; it just gives the
+       correct order of magnitude and m_N threshold behaviour. Replace
+       with a proper meson-production model if you need exact PBC lines.
     """
-    m_lepton = M_MU if lepton == 'mu' else M_TAU
+    mode = production_mode.upper()
+    flav = _normalize_flavour(flavour)
 
-    # Phase space factor
-    f = phase_space_factor(m_N, M_W, m_lepton)
+    # --- W production (HL-LHC / ATLAS/CMS-style BC6/7) ---
+    if mode in {"W", "WZ"}:
+        m_W = 80.379  # GeV
+        if mass_GeV >= m_W:
+            return 0.0
 
-    # Approximate normalization (relative to W → ℓ ν)
-    # BR(W → ℓ ν) ≈ 1/9 for each generation
-    br_w_lnu = 1.0 / 9.0
+        BR_W_lnu = 0.108  # per flavour, approx PDG
+        x = (mass_GeV / m_W) ** 2
+        rho_W = (1.0 - x) ** 2 * (1.0 + 0.5 * x)
+        return BR_W_lnu * rho_W
 
-    # BR(W → ℓ N) = |U_ℓ|^2 × f × BR(W → ℓ ν)
-    br = coupling_sq * f * br_w_lnu
+    # --- B production (LHCb-style) ---
+    if mode == "B":
+        # Use an effective B mass and inclusive semileptonic BRs
+        m_B = 5.279  # GeV, representative B meson mass
 
-    return br
+        if mass_GeV >= m_B:
+            return 0.0
 
-def hnl_lifetime(coupling_sq, m_N):
-    """
-    Calculate HNL lifetime as a function of |U_ℓ|^2 and m_N
+        # Inclusive semileptonic branching fractions (approx PDG)
+        if flav in {"e", "mu"}:
+            BR_B_lnu = 0.105  # B→X e ν or μ ν
+        elif flav == "tau":
+            BR_B_lnu = 0.025  # B→X τ ν
+        else:
+            # default to e/μ-like if flavour is weird
+            BR_B_lnu = 0.105
 
-    The HNL decay width is:
-    Γ_N ≈ C × |U_ℓ|^2 × G_F^2 × m_N^5
+        x = (mass_GeV / m_B) ** 2
+        rho_B = (1.0 - x) ** 2 * (1.0 + 0.5 * x)
 
-    Calibrated using CMS 2024 data: for m=10 GeV, |U|^2 = 5×10^-7 gives cτ = 17 mm
+        return BR_B_lnu * rho_B
 
-    This gives C ≈ 1.7×10^-3 (dimensionless constant accounting for phase space
-    and decay channels)
+    # If you introduce more production modes later (Z, Higgs, etc.),
+    # add them here.
+    raise ValueError(f"Unknown production_mode '{production_mode}'")
 
-    The lifetime is τ_N = ℏ / Γ_N
 
-    Args:
-        coupling_sq: |U_ℓ|^2
-        m_N: HNL mass in GeV
+# ---------- GENERIC MAPPER: BR_limit(cτ) → U2_limit(m) ----------
 
-    Returns:
-        Lifetime in seconds
-    """
-    # Calibration: CMS 2024 result gives C ≈ 1.7×10^-3
-    # τ = cτ/c = 0.017 m / 3×10^8 m/s = 5.67×10^-11 s
-    # Γ = ℏ/τ = 6.582×10^-25 / 5.67×10^-11 = 1.16×10^-14 GeV
-    # Γ = C × 5×10^-7 × (1.166×10^-5)^2 × 10^5 = C × 6.8×10^-12
-    # C = 1.16×10^-14 / 6.8×10^-12 ≈ 1.7×10^-3
+def load_br_vs_ctau(csv_file):
+    df = pd.read_csv(csv_file)
+    # Sometimes ctau is strictly monotonic; we assume it is.
+    # We interpolate BR_limit as a function of log10(ctau_m) for stability.
+    ctau = df['ctau_m'].values
+    br_lim = df['BR_limit'].values
 
-    C = 1.7e-3
+    # Remove infinities / zeros if any
+    mask = np.isfinite(br_lim) & (br_lim > 0) & np.isfinite(ctau) & (ctau > 0)
+    ctau = ctau[mask]
+    br_lim = br_lim[mask]
 
-    # Γ_N in GeV
-    gamma_N = coupling_sq * C * G_F**2 * m_N**5
-
-    # Lifetime τ = ℏ / Γ
-    if gamma_N > 0:
-        tau = HBAR_GEV_S / gamma_N  # in seconds
-    else:
-        tau = np.inf
-
-    return tau
-
-def load_br_vs_lifetime_data(mass_gev, scenario='mu'):
-    """
-    Load BR vs lifetime exclusion data for a given mass
-
-    This function looks for existing analysis output from decayProbPerEvent.py
-
-    Args:
-        mass_gev: HNL mass in GeV
-        scenario: 'mu' or 'tau'
-
-    Returns:
-        (lifetimes_array, br_limits_array) or None if data not available
-    """
-    # Check for the exclusion data CSV file
-    if scenario == 'mu':
-        exclusion_file = f"output/csv/hnlLL_m{mass_gev}GeVLLP_exclusion_data.csv"
-    else:
-        exclusion_file = f"output/csv/hnlTauLL_m{mass_gev}GeVLLP_exclusion_data.csv"
-
-    if not os.path.exists(exclusion_file):
-        print(f"Warning: Exclusion data not found: {exclusion_file}")
-        print(f"Run: python decayProbPerEvent.py output/csv/{'hnlLL' if scenario == 'mu' else 'hnlTauLL'}_m{mass_gev}GeVLLP.csv")
+    # If no valid points remain, return None (no sensitivity)
+    if len(ctau) < 2:
         return None
 
-    # Load the exclusion data
-    df = pd.read_csv(exclusion_file)
+    log_ctau = np.log10(ctau)
+    log_br_lim = np.log10(br_lim)
 
-    lifetimes = df['lifetime_s'].values
-    br_limits = df['BR_limit'].values
+    f = interp1d(
+        log_ctau,
+        log_br_lim,
+        kind='linear',
+        bounds_error=False,
+        fill_value=np.inf  # outside range → enormous BR_limit
+    )
+    return f
 
-    print(f"Loaded exclusion data for m={mass_gev} GeV ({scenario}): {len(lifetimes)} points")
 
-    return lifetimes, br_limits
-
-def compute_coupling_limit(mass_gev, br_limits, lifetimes, lepton='mu'):
+def find_U2_exclusion(mass_GeV, flavour, production_mode,
+                      br_limit_interp,
+                      U2_grid=None):
     """
-    Convert BR vs lifetime exclusion to coupling^2 limit
+    For a fixed mass, find the excluded |U|^2 band (island).
 
-    For each coupling value, we calculate:
-    - BR(|U|^2, m_N) - the expected BR for that coupling
-    - τ(|U|^2, m_N) - the expected lifetime for that coupling
+    Returns (U2_min, U2_max) where:
+    - U2_min: too prompt (decays before detector)
+    - U2_max: too long-lived (passes through detector)
 
-    The coupling is excluded if BR(|U|^2) > BR_limit(τ(|U|^2))
-
-    Args:
-        mass_gev: HNL mass in GeV
-        br_limits: Array of BR limits
-        lifetimes: Array of lifetimes (seconds)
-        lepton: 'mu' or 'tau'
-
-    Returns:
-        |U_ℓ|^2 limit for this mass
+    The excluded region is U2_min < |U|^2 < U2_max.
     """
-    # Create interpolation function for BR_limit(τ)
-    # Use log-log interpolation since both axes are log-scale
-    log_tau = np.log10(lifetimes)
-    log_br = np.log10(br_limits)
+    if U2_grid is None:
+        # e.g. scan |U|^2 from 1e-15 to 1
+        U2_grid = np.logspace(-15, 0, 300)
 
-    # Remove any infinite or nan values
-    valid = np.isfinite(log_tau) & np.isfinite(log_br)
-    if not np.any(valid):
-        return np.nan
+    ctau0 = ctau0_m_for_U2_eq_1(mass_GeV, flavour)
+    f_p = f_prod(mass_GeV, flavour, production_mode)
 
-    br_limit_interp = interp1d(log_tau[valid], log_br[valid],
-                               kind='linear', bounds_error=False,
-                               fill_value=(log_br[valid][0], log_br[valid][-1]))
+    # If production factor is zero (e.g. above kinematic threshold), nothing is excluded
+    if f_p <= 0.0:
+        return None, None
 
-    # Scan over coupling values
-    log_coupling_sq_range = np.linspace(-12, 0, 1000)  # |U|^2 from 10^-12 to 1
-    coupling_sq_range = 10**log_coupling_sq_range
+    # For each U2:
+    #   ctau(U2) = ctau0 / U2
+    #   BR_phys(U2) = U2 * f_p
+    #   BR_lim  = BR_limit(ctau(U2))
+    # We find where BR_phys crosses BR_lim.
+    ratios = []
 
-    excluded = []
+    for U2 in U2_grid:
+        ctau = ctau0 / U2
+        log_ctau = np.log10(ctau)
+        log_br_lim = br_limit_interp(log_ctau)
+        br_lim = 10 ** log_br_lim
 
-    for coupling_sq in coupling_sq_range:
-        # Calculate expected BR and lifetime for this coupling
-        br_expected = br_w_to_hnl(coupling_sq, mass_gev, lepton)
-        tau_expected = hnl_lifetime(coupling_sq, mass_gev)
+        br_phys = U2 * f_p
+        ratios.append(br_phys / br_lim)
 
-        # Get BR limit at this lifetime
-        log_tau_exp = np.log10(tau_expected)
-        log_br_lim = br_limit_interp(log_tau_exp)
-        br_lim = 10**log_br_lim
+    ratios = np.array(ratios)
 
-        # Check if excluded
-        is_excluded = (br_expected > br_lim)
-        excluded.append(is_excluded)
+    # Excluded region is where br_phys > br_lim ⇒ ratio > 1.
+    mask = ratios > 1.0
+    if not np.any(mask):
+        return None, None  # not excluded anywhere in this U2 range
 
-    # Find the boundary (smallest coupling that's excluded)
-    excluded = np.array(excluded)
-    if np.any(excluded):
-        # Find the transition point
-        excluded_indices = np.where(excluded)[0]
-        if len(excluded_indices) > 0:
-            boundary_idx = excluded_indices[0]
-            coupling_sq_limit = coupling_sq_range[boundary_idx]
-            return coupling_sq_limit
+    # Find contiguous excluded region
+    excluded_indices = np.where(mask)[0]
 
-    # No exclusion found
-    return np.nan
+    # Lower boundary (too prompt)
+    U2_min = U2_grid[excluded_indices[0]]
 
-def create_coupling_mass_plot(masses, coupling_limits_mu=None, coupling_limits_tau=None,
-                             save_path='output/images/hnl_coupling_vs_mass.png'):
-    """
-    Create the "money plot": |U_ℓ|^2 vs mass with experimental comparisons
+    # Upper boundary (too long-lived)
+    U2_max = U2_grid[excluded_indices[-1]]
 
-    Args:
-        masses: Array of HNL masses in GeV
-        coupling_limits_mu: Array of |U_μ|^2 limits (or None)
-        coupling_limits_tau: Array of |U_τ|^2 limits (or None)
-        save_path: Output file path
-    """
-    fig, ax = plt.subplots(figsize=(10, 8))
+    return U2_min, U2_max
 
-    # Plot the milliQan sensitivity
-    if coupling_limits_mu is not None:
-        valid = np.isfinite(coupling_limits_mu) & (coupling_limits_mu > 0)
-        if np.any(valid):
-            ax.loglog(masses[valid], coupling_limits_mu[valid],
-                     'b-', linewidth=3, label='milliQan (muon-coupled)', marker='o')
-
-    if coupling_limits_tau is not None:
-        valid = np.isfinite(coupling_limits_tau) & (coupling_limits_tau > 0)
-        if np.any(valid):
-            ax.loglog(masses[valid], coupling_limits_tau[valid],
-                     'r-', linewidth=3, label='milliQan (tau-coupled)', marker='s')
-
-    # Load and plot experimental limits (if available)
-    # Note: The external files (MATHUSLA, CODEX, ANUBIS) are in cτ vs BR format
-    # They would need to be converted to coupling vs mass format as well
-    # For now, we'll just plot our sensitivity
-
-    ax.set_xlabel('HNL Mass (GeV)', fontsize=14)
-    ax.set_ylabel(r'$|U_\ell|^2$ (Mixing Parameter)', fontsize=14)
-    ax.set_title('Heavy Neutral Lepton Sensitivity at HL-LHC', fontsize=16)
-    ax.grid(True, which='both', alpha=0.3)
-    ax.legend(fontsize=12)
-
-    # Set axis limits based on data
-    ax.set_xlim(10, 50)  # Mass range
-
-    # Auto-scale y-axis based on actual coupling limits
-    all_limits = []
-    if coupling_limits_mu is not None:
-        valid_mu = coupling_limits_mu[np.isfinite(coupling_limits_mu) & (coupling_limits_mu > 0)]
-        if len(valid_mu) > 0:
-            all_limits.extend(valid_mu)
-    if coupling_limits_tau is not None:
-        valid_tau = coupling_limits_tau[np.isfinite(coupling_limits_tau) & (coupling_limits_tau > 0)]
-        if len(valid_tau) > 0:
-            all_limits.extend(valid_tau)
-
-    if len(all_limits) > 0:
-        min_limit = np.min(all_limits)
-        max_limit = np.max(all_limits)
-        # Add some margin in log space
-        y_min = 10**(np.floor(np.log10(min_limit)) - 0.5)
-        y_max = 10**(np.ceil(np.log10(max_limit)) + 0.5)
-        ax.set_ylim(y_min, y_max)
-    else:
-        ax.set_ylim(1e-10, 1e-2)  # Fallback
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    print(f"Saved coupling vs mass plot: {save_path}")
-
-    return fig, ax
 
 def main():
-    """
-    Main function to create HNL coupling limit plot
+    in_pattern = "output/csv/analysis/HNL_mass_*_BR_vs_ctau.csv"
+    rows = []
 
-    This requires that decayProbPerEvent.py has been run for all mass points first.
-    """
-    parser = argparse.ArgumentParser(
-        description='Create HNL coupling vs mass exclusion plot from BR vs lifetime data'
-    )
-    parser.add_argument('--scenario', type=str, default='mu', choices=['mu', 'tau'],
-                       help='HNL coupling scenario: mu or tau')
-    parser.add_argument('--test', action='store_true',
-                       help='Run in test mode with synthetic data')
-    args = parser.parse_args()
+    for fname in glob.glob(in_pattern):
+        base = os.path.basename(fname).replace(".csv", "")
+        parts = base.split("_")
+        mass = float(parts[2])
+        # For low-mass "B-mode", you may have electron/muon/tau; adjust parse if needed.
+        flavour = parts[3]
 
-    # Define mass points to analyze
-    # Only include masses with meaningful sensitivity (BR_limit < 1)
-    # For m >= 47 GeV, detector has essentially zero acceptance (heavy, slow HNLs)
-    masses = np.array([15, 23, 31, 39])  # GeV
+        # Choose production mode by mass:
+        #   - below ~5 GeV: B decays (LHCb-style)
+        #   - above ~5 GeV: W decays (HL-LHC-style)
+        production_mode = "B" if mass < 5.0 else "W"
 
-    print("="*60)
-    print(f"HNL COUPLING LIMIT ANALYSIS ({args.scenario}-coupled)")
-    print("="*60)
+        print(f"Processing {base} ... (mass={mass} GeV, flavour={flavour}, mode={production_mode})")
 
-    if args.test:
-        print("\nRunning in TEST MODE with synthetic data...")
-        print("This demonstrates the conversion logic without requiring full analysis.")
-        print("")
+        br_interp = load_br_vs_ctau(fname)
 
-        # Create synthetic BR vs lifetime data for demonstration
-        lifetimes_test = np.logspace(-9, -5, 50)  # seconds
-
-        coupling_limits = []
-
-        for mass in masses:
-            # Synthetic BR limits (decreasing with lifetime, as expected)
-            # This is just for demonstration
-            br_limits_test = 1e-3 * (lifetimes_test / 1e-7)**(-0.5)
-
-            # Compute coupling limit
-            coupling_limit = compute_coupling_limit(
-                mass, br_limits_test, lifetimes_test, lepton=args.scenario
+        # Skip if no valid data (no sensitivity)
+        if br_interp is None:
+            print(f"  -> No valid BR limits (no detector acceptance)")
+            U2_min, U2_max = None, None
+        else:
+            U2_min, U2_max = find_U2_exclusion(
+                mass, flavour, production_mode,
+                br_limit_interp=br_interp
             )
 
-            coupling_limits.append(coupling_limit)
-            print(f"Mass {mass} GeV: |U_{args.scenario}|^2 limit = {coupling_limit:.2e}")
+        rows.append({
+            "mass_GeV": mass,
+            "flavour": flavour,
+            "production_mode": production_mode,
+            "U2_min": U2_min if U2_min is not None else np.nan,
+            "U2_max": U2_max if U2_max is not None else np.nan,
+        })
 
-        coupling_limits = np.array(coupling_limits)
+    df_out = pd.DataFrame(rows).sort_values(["flavour", "mass_GeV"])
+    out_file = "output/csv/analysis/HNL_U2_limits_summary.csv"
+    df_out.to_csv(out_file, index=False)
+    print(f"\nSaved |U|^2 limits to: {out_file}")
+    print(df_out)
 
-        # Create the plot
-        if args.scenario == 'mu':
-            create_coupling_mass_plot(masses, coupling_limits_mu=coupling_limits,
-                                    save_path=f'output/images/hnl_coupling_vs_mass_{args.scenario}_test.png')
-        else:
-            create_coupling_mass_plot(masses, coupling_limits_tau=coupling_limits,
-                                    save_path=f'output/images/hnl_coupling_vs_mass_{args.scenario}_test.png')
-
-    else:
-        print("\nLoading real exclusion data and computing coupling limits...")
-        print("")
-
-        coupling_limits = []
-        masses_with_data = []
-
-        for mass in masses:
-            data = load_br_vs_lifetime_data(mass, scenario=args.scenario)
-
-            if data is None:
-                print(f"  Skipping mass {mass} GeV (no data)")
-                continue
-
-            lifetimes, br_limits = data
-
-            # Compute coupling limit
-            coupling_limit = compute_coupling_limit(
-                mass, br_limits, lifetimes, lepton=args.scenario
-            )
-
-            coupling_limits.append(coupling_limit)
-            masses_with_data.append(mass)
-
-            print(f"  Mass {mass} GeV: |U_{args.scenario}|^2 limit = {coupling_limit:.2e}")
-
-        print("")
-
-        if len(masses_with_data) == 0:
-            print("No data available. Please run decayProbPerEvent.py for the mass points first.")
-            print("Example:")
-            print(f"  python decayProbPerEvent.py output/csv/{'hnlLL' if args.scenario == 'mu' else 'hnlTauLL'}_m31GeVLLP.csv")
-            return
-
-        coupling_limits = np.array(coupling_limits)
-        masses_with_data = np.array(masses_with_data)
-
-        # Create the plot
-        if args.scenario == 'mu':
-            create_coupling_mass_plot(masses_with_data, coupling_limits_mu=coupling_limits,
-                                    save_path=f'output/images/hnl_coupling_vs_mass_{args.scenario}.png')
-        else:
-            create_coupling_mass_plot(masses_with_data, coupling_limits_tau=coupling_limits,
-                                    save_path=f'output/images/hnl_coupling_vs_mass_{args.scenario}.png')
 
 if __name__ == "__main__":
     main()

@@ -1,348 +1,351 @@
-# CLAUDE.md
+# Long-Lived Particle Detector Simulation
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Project Overview
 
-## Repository Overview
+This project simulates Heavy Neutral Leptons (HNLs) and other Long-Lived Particles (LLPs) for a proposed detector in the CMS "drainage gallery" at the LHC.
 
-This is a physics research codebase for analyzing Long-Lived Particle (LLP) detection at the Large Hadron Collider. It combines Monte Carlo simulation, geometric modeling, and statistical analysis to study particle decay probabilities for a proposed detector located in the **CMS drainage gallery**, approximately 22 meters above the CMS interaction point. This location offers concrete and earth shielding from backgrounds, along with capacity for a large active detector volume (~800 m³).
+## Detector Concept
 
-### Repository Structure
-```
-.
-├── pythiaStuff/          # PYTHIA 8 simulation code and configs
-│   ├── main144.cc        # C++ simulation code (with duplicate detection)
-│   ├── main144           # Compiled executable
-│   ├── make.sh           # Build script
-│   ├── run_mass_scan.py  # Automated mass scan script for HNL (supports mu/tau)
-│   ├── higgsLL.cmnd      # Higgs → LLP pairs configuration
-│   ├── hnlLL.cmnd        # W → HNL (muon-coupled) configuration (template)
-│   ├── hnlTauLL.cmnd     # W → HNL (tau-coupled) configuration (template)
-│   ├── hnlTauLL_test.cmnd # Tau scenario test config (1k events, 31 GeV)
-│   ├── hnlLL_m*GeV.cmnd  # Mass-specific muon HNL configurations (15-71 GeV)
-│   └── hnlTauLL_m*GeV.cmnd # Mass-specific tau HNL configurations (15-71 GeV)
-├── output/               # All output files organized by type
-│   ├── csv/              # CSV files from simulation and analysis
-│   └── images/           # PNG plots and visualizations
-├── external/             # Experimental limits data
-│   ├── ANUBIS.csv        # ANUBIS experiment exclusion limits
-│   ├── CODEX.csv         # CODEX-b experiment exclusion limits
-│   └── MATHUSLA.csv      # MATHUSLA experiment exclusion limits
-├── decayProbPerEvent.py  # Main post-simulation analysis script
-├── hnl_coupling_limit.py # HNL coupling limit calculator (BR→|U|² conversion)
-├── quick_test_coupling.py # Quick test for coupling conversion logic
-├── create_coupling_plot.sh # Automated coupling analysis pipeline
-├── neutral3D.py          # 3D geometric analysis
-├── neutralv2.py          # 2D geometric analysis
-├── auto_analyze.sh       # Automated analysis script for all mass points
-├── environment.yml       # Conda environment specification
-├── CHANGELOG.md          # Development log and changes
-├── CLAUDE.md             # AI assistant guidance (this file)
-└── README.md             # Repository documentation
-```
+We propose a transverse long-lived particle detector located in the CMS drainage gallery, approximately 20m above the CMS interaction point. This location provides:
 
-## Core Architecture
+- **Shielding**: Concrete and earth shielding from both surface and collisional backgrounds
+- **Large Active Volume**: Capacity for up to 800 m³ of active detector volume
+- **Accessibility**: Capability to construct, power and operate the detector infrastructure
 
-### Simulation Pipeline
-1. **Event Generation (PYTHIA 8)**
-   - Source & configs live in: `pythiaStuff/` (repo path: `llpatcolliders/tree/main/pythiaStuff`)
-   - Build command (from repo root):
-     ```bash
-     bash pythiaStuff/make.sh
-     ```
-     This compiles `pythiaStuff/main144.cc` using the locally installed PYTHIA 8.
-   - Run command:
-     ```bash
-     ./pythiaStuff/main144 -c pythiaStuff/higgsLL.cmnd
-     ```
-   - Takes `.cmnd` configuration files as input and produces **CSV files** directly with particle kinematics and decay information.
+## Physics Goals
 
-2. **Post-Simulation Analysis**
-   - **`decayProbPerEvent.py`** is the main analysis script run after simulation
-   - Calculates event-level decay probabilities with lifetime scanning
-   - Creates exclusion plots comparing with experimental limits from `external/` directory
+The detector aims to search for LLPs using common benchmark models and demonstrate competitive sensitivity compared to existing proposals. The primary focus includes:
 
-3. **Additional Analysis**
-   - `neutral3D.py`: Full 3D tube geometry with ray-casting for omnidirectional particle flux
-   - `neutralv2.py`: Simplified 2D detector geometry using Shapely
+- Heavy Neutral Leptons (HNLs) coupling to electrons, muons, and taus
+- LLPs produced in proton-proton collisions at √s = 14 TeV
+- Mass range scanning from very low masses (0.2 GeV) to high masses (60 GeV)
+- Lepton flavor-dependent sensitivity studies
 
-### Workflow Summary
-```
-PYTHIA 8 Simulation (main144) → CSV particle data → decayProbPerEvent.py → Exclusion plots (BR vs lifetime)
-                                                                        ↓
-                                                    hnl_coupling_limit.py → Coupling plot (|U|² vs mass)
-```
+## Simulation Framework
 
-Particle CSV format: `event,id,pt,eta,phi,momentum,mass` (~1 HNL per event)
+### Main Components
 
-### Complete Analysis Pipeline Example
-```bash
-# 1. Build PYTHIA simulation
-bash pythiaStuff/make.sh
+1. **Event Generation**: Uses PYTHIA 8.315 for pp collisions and B-meson/W/Z production
+2. **Multi-Lepton Support**: Systematic scans for electron, muon, and tau couplings
+3. **Mass Scan**: Lepton-specific mass ranges optimized for coverage
+4. **Decay Analysis**: Python-based lifetime and geometric acceptance calculations
+5. **Background Estimation**: Simulation of SM backgrounds and detector response
 
-# 2. Run mass scan (generates CSV files for all mass points)
-cd pythiaStuff
+### Key Files
 
-# For muon-coupled HNL (default)
-conda run -n llpatcolliders python run_mass_scan.py
+#### Simulation Code
+- `main_hnl_single.cc`: Main C++ simulation with lepton flavor parameter support
 
-# For tau-coupled HNL
-conda run -n llpatcolliders python run_mass_scan.py --scenario tau
+#### Configuration Templates
+- `hnl_LowMass_Inclusive_Template.cmnd`: Template for low-mass HNLs (B-meson production)
+- `hnl_HighMass_Inclusive_Template.cmnd`: Template for high-mass HNLs (W/Z production)
 
-# 3. Analyze each mass point for detector sensitivity
-conda activate llpatcolliders
+#### Analysis Scripts
+- `decayProbPerEvent.py`: Decay probability calculation with detector geometry
+- `hnl_coupling_limit.py`: Coupling limit analysis script
 
-# For muon-coupled results (recommended: only masses with meaningful sensitivity)
-for mass in 15 23 31 39; do
-    python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
-done
+#### Mass Scan Scripts
+- `make.sh`: Universal compilation and scan script (supports all leptons)
+- `scan_electron.sh`: Electron-specific mass scan
+- `scan_muon.sh`: Muon-specific mass scan
+- `scan_tau.sh`: Tau-specific mass scan
 
-# For tau-coupled results
-for mass in 15 23 31 39; do
-    python decayProbPerEvent.py output/csv/hnlTauLL_m${mass}GeVLLP.csv
-done
+### Lepton Flavor Capabilities
 
-# Note: Masses 47-71 GeV have BR_limit > 1, indicating essentially zero detector
-# acceptance (heavy, slow HNLs that rarely reach the tube)
+The simulation supports three lepton flavors with optimized mass ranges:
 
-# Output: Exclusion plots saved in output/images/
+**Electrons:**
+- Mass points: 0.2, 0.3, 0.4, 0.5, 1.0, 1.5, 2.0, 2.5, 2.8, 3.1, 3.3, 3.6, 4.0, 4.4, 4.8, 5.2, 10.0, 15.0, 20.0, 40.0, 60.0 GeV
+- Covers masses below muon threshold
+- 21 mass points
 
-# 4. Generate coupling vs mass plot (final physics result)
-python hnl_coupling_limit.py --scenario mu
-# or use automated script:
-bash create_coupling_plot.sh mu
+**Muons:**
+- Mass points: 0.5, 1.0, 1.5, 2.0, 2.5, 2.8, 3.1, 3.3, 3.6, 4.0, 4.4, 4.8, 5.2, 10.0, 15.0, 20.0, 40.0, 60.0 GeV
+- Standard range starting from muon mass
+- 18 mass points
+
+**Taus:**
+- Low-mass: 0.5, 1.0, 1.5, 2.0, 2.5, 2.8, 3.1, 3.4 GeV (B-meson decays)
+- High-mass: 10.0, 15.0, 20.0, 40.0, 60.0 GeV (W/Z decays)
+- Skips 3.6-5.2 GeV (kinematic gap region)
+- 13 mass points
+
+### Usage
+
+Run simulations using the universal script:
+```fish
+# Electron scan
+./make.sh electron
+
+# Muon scan (default)
+./make.sh muon
+
+# Tau scan
+./make.sh tau
+
+# All three leptons
+./make.sh all
 ```
 
-### Coupling Limit Analysis Pipeline
-
-After running `decayProbPerEvent.py` for all mass points, you can convert the BR vs lifetime exclusions into coupling limits (|U_ℓ|² vs mass) - the standard experimental result format for HNL searches.
-
-**Physics:** For Heavy Neutral Leptons, production and decay are coupled through mixing:
-- Production: BR(W → ℓ N) ∝ |U_ℓ|² × f(m_N)  [phase space factor]
-- Decay: τ_N ∝ 1/|U_ℓ|²  [lifetime inversely proportional to coupling]
-- **Normalization**: BR(W → ℓ N) is defined relative to ALL W decays
-  - Uses σ(pp → W± + X) ≈ 200 nb (inclusive W production, see Cross-Section Normalization section)
-  - Expected signal: N = BR(W→ℓN) × ε × L × σ_W_inclusive
-  - The coupling |U_ℓ|² determines both the production BR and the decay lifetime
-
-**Scripts:**
-- `hnl_coupling_limit.py`: Main conversion script
-  - Implements phase space factor f(m_N, m_W, m_ℓ) for W → ℓ N
-  - Calculates HNL lifetime using Γ_N ≈ C × |U_ℓ|² × G_F² × m_N⁵ (C ≈ 1.7×10⁻³)
-  - Converts each mass point's (BR, τ) exclusion to |U_ℓ|² limit
-  - Creates coupling vs mass plot with all mass points
-- `quick_test_coupling.py`: Test with synthetic data
-- `create_coupling_plot.sh`: Automated pipeline (checks for missing data, runs analysis, generates plot)
-
-**Usage:**
-```bash
-# After running decayProbPerEvent.py for all mass points:
-
-# Generate coupling plot for muon scenario
-python hnl_coupling_limit.py --scenario mu
-
-# Generate coupling plot for tau scenario
-python hnl_coupling_limit.py --scenario tau
-
-# Test mode (uses synthetic data)
-python hnl_coupling_limit.py --scenario mu --test
-
-# Or use automated script that runs missing analyses first
-bash create_coupling_plot.sh mu
+Or use dedicated scripts:
+```fish
+./scan_electron.sh
+./scan_muon.sh
+./scan_tau.sh
 ```
 
-**Outputs:**
-- `output/images/hnl_coupling_vs_mass_mu.png` - Muon-coupled HNL sensitivity
-- `output/images/hnl_coupling_vs_mass_tau.png` - Tau-coupled HNL sensitivity
-- Log-log plot with auto-scaled y-axis based on actual coupling limits
-
-**Current Sensitivity Results:**
-- **Muon-coupled** (1M events/mass, 4 points):
-  - m15 GeV: |U_μ|² = 2.08×10⁻²
-  - m23 GeV: |U_μ|² = 2.98×10⁻²
-  - m31 GeV: |U_μ|² = 5.75×10⁻¹
-  - m39 GeV: |U_μ|² = 9.01×10⁻²
-- **Tau-coupled** (200k events/mass, 2 points):
-  - m15 GeV: |U_τ|² = 4.39×10⁻²
-  - m23 GeV: |U_τ|² = 1.52×10⁻¹
-  - m31, 39 GeV: No sensitivity (limited statistics)
-
-**Requirements:**
-- Needs `{scenario}_m{mass}GeVLLP_exclusion_data.csv` for each mass point
-- These are created automatically by `decayProbPerEvent.py` (added in 2025-11-18)
-- If missing, script will print which analyses need to be run
-- **Note**: Only masses 15-39 GeV are analyzed (m ≥ 47 GeV have BR_limit > 1)
-- **Cross-section**: Uses σ(pp → W± + X) ≈ 200 nb from the BR limit analysis (see Cross-Section Normalization section)
-
-## Dependencies and Setup
-
-### Environment Setup
-This project uses a conda environment defined in `environment.yml`. Set up the environment with:
-```bash
-conda env create -f environment.yml
-conda activate llpatcolliders
+Single mass point:
+```fish
+# Example: 1.0 GeV muon
+./main_hnl_single 1.0 muon
 ```
 
-The conda environment includes:
-- Python 3.11
-- Scientific computing: numpy, pandas, scipy, matplotlib
-- Geometry tools: shapely, trimesh, rtree
-- Utilities: tqdm, jupyter
+### Simulation Strategy
 
-### C++ Code (PYTHIA Simulation)
-Requires PYTHIA 8 installed locally (no ROOT dependency).
+#### Two-Stage Approach
 
-**Building the simulation:**
-```bash
-# From repo root
-bash pythiaStuff/make.sh
+The simulation uses a clean separation between production and decay:
+
+**Stage 1: Production in Pythia (C++)**
+1. Generation of b-bbar pairs (low mass) or W/Z bosons (high mass)
+2. Hadronization and B-meson production
+3. Forced production decays: B → D ℓ N or W/Z → ℓ N
+4. **HNL is stable in Pythia** (`mayDecay = off`)
+5. Records HNL kinematics (pT, η, φ, production vertex)
+
+**Stage 2: Decay and Acceptance in Python**
+1. Python layer (`decayProbPerEvent.py`) handles all decay calculations
+2. Uses proper HNL lifetime scaling with momentum/mass
+3. Ray-tracing through detector geometry
+4. Calculates decay probabilities within detector volume
+5. Generates BR vs cτ exclusion limits
+
+**Why this approach?**
+- Pythia production cross-sections are accurate and mass-dependent
+- Python provides flexible lifetime scanning without re-running Pythia
+- Clean separation: production physics (Pythia) vs detector effects (Python)
+- Matches methodology of ANUBIS, MATHUSLA, CODEX-b proposals
+
+### Cross-Section Methodology
+
+The simulation uses **Pythia-generated cross-sections** specific to each mass point, lepton flavor, and production mechanism. This approach ensures accurate predictions for HL-LHC sensitivity studies.
+
+#### Implementation
+
+**C++ Simulation (`main_hnl_single.cc`)**:
+- After event generation, extracts `pythia.info.sigmaGen()` and `sigmaErr()`
+- Converts from millibarns (mb) to picobarns (pb): σ_pb = σ_mb × 10⁹
+- Writes cross-section to `.meta` file alongside each CSV output
+
+**Python Analysis (`decayProbPerEvent.py`)**:
+- Reads cross-section from `.meta` file for each mass point
+- Converts pb → fb for luminosity calculations
+- Uses mass-specific σ for exclusion limit calculations
+
+#### Meta File Format
+
+Each `.meta` file contains:
+```
+# Cross-section information from Pythia 8
+# Generated at sqrt(s) = 14 TeV
+sigma_gen_pb 2.714698e+07
+sigma_err_pb 4.447674e+04
 ```
 
-**Running single simulations:**
-```bash
-./pythiaStuff/main144 -c pythiaStuff/higgsLL.cmnd   # Higgs → LLP pairs
-# or
-./pythiaStuff/main144 -c pythiaStuff/hnlLL.cmnd     # W → Heavy Neutral Leptons
+#### Production Mechanisms
+
+Cross-sections vary by mass and production channel:
+
+- **Low Mass (< 5 GeV)**: B-meson production (b-bbar → B-mesons → HNL)
+  - Example: m_HNL = 0.2 GeV (e-coupling) → σ ≈ 27 nb
+  - Dominated by QCD b-quark production
+  - Uses 3-body B → D ℓ N decays
+
+- **High Mass (≥ 5 GeV)**: W/Z boson production (pp → W/Z → HNL)
+  - Example: m_HNL = 60 GeV → σ varies by lepton flavor
+  - Electroweak production mechanism
+  - Uses 2-body W → ℓ N and Z → ν N decays
+
+#### Why Pythia Cross-Sections?
+
+Previously, the analysis used a generic hardcoded cross-section (σ = 200 nb for W production). The new approach:
+
+1. **Mass-dependent**: Cross-section changes significantly with HNL mass
+2. **Process-specific**: B-meson vs W/Z production have different σ values
+3. **Lepton-dependent**: Different kinematic cuts for e/μ/τ affect acceptance
+4. **Generator-accurate**: Uses the same σ that generated the events
+
+This matches the methodology used by ANUBIS and other LLP detector proposals, where events are generated at |U|² = 1 (unit mixing), and the true branching ratio BR(parent → HNL) is applied as a reweighting factor in the analysis.
+
+## Analysis Approach
+
+The analysis strategy focuses on:
+- Design optimization of the detector geometry
+- Lepton flavor-dependent sensitivity comparisons
+- Background characterization and mitigation
+- Signal efficiency calculations across all three lepton flavors
+- Sensitivity reach for various LLP benchmarks
+- Comparison with existing LLP detector proposals
+
+## Current Status
+
+The simulation framework is fully operational with multi-lepton support. Mass scans can be performed for electron, muon, and tau couplings to determine flavor-dependent detector sensitivity and physics reach.
+
+## Project Structure
+
+```
+llpatcolliders/
+├── CLAUDE.md                                  # Project documentation
+├── main_hnl_single.cc                         # Main C++ simulation
+├── main_hnl_single                            # Compiled executable
+├── make.sh                                    # Universal compilation & scan script
+├── scan_electron.sh                           # Electron mass scan script
+├── scan_muon.sh                               # Muon mass scan script
+├── scan_tau.sh                                # Tau mass scan script
+├── run_decay_analysis.sh                      # Run decay probability analysis
+├── hnl_LowMass_Inclusive_Template.cmnd        # B-meson production config template
+├── hnl_HighMass_Inclusive_Template.cmnd       # W/Z production config template
+├── hnl_coupling_limit.py                      # Coupling limit analysis script
+├── decayProbPerEvent.py                       # Decay probability calculation
+├── environment.yml                            # Conda environment specification
+├── tmp/                                       # Temporary configuration files (auto-cleaned)
+└── output/                                    # All output data organized by type
+    ├── csv/
+    │   ├── simulation/                        # Raw simulation data
+    │   │   ├── HNL_mass_0.2_electron.csv     # Event data
+    │   │   ├── HNL_mass_0.2_electron.meta    # Cross-section metadata
+    │   │   ├── HNL_mass_0.5_muon.csv
+    │   │   ├── HNL_mass_0.5_muon.meta
+    │   │   ├── HNL_mass_1.0_tau.csv
+    │   │   ├── HNL_mass_1.0_tau.meta
+    │   │   └── ... (52 CSV + 52 meta files = 104 total)
+    │   └── analysis/                          # Processed analysis results
+    │       ├── HNL_mass_*_particle_decay_results.csv
+    │       ├── HNL_mass_*_event_decay_statistics.csv
+    │       └── HNL_mass_*_exclusion_data.csv
+    ├── logs/
+    │   ├── simulation/                        # Simulation execution logs
+    │   │   ├── log_electron_0.2.txt
+    │   │   ├── log_muon_0.5.txt
+    │   │   ├── log_tau_1.0.txt
+    │   │   └── ... (52 log files total, one per CSV)
+    │   └── analysis/                          # Analysis execution logs
+    │       └── decay_analysis_*GeV_*.log
+    └── images/                                # Plots and visualizations
 ```
 
-**Running automated mass scans:**
-```bash
-cd pythiaStuff
+### Output Data Summary
 
-# Muon-coupled HNL (default)
-conda run -n llpatcolliders python run_mass_scan.py
+- **52 CSV files**: Complete simulation results for all mass points across three lepton flavors
+  - 21 electron mass points (0.2-60.0 GeV)
+  - 18 muon mass points (0.5-60.0 GeV)
+  - 13 tau mass points (0.5-60.0 GeV)
+- **52 meta files**: Cross-section metadata from Pythia 8 (one-to-one correspondence with CSV files)
+  - Contains σ_gen (generated cross-section in pb) at √s = 14 TeV
+  - Mass-specific, lepton-specific, and process-specific (B-meson vs W/Z production)
+- **52 log files**: Detailed execution logs matching each CSV output (one-to-one correspondence)
+- Each CSV contains: event weights, particle IDs, kinematics (pT, η, φ), production vertices
+- Each meta file contains: Pythia-generated cross-section and uncertainty in picobarns
 
-# Tau-coupled HNL
-conda run -n llpatcolliders python run_mass_scan.py --scenario tau
+## Technical Implementation Details
+
+### Parallel Execution Safety
+
+The simulation is designed for safe parallel execution with up to 10 concurrent processes (configurable in `make.sh`). Key safety features include:
+
+- **Unique Temporary Files**: Each mass point generates unique temporary configuration files in `tmp/` directory (e.g., `tmp/hnl_LowMass_muon_1.0_temp.cmnd`) to prevent race conditions
+- **Independent Processes**: Each mass point runs as a completely independent process with no shared file I/O
+- **Separate Output Files**: Results are written to unique CSV files per mass and lepton flavor
+- **Automatic Cleanup**: RAII-based cleanup ensures temporary files are deleted even if processes crash or are interrupted
+
+### HNL Particle Selection
+
+The HNL is configured as a **stable particle** in Pythia (`9900015:mayDecay = off`). This design choice ensures:
+
+1. **Clean separation**: Production (Pythia) vs decay/acceptance (Python)
+2. **Flexible lifetime scanning**: No need to re-run Pythia for different lifetimes
+3. **Simple particle selection**: Just `isFinal()` check selects the physical HNL
+4. **No decay branching complications**: Python handles all decay calculations
+
+The C++ code selects HNLs using:
+```cpp
+if (std::abs(prt.id()) != 9900015) continue;  // Select HNLs
+if (!prt.isFinal()) continue;                  // Select final-state copy
 ```
 
-This will:
-- Generate configuration files for mass points from 15-71 GeV (8 points in 8 GeV steps)
-- Run PYTHIA for each mass point **in parallel (2 at a time)**
-- Print timestamped progress showing which masses are currently running
-- Save all CSV outputs to `output/csv/` directory
-- Default configuration: **1M events per mass point** (N_EVENTS = 1_000_000 in run_mass_scan.py)
-- Runtime: ~3.5-4.5 hours for full scan at 1M events (with 2x parallelization speedup)
+### Recent Updates (2025-11-20)
 
-Available configuration files:
-- `higgsLL.cmnd`: Higgs production with decay to long-lived particle pairs
-- `hnlLL.cmnd`: W boson production with decay to Heavy Neutral Leptons (muon-coupled)
-- `hnlTauLL.cmnd`: W boson production with decay to Heavy Neutral Leptons (tau-coupled)
-- `hnlTauLL_test.cmnd`: Quick tau scenario test (1k events, 31 GeV)
-- `run_mass_scan.py`: Automated mass scanning (configurable via N_EVENTS variable and --scenario flag)
+#### Stable HNL Implementation (LATEST)
 
-**Note on CSV output**: The code includes duplicate detection to ensure only unique particles are written. For W → HNL, expect ~1 HNL per event (some events may have 2 due to multi-W production).
+**Major architectural change**: HNL is now fully stable in Pythia, with all decay calculations moved to Python layer.
 
-### Running Analysis
+**Changes to `.cmnd` templates:**
+- `9900015:mayDecay = off` - HNL does not decay in Pythia
+- `9900015:onMode = off` - No decay channels defined
+- Removed all `9900015:addChannel` lines (previous N → ℓ π decays)
+- **Production decays unchanged**: B → D ℓ N, W → ℓ N, Z → ν N still forced
 
-**Post-Simulation Analysis** (run with conda environment activated):
-```bash
-conda activate llpatcolliders
+**Changes to `main_hnl_single.cc`:**
+- Removed lepton-flavor-dependent kinematic threshold logic (previously lines 164-191)
+- Removed 3-body → 2-body B decay switching code
+- Simplified HNL selection to just `isFinal()` check
+- Added `#include <sstream>` for proper compilation
 
-# For a single mass point (muon scenario)
-python decayProbPerEvent.py output/csv/hnlLL_m15GeVLLP.csv
+**Benefits:**
+- Clean two-stage design: production (Pythia) + decay/geometry (Python)
+- No artificial mass thresholds or decay mode switching
+- Consistent with ANUBIS/MATHUSLA/CODEX-b methodology
+- Python layer has full control over lifetime and acceptance calculations
+- Easy to scan multiple lifetimes without re-generating events
 
-# For all muon-coupled mass points (can be run in parallel)
-for mass in 15 23 31 39 47 55 63 71; do
-    python decayProbPerEvent.py output/csv/hnlLL_m${mass}GeVLLP.csv
-done
+#### Pythia Cross-Section Implementation
 
-# For all tau-coupled mass points (can be run in parallel)
-for mass in 15 23 31 39 47 55 63 71; do
-    python decayProbPerEvent.py output/csv/hnlTauLL_m${mass}GeVLLP.csv
-done
-```
+The simulation uses **Pythia-generated cross-sections** instead of hardcoded values:
 
-**Analysis outputs:**
+1. **C++ Implementation**: `main_hnl_single.cc` (lines 243-264)
+   - Extracts `pythia.info.sigmaGen()` and `sigmaErr()` after event generation
+   - Converts from millibarns to picobarns
+   - Writes cross-section to `.meta` file alongside each CSV
 
-For muon-coupled HNL:
-- `output/images/hnlLL_m{mass}GeVLLP_exclusion_vs_lifetime.png` - Main exclusion plot comparing detector sensitivity with MATHUSLA, CODEX-b, and ANUBIS
-- `output/images/hnlLL_m{mass}GeVLLP_correlation_analysis.png` - Event correlation and probability distribution plots
-- `output/csv/hnlLL_m{mass}GeVLLP_event_decay_statistics.csv` - Event-level decay statistics
-- `output/csv/hnlLL_m{mass}GeVLLP_particle_decay_results.csv` - Particle-level results with path lengths and decay probabilities
+2. **Python Integration**: `decayProbPerEvent.py`
+   - Added `read_cross_section_from_meta()` function
+   - Automatically reads mass-specific σ from `.meta` files
+   - Replaces hardcoded σ = 200 nb with process-specific values
 
-For tau-coupled HNL:
-- `output/images/hnlTauLL_m{mass}GeVLLP_exclusion_vs_lifetime.png` - Main exclusion plot
-- `output/images/hnlTauLL_m{mass}GeVLLP_correlation_analysis.png` - Event correlation plots
-- `output/csv/hnlTauLL_m{mass}GeVLLP_event_decay_statistics.csv` - Event-level statistics
-- `output/csv/hnlTauLL_m{mass}GeVLLP_particle_decay_results.csv` - Particle-level results
+3. **Benefits**:
+   - Mass-dependent cross-sections (σ varies from ~27 nb at 0.2 GeV to ~pb levels at 60 GeV)
+   - Process-specific (B-meson vs W/Z production)
+   - Lepton-flavor dependent (accounts for different kinematic cuts)
+   - Matches ANUBIS methodology (generate at |U|² = 1, reweight by BR)
 
-**Additional Analysis Scripts:**
-```bash
-python neutral3D.py            # 3D geometric analysis
-python neutralv2.py            # 2D geometric analysis
-```
+#### Mass Range Update (80 → 60 GeV)
 
-## Key Details
+Maximum HNL mass changed from 80 GeV to 60 GeV across all lepton flavors:
+- **Reason**: 80 GeV is too close to W boson mass (80.4 GeV), causing generation issues
+- **Updated**: All scan scripts (`make.sh`, `scan_*.sh`) now use 60 GeV as maximum
+- **Impact**: Total mass points remain at 52, but highest mass is now 60 GeV
 
-**Detector Geometry**:
-- **Location**: CMS drainage gallery, approximately 22m above the CMS interaction point (z=22m)
-- **Shape**: Cylindrical tube detector with circular cross-section, radius ~1.54m
-- **Potential volume**: Up to ~800 m³ active detector volume
-- **Shielding**: Concrete and earth overburden providing background reduction from both surface and collisional backgrounds
-- Follows a curved path defined by correctedVert coordinates
-- Geometry implemented in 3D using trimesh for ray-tube intersection calculations
-- Used for calculating decay probabilities based on path length through detector
+#### RAII-Based Temporary File Cleanup
 
-**Cross-Section Normalization**:
-- **σ(pp → W± + X) ≈ 200 nb** at √s = 13.6 TeV (inclusive W production)
-  - Based on CMS measurements: σ × BR(W→μν) ≈ 20.8 nb with BR(W→μν) = 10.86%
-  - This gives σ_inclusive ≈ 191.5 nb; using 200 nb as round number (within 4%)
-- **IMPORTANT**: This is the **INCLUSIVE W production cross-section**, NOT pre-folded with leptonic BR
-- **Why**: BR limit formula is `N_signal = BR(W→ℓN) × ε × L × σ(W)`
-  - BR(W→ℓN) is the parameter we constrain
-  - ε is detector efficiency (from simulation with forced BR=1)
-  - L = 3000 fb⁻¹ (HL-LHC integrated luminosity)
-  - σ(W) must be total W production to properly normalize
-- **Poisson limit**: For 95% CL with 0 observed events: `BR_limit = 3 / (ε × L × σ)`
+The simulation implements automatic temporary file cleanup using RAII (Resource Acquisition Is Initialization):
 
-**Important Implementation Notes**:
-- **Duplicate Detection**: `main144.cc` includes kinematic-based duplicate filtering to prevent writing the same particle multiple times from different stages of the PYTHIA event record
-- **Event Structure**: For W → HNL scenario, expect ~1 HNL per event (CSV has ~1M particles for 1M events)
-- **Mass Scanning**: Use `run_mass_scan.py` to automate generation of multiple mass points for exclusion limit studies
-  - Currently configured for 1M events per mass point (modify N_EVENTS if different statistics needed)
-  - Runs 2 simulations in parallel for 2x speedup
-  - Prints real-time progress with timestamps showing which masses are running
-- **CSV Format**: One particle per line with format `event,id,pt,eta,phi,momentum,mass`
+- **ScopedFileRemover Class**: Added to `main_hnl_single.cc` (lines 86-104)
+  - Automatically deletes temporary `.cmnd` configuration files when the program exits
+  - Works even in error cases (failed init, exceptions, early returns)
+  - Prevents copying to avoid ownership confusion
 
-## Physics Context
+- **Temporary File Location**: All temporary configuration files stored in `./tmp/` directory
+  - Keeps the working directory clean
+  - Directory automatically created if it doesn't exist (`mkdir -p tmp`)
+  - Files named: `tmp/hnl_{LowMass|HighMass}_{lepton}_{mass}_temp.cmnd`
 
-The code models scenarios where:
+- **Benefits**:
+  - Crash-safe: Files deleted even if program exits early
+  - No manual cleanup needed before each `return` statement
+  - Exception-safe: Destructors run automatically during stack unwinding
+  - Parallel-safe: Works with existing unique filename strategy
+  - Clean workspace: All temporary files isolated in `tmp/`
 
-* Long-lived particles (LLPs) are produced in various processes:
-  - Higgs decays to LLP pairs (higgsLL.cmnd)
-  - W boson decays to Heavy Neutral Leptons:
-    - Muon-coupled: W → μ N, N → μ± + jets (hnlLL.cmnd)
-    - Tau-coupled: W → τ N, N → τ± + jets (hnlTauLL.cmnd)
-* Particles travel distances before decaying in the detector
-* Decay probability depends on particle lifetime and path length through detector
-* Goal is to set exclusion limits on particle properties (decay length vs branching ratio)
+#### Race Condition Fix
 
-**Scenario comparison:**
-- Both muon and tau scenarios use the same HNL PDG ID (9900015) and physics model
-- Production differs only in the lepton coupling (PDG 13/-13 for muon, 15/-15 for tau)
-- HNL decay channels mirror production: N → μ±/τ± + jets (same quark content: u d̄, ū d)
-- Analysis framework is identical for both scenarios
-
-Analysis compares calculated sensitivities with existing experimental limits from MATHUSLA, CODEX-b, and ANUBIS experiments.
-
-## Troubleshooting
-
-**Duplicate particles in CSV output**:
-- Fixed in current version of `main144.cc` with kinematic-based duplicate detection
-- If you see excessive duplicates, rebuild with `bash pythiaStuff/make.sh`
-
-**Empty CSV files after simulation**:
-- Check that `Main:writeRoot = on` in your `.cmnd` file
-- Verify the LLP PDG ID matches in both `.cmnd` and `main144.cc` (default: 9900015 for HNL)
-
-**Mass scan script issues**:
-- Must run from `pythiaStuff/` directory: `cd pythiaStuff && conda run -n llpatcolliders python run_mass_scan.py`
-- Check that conda environment is activated: `conda activate llpatcolliders`
-- Current default: N_EVENTS = 1_000_000 (modify in `run_mass_scan.py` if different statistics needed for testing)
-
-**Build errors**:
-- Ensure PYTHIA 8 is properly installed and accessible
-- Check that `make.sh` has correct paths to PYTHIA installation
-- Verify `#include <set>` is present in `main144.cc` for duplicate detection
-
-For detailed change history, see `CHANGELOG.md`.	
+Temporary configuration files now include the mass value in their filenames, preventing file corruption when multiple processes run in parallel. This was essential for `./make.sh all` to function correctly.
