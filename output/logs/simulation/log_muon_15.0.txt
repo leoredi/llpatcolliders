@@ -9,7 +9,7 @@ Running simulation with muon (PDG ID: 13)
  |  |   P  P   Y Y     T    H   H   I    A A     This is PYTHIA version 8.315      |  | 
  |  |   PPP     Y      T    HHHHH   I   AAAAA    Last date of change: 27 May 2025  |  | 
  |  |   P       Y      T    H   H   I   A   A                                      |  | 
- |  |   P       Y      T    H   H  III  A   A    Now is 20 Nov 2025 at 21:53:23    |  | 
+ |  |   P       Y      T    H   H  III  A   A    Now is 21 Nov 2025 at 19:36:32    |  | 
  |  |                                                                              |  | 
  |  |   Program documentation and an archive of historic versions is found on:     |  | 
  |  |                                                                              |  | 
@@ -43,6 +43,7 @@ Running simulation with muon (PDG ID: 13)
  |                                                                                    | 
  *------------------------------------------------------------------------------------* 
 
+Production mode: ELECTROWEAK (W/Z/top) for m_N >= 5 GeV
 
  *-------  PYTHIA Process Initialization  --------------------------*
  |                                                                  |
@@ -309,5 +310,206 @@ Running simulation with muon (PDG ID: 13)
  Pythia::next(): 98000 events have been generated 
 
  Pythia::next(): 99000 events have been generated 
-Mass 15.000 GeV (muon): Done. (100192 HNLs)
-Cross-section: 8.0272e+04 ± 1.4334e+02 pb
+
+ Pythia::next(): 100000 events have been generated 
+
+ Pythia::next(): 101000 events have been generated 
+
+ Pythia::next(): 102000 events have been generated 
+
+ Pythia::next(): 103000 events have been generated 
+
+ Pythia::next(): 104000 events have been generated 
+
+ Pythia::next(): 105000 events have been generated 
+
+ Pythia::next(): 106000 events have been generated 
+
+ Pythia::next(): 107000 events have been generated 
+
+ Pythia::next(): 108000 events have been generated 
+
+ Pythia::next(): 109000 events have been generated 
+
+ Pythia::next(): 110000 events have been generated 
+
+ Pythia::next(): 111000 events have been generated 
+
+ Pythia::next(): 112000 events have been generated 
+
+ Pythia::next(): 113000 events have been generated 
+
+ Pythia::next(): 114000 events have been generated 
+
+ Pythia::next(): 115000 events have been generated 
+
+ Pythia::next(): 116000 events have been generated 
+
+ Pythia::next(): 117000 events have been generated 
+
+ Pythia::next(): 118000 events have been generated 
+
+ Pythia::next(): 119000 events have been generated 
+
+ Pythia::next(): 120000 events have been generated 
+
+ Pythia::next(): 121000 events have been generated 
+ PYTHIA Warning in TauDecays::decay: maximum decay weight exceeded in tau decay
+
+ Pythia::next(): 122000 events have been generated 
+
+ Pythia::next(): 123000 events have been generated 
+
+ Pythia::next(): 124000 events have been generated 
+
+ Pythia::next(): 125000 events have been generated 
+
+ Pythia::next(): 126000 events have been generated 
+
+ Pythia::next(): 127000 events have been generated 
+
+ Pythia::next(): 128000 events have been generated 
+
+ Pythia::next(): 129000 events have been generated 
+
+ Pythia::next(): 130000 events have been generated 
+
+ Pythia::next(): 131000 events have been generated 
+
+ Pythia::next(): 132000 events have been generated 
+
+ Pythia::next(): 133000 events have been generated 
+
+ Pythia::next(): 134000 events have been generated 
+
+ Pythia::next(): 135000 events have been generated 
+
+ Pythia::next(): 136000 events have been generated 
+
+ Pythia::next(): 137000 events have been generated 
+
+ Pythia::next(): 138000 events have been generated 
+
+ Pythia::next(): 139000 events have been generated 
+
+ Pythia::next(): 140000 events have been generated 
+
+ Pythia::next(): 141000 events have been generated 
+
+ Pythia::next(): 142000 events have been generated 
+
+ Pythia::next(): 143000 events have been generated 
+
+ Pythia::next(): 144000 events have been generated 
+
+ Pythia::next(): 145000 events have been generated 
+
+ Pythia::next(): 146000 events have been generated 
+
+ Pythia::next(): 147000 events have been generated 
+
+ Pythia::next(): 148000 events have been generated 
+
+ Pythia::next(): 149000 events have been generated 
+
+ Pythia::next(): 150000 events have been generated 
+
+ Pythia::next(): 151000 events have been generated 
+
+ Pythia::next(): 152000 events have been generated 
+
+ Pythia::next(): 153000 events have been generated 
+
+ Pythia::next(): 154000 events have been generated 
+
+ Pythia::next(): 155000 events have been generated 
+
+ Pythia::next(): 156000 events have been generated 
+
+ Pythia::next(): 157000 events have been generated 
+
+ Pythia::next(): 158000 events have been generated 
+
+ Pythia::next(): 159000 events have been generated 
+
+ Pythia::next(): 160000 events have been generated 
+
+ Pythia::next(): 161000 events have been generated 
+
+ Pythia::next(): 162000 events have been generated 
+
+ Pythia::next(): 163000 events have been generated 
+
+ Pythia::next(): 164000 events have been generated 
+
+ Pythia::next(): 165000 events have been generated 
+
+ Pythia::next(): 166000 events have been generated 
+
+ Pythia::next(): 167000 events have been generated 
+
+ Pythia::next(): 168000 events have been generated 
+
+ Pythia::next(): 169000 events have been generated 
+
+ Pythia::next(): 170000 events have been generated 
+
+ Pythia::next(): 171000 events have been generated 
+
+ Pythia::next(): 172000 events have been generated 
+
+ Pythia::next(): 173000 events have been generated 
+
+ Pythia::next(): 174000 events have been generated 
+
+ Pythia::next(): 175000 events have been generated 
+
+ Pythia::next(): 176000 events have been generated 
+
+ Pythia::next(): 177000 events have been generated 
+
+ Pythia::next(): 178000 events have been generated 
+
+ Pythia::next(): 179000 events have been generated 
+
+ Pythia::next(): 180000 events have been generated 
+
+ Pythia::next(): 181000 events have been generated 
+
+ Pythia::next(): 182000 events have been generated 
+
+ Pythia::next(): 183000 events have been generated 
+
+ Pythia::next(): 184000 events have been generated 
+
+ Pythia::next(): 185000 events have been generated 
+
+ Pythia::next(): 186000 events have been generated 
+
+ Pythia::next(): 187000 events have been generated 
+
+ Pythia::next(): 188000 events have been generated 
+
+ Pythia::next(): 189000 events have been generated 
+
+ Pythia::next(): 190000 events have been generated 
+
+ Pythia::next(): 191000 events have been generated 
+
+ Pythia::next(): 192000 events have been generated 
+
+ Pythia::next(): 193000 events have been generated 
+
+ Pythia::next(): 194000 events have been generated 
+
+ Pythia::next(): 195000 events have been generated 
+
+ Pythia::next(): 196000 events have been generated 
+
+ Pythia::next(): 197000 events have been generated 
+
+ Pythia::next(): 198000 events have been generated 
+
+ Pythia::next(): 199000 events have been generated 
+Mass 15.000 GeV (muon): Done. (200394 HNLs)
+Cross-section: 8.0213e+04 ± 1.0112e+02 pb

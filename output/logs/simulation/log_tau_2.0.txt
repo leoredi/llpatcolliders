@@ -9,7 +9,7 @@ Running simulation with tau (PDG ID: 15)
  |  |   P  P   Y Y     T    H   H   I    A A     This is PYTHIA version 8.315      |  | 
  |  |   PPP     Y      T    HHHHH   I   AAAAA    Last date of change: 27 May 2025  |  | 
  |  |   P       Y      T    H   H   I   A   A                                      |  | 
- |  |   P       Y      T    H   H  III  A   A    Now is 20 Nov 2025 at 21:59:41    |  | 
+ |  |   P       Y      T    H   H  III  A   A    Now is 21 Nov 2025 at 19:56:37    |  | 
  |  |                                                                              |  | 
  |  |   Program documentation and an archive of historic versions is found on:     |  | 
  |  |                                                                              |  | 
@@ -43,6 +43,8 @@ Running simulation with tau (PDG ID: 15)
  |                                                                                    | 
  *------------------------------------------------------------------------------------* 
 
+Production mode: MESON (K/D/B) for m_N < 5 GeV
+ PYTHIA Warning in Pythia::init: should not combine softQCD processes with hard ones
 
  *-------  PYTHIA Process Initialization  --------------------------*
  |                                                                  |
@@ -55,6 +57,9 @@ Running simulation with tau (PDG ID: 15)
  |                                                    |             |
  |------------------------------------------------------------------|
  |                                                    |             |
+ | non-diffractive                                101 |   5.717e+01 |
+ | g g -> c cbar                                  121 |   5.348e+01 |
+ | q qbar -> c cbar                               122 |   5.495e-01 |
  | g g -> b bbar                                  123 |   3.842e+00 |
  | q qbar -> b bbar                               124 |   2.248e-02 |
  |                                                                  |
@@ -64,28 +69,28 @@ Running simulation with tau (PDG ID: 15)
  |                                                                  | 
  |                   sigmaNonDiffractive =    57.17 mb              | 
  |                                                                  | 
- |    pT0 =  2.65 gives sigmaInteraction =   328.53 mb: accepted    | 
+ |    pT0 =  2.65 gives sigmaInteraction =   328.72 mb: accepted    | 
  |                                                                  | 
  *-------  End PYTHIA Multiparton Interactions Initialization  -----* 
- PYTHIA Error in ParticleDecays::decay: failed to find workable decay channel for id = 521
 
  --------  PYTHIA Info Listing  ---------------------------------------- 
  
  Beam A: id =   2212, pz =  7.000e+03, e =  7.000e+03, m =  9.383e-01.
  Beam B: id =   2212, pz = -7.000e+03, e =  7.000e+03, m =  9.383e-01.
 
- In 1: id =   21, x =  2.830e-03, pdf =  1.330e+01 at Q2 =  1.044e+02.
- In 2: id =   21, x =  1.223e-03, pdf =  1.987e+01 at same Q2.
+ In 1: id =   21, x =  2.745e-02, pdf =  3.347e+00 at Q2 =  3.146e+01.
+ In 2: id =   21, x =  3.849e-05, pdf =  5.553e+01 at same Q2.
 
- Subprocess g g -> b bbar with code 123 is 2 -> 2.
- It has sHat =  6.782e+02,    tHat = -1.058e+02,    uHat = -5.263e+02,
-       pTHat =  9.018e+00,   m3Hat =  4.800e+00,   m4Hat =  4.800e+00,
-    thetaHat =  8.406e-01,  phiHat =  4.871e+00.
-     alphaEM =  7.628e-03,  alphaS =  1.991e-01    at Q2 =  1.044e+02.
+ Process non-diffractive with code 101 is 2 -> 2.
+ Subprocess g g -> g g with code 111 is 2 -> 2.
+ It has sHat =  2.071e+02,    tHat = -3.868e+01,    uHat = -1.684e+02,
+       pTHat =  5.609e+00,   m3Hat =  0.000e+00,   m4Hat =  0.000e+00,
+    thetaHat =  8.937e-01,  phiHat =  1.510e+00.
+     alphaEM =  7.588e-03,  alphaS =  2.266e-01    at Q2 =  3.846e+01.
 
- Impact parameter b =  1.472e+00 gives enhancement factor =  8.155e-02.
- Max pT scale for MPI =  1.022e+01, ISR =  1.022e+01, FSR =  1.022e+01.
- Number of MPI =     2, ISR =     4, FSRproc =    14, FSRreson =     0.
+ Impact parameter b =  1.266e+00 gives enhancement factor =  2.129e-01.
+ Max pT scale for MPI =  5.609e+00, ISR =  5.609e+00, FSR =  5.609e+00.
+ Number of MPI =     1, ISR =     4, FSRproc =    15, FSRreson =     0.
 
  --------  End PYTHIA Info Listing  ------------------------------------
 
@@ -95,22 +100,24 @@ Running simulation with tau (PDG ID: 15)
      0         90  (system)           -11     0     0     0     0     0     0      0.000      0.000      0.000  14000.000  14000.000
      1       2212  (p+)               -12     0     0     3     0     0     0      0.000      0.000   7000.000   7000.000      0.938
      2       2212  (p+)               -12     0     0     4     0     0     0      0.000      0.000  -7000.000   7000.000      0.938
-     3         21  (g)                -21     1     0     5     6   101   102      0.000      0.000     19.809     19.809      0.000
-     4         21  (g)                -21     2     0     5     6   102   103      0.000      0.000     -8.559      8.559      0.000
-     5          5  b                   23     3     4     0     0   101     0      1.421     -8.905     14.420     17.672      4.800
-     6         -5  bbar                23     3     4     0     0     0   103     -1.421      8.905     -3.169     10.696      4.800
-                                   Charge sum:  0.000           Momentum sum:      0.000      0.000     11.250     28.368     26.042
+     3         21  (g)                -21     1     0     5     6   101   102      0.000      0.000    192.181    192.181      0.000
+     4         21  (g)                -21     2     0     5     6   103   104      0.000      0.000     -0.269      0.269      0.000
+     5         21  g                   23     3     4     0     0   101   104      5.598      0.341    156.241    156.341      0.000
+     6         21  g                   23     3     4     0     0   103   102     -5.598     -0.341     35.671     36.109      0.000
+                                   Charge sum:  0.000           Momentum sum:      0.000      0.000    191.911    192.450     14.392
 
  --------  End PYTHIA Event Listing  -----------------------------------------------------------------------------------------------
- PYTHIA Warning in PhaseSpace2to2tauyz::finalKin: failed after mass assignment
+ PYTHIA Error in ParticleDecays::decay: failed to find workable decay channel for id = -411
+ PYTHIA Warning in SimpleSpaceShower::pT2nextQCD: weight above unity
 
  Pythia::next(): 1000 events have been generated 
- PYTHIA Warning in SimpleSpaceShower::pT2nextQCD: weight above unity
- PYTHIA Warning in Pythia::check: energy-momentum not quite conserved
+ PYTHIA Error in StringFragmentation::fragment: stuck in joining
+ PYTHIA Error in Pythia::next: hadronLevel failed; try again
+ PYTHIA Warning in MultipartonInteractions::pTfirst: weight above unity
 
  Pythia::next(): 2000 events have been generated 
- PYTHIA Error in SimpleSpaceShower::pT2nearThreshold: stuck in loop
- PYTHIA Warning in HadronWidths::pickMasses: angular momentum and running widths not used
+ PYTHIA Warning in Pythia::check: not quite matched particle energy/momentum/mass
+ PYTHIA Warning in Pythia::check: energy-momentum not quite conserved
 
  Pythia::next(): 3000 events have been generated 
 
@@ -119,12 +126,14 @@ Running simulation with tau (PDG ID: 15)
  Pythia::next(): 5000 events have been generated 
 
  Pythia::next(): 6000 events have been generated 
+ PYTHIA Warning in SimpleSpaceShower::pT2nextQCD: small daughter PDF
 
  Pythia::next(): 7000 events have been generated 
 
  Pythia::next(): 8000 events have been generated 
 
  Pythia::next(): 9000 events have been generated 
+ PYTHIA Error in SimpleSpaceShower::pT2nearThreshold: stuck in loop
 
  Pythia::next(): 10000 events have been generated 
 
@@ -147,7 +156,6 @@ Running simulation with tau (PDG ID: 15)
  Pythia::next(): 19000 events have been generated 
 
  Pythia::next(): 20000 events have been generated 
- PYTHIA Warning in SimpleSpaceShower::pT2nextQCD: small daughter PDF
 
  Pythia::next(): 21000 events have been generated 
 
@@ -222,9 +230,9 @@ Running simulation with tau (PDG ID: 15)
  Pythia::next(): 56000 events have been generated 
 
  Pythia::next(): 57000 events have been generated 
- PYTHIA Warning in MultipartonInteractions::pTnext: weight above unity
 
  Pythia::next(): 58000 events have been generated 
+ PYTHIA Warning in MultipartonInteractions::pTnext: weight above unity
 
  Pythia::next(): 59000 events have been generated 
 
@@ -239,8 +247,6 @@ Running simulation with tau (PDG ID: 15)
  Pythia::next(): 64000 events have been generated 
 
  Pythia::next(): 65000 events have been generated 
- PYTHIA Error in StringFragmentation::fragment: stuck in joining
- PYTHIA Error in Pythia::next: hadronLevel failed; try again
 
  Pythia::next(): 66000 events have been generated 
 
@@ -299,7 +305,6 @@ Running simulation with tau (PDG ID: 15)
  Pythia::next(): 93000 events have been generated 
 
  Pythia::next(): 94000 events have been generated 
- PYTHIA Warning in Pythia::check: not quite matched particle energy/momentum/mass
 
  Pythia::next(): 95000 events have been generated 
 
@@ -310,5 +315,205 @@ Running simulation with tau (PDG ID: 15)
  Pythia::next(): 98000 events have been generated 
 
  Pythia::next(): 99000 events have been generated 
+
+ Pythia::next(): 100000 events have been generated 
+
+ Pythia::next(): 101000 events have been generated 
+
+ Pythia::next(): 102000 events have been generated 
+
+ Pythia::next(): 103000 events have been generated 
+
+ Pythia::next(): 104000 events have been generated 
+
+ Pythia::next(): 105000 events have been generated 
+
+ Pythia::next(): 106000 events have been generated 
+
+ Pythia::next(): 107000 events have been generated 
+
+ Pythia::next(): 108000 events have been generated 
+
+ Pythia::next(): 109000 events have been generated 
+
+ Pythia::next(): 110000 events have been generated 
+
+ Pythia::next(): 111000 events have been generated 
+
+ Pythia::next(): 112000 events have been generated 
+
+ Pythia::next(): 113000 events have been generated 
+
+ Pythia::next(): 114000 events have been generated 
+
+ Pythia::next(): 115000 events have been generated 
+
+ Pythia::next(): 116000 events have been generated 
+
+ Pythia::next(): 117000 events have been generated 
+
+ Pythia::next(): 118000 events have been generated 
+
+ Pythia::next(): 119000 events have been generated 
+
+ Pythia::next(): 120000 events have been generated 
+
+ Pythia::next(): 121000 events have been generated 
+
+ Pythia::next(): 122000 events have been generated 
+
+ Pythia::next(): 123000 events have been generated 
+
+ Pythia::next(): 124000 events have been generated 
+
+ Pythia::next(): 125000 events have been generated 
+
+ Pythia::next(): 126000 events have been generated 
+
+ Pythia::next(): 127000 events have been generated 
+
+ Pythia::next(): 128000 events have been generated 
+
+ Pythia::next(): 129000 events have been generated 
+
+ Pythia::next(): 130000 events have been generated 
+
+ Pythia::next(): 131000 events have been generated 
+
+ Pythia::next(): 132000 events have been generated 
+
+ Pythia::next(): 133000 events have been generated 
+
+ Pythia::next(): 134000 events have been generated 
+
+ Pythia::next(): 135000 events have been generated 
+
+ Pythia::next(): 136000 events have been generated 
+
+ Pythia::next(): 137000 events have been generated 
+
+ Pythia::next(): 138000 events have been generated 
+
+ Pythia::next(): 139000 events have been generated 
+
+ Pythia::next(): 140000 events have been generated 
+
+ Pythia::next(): 141000 events have been generated 
+
+ Pythia::next(): 142000 events have been generated 
+
+ Pythia::next(): 143000 events have been generated 
+
+ Pythia::next(): 144000 events have been generated 
+
+ Pythia::next(): 145000 events have been generated 
+
+ Pythia::next(): 146000 events have been generated 
+
+ Pythia::next(): 147000 events have been generated 
+
+ Pythia::next(): 148000 events have been generated 
+
+ Pythia::next(): 149000 events have been generated 
+
+ Pythia::next(): 150000 events have been generated 
+
+ Pythia::next(): 151000 events have been generated 
+
+ Pythia::next(): 152000 events have been generated 
+
+ Pythia::next(): 153000 events have been generated 
+
+ Pythia::next(): 154000 events have been generated 
+
+ Pythia::next(): 155000 events have been generated 
+
+ Pythia::next(): 156000 events have been generated 
+
+ Pythia::next(): 157000 events have been generated 
+
+ Pythia::next(): 158000 events have been generated 
+
+ Pythia::next(): 159000 events have been generated 
+
+ Pythia::next(): 160000 events have been generated 
+
+ Pythia::next(): 161000 events have been generated 
+
+ Pythia::next(): 162000 events have been generated 
+
+ Pythia::next(): 163000 events have been generated 
+
+ Pythia::next(): 164000 events have been generated 
+
+ Pythia::next(): 165000 events have been generated 
+
+ Pythia::next(): 166000 events have been generated 
+
+ Pythia::next(): 167000 events have been generated 
+
+ Pythia::next(): 168000 events have been generated 
+
+ Pythia::next(): 169000 events have been generated 
+
+ Pythia::next(): 170000 events have been generated 
+
+ Pythia::next(): 171000 events have been generated 
+
+ Pythia::next(): 172000 events have been generated 
+
+ Pythia::next(): 173000 events have been generated 
+
+ Pythia::next(): 174000 events have been generated 
+
+ Pythia::next(): 175000 events have been generated 
+
+ Pythia::next(): 176000 events have been generated 
+
+ Pythia::next(): 177000 events have been generated 
+
+ Pythia::next(): 178000 events have been generated 
+
+ Pythia::next(): 179000 events have been generated 
+
+ Pythia::next(): 180000 events have been generated 
+
+ Pythia::next(): 181000 events have been generated 
+
+ Pythia::next(): 182000 events have been generated 
+
+ Pythia::next(): 183000 events have been generated 
+
+ Pythia::next(): 184000 events have been generated 
+
+ Pythia::next(): 185000 events have been generated 
+
+ Pythia::next(): 186000 events have been generated 
+
+ Pythia::next(): 187000 events have been generated 
+
+ Pythia::next(): 188000 events have been generated 
+
+ Pythia::next(): 189000 events have been generated 
+
+ Pythia::next(): 190000 events have been generated 
+
+ Pythia::next(): 191000 events have been generated 
+
+ Pythia::next(): 192000 events have been generated 
+
+ Pythia::next(): 193000 events have been generated 
+
+ Pythia::next(): 194000 events have been generated 
+
+ Pythia::next(): 195000 events have been generated 
+
+ Pythia::next(): 196000 events have been generated 
+
+ Pythia::next(): 197000 events have been generated 
+
+ Pythia::next(): 198000 events have been generated 
+
+ Pythia::next(): 199000 events have been generated 
 Mass 2.000 GeV (tau): Done. (0 HNLs)
-Cross-section: 3.8199e+08 ± 5.7032e+05 pb
+Cross-section: 6.2299e+10 ± 1.8014e+07 pb
