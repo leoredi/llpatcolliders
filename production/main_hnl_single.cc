@@ -129,53 +129,69 @@ int main(int argc, char* argv[]) {
   std::cout << "Running simulation with " << leptonName << " (PDG ID: " << leptonID << ")" << std::endl;
 
   // 2. CONFIGURATION
-  int nEvents = 100000;
+  int nEvents = 200000;
   int llp_pdgid = 9900015;
 
-  // Template files
-  std::string templateLowMass  = "hnl_LowMass_Inclusive_Template.cmnd";
-  std::string templateHighMass = "hnl_HighMass_Inclusive_Template.cmnd";
+  // Template files (in production/ directory)
+  // Two production regimes following ANUBIS/MATHUSLA/PBC methodology:
+  // - Meson: K + D + B combined for m_N < 5 GeV
+  //   (includes kaons, charm, beauty all produced simultaneously)
+  // - EW: W/Z/top for m_N ≥ 5 GeV
+  std::string templateMeson = "hnl_Meson_Inclusive_Template.cmnd";
+  std::string templateEW    = "hnl_HighMass_Inclusive_Template.cmnd";
 
   // Generated config files (temporary) - include mass to avoid race conditions
-  // Store in tmp/ directory to keep working directory clean
-  std::system("mkdir -p tmp");  // Ensure tmp directory exists
+  // Store in ../tmp/ directory to keep working directory clean
+  std::system("mkdir -p ../tmp");  // Ensure tmp directory exists
 
   std::ostringstream massStr;
   massStr << std::fixed << std::setprecision(1) << mN;
-  std::string cardLowMass  = "tmp/hnl_LowMass_" + leptonName + "_" + massStr.str() + "_temp.cmnd";
-  std::string cardHighMass = "tmp/hnl_HighMass_" + leptonName + "_" + massStr.str() + "_temp.cmnd";
+  std::string cardMeson = "../tmp/hnl_Meson_" + leptonName + "_" + massStr.str() + "_temp.cmnd";
+  std::string cardEW    = "../tmp/hnl_EW_" + leptonName + "_" + massStr.str() + "_temp.cmnd";
 
   // --- RAII CLEANUP OBJECTS ---
   // These will automatically delete the files when main() returns or exits
-  ScopedFileRemover cleanupLow(cardLowMass);
-  ScopedFileRemover cleanupHigh(cardHighMass);
+  ScopedFileRemover cleanupMeson(cardMeson);
+  ScopedFileRemover cleanupEW(cardEW);
 
   // 3. GENERATE CONFIG FILES FROM TEMPLATES
-  bool lowMassGenerated = generateConfigFromTemplate(templateLowMass, cardLowMass, leptonID, neutrinoID);
-  bool highMassGenerated = generateConfigFromTemplate(templateHighMass, cardHighMass, leptonID, neutrinoID);
+  bool mesonGenerated = generateConfigFromTemplate(templateMeson, cardMeson, leptonID, neutrinoID);
+  bool ewGenerated    = generateConfigFromTemplate(templateEW, cardEW, leptonID, neutrinoID);
 
-  if (!lowMassGenerated || !highMassGenerated) {
+  if (!mesonGenerated || !ewGenerated) {
     std::cerr << "Error: Failed to generate configuration files from templates" << std::endl;
-    return 1; // cleanupLow and cleanupHigh destructors run here automatically
+    return 1; // cleanup destructors run here automatically
   }
 
   // 4. SETUP PYTHIA
   Pythia pythia;
 
   /*
-   Historically we forced 2-body B→ℓN decays for a smoother validation sample.
-   This is no longer correct:
-     - the .cmnd files fully define the desired forced B-decay modes,
-     - our Python layer handles lifetime and geometry for ALL produced HNLs,
-     - manual overrides produce unphysical mass thresholds and distortions.
-   Therefore: all B→ℓN overrides inside the C++ code are now removed.
+   TWO-REGIME PRODUCTION MODEL (ANUBIS/MATHUSLA/PBC-compatible):
+
+   The HNL production hierarchy at √s = 14 TeV includes:
+     Below ~0.5 GeV  → KAONS matter
+     ~0.5-2 GeV      → CHARM dominates (σ_cc̄ ≈ 2×10^10 pb)
+     ~2-5 GeV        → BEAUTY becomes important (σ_bb̄ ≈ 6×10^8 pb)
+     > 5 GeV         → ELECTROWEAK (W/Z/top) takes over
+
+   Instead of splitting by mass, we now produce K+D+B SIMULTANEOUSLY
+   for all low masses, letting the analysis layer separate contributions
+   by parent_id and apply correct BR(M→ℓN) from HNLCalc/PBC tables.
   */
 
-  // --- Logic: Choose Regime ---
+  std::string productionMode;
+
   if (mN < 5.0) {
-    pythia.readFile(cardLowMass);
+    // MESON REGIME: K + D + B combined
+    pythia.readFile(cardMeson);
+    productionMode = "Meson";
+    std::cout << "Production mode: MESON (K/D/B) for m_N < 5 GeV" << std::endl;
   } else {
-    pythia.readFile(cardHighMass);
+    // ELECTROWEAK REGIME: W/Z/top
+    pythia.readFile(cardEW);
+    productionMode = "EW";
+    std::cout << "Production mode: ELECTROWEAK (W/Z/top) for m_N >= 5 GeV" << std::endl;
   }
 
   // --- Logic: Set Mass ---
@@ -189,15 +205,19 @@ int main(int argc, char* argv[]) {
   if (!pythia.init()) return 1; // Destructors run here automatically
 
   // 6. OUTPUT FILE
+  // Include production mode in filename for provenance tracking
   std::ostringstream fn;
-  fn << "HNL_mass_" << std::fixed << std::setprecision(1) << mN << "_" << leptonName << ".csv";
+  fn << "HNL_mass_" << std::fixed << std::setprecision(1) << mN
+     << "_" << leptonName << "_" << productionMode << ".csv";
 
   // SAFETY: Ensure this folder exists!
-  std::string csvFilename = "output/csv/simulation/" + fn.str();
+  std::string csvFilename = "../output/csv/simulation/" + fn.str();
 
   std::ofstream myfile;
   myfile.open(csvFilename);
-  myfile << "event,weight,id,parent_id,pt,eta,phi,momentum,mass,decay_x_m,decay_y_m,decay_z_m,L_xyz_m,L_xy_m\n";
+  // HNL is stable in Pythia (mayDecay=off), so we only save PRODUCTION vertex
+  // Decay coordinates and lengths are invalid/misleading and handled in Python
+  myfile << "event,weight,id,parent_id,pt,eta,phi,momentum,energy,mass,prod_x_m,prod_y_m,prod_z_m\n";
 
   // 7. EVENT LOOP
   int nLLPFound = 0;
@@ -218,55 +238,24 @@ int main(int argc, char* argv[]) {
       */
       if (!prt.isFinal()) continue;
 
-      // Calcs
-      double dx = (prt.xDec() - prt.xProd()) / 1000.0;
-      double dy = (prt.yDec() - prt.yProd()) / 1000.0;
-      double dz = (prt.zDec() - prt.zProd()) / 1000.0;
-      double L_xyz = std::sqrt(dx*dx + dy*dy + dz*dz);
-      double L_xy  = std::sqrt(dx*dx + dy*dy);
-
       // Parent Check
       int parent_id = 0;
       if (prt.mother1() > 0) parent_id = pythia.event[prt.mother1()].id();
 
+      // Write only VALID data: kinematics and PRODUCTION vertex
+      // Decay vertex is meaningless since HNL is stable in Pythia
       myfile << iEvent << "," << weight << "," << prt.id() << "," << parent_id << ","
              << prt.pT() << "," << prt.eta() << "," << prt.phi() << "," << prt.pAbs() << ","
-             << prt.m() << "," << prt.xDec()/1000.0 << "," << prt.yDec()/1000.0 << "," << prt.zDec()/1000.0 << ","
-             << L_xyz << "," << L_xy << "\n";
+             << prt.e() << "," << prt.m() << ","
+             << prt.xProd()/1000.0 << "," << prt.yProd()/1000.0 << "," << prt.zProd()/1000.0 << "\n";
 
       nLLPFound++;
     }
   }
   myfile.close();
 
-  // 8. EXTRACT AND SAVE CROSS-SECTION
-  // Get the generated cross-section from Pythia
-  double sigmaGen_mb = pythia.info.sigmaGen();  // in millibarns
-  double sigmaErr_mb = pythia.info.sigmaErr();  // error in millibarns
-
-  // Convert mb to pb (1 mb = 1e9 pb)
-  double sigmaGen_pb = sigmaGen_mb * 1e9;
-  double sigmaErr_pb = sigmaErr_mb * 1e9;
-
-  // Write cross-section to meta file
-  std::string metaFilename = "output/csv/simulation/" + fn.str();
-  metaFilename = metaFilename.substr(0, metaFilename.length() - 4) + ".meta";  // Replace .csv with .meta
-
-  std::ofstream metaFile(metaFilename);
-  if (metaFile.is_open()) {
-    metaFile << "# Cross-section information from Pythia 8\n";
-    metaFile << "# Generated at sqrt(s) = 14 TeV\n";
-    metaFile << "sigma_gen_pb " << std::scientific << std::setprecision(6) << sigmaGen_pb << "\n";
-    metaFile << "sigma_err_pb " << std::scientific << std::setprecision(6) << sigmaErr_pb << "\n";
-    metaFile.close();
-  } else {
-    std::cerr << "Warning: Could not write meta file: " << metaFilename << std::endl;
-  }
-
   // Print minimal output to stdout so parallel runner captures it
   std::cout << "Mass " << mN << " GeV (" << leptonName << "): Done. (" << nLLPFound << " HNLs)" << std::endl;
-  std::cout << "Cross-section: " << std::scientific << std::setprecision(4)
-            << sigmaGen_pb << " ± " << sigmaErr_pb << " pb" << std::endl;
 
   return 0; // Destructors run here automatically
 }

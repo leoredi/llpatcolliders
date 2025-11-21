@@ -233,7 +233,7 @@ def find_U2_exclusion(mass_GeV, flavour, production_mode,
 
 
 def main():
-    in_pattern = "output/csv/analysis/HNL_mass_*_BR_vs_ctau.csv"
+    in_pattern = "../output/csv/analysis/HNL_mass_*_BR_vs_ctau.csv"
     rows = []
 
     for fname in glob.glob(in_pattern):
@@ -271,7 +271,7 @@ def main():
         })
 
     df_out = pd.DataFrame(rows).sort_values(["flavour", "mass_GeV"])
-    out_file = "output/csv/analysis/HNL_U2_limits_summary.csv"
+    out_file = "../output/csv/analysis/HNL_U2_limits_summary.csv"
     df_out.to_csv(out_file, index=False)
     print(f"\nSaved |U|^2 limits to: {out_file}")
     print(df_out)

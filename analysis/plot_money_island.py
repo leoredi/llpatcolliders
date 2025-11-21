@@ -4,7 +4,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
-df = pd.read_csv("output/csv/analysis/HNL_U2_limits_summary.csv")
+df = pd.read_csv("../output/csv/analysis/HNL_U2_limits_summary.csv")
 
 fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
@@ -40,5 +40,5 @@ for idx, flavour in enumerate(["electron", "muon", "tau"]):
         ax.set_ylabel(r"$|U_{\ell}|^2$", fontsize=14)
 
 plt.tight_layout()
-plt.savefig("output/images/HNL_moneyplot_island.png", dpi=150)
-print("Saved: output/images/HNL_moneyplot_island.png")
+plt.savefig("../output/images/HNL_moneyplot_island.png", dpi=150)
+print("Saved: ../output/images/HNL_moneyplot_island.png")

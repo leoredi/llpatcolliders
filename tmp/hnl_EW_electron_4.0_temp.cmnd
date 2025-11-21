@@ -1,0 +1,47 @@
+! FILE: hnl_HighMass_Inclusive_Template.cmnd - TEMPLATE
+! Full Electroweak + Top Production
+! Covers mass range: m_N ≳ 5 GeV
+! Parent channels: W, Z, ttbar
+! HNL produced via forced W/Z decays (BR=1, factorised pipeline)
+! -------------------------------------------------------------
+
+! 1) Setup
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 14000.
+
+! 2) Processes: Electroweak + Top
+WeakSingleBoson:ffbar2W   = on   ! q qbar -> W
+WeakSingleBoson:ffbar2gmZ = on   ! q qbar -> Z/γ*
+Top:gg2ttbar              = on   ! gg -> t tbar
+Top:qqbar2ttbar           = on   ! qqbar -> t tbar
+
+! Fully inclusive
+PhaseSpace:pTHatMin = 0.0
+
+! 3) HNL Settings (stable)
+9900015:new      = N Nbar 2 0 0
+9900015:m0       = 15.0        ! SCAN PARAMETER (overwritten from C++)
+9900015:tau0     = 1.0e6       ! effectively stable in Pythia (mm)
+9900015:mayDecay = off
+9900015:onMode   = off
+
+! 4) Forced W/Z → HNL decays
+! 11 / 12 placeholders
+
+! W± decays (including those from tops)
+24:onMode      = off
+24:addChannel  = 1 1.0 100 -11 9900015   ! W+ -> ℓ+ N
+-24:onMode     = off
+-24:addChannel = 1 1.0 100  11 9900015   ! W- -> ℓ- N
+
+! Z decays
+23:onMode      = off
+23:addChannel  = 1 1.0 100 12 9900015  ! Z -> ν N
+
+! 5) Run
+Init:showChangedSettings     = on
+Init:showChangedParticleData = on
+Next:numberCount             = 1000
+Next:numberShowEvent         = 0
+Main:numberOfEvents          = 200000

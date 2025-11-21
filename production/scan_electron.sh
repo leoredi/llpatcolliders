@@ -37,9 +37,9 @@ echo "-------------------------------------------------------"
 echo "Step 2: Checking directories..."
 echo "-------------------------------------------------------"
 
-mkdir -p csv
-mkdir -p logs
-echo "Directories 'csv' and 'logs' are ready."
+mkdir -p ../output/csv/simulation
+mkdir -p ../output/logs/simulation
+echo "Directories '../output/csv/simulation' and '../output/logs/simulation' are ready."
 
 # 5. PARALLEL EXECUTION
 echo "-------------------------------------------------------"
@@ -48,9 +48,9 @@ echo "Mass points: $MASSES"
 echo "-------------------------------------------------------"
 
 # Run the scan with electron parameter
-echo $MASSES | xargs -n 1 -P $CORES -I {} sh -c "./main_hnl_single {} $LEPTON > logs/log_electron_{}.txt 2>&1"
+echo $MASSES | xargs -n 1 -P $CORES -I {} sh -c "./main_hnl_single {} $LEPTON > ../output/logs/simulation/log_electron_{}.txt 2>&1"
 
 echo "======================================================="
 echo "ELECTRON SCAN COMPLETE."
-echo "Results saved to csv/HNL_mass_*_electron.csv"
+echo "Results saved to ../output/csv/simulation/HNL_mass_*_electron.csv"
 echo "======================================================="

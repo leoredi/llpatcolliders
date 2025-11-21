@@ -351,7 +351,7 @@ def main():
                                          lifetimes_s=lifetimes_s)
 
     # 5) Save results for coupling-mapping step
-    out_csv = f"output/csv/analysis/{base}_BR_vs_ctau.csv"
+    out_csv = f"../output/csv/analysis/{base}_BR_vs_ctau.csv"
     os.makedirs(os.path.dirname(out_csv), exist_ok=True)
     df_out = pd.DataFrame(results)
     df_out.to_csv(out_csv, index=False)

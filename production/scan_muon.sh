@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Mass Scan Script for TAUS
-# Special handling: Skip intermediate masses (3.6-5.2 GeV) where yield is zero
+# Mass Scan Script for MUONS
+# Standard mass range starting from muon mass threshold
 
 # 1. SAFETY SETTINGS
 set -e
@@ -9,23 +9,17 @@ cd "$(dirname "$0")"
 
 # 2. CONFIGURATION
 PYTHIA_DIR="/Users/fredi/cernbox/Physics/llpatcolliders/pythia-install"
-LEPTON="tau"
+LEPTON="muon"
 
-# Tau mass range - TWO REGIMES:
-# Low Mass (B-meson decays): 0.5 - 3.4 GeV (stop before zero-yield region)
-# High Mass (W-decays): 10.0+ GeV (resume after zero-yield region)
-# Skip: 3.6 4.0 4.4 4.8 5.2 (Yield will be zero due to tau mass threshold)
-
-MASSES_LOW="0.5 1.0 1.5 2.0 2.5 2.8 3.1 3.4"
-MASSES_HIGH="10.0 15.0 20.0 40.0 60.0"
-MASSES="$MASSES_LOW $MASSES_HIGH"
+# Muon mass range: Starting from ~0.5 GeV (above muon mass)
+MASSES="0.5 1.0 1.5 2.0 2.5 2.8 3.1 3.3 3.6 4.0 4.4 4.8 5.2 10.0 15.0 20.0 40.0 60.0"
 
 # Number of CPU cores to use
 CORES=10
 
 # 3. COMPILATION
 echo "======================================================="
-echo "TAU HNL MASS SCAN"
+echo "MUON HNL MASS SCAN"
 echo "======================================================="
 echo "Step 1: Compiling main_hnl_single.cc..."
 echo "-------------------------------------------------------"
@@ -43,23 +37,20 @@ echo "-------------------------------------------------------"
 echo "Step 2: Checking directories..."
 echo "-------------------------------------------------------"
 
-mkdir -p csv
-mkdir -p logs
-echo "Directories 'csv' and 'logs' are ready."
+mkdir -p ../output/csv/simulation
+mkdir -p ../output/logs/simulation
+echo "Directories '../output/csv/simulation' and '../output/logs/simulation' are ready."
 
 # 5. PARALLEL EXECUTION
 echo "-------------------------------------------------------"
-echo "Step 3: Launching Parallel Scan for TAUS on $CORES cores..."
-echo "-------------------------------------------------------"
-echo "Low Mass Regime:  $MASSES_LOW"
-echo "High Mass Regime: $MASSES_HIGH"
-echo "NOTE: Skipping 3.6-5.2 GeV (zero yield due to tau mass)"
+echo "Step 3: Launching Parallel Scan for MUONS on $CORES cores..."
+echo "Mass points: $MASSES"
 echo "-------------------------------------------------------"
 
-# Run the scan with tau parameter
-echo $MASSES | xargs -n 1 -P $CORES -I {} sh -c "./main_hnl_single {} $LEPTON > logs/log_tau_{}.txt 2>&1"
+# Run the scan with muon parameter
+echo $MASSES | xargs -n 1 -P $CORES -I {} sh -c "./main_hnl_single {} $LEPTON > ../output/logs/simulation/log_muon_{}.txt 2>&1"
 
 echo "======================================================="
-echo "TAU SCAN COMPLETE."
-echo "Results saved to csv/HNL_mass_*_tau.csv"
+echo "MUON SCAN COMPLETE."
+echo "Results saved to ../output/csv/simulation/HNL_mass_*_muon.csv"
 echo "======================================================="
