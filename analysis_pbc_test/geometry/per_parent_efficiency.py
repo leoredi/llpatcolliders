@@ -1,309 +1,336 @@
-"""
-Per-Parent Geometric Efficiency Calculator
-
-Computes ε_geom(parent, mass, cτ) for the drainage gallery detector.
-
-This module:
-1. Reads Pythia CSV with parent_id tracking
-2. Groups events by parent species (K, D, B, W, Z, ...)
-3. Computes decay probability in detector volume for each parent
-4. Outputs per-parent efficiency maps: eps_geom[parent_pdg][ctau]
-
-Replaces the old single-efficiency approach with proper parent separation
-for PBC-grade analysis.
-"""
-
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Dict, List, Tuple, Optional
-import pickle
-from dataclasses import dataclass
+import trimesh
+from tqdm import tqdm
+
+# Try to import the specific RTreeError used by trimesh's ray code.
+# If it's not available for some reason, fall back to a generic Exception subclass.
+try:
+    from rtree.exceptions import RTreeError
+except Exception:  # pragma: no cover
+    class RTreeError(Exception):
+        pass
 
 
-@dataclass
-class DetectorGeometry:
+def eta_phi_to_direction(eta: float, phi: float) -> np.ndarray:
     """
-    Drainage gallery detector geometry.
+    Convert pseudorapidity (eta) and azimuthal angle (phi) to a 3D unit direction vector.
 
-    Coordinates relative to CMS interaction point.
+    Args:
+        eta: Pseudorapidity
+        phi: Azimuthal angle in radians
+
+    Returns:
+        Normalized 3D direction vector [dx, dy, dz]
     """
-    # Detector position (m)
-    x_min: float = -5.0
-    x_max: float = 5.0
-    y_min: float = 18.0  # ~20m above IP
-    y_max: float = 22.0
-    z_min: float = -5.0
-    z_max: float = 5.0
+    # Convert eta to polar angle theta
+    theta = 2.0 * np.arctan(np.exp(-eta))
 
-    # Shielding (for background studies, not used in acceptance)
-    concrete_thickness_m: float = 1.0
-    earth_thickness_m: float = 18.0
+    # Convert to Cartesian direction
+    dx = np.sin(theta) * np.cos(phi)
+    dy = np.sin(theta) * np.sin(phi)
+    dz = np.cos(theta)
 
-    def volume_m3(self) -> float:
-        """Active detector volume in m³."""
-        return ((self.x_max - self.x_min) *
-                (self.y_max - self.y_min) *
-                (self.z_max - self.z_min))
-
-    def contains_point(self, x: float, y: float, z: float) -> bool:
-        """Check if a point is inside the detector volume."""
-        return (self.x_min <= x <= self.x_max and
-                self.y_min <= y <= self.y_max and
-                self.z_min <= z <= self.z_min)
+    return np.array([dx, dy, dz], dtype=float)
 
 
-class PerParentEfficiency:
+def create_tube_mesh(path_points: np.ndarray,
+                     radius: float = 1.0,
+                     n_segments: int = 16) -> tuple[np.ndarray, np.ndarray]:
     """
-    Calculate geometric efficiency per parent species.
+    Create a tube mesh along a 3D polyline path with a circular cross-section.
 
-    For each (mass, flavour) mass point:
-    - Reads CSV from Pythia with parent_id column
-    - Groups events by parent PDG ID
-    - For each parent and cτ hypothesis:
-      - Computes P(decay in drainage gallery | kinematics, cτ)
-    - Saves efficiency map: eps_geom[parent_pdg][ctau]
+    Args:
+        path_points: array-like of shape (N, 3), the 3D path of the tube axis
+        radius: tube radius (same units as path_points)
+        n_segments: number of points around the circular cross-section
+
+    Returns:
+        vertices: (Nv, 3) array of vertex positions
+        faces:    (Nf, 3) array of triangular faces (indices into vertices)
     """
+    path_points = np.asarray(path_points, dtype=float)
+    vertices: list[np.ndarray] = []
+    faces: list[list[int]] = []
 
-    def __init__(self, detector: Optional[DetectorGeometry] = None):
-        """
-        Initialize efficiency calculator.
+    n_points = len(path_points)
+    if n_points < 2:
+        raise ValueError("Need at least two path points to build a tube.")
 
-        Parameters:
-        -----------
-        detector : DetectorGeometry, optional
-            Detector geometry (default: drainage gallery)
-        """
-        self.detector = detector if detector else DetectorGeometry()
-        self.ctau_scan_points = np.logspace(-2, 3, 100)  # 0.01 m to 1 km
+    for i in range(n_points):
+        if i == 0:
+            tangent = path_points[1] - path_points[0]
+        elif i == n_points - 1:
+            tangent = path_points[i] - path_points[i - 1]
+        else:
+            tangent = path_points[i + 1] - path_points[i - 1]
 
-    def load_csv(self, csv_path: Path) -> pd.DataFrame:
-        """
-        Load Pythia CSV with production vertices and parent IDs.
+        tangent = tangent / np.linalg.norm(tangent)
 
-        Expected columns:
-        - event, weight, id, parent_id
-        - pt, eta, phi, momentum, energy, mass
-        - prod_x_m, prod_y_m, prod_z_m
-        """
-        df = pd.read_csv(csv_path)
+        # Choose an "up" vector not parallel to tangent
+        if abs(tangent[2]) < 0.9:
+            up = np.array([0.0, 0.0, 1.0])
+        else:
+            up = np.array([1.0, 0.0, 0.0])
 
-        # Verify required columns
-        required = ['event', 'weight', 'id', 'parent_id',
-                   'pt', 'eta', 'phi', 'momentum', 'energy', 'mass',
-                   'prod_x_m', 'prod_y_m', 'prod_z_m']
+        right = np.cross(tangent, up)
+        right = right / np.linalg.norm(right)
+        up = np.cross(right, tangent)
+        up = up / np.linalg.norm(up)
 
-        missing = set(required) - set(df.columns)
-        if missing:
-            raise ValueError(f"CSV missing columns: {missing}")
+        # Build the ring of vertices at this path point
+        for j in range(n_segments):
+            angle = 2.0 * np.pi * j / n_segments
+            offset = radius * (np.cos(angle) * right + np.sin(angle) * up)
+            vertex = path_points[i] + offset
+            vertices.append(vertex)
 
-        return df
+        # Connect this ring to the previous ring
+        if i > 0:
+            for j in range(n_segments):
+                v1 = (i - 1) * n_segments + j
+                v2 = (i - 1) * n_segments + (j + 1) % n_segments
+                v3 = i * n_segments + (j + 1) % n_segments
+                v4 = i * n_segments + j
 
-    def decay_probability_in_detector(self, df: pd.DataFrame,
-                                      ctau_m: float) -> np.ndarray:
-        """
-        Calculate P(decay in detector) for each event at given cτ.
+                # Two triangles per quad
+                faces.append([v1, v4, v3])
+                faces.append([v1, v3, v2])
 
-        Uses proper Lorentz boost: decay length in lab frame is γβcτ.
+    # Cap the ends
+    center_start = len(vertices)
+    vertices.append(path_points[0])
+    for j in range(n_segments):
+        v1 = j
+        v2 = (j + 1) % n_segments
+        faces.append([center_start, v1, v2])
 
-        Parameters:
-        -----------
-        df : pd.DataFrame
-            Event data with kinematics and production vertices
-        ctau_m : float
-            Proper lifetime cτ in meters
+    center_end = len(vertices)
+    vertices.append(path_points[-1])
+    last_ring_start = (n_points - 1) * n_segments
+    for j in range(n_segments):
+        v1 = last_ring_start + j
+        v2 = last_ring_start + (j + 1) % n_segments
+        faces.append([center_end, v2, v1])
 
-        Returns:
-        --------
-        np.ndarray
-            Decay probability for each event (0 to 1)
-        """
-        # Production vertex
-        x0 = df['prod_x_m'].values
-        y0 = df['prod_y_m'].values
-        z0 = df['prod_z_m'].values
-
-        # HNL momentum and energy
-        p = df['momentum'].values
-        E = df['energy'].values
-        m = df['mass'].values
-
-        # Boost factor: γβ = p/m
-        gamma_beta = p / m
-
-        # Mean decay length in lab frame
-        L_decay_lab = gamma_beta * ctau_m
-
-        # Direction unit vector
-        pt = df['pt'].values
-        eta = df['eta'].values
-        phi = df['phi'].values
-
-        # Momentum components (unit vector)
-        px_hat = pt * np.cos(phi) / p
-        py_hat = pt * np.sin(phi) / p
-        pz_hat = np.sqrt(1 - (pt/p)**2) * np.sign(np.sinh(eta))
-
-        # Ray-tracing: find intersection with detector box
-        # For each event, compute distance to detector entry and exit
-
-        # Simplified: compute distance to detector center plane (y ≈ 20 m)
-        # More sophisticated: full box intersection
-
-        y_detector_center = (self.detector.y_max + self.detector.y_min) / 2
-
-        # Distance to y = y_detector_center plane
-        # y0 + t * py_hat = y_detector_center
-        # t = (y_detector_center - y0) / py_hat
-
-        with np.errstate(divide='ignore', invalid='ignore'):
-            t_to_detector = (y_detector_center - y0) / py_hat
-            t_to_detector = np.where(py_hat > 0, t_to_detector, np.inf)
-
-        # Decay probability between production and detector
-        # P(not decay before detector) = exp(-t_to_detector / L_decay)
-        P_survive_to_detector = np.exp(-t_to_detector / L_decay_lab)
-
-        # P(decay in detector volume) ≈ P(survive to detector) × (detector_thickness / L_decay)
-        # Simplified: assume detector thickness is small compared to L_decay
-        detector_thickness = self.detector.y_max - self.detector.y_min
-
-        P_decay_in_detector = P_survive_to_detector * (detector_thickness / L_decay_lab)
-
-        # Clamp to [0, 1]
-        P_decay_in_detector = np.clip(P_decay_in_detector, 0, 1)
-
-        return P_decay_in_detector
-
-    def compute_efficiency_per_parent(self, csv_path: Path,
-                                      output_dir: Optional[Path] = None) -> Dict:
-        """
-        Compute ε_geom(parent, cτ) for all parents in the sample.
-
-        Parameters:
-        -----------
-        csv_path : Path
-            Path to Pythia CSV file
-        output_dir : Path, optional
-            Directory to save efficiency maps (default: same as CSV)
-
-        Returns:
-        --------
-        Dict
-            {parent_pdg: {ctau: eps_geom}}
-        """
-        # Load data
-        df = self.load_csv(csv_path)
-
-        # Group by parent_id
-        parent_groups = df.groupby('parent_id')
-
-        efficiency_map = {}
-
-        print(f"Computing efficiency for {len(parent_groups)} parent species...")
-
-        for parent_pdg, group_df in parent_groups:
-            print(f"  Parent PDG {parent_pdg}: {len(group_df)} events")
-
-            eps_vs_ctau = {}
-
-            for ctau in self.ctau_scan_points:
-                # Compute decay probability for this parent at this cτ
-                P_decay = self.decay_probability_in_detector(group_df, ctau)
-
-                # Weighted average over events
-                weights = group_df['weight'].values
-                eps_geom = np.average(P_decay, weights=weights)
-
-                eps_vs_ctau[ctau] = eps_geom
-
-            efficiency_map[parent_pdg] = eps_vs_ctau
-
-        # Save to disk
-        if output_dir is None:
-            output_dir = csv_path.parent
-
-        # Extract mass and flavour from filename
-        # Expected: HNL_mass_1.0_muon_Meson.csv
-        stem = csv_path.stem
-        output_file = output_dir / f"{stem}_efficiency_map.pkl"
-
-        with open(output_file, 'wb') as f:
-            pickle.dump(efficiency_map, f)
-
-        print(f"Saved efficiency map to {output_file}")
-
-        # Also save as CSV for inspection
-        self._save_efficiency_csv(efficiency_map, output_dir / f"{stem}_efficiency_map.csv")
-
-        return efficiency_map
-
-    def _save_efficiency_csv(self, efficiency_map: Dict, output_path: Path):
-        """Save efficiency map as CSV for easy inspection."""
-        rows = []
-        for parent_pdg, eps_vs_ctau in efficiency_map.items():
-            for ctau, eps in eps_vs_ctau.items():
-                rows.append({
-                    'parent_pdg': parent_pdg,
-                    'ctau_m': ctau,
-                    'eps_geom': eps
-                })
-
-        df = pd.DataFrame(rows)
-        df.to_csv(output_path, index=False)
-        print(f"Saved efficiency CSV to {output_path}")
-
-    def load_efficiency_map(self, pkl_path: Path) -> Dict:
-        """Load pre-computed efficiency map from pickle."""
-        with open(pkl_path, 'rb') as f:
-            return pickle.load(f)
+    return np.array(vertices, dtype=float), np.array(faces, dtype=int)
 
 
-def process_all_csvs(csv_dir: Path, output_dir: Optional[Path] = None):
+def build_drainage_gallery_mesh() -> trimesh.Trimesh:
     """
-    Batch process all CSV files in a directory.
+    Build the CMS drainage-gallery tube mesh at z = 22 m.
 
-    Parameters:
-    -----------
-    csv_dir : Path
-        Directory containing Pythia CSV files
-    output_dir : Path, optional
-        Output directory for efficiency maps
+    Uses the 'correctedVert' polyline and shifts/scales exactly as in the original
+    Higgs→LLP script:
+      - subtract 11908.8279764855 in x, add 13591.106147774964 in y
+      - divide by 1000 to go from mm (?) to m
+      - set z = 22 m
+      - radius = 1.4 * 1.1
+      - n_segments = 32
+
+    Returns:
+        mesh: trimesh.Trimesh object representing the tube volume.
     """
-    calculator = PerParentEfficiency()
+    correctedVert = [
+        (-86.57954338701529, 0.1882163986665546),
+        (-1731.590867740335, 3.764327973349282),
+        (-3549.761278867689, 7.716872345365118),
+        (-5887.408950317142, 12.798715109387558),
+        (-8053.403266181902, -504.23173203003535),
+        (-10046.991360867298, -1282.5065405198511),
+        (-11783.350377373874, -2930.9057600491833),
+        (-12913.652590171332, -4580.622494369192),
+        (-13095.344153684957, -7536.749251839814),
+        (-13099.610392054752, -9015.000846973791),
+        (-13278.792403586143, -11101.567842600896),
+        (-13372.39869252341, -13536.146959364076),
+        (-13292.093029091975, -15710.234580371536),
+        (-12779.140603923677, -17972.21925955668),
+        (-11659.12755425337, -19887.69754879509),
+        (-10105.714877251532, -21630.204967658145),
+        (-7512.845769209047, -23201.0590309365),
+        (-5262.530506741277, -23466.820585854904),
+        (-2751.72374851779, -23472.278861416264),
+        (-241.41890069074725, -23651.64908934632),
+        (1749.6596420124115, -23742.93404270002),
+        (3827.568683300815, -23747.45123626804),
+        (6078.6368113632525, -23752.344862633392),
+        (8502.613071001502, -23844.570897980426),
+        (11446.568501358292, -23764.01427935077),
+        (13438.399909656131, -23594.431304151418),
+        (15777.051401898476, -23251.689242178036),
+        (18289.614846509525, -22648.455684448927),
+        (20889.761655300477, -21697.58643838109),
+        (23143.841245741598, -20659.00835053422),
+        (25486.006110759066, -19098.88262197991),
+        (27742.09334278597, -17364.656724658227),
+        (28871.391734790544, -16062.763895075637),
+        (30781.662703665817, -14153.873179790575),
+        (32518.021720172394, -12505.473960261239),
+        (34513.49197884447, -11075.029330388788),
+        (36636.57295581305, -10427.47081077351),
+        (38759.40297758341, -9866.868267342572),
+        (41357.416667189485, -9655.12481884172),
+        (43694.93886103982, -9703.684649697909),
+        (46379.03018363646, -9666.041369964427),
+        (49409.43967978114, -9629.150955825604),
+        (51660.88424064092, -9503.610617914434),
+        (54258.0195870532, -9596.213086058811),
+        (57028.564975437745, -9602.236010816167),
+        (59539.87364405768, -9433.782334008818),
+        (62050.42944708294, -9526.196585754526),
+    ]
 
-    csv_files = sorted(csv_dir.glob("HNL_mass_*_*.csv"))
+    correctedVertWithShift: list[tuple[float, float]] = []
+    for x, y in correctedVert:
+        correctedVertWithShift.append(
+            (
+                (x - 11908.8279764855) / 1000.0,
+                (y + 13591.106147774964) / 1000.0,
+            )
+        )
 
-    print(f"Found {len(csv_files)} CSV files to process")
+    Z_POSITION = 22.0  # m
+    path_3d = np.array(
+        [[x, y, Z_POSITION] for x, y in correctedVertWithShift],
+        dtype=float,
+    )
 
-    for i, csv_path in enumerate(csv_files, 1):
-        print(f"\n[{i}/{len(csv_files)}] Processing {csv_path.name}...")
-        try:
-            calculator.compute_efficiency_per_parent(csv_path, output_dir)
-        except Exception as e:
-            print(f"ERROR processing {csv_path.name}: {e}")
+    tube_radius = 1.4 * 1.1
+    vertices, faces = create_tube_mesh(
+        path_3d, radius=tube_radius, n_segments=32
+    )
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+
+    if mesh.volume < 0:
+        mesh = mesh.copy()  # avoid modifying original in place
+        mesh.invert()
+
+    print("Tube mesh created at z=22 m")
+    print(
+        "Mesh bounds: "
+        f"X:[{mesh.bounds[0][0]:.1f}, {mesh.bounds[1][0]:.1f}], "
+        f"Y:[{mesh.bounds[0][1]:.1f}, {mesh.bounds[1][1]:.1f}], "
+        f"Z:[{mesh.bounds[0][2]:.1f}, {mesh.bounds[1][2]:.1f}]"
+    )
+
+    return mesh
+
+
+def preprocess_hnl_csv(
+    csv_file: str,
+    mesh: trimesh.Trimesh,
+    origin: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> pd.DataFrame:
+    """
+    Read a Pythia HNL CSV and precompute geometry quantities
+    (independent of lifetime and couplings).
+
+    Expected input columns (at minimum):
+        - event
+        - parent_id
+        - eta
+        - phi
+        - momentum
+        - mass
+        - weight (optional; if absent, set to 1.0)
+
+    Output DataFrame contains original columns plus:
+        - beta_gamma        : p / m (dimensionless)
+        - hits_tube         : bool
+        - entry_distance    : distance from origin to entry point [m]
+        - path_length       : path length inside tube [m]
+
+    The event-level logic (per-event decay probability, etc.) is *not*
+    handled here; this is purely per-particle geometry.
+
+    Note: Pythia events can contain multiple HNLs from different parent
+    mesons (e.g., event 44 might have D0→N, B0→N, Ds→N). We compute
+    geometry for EACH HNL individually (one row per HNL), not per event.
+    This enables per-parent counting in the analysis layer.
+    """
+    df = pd.read_csv(csv_file)
+
+    required_cols = ["event", "parent_id", "eta", "phi", "momentum", "mass"]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"CSV {csv_file} is missing required columns: {missing}"
+        )
+
+    if "weight" not in df.columns:
+        df["weight"] = 1.0
+
+    # Initialize geometry columns
+    df["hits_tube"] = False
+    df["entry_distance"] = np.nan
+    df["path_length"] = np.nan
+
+    # beta * gamma = p / m (in natural units)
+    df["beta_gamma"] = df["momentum"] / df["mass"]
+
+    origin_arr = np.array(origin, dtype=float)
+
+    print(f"Precomputing geometry for {len(df)} HNLs from {csv_file} ...")
+
+    rtree_errors = 0
+    bad_dir_count = 0
+
+    for idx, row in tqdm(
+        df.iterrows(),
+        total=len(df),
+        desc="Geometry rays",
+        unit="HNL",
+    ):
+        eta = row["eta"]
+        phi = row["phi"]
+
+        # Skip non-finite kinematics
+        if not np.isfinite(eta) or not np.isfinite(phi):
+            bad_dir_count += 1
             continue
 
-    print("\nAll files processed.")
+        direction = eta_phi_to_direction(eta, phi)
 
+        # Guard against non-finite / zero-length direction vectors
+        if (not np.all(np.isfinite(direction))) or np.linalg.norm(direction) == 0.0:
+            bad_dir_count += 1
+            continue
 
-# Example usage
-if __name__ == "__main__":
-    import sys
+        try:
+            locations, _, _ = mesh.ray.intersects_location(
+                ray_origins=[origin_arr],
+                ray_directions=[direction],
+            )
+        except RTreeError:
+            # This is the error we saw: "Coordinates must not have minimums more than maximums"
+            # Treat this ray as invalid and move on.
+            rtree_errors += 1
+            continue
 
-    if len(sys.argv) < 2:
-        print("Usage: python per_parent_efficiency.py <csv_file_or_directory>")
-        sys.exit(1)
+        if len(locations) >= 2:
+            df.at[idx, "hits_tube"] = True
 
-    path = Path(sys.argv[1])
+            distances = [
+                np.linalg.norm(loc - origin_arr) for loc in locations
+            ]
+            distances.sort()
+            entry = distances[0]
+            exit_ = distances[1]
+            path_len = exit_ - entry
 
-    if path.is_file():
-        # Single file
-        calc = PerParentEfficiency()
-        calc.compute_efficiency_per_parent(path)
-    elif path.is_dir():
-        # Batch process directory
-        process_all_csvs(path)
-    else:
-        print(f"ERROR: {path} is not a valid file or directory")
-        sys.exit(1)
+            df.at[idx, "entry_distance"] = entry
+            df.at[idx, "path_length"] = path_len
+        else:
+            # No valid intersection => leave defaults (False / NaN)
+            df.at[idx, "hits_tube"] = False
+            df.at[idx, "entry_distance"] = np.nan
+            df.at[idx, "path_length"] = np.nan
+
+    if bad_dir_count > 0:
+        print(f"[WARN] Skipped {bad_dir_count} HNL(s) with non-finite or degenerate directions.")
+
+    if rtree_errors > 0:
+        print(f"[WARN] Skipped {rtree_errors} HNL(s) due to RTreeError in ray-mesh intersection.")
+
+    return df
