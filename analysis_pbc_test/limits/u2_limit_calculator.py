@@ -1,320 +1,458 @@
 """
-|U|² Limit Calculator - PBC-Grade Analysis
+limits/u2_limit_calculator.py
 
-Computes expected |U_flavour|² exclusion limits using:
-1. HNLCalc model (width, production, BRs)
-2. Per-parent geometric efficiencies
-3. Direct N_sig calculation (no BR_limit detour)
-
-Matches methodology of Physics Beyond Colliders benchmark curves BC6/7/8.
-
-Usage:
-------
-    from u2_limit_calculator import U2LimitCalculator
-
-    calc = U2LimitCalculator(lumi_fb=3000.0)  # HL-LHC
-    U2_limit = calc.find_U2_limit(mass_GeV=1.0, flavour='muon')
+End-to-end HNL reinterpretation for the CMS drainage gallery LLP detector.
 """
+
+from __future__ import annotations
+
+import sys
+import re
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+from typing import Tuple, Optional, Dict
 
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Dict, Optional, Tuple
-from scipy.optimize import brentq
-from scipy.interpolate import interp1d
-import sys
 
-# Add models to path
-sys.path.append(str(Path(__file__).parent.parent / 'models'))
-sys.path.append(str(Path(__file__).parent.parent / 'geometry'))
+# ----------------------------------------------------------------------
+# 0. Helpers: repository paths & I/O
+# ----------------------------------------------------------------------
 
-from hnl_model_hnlcalc import HNLModelHNLCalc
-from per_parent_efficiency import PerParentEfficiency
+THIS_FILE = Path(__file__).resolve()
+ANALYSIS_DIR = THIS_FILE.parent           # .../analysis_pbc_test/limits
+REPO_ROOT = ANALYSIS_DIR.parents[1]       # .../llpatcolliders
+OUTPUT_DIR = REPO_ROOT / "output" / "csv"
+SIM_DIR = OUTPUT_DIR / "simulation"
+GEOM_CACHE_DIR = OUTPUT_DIR / "geometry"
+ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
+
+# Ensure the analysis_pbc_test root is on sys.path
+ANALYSIS_ROOT = ANALYSIS_DIR.parent
+if str(ANALYSIS_ROOT) not in sys.path:
+    sys.path.insert(0, str(ANALYSIS_ROOT))
+
+# Import project modules
+try:
+    from geometry.per_parent_efficiency import (
+        build_drainage_gallery_mesh,
+        preprocess_hnl_csv,
+    )
+    from models.hnl_model_hnlcalc import HNLModel
+    from config.production_xsecs import get_parent_sigma_pb
+except ImportError as e:
+    print(f"CRITICAL: Could not import project modules. Check python path.\nError: {e}")
+    sys.exit(1)
 
 
-class U2LimitCalculator:
+# ----------------------------------------------------------------------
+# 1. Coupling benchmark mapping
+# ----------------------------------------------------------------------
+
+def couplings_from_eps2(eps2: float, benchmark: str) -> Tuple[float, float, float]:
     """
-    Calculate |U|² exclusion limits from signal yield.
-
-    For a given (mass, flavour), scans |U|² to find the value where
-    the expected signal yield N_sig reaches the exclusion threshold.
+    Map PBC benchmark (string) to (Ue^2, Umu^2, Utau^2).
     """
+    if benchmark == "100":
+        return eps2, 0.0, 0.0
+    elif benchmark == "010":
+        return 0.0, eps2, 0.0
+    elif benchmark == "001":
+        return 0.0, 0.0, eps2
+    else:
+        raise ValueError(f"Unsupported benchmark: {benchmark} (use '100','010','001').")
 
-    def __init__(self,
-                 lumi_fb: float = 3000.0,
-                 n_limit: float = 3.0,
-                 cl: float = 0.95):
-        """
-        Initialize limit calculator.
 
-        Parameters:
-        -----------
-        lumi_fb : float
-            Integrated luminosity in fb⁻¹ (default: 3 ab⁻¹ = 3000 fb⁻¹)
-        n_limit : float
-            Number of events for exclusion (default: 3 for background-free 95% CL)
-        cl : float
-            Confidence level (default: 0.95)
-        """
-        self.lumi_fb = lumi_fb
-        self.n_limit = n_limit
-        self.cl = cl
+# ----------------------------------------------------------------------
+# 2. Expected signal yield N_sig(m, eps^2)
+# ----------------------------------------------------------------------
 
-        # Initialize model
-        self.model = HNLModelHNLCalc()
+def expected_signal_events(
+    geom_df: pd.DataFrame,
+    mass_GeV: float,
+    eps2: float,
+    benchmark: str,
+    lumi_fb: float,
+) -> float:
+    """
+    Compute expected signal events N_sig using per-parent counting.
 
-        print(f"U2LimitCalculator initialized:")
-        print(f"  Luminosity: {lumi_fb:.1f} fb⁻¹")
-        print(f"  Exclusion threshold: {n_limit:.1f} events @ {cl*100:.0f}% CL")
+    Multi-HNL Event Handling
+    -------------------------
+    Pythia events can contain MULTIPLE HNLs from different parent mesons
+    (e.g., one event might produce D0→N, D+→N, B0→N simultaneously).
 
-    def compute_Nsig(self,
-                     mass_GeV: float,
-                     flavour: str,
-                     U2: float,
-                     efficiency_map: Dict) -> float:
-        """
-        Compute expected signal yield N_sig(m, flavour, |U|²).
+    We treat each HNL independently because each comes from a distinct
+    production process with its own cross-section:
 
-        N_sig = L × Σ_parents [σ_p × BR(p→ℓN, |U|²) × ε_geom(p, cτ(|U|²))]
+        N_sig = Σ_parents [ L × σ_parent × BR(parent→ℓN) × ε_geom(parent) ]
 
-        Parameters:
-        -----------
-        mass_GeV : float
-            HNL mass in GeV
-        flavour : str
-            Lepton flavour (electron, muon, tau)
-        U2 : float
-            Mixing parameter |U_flavour|²
-        efficiency_map : Dict
-            Per-parent efficiency map: {parent_pdg: {ctau: eps_geom}}
+    This is **per-parent** counting, not per-event counting. We do NOT use
+    event-level logic like P_event = 1 - ∏(1 - P_i), because:
 
-        Returns:
-        --------
-        float
-            Expected number of signal events
-        """
-        # 1. Compute cτ at this |U|²
-        ctau0 = self.model.ctau0_m_for_U2_eq_1(mass_GeV, flavour)
-        ctau = ctau0 / U2
+    1. Different parents have different cross-sections (σ_D ≠ σ_B ≠ σ_K)
+    2. Each parent meson represents an independent production channel
+    3. This matches MATHUSLA/ANUBIS/CODEX-b/PBC methodology
 
-        # 2. Sum contributions from all parents
-        N_sig_total = 0.0
+    Example: If event #44 produces [B0→N, Bs→N, D+→N, Ds→N], we count
+    4 independent signal contributions with their respective σ and BR values.
 
-        for parent_pdg, eps_vs_ctau in efficiency_map.items():
-            # Get σ and BR for this parent
-            sigma_pb = self.model.sigma_parent(parent_pdg, mass_GeV, flavour)
-            BR = self.model.BR_parent_to_HNL(parent_pdg, mass_GeV, flavour, U2)
+    Parameters
+    ----------
+    geom_df : pd.DataFrame
+        Geometry dataframe with columns: parent_id, weight, beta_gamma,
+        hits_tube, entry_distance, path_length (one row per HNL)
+    mass_GeV : float
+        HNL mass in GeV
+    eps2 : float
+        Total coupling squared |U|² = |Ue|² + |Umu|² + |Utau|²
+    benchmark : str
+        Coupling pattern: "100" (electron), "010" (muon), "001" (tau)
+    lumi_fb : float
+        Integrated luminosity in fb⁻¹
 
-            # Interpolate ε_geom at this cτ
-            ctau_array = np.array(sorted(eps_vs_ctau.keys()))
-            eps_array = np.array([eps_vs_ctau[c] for c in ctau_array])
+    Returns
+    -------
+    float
+        Expected number of signal events N_sig
+    """
+    # 1) Couplings and HNL model
+    Ue2, Umu2, Utau2 = couplings_from_eps2(eps2, benchmark)
+    model = HNLModel(mass_GeV=mass_GeV, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
 
-            # Use log-log interpolation (efficiency often varies over many orders)
-            log_interp = interp1d(np.log10(ctau_array), np.log10(eps_array + 1e-20),
-                                 kind='linear', bounds_error=False, fill_value=-20)
+    # Proper decay length in METRES
+    ctau0_m = model.ctau0_m
 
-            log_eps = log_interp(np.log10(ctau))
-            eps_geom = 10**log_eps
+    # Production BRs per parent
+    br_per_parent: Dict[int, float] = model.production_brs()
 
-            # Contribution from this parent
-            N_parent = self.lumi_fb * sigma_pb * BR * eps_geom
+    # 2) Extract geometry arrays
+    df = geom_df  # Reference copy
+    
+    required_cols = ["parent_id", "weight", "beta_gamma", "hits_tube", "entry_distance", "path_length"]
+    missing_cols = [c for c in required_cols if c not in df.columns]
+    if missing_cols:
+        print(f"[WARN] geom_df missing columns {missing_cols}. Returning N_sig=0.")
+        return 0.0
 
-            N_sig_total += N_parent
+    if len(df) == 0:
+        return 0.0
 
-            # Debug print for first few parents
-            if N_parent > 1e-10:
-                parent_name = self.model.get_parent_name(parent_pdg)
-                print(f"    {parent_name:10s} (PDG {parent_pdg:6d}): "
-                      f"σ={sigma_pb:.2e} pb, BR={BR:.2e}, ε={eps_geom:.2e} "
-                      f"→ N={N_parent:.2e}")
+    # Extract raw arrays
+    parent_id = df["parent_id"].to_numpy()
+    weights = df["weight"].to_numpy(dtype=float)
+    beta_gamma = df["beta_gamma"].to_numpy(dtype=float)
+    hits_tube = df["hits_tube"].to_numpy(dtype=bool)
+    entry = df["entry_distance"].to_numpy(dtype=float)
+    length = df["path_length"].to_numpy(dtype=float)
 
-        return N_sig_total
+    # --- SAFETY CHECK: DROP BAD PARENT IDs ---
+    # This prevents IntCastingNaNError if geometry has NaNs
+    mask_valid = np.isfinite(parent_id)
+    if not np.all(mask_valid):
+        # We silently drop them here to keep the scan fast; 
+        # logging happens in the worker function usually.
+        parent_id = parent_id[mask_valid]
+        weights = weights[mask_valid]
+        beta_gamma = beta_gamma[mask_valid]
+        hits_tube = hits_tube[mask_valid]
+        entry = entry[mask_valid]
+        length = length[mask_valid]
 
-    def find_U2_limit(self,
-                     mass_GeV: float,
-                     flavour: str,
-                     efficiency_map: Dict,
-                     U2_min: float = 1e-12,
-                     U2_max: float = 1.0) -> Tuple[float, Dict]:
-        """
-        Find |U|² limit where N_sig = N_limit.
+    if len(parent_id) == 0:
+        return 0.0
 
-        Uses root-finding (Brent's method) to solve:
-            N_sig(m, flavour, |U|²) = N_limit
+    # 3) Compute P_decay_i for all HNLs
+    lam = beta_gamma * ctau0_m 
+    lam = np.where(lam <= 1e-9, 1e-9, lam) # Prevent divide by zero
 
-        Parameters:
-        -----------
-        mass_GeV : float
-            HNL mass in GeV
-        flavour : str
-            Lepton flavour
-        efficiency_map : Dict
-            Per-parent efficiency map
-        U2_min : float
-            Minimum |U|² to search (default: 1e-12)
-        U2_max : float
-            Maximum |U|² to search (default: 1.0)
+    P_decay = np.zeros_like(lam, dtype=float)
+    
+    mask_hits = hits_tube & (length > 0)
+    
+    if np.any(mask_hits):
+        arg_entry = -entry[mask_hits] / lam[mask_hits]
+        arg_path  = -length[mask_hits] / lam[mask_hits]
+        
+        # Numerically stable: exp(A) * (1 - exp(B)) = exp(A) * (-expm1(B))
+        prob_in_tube = np.exp(arg_entry) * (-np.expm1(arg_path))
+        P_decay[mask_hits] = prob_in_tube
 
-        Returns:
-        --------
-        Tuple[float, Dict]
-            (U2_limit, info_dict)
-            info_dict contains:
-                - N_sig_at_limit
-                - ctau_at_limit
-                - dominant_parents
-        """
-        print(f"\nFinding |U|² limit for m={mass_GeV} GeV, flavour={flavour}")
+    # 4) Group by parent species
+    # Safe to cast to int now because we filtered non-finites
+    unique_parents = np.unique(np.abs(parent_id.astype(int)))
+    total_expected = 0.0
 
-        # Define objective function: N_sig(U2) - N_limit
-        def objective(U2):
-            N = self.compute_Nsig(mass_GeV, flavour, U2, efficiency_map)
-            return N - self.n_limit
+    # Track diagnostics for missing PDG codes
+    missing_br_pdgs = []
+    missing_xsec_pdgs = []
 
-        # Check bounds
-        N_at_min = objective(U2_min) + self.n_limit
-        N_at_max = objective(U2_max) + self.n_limit
+    for pid in unique_parents:
+        BR_parent = br_per_parent.get(int(pid), 0.0)
+        if BR_parent <= 0.0:
+            missing_br_pdgs.append(int(pid))
+            continue
 
-        print(f"  N_sig at |U|²={U2_min:.2e}: {N_at_min:.2e}")
-        print(f"  N_sig at |U|²={U2_max:.2e}: {N_at_max:.2e}")
+        sigma_parent_pb = get_parent_sigma_pb(int(pid))
+        if sigma_parent_pb <= 0.0:
+            missing_xsec_pdgs.append(int(pid))
+            continue
 
-        if N_at_min < self.n_limit and N_at_max < self.n_limit:
-            # No exclusion possible in this range
-            print(f"  WARNING: No exclusion - N_sig < {self.n_limit} everywhere")
-            return U2_max, {'N_sig_at_limit': N_at_max, 'ctau_at_limit': np.nan}
+        # Select geometry rows for this parent
+        # We use the array from step 2 (already filtered)
+        mask_parent = np.abs(parent_id) == pid
+        
+        w = weights[mask_parent]
+        P = P_decay[mask_parent]
+        w_sum = np.sum(w)
 
-        if N_at_min > self.n_limit:
-            # Even at minimum |U|², we have too many events
-            print(f"  WARNING: Excluded even at |U|²={U2_min}")
-            return U2_min, {'N_sig_at_limit': N_at_min, 'ctau_at_limit': np.nan}
+        if w_sum <= 0.0:
+            continue
+            
+        eff_parent = np.sum(w * P) / w_sum
 
-        # Find root
+        # N = L * sigma * BR * eff (1 pb = 1000 fb)
+        total_expected += lumi_fb * (sigma_parent_pb * 1e3) * BR_parent * eff_parent
+
+    # Diagnostic warnings for missing PDG codes (only warn once per mass point)
+    # We suppress detailed logging during the 100-point eps2 scan to avoid spam
+    # The worker function (_scan_single_mass) should log these once per mass
+    if missing_br_pdgs and eps2 == 1e-12:  # Only log at first eps2 point
+        n_lost = np.sum(np.isin(parent_id, missing_br_pdgs))
+        print(f"[WARN] Mass {mass_GeV:.2f} GeV: {len(missing_br_pdgs)} parent PDG(s) have no HNLCalc BR: {missing_br_pdgs}")
+        print(f"       → Discarding {n_lost} events (silent data loss)")
+
+    if missing_xsec_pdgs and eps2 == 1e-12:  # Only log at first eps2 point
+        n_lost = np.sum(np.isin(parent_id, missing_xsec_pdgs))
+        print(f"[WARN] Mass {mass_GeV:.2f} GeV: {len(missing_xsec_pdgs)} parent PDG(s) have no cross-section: {missing_xsec_pdgs}")
+        print(f"       → Discarding {n_lost} events (silent data loss)")
+
+    return float(total_expected)
+
+
+# ----------------------------------------------------------------------
+# 3. Scan eps^2 for a fixed mass
+# ----------------------------------------------------------------------
+
+def scan_eps2_for_mass(
+    geom_df: pd.DataFrame,
+    mass_GeV: float,
+    benchmark: str,
+    lumi_fb: float,
+    N_limit: float = 3.0,
+) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
+    
+    # Log grid from 1e-12 to 1e-2
+    eps2_grid = np.logspace(-12, -2, 100)
+    Nsig = np.zeros_like(eps2_grid, dtype=float)
+
+    for i, eps2 in enumerate(eps2_grid):
+        Nsig[i] = expected_signal_events(
+            geom_df=geom_df,
+            mass_GeV=mass_GeV,
+            eps2=float(eps2),
+            benchmark=benchmark,
+            lumi_fb=lumi_fb,
+        )
+
+    mask = Nsig >= N_limit
+    
+    if not np.any(mask):
+        return eps2_grid, Nsig, None, None
+    
+    idx_above = np.where(mask)[0]
+    eps2_min = float(eps2_grid[idx_above[0]])
+    eps2_max = float(eps2_grid[idx_above[-1]])
+
+    return eps2_grid, Nsig, eps2_min, eps2_max
+
+
+# ----------------------------------------------------------------------
+# 4. Worker for parallel mass scan
+# ----------------------------------------------------------------------
+
+def _scan_single_mass(
+    mass_val: float,
+    mass_str: str,
+    flavour: str,
+    benchmark: str,
+    lumi_fb: float,
+    csv_path: Path,
+    geom_path: Path,
+) -> Optional[dict]:
+    
+    # Build mesh locally
+    try:
+        mesh = build_drainage_gallery_mesh()
+    except Exception as e:
+        print(f"[Worker Error] Mesh build failed: {e}")
+        return None
+        
+    origin = (0.0, 0.0, 0.0)
+
+    # Load or Create Geometry DataFrame
+    if geom_path.exists():
         try:
-            U2_limit = brentq(objective, U2_min, U2_max, xtol=1e-14)
+            geom_df = pd.read_csv(geom_path)
+            if "entry_distance" not in geom_df.columns:
+                print(f"[WARN] Cache corrupt for {mass_str}, rebuilding...")
+                raise ValueError("Corrupt geometry cache")
+        except Exception:
+            geom_df = preprocess_hnl_csv(str(csv_path), mesh, origin=origin)
+            geom_df.to_csv(geom_path, index=False)
+    else:
+        if not csv_path.exists():
+            return None
+        geom_df = preprocess_hnl_csv(str(csv_path), mesh, origin=origin)
+        geom_df.to_csv(geom_path, index=False)
 
-            # Compute info at limit
-            ctau0 = self.model.ctau0_m_for_U2_eq_1(mass_GeV, flavour)
-            ctau_at_limit = ctau0 / U2_limit
+    # --- Data Cleaning ---
+    # Check all critical columns for NaN/inf to prevent propagation into physics calculations
+    cols_to_check = ["parent_id", "weight", "beta_gamma", "entry_distance", "path_length"]
+    mask_valid = np.ones(len(geom_df), dtype=bool)
 
-            info = {
-                'N_sig_at_limit': self.n_limit,
-                'ctau_at_limit': ctau_at_limit,
-                'U2_limit': U2_limit
-            }
+    for col in cols_to_check:
+        if col in geom_df.columns:
+            mask_valid &= geom_df[col].notna().to_numpy() & np.isfinite(geom_df[col].to_numpy())
+        else:
+            print(f"[WARN] m={mass_str} {flavour}: Missing required column '{col}'.")
+            return None
 
-            print(f"  ✓ Found limit: |U|² = {U2_limit:.3e}")
-            print(f"    cτ = {ctau_at_limit:.3e} m")
+    n_total = len(geom_df)
+    n_valid = mask_valid.sum()
 
-            return U2_limit, info
+    if n_valid < n_total:
+        n_dropped = n_total - n_valid
+        print(f"[INFO] m={mass_str} {flavour}: Dropping {n_dropped} rows with NaNs in geometry/weights.")
+        geom_df = geom_df[mask_valid].copy()
 
-        except ValueError as e:
-            print(f"  ERROR: Root finding failed: {e}")
-            return np.nan, {'error': str(e)}
+    if len(geom_df) == 0:
+        print(f"[WARN] m={mass_str} {flavour}: No valid events left after cleaning.")
+        return None
+    # ---------------------
 
-    def scan_mass_grid(self,
-                      mass_grid: np.ndarray,
-                      flavour: str,
-                      efficiency_map_dir: Path) -> pd.DataFrame:
-        """
-        Scan full mass grid to produce |U|² limit curve.
+    # Run Physics Scan
+    eps2_grid, Nsig, eps2_min, eps2_max = scan_eps2_for_mass(
+        geom_df=geom_df,
+        mass_GeV=float(mass_val),
+        benchmark=benchmark,
+        lumi_fb=lumi_fb,
+        N_limit=3.0,
+    )
 
-        Parameters:
-        -----------
-        mass_grid : np.ndarray
-            Array of HNL masses in GeV
-        flavour : str
-            Lepton flavour
-        efficiency_map_dir : Path
-            Directory containing efficiency map pickles
+    peak_evts = Nsig.max()
+    log_msg = f"m={mass_str:<4} {flavour:<4}: Peak Events={peak_evts:.2e}"
+    if eps2_min is not None:
+        log_msg += f" | Limit: [{eps2_min:.1e}, {eps2_max:.1e}]"
+    else:
+        log_msg += " | No Sensitivity"
+        
+    print(log_msg)
 
-        Returns:
-        --------
-        pd.DataFrame
-            Columns: mass_GeV, flavour, U2_limit, ctau_at_limit, N_sig_at_limit
-        """
-        results = []
-
-        for mass in mass_grid:
-            print(f"\n{'='*70}")
-            print(f"Mass point: {mass} GeV ({flavour})")
-            print(f"{'='*70}")
-
-            # Find efficiency map file
-            # Expected: HNL_mass_1.0_muon_Meson_efficiency_map.pkl
-            pkl_files = list(efficiency_map_dir.glob(f"HNL_mass_{mass}_"
-                                                     f"{flavour}_*_efficiency_map.pkl"))
-
-            if not pkl_files:
-                print(f"WARNING: No efficiency map found for {mass} GeV {flavour}")
-                results.append({
-                    'mass_GeV': mass,
-                    'flavour': flavour,
-                    'U2_limit': np.nan,
-                    'ctau_at_limit': np.nan,
-                    'N_sig_at_limit': np.nan
-                })
-                continue
-
-            # Load efficiency map
-            efficiency_pkl = pkl_files[0]
-            print(f"Loading efficiency map: {efficiency_pkl.name}")
-
-            from per_parent_efficiency import PerParentEfficiency
-            calc = PerParentEfficiency()
-            efficiency_map = calc.load_efficiency_map(efficiency_pkl)
-
-            # Find limit
-            U2_limit, info = self.find_U2_limit(mass, flavour, efficiency_map)
-
-            # Store result
-            results.append({
-                'mass_GeV': mass,
-                'flavour': flavour,
-                'U2_limit': U2_limit,
-                'ctau_at_limit': info.get('ctau_at_limit', np.nan),
-                'N_sig_at_limit': info.get('N_sig_at_limit', np.nan)
-            })
-
-        return pd.DataFrame(results)
+    return dict(
+        mass_GeV=float(mass_val),
+        flavour=flavour,
+        benchmark=benchmark,
+        eps2_min=eps2_min,
+        eps2_max=eps2_max,
+        peak_events=peak_evts
+    )
 
 
-def main():
-    """Example usage: compute limits for a mass grid."""
-    import argparse
+# ----------------------------------------------------------------------
+# 5. High-level driver
+# ----------------------------------------------------------------------
 
-    parser = argparse.ArgumentParser(description="Compute |U|² limits")
-    parser.add_argument('--flavour', type=str, default='muon',
-                       choices=['electron', 'muon', 'tau'],
-                       help='Lepton flavour')
-    parser.add_argument('--lumi', type=float, default=3000.0,
-                       help='Luminosity in fb⁻¹')
-    parser.add_argument('--efficiency-dir', type=Path, required=True,
-                       help='Directory with efficiency maps')
-    parser.add_argument('--output', type=Path, default='U2_limits.csv',
-                       help='Output CSV file')
+def run_reach_scan(
+    flavour: str,
+    benchmark: str,
+    lumi_fb: float,
+    csv_dir: Path = SIM_DIR,
+    geom_cache_dir: Path = GEOM_CACHE_DIR,
+    results_out: Path = None,
+    n_jobs: int = 4,
+) -> pd.DataFrame:
+    
+    if results_out is None:
+        results_out = ANALYSIS_OUT_DIR / "HNL_U2_limits_summary.csv"
 
-    args = parser.parse_args()
+    geom_cache_dir.mkdir(parents=True, exist_ok=True)
+    ANALYSIS_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Mass grid (example - adjust based on available data)
-    mass_grid = np.array([0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0,
-                         10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0])
+    # 1. Auto-detect files and capture exact mass string
+    pattern = re.compile(f"HNL_mass_([0-9\.]+)_{flavour}_Meson\.csv")
+    
+    available_files = []
+    for f in csv_dir.glob(f"*{flavour}*.csv"):
+        match = pattern.search(f.name)
+        if match:
+            mass_str = match.group(1)   # EXACT string from filename
+            mass_val = float(mass_str)  # Float for sorting
+            available_files.append((mass_val, mass_str, f))
+    
+    # Sort by mass value
+    available_files.sort(key=lambda x: x[0])
+    
+    if not available_files:
+        print(f"[WARN] No Simulation CSVs found for flavour {flavour} in {csv_dir}")
+        return pd.DataFrame()
 
-    # Initialize calculator
-    calc = U2LimitCalculator(lumi_fb=args.lumi)
+    print(f"--- Starting Scan: {flavour} (Benchmark {benchmark}) ---")
+    print(f"Found {len(available_files)} mass points.")
 
-    # Scan mass grid
-    results = calc.scan_mass_grid(mass_grid, args.flavour, args.efficiency_dir)
+    tasks = []
+    for mass_val, mass_str, csv_path in available_files:
+        # Use mass_str for filename to guarantee match
+        geom_path = geom_cache_dir / f"HNL_mass_{mass_str}_{flavour}_geom.csv"
+        tasks.append((mass_val, mass_str, flavour, benchmark, lumi_fb, csv_path, geom_path))
 
-    # Save results
-    results.to_csv(args.output, index=False)
-    print(f"\n{'='*70}")
-    print(f"Results saved to {args.output}")
-    print(f"{'='*70}")
+    results = []
+    
+    # 2. Execute
+    with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+        future_to_mass = {
+            executor.submit(_scan_single_mass, *t): t[0] for t in tasks
+        }
+        for fut in as_completed(future_to_mass):
+            try:
+                res = fut.result()
+                if res:
+                    results.append(res)
+            except Exception as e:
+                print(f"Worker Exception: {e}")
 
-    # Print summary
-    print("\nSummary:")
-    print(results.to_string(index=False))
+    df_res = pd.DataFrame(results).sort_values("mass_GeV")
 
+    # 3. Merge (Overwrite old results for this benchmark)
+    if results_out.exists():
+        existing_df = pd.read_csv(results_out)
+        mask_keep = ~(
+            (existing_df["flavour"] == flavour) & 
+            (existing_df["benchmark"] == benchmark)
+        )
+        existing_df = existing_df[mask_keep]
+        final_df = pd.concat([existing_df, df_res], ignore_index=True)
+    else:
+        final_df = df_res
+
+    final_df.to_csv(results_out, index=False)
+    print(f"Saved {len(df_res)} points to {results_out}\n")
+    return df_res
+
+
+# ----------------------------------------------------------------------
+# 6. Main execution
+# ----------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main()
+    L_HL_LHC_FB = 3000.0
+    N_CORES = 4 
+
+    # 1. Electrons (Ve)
+    run_reach_scan("electron", "100", L_HL_LHC_FB, n_jobs=N_CORES)
+
+    # 2. Muons (Vmu)
+    run_reach_scan("muon", "010", L_HL_LHC_FB, n_jobs=N_CORES)
+
+    # 3. Taus (Vtau)
+    run_reach_scan("tau", "001", L_HL_LHC_FB, n_jobs=N_CORES)
