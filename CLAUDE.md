@@ -116,215 +116,183 @@ Run mass scans:
 ./main_hnl_single 1.0 muon
 ```
 
-### Running Analysis
+Complete Analysis Pipeline: File-by-File Flow
 
-Navigate to the `analysis/` directory:
-```bash
-cd analysis
-```
+  Base directory: /Users/fredi/cernbox/Physics/llpatcolliders/llpatcolliders
 
-Process simulation data:
-```bash
-# Decay probability analysis
-python decayProbPerEvent.py ../output/csv/simulation/HNL_mass_1.0_electron.csv \
-       --meta ../output/csv/simulation/HNL_mass_1.0_electron.meta
+  ---
+  Stage 1: Pythia Event Generation (C++)
 
-# Coupling limit analysis
-python hnl_coupling_limit.py
+  File: production/main_hnl_single.cc
+  - Input: None (generates events)
+  - Configuration:
+    - production/hnl_Meson_Inclusive_Template.cmnd (for m < 5 GeV)
+    - production/hnl_HighMass_Inclusive_Template.cmnd (for m ≥ 5 GeV)
+  - Output: output/csv/simulation/HNL_mass_{mass}_{flavour}_{regime}.csv
+    - Example: output/csv/simulation/HNL_mass_2.6_muon_Meson.csv
+    - Columns: event,weight,id,parent_id,pt,eta,phi,momentum,energy,mass,pro
+  d_x_m,prod_y_m,prod_z_m
 
-# Generate plots
-python plot_money_island.py
-python plot_money.py
-```
+  Compilation script: production/make.sh
 
-## Simulation Strategy
+  Scan scripts:
+  - production/scan_electron.sh
+  - production/scan_muon.sh
+  - production/scan_tau.sh
 
-### Two-Stage Approach
+  ---
+  Stage 2: Geometry Preprocessing (Python)
 
-The simulation uses a clean separation between production and decay:
+  File: analysis_pbc_test/geometry/per_parent_efficiency.py
 
-**Stage 1: Production in Pythia (C++)**
-1. Generation of b-bbar pairs (low mass) or W/Z bosons (high mass)
-2. Hadronization and B-meson production
-3. Forced production decays: B → D ℓ N or W/Z → ℓ N
-4. **HNL is stable in Pythia** (`mayDecay = off`)
-5. Records HNL kinematics (pT, η, φ, production vertex)
+  Function: preprocess_hnl_csv(csv_file, mesh, origin)
 
-**Stage 2: Decay and Acceptance in Python**
-1. Python layer (`decayProbPerEvent.py`) handles all decay calculations
-2. Uses proper HNL lifetime scaling with momentum/mass
-3. Ray-tracing through detector geometry
-4. Calculates decay probabilities within detector volume
-5. Generates BR vs cτ exclusion limits
+  Input: output/csv/simulation/HNL_mass_{mass}_{flavour}_{regime}.csv
 
-**Why this approach?**
-- Pythia production cross-sections are accurate and mass-dependent
-- Python provides flexible lifetime scanning without re-running Pythia
-- Clean separation: production physics (Pythia) vs detector effects (Python)
-- Matches methodology of ANUBIS, MATHUSLA, CODEX-b proposals
+  Output: output/csv/geometry/HNL_mass_{mass}_{flavour}_geom.csv
+  - Example: output/csv/geometry/HNL_mass_2.6_muon_geom.csv
+  - Added columns:
+    - hits_tube (bool)
+    - entry_distance (m)
+    - path_length (m)
+    - beta_gamma (dimensionless)
 
-### Cross-Section Methodology
+  Helper function: build_drainage_gallery_mesh() - Creates detector mesh at
+  z=22m
 
-**IMPORTANT:** The simulation uses **forced decays** (BR=1.0) to decouple event kinematics from coupling strength.
+  ---
+  Stage 3: HNL Physics Model (Python)
 
-**What the simulation provides:**
-- CSV files contain **event kinematics** (pT, η, φ, production vertex)
-- CSV files contain **parent_id** to track which meson/boson produced the HNL
-- These are generated with forced BR(parent→HNL) = 1.0 (artificial, for sampling efficiency)
+  File: analysis_pbc_test/models/hnl_model_hnlcalc.py
 
-**What the analysis must calculate:**
-The physical HNL production cross-section requires:
+  Class: HNLModel(mass_GeV, Ue2, Umu2, Utau2)
 
-```
-σ_HNL(m, |U|²) = σ_parent × BR_real(parent → ℓN, |U|²)
+  Dependencies:
+  - analysis_pbc_test/HNLCalc/HNLCalc.py (external repository)
 
-where:
-- σ_parent: Parent production cross-section from literature or HNLCalc
-  - σ(pp → K): ~10⁷ pb (QCD)
-  - σ(pp → D): ~10⁶ pb (charm production)
-  - σ(pp → B): ~10⁵ pb (bottom production)
-  - σ(pp → W): ~10⁴ pb (EW)
-  - σ(pp → Z): ~10³ pb (EW)
+  Methods:
+  - .ctau0_m - Returns proper lifetime in meters
+  - .production_brs() - Returns dict {parent_pdg: BR(parent→ℓN)}
 
-- BR_real(parent → ℓN, |U|²): Real branching ratio from HNLCalc
-  - BR_real ∝ |U|² (for small mixing)
-  - Typical values: 10⁻⁶ to 10⁻¹⁰ for mesons, |U|² for W/Z
-```
+  No direct input/output - Called by limit calculator
 
-**Analysis workflow:**
-1. Use CSV kinematics to calculate **ε_geom(parent, cτ)** via ray-tracing
-2. Use HNLCalc to get **σ_parent** and **BR(parent→ℓN, |U|²)**
-3. Calculate signal: **N_sig = L × Σ_parents [σ_parent × BR × ε_geom]**
-4. Solve for |U|² limit: **N_sig(|U|²) = N_limit** (typically 3 events at 90% CL)
+  ---
+  Stage 4: Cross-Section Database (Python)
 
-**Why forced decays?**
-- Generates clean kinematic samples without wasting CPU on rare events
-- Identical methodology to ANUBIS, MATHUSLA, CODEX-b, PBC proposals
-- Separates "production physics" (HNLCalc) from "detector effects" (geometry)
+  File: analysis_pbc_test/config/production_xsecs.py
 
-## Technical Implementation
+  Function: get_parent_sigma_pb(parent_pdg)
 
-### Parallel Execution
+  Input: PDG code (int)
 
-The simulation supports parallel execution with up to 10 concurrent processes (configurable in `make.sh`):
-- **Unique Temporary Files**: Each mass point generates unique config files in `tmp/` directory
-- **Independent Processes**: No shared file I/O between mass points
-- **RAII Cleanup**: Temporary files deleted automatically, even on crashes
+  Output: Production cross-section in pb (float)
 
-### HNL Particle Selection
+  Examples:
+  - σ(pp→D⁰) = 2.8 × 10¹⁰ pb
+  - σ(pp→B⁰) = 4.0 × 10⁸ pb
+  - σ(pp→K⁺) = 5.0 × 10¹⁰ pb
 
-The HNL is configured as a **stable particle** in Pythia (`9900015:mayDecay = off`):
-- Clean separation: production (Pythia) vs decay/acceptance (Python)
-- Flexible lifetime scanning without re-running Pythia
-- Simple particle selection: just `isFinal()` check
-- Python handles all decay calculations
+  No file I/O - Hardcoded values from PBC literature
 
-### Output Data
+  ---
+  Stage 5: Limit Calculation (Python)
 
-- **102 CSV files**: Complete simulation results across all mass points and lepton flavors
-  - 38 electron + 38 muon + 26 tau = 102 total
-- **102 log files**: Detailed execution logs (one per CSV)
-- Each CSV contains: event weights, particle IDs, kinematics (pT, η, φ), production vertices, parent_id
-- Total data size: ~2 GB raw simulation output (~20 MB per mass point)
+  File: analysis_pbc_test/limits/u2_limit_calculator.py
 
-**CSV Format:**
-```
-event,weight,id,parent_id,pt,eta,phi,momentum,energy,mass,prod_x_m,prod_y_m,prod_z_m
-0,1.0,9900015,321,2.34,1.56,0.78,5.67,6.12,1.0,0.0,0.0,0.0
-```
-- `parent_id`: PDG code of parent meson/boson (321=K+, 411=D+, 521=B+, 24=W, 23=Z, etc.)
-- Kinematics: Used for boost calculations and geometric acceptance
-- Production vertex: Used for ray-tracing through detector geometry
+  Main function: run_reach_scan(flavour, benchmark, lumi_fb, n_jobs=4)
 
-## Analysis Approach
+  Input files (per mass point):
+  - output/csv/simulation/HNL_mass_{mass}_{flavour}_{regime}.csv
+  - output/csv/geometry/HNL_mass_{mass}_{flavour}_geom.csv (created if not
+  cached)
 
-The analysis strategy focuses on:
-- Design optimization of the detector geometry
-- Lepton flavor-dependent sensitivity comparisons
-- Background characterization and mitigation
-- Signal efficiency calculations across all three lepton flavors
-- Sensitivity reach for various LLP benchmarks
-- Comparison with existing LLP detector proposals
+  Uses:
+  - models/hnl_model_hnlcalc.py (HNLModel class)
+  - config/production_xsecs.py (cross-sections)
+  - geometry/per_parent_efficiency.py (geometry preprocessing)
 
-## PBC-Grade Analysis Pipeline
+  Output: output/csv/analysis/HNL_U2_limits_summary.csv
+  - Columns:
+    - mass_GeV - HNL mass
+    - flavour - electron/muon/tau
+    - benchmark - 100/010/001 (coupling pattern)
+    - eps2_min - Lower |U|² exclusion boundary
+    - eps2_max - Upper |U|² exclusion boundary
+    - peak_events - Maximum signal events
 
-### HNLCalc Integration
+  Execution:
+  cd analysis_pbc_test
+  python limits/u2_limit_calculator.py
 
-**Location:** `analysis_pbc_test/` directory contains the PBC-style analysis pipeline
+  ---
+  Stage 6: Plotting (Python)
 
-**HNLCalc Repository:** https://github.com/laroccod/HNLCalc
-- Comprehensive HNL calculator with 150+ production modes and 100+ decay modes
-- Covers HNL masses from 0.2 GeV to 10 GeV
-- Arbitrary mixing patterns (ve, vmu, vtau)
-- Based on arXiv:2405.07330 (Feng, Hewitt, Kling, La Rocco)
+  File: analysis/plot_money_island.py
 
-**Installation:**
-```bash
-cd analysis_pbc_test
-git clone https://github.com/laroccod/HNLCalc.git
-conda run -n llpatcolliders pip install sympy mpmath particle numba
-conda run -n llpatcolliders pip install 'scikit-hep==0.4.0'  # Old version with skhep.math
-```
+  Input: output/csv/analysis/HNL_U2_limits_summary.csv
 
-**Key HNLCalc Methods:**
-- `gen_ctau(mass)` - Proper lifetime at |U|² = 1
-- `parent_br(pdg, mass)` - Production branching ratio for parent → ℓN
-- `gen_widths(mass)` - Total HNL width
-- `Gamma_*()` - Individual decay channel widths
+  Output: output/images/HNL_moneyplot_island.png
+  - 3-panel plot (electron, muon, tau)
+  - Shows exclusion islands (shaded regions)
+  - Upper/lower boundaries for each flavor
 
-### PBC Analysis Structure
+  Execution:
+  cd analysis
+  python plot_money_island.py
 
-```
-analysis_pbc_test/
-├── HNLCalc/                          # HNLCalc repository (cloned)
-│   └── HNLCalc.py                   # Main module (~3000 lines)
-├── models/
-│   └── hnl_model_hnlcalc.py         # Wrapper around HNLCalc
-├── geometry/
-│   └── per_parent_efficiency.py     # ε_geom(parent, cτ) calculator
-├── limits/
-│   └── u2_limit_calculator.py       # Direct |U|² limit solver
-└── test_hnlcalc.py                  # Installation verification script
-```
+  ---
+  Complete File Dependency Tree
 
-### PBC Methodology
+  production/main_hnl_single.cc
+  ├── [reads] production/hnl_Meson_Inclusive_Template.cmnd
+  ├── [reads] production/hnl_HighMass_Inclusive_Template.cmnd
+  └── [writes] output/csv/simulation/HNL_mass_*.csv
+              ↓
+  analysis_pbc_test/geometry/per_parent_efficiency.py
+  ├── [reads] output/csv/simulation/HNL_mass_*.csv
+  └── [writes] output/csv/geometry/HNL_mass_*_geom.csv
+              ↓
+  analysis_pbc_test/limits/u2_limit_calculator.py
+  ├── [reads] output/csv/simulation/HNL_mass_*.csv
+  ├── [reads] output/csv/geometry/HNL_mass_*_geom.csv
+  ├── [uses] analysis_pbc_test/models/hnl_model_hnlcalc.py
+  │          └── [uses] analysis_pbc_test/HNLCalc/HNLCalc.py
+  ├── [uses] analysis_pbc_test/config/production_xsecs.py
+  └── [writes] output/csv/analysis/HNL_U2_limits_summary.csv
+              ↓
+  analysis/plot_money_island.py
+  ├── [reads] output/csv/analysis/HNL_U2_limits_summary.csv
+  └── [writes] output/images/HNL_moneyplot_island.png
 
-**Per-Parent Efficiency Maps:**
-- Separate ε_geom(K), ε_geom(D), ε_geom(B), ε_geom(W), ε_geom(Z)
-- Accounts for different boost distributions per parent species
-- Uses ray-tracing through detector geometry
-- Scans 100 log-spaced cτ points from 1 mm to 1 km
+  ---
+  Key Intermediate Files (Example: 2.6 GeV Muon)
 
-**Direct |U|² Limit Calculation:**
-```
-N_sig(m, flavour, |U|²) = L × Σ_parents [σ_p × BR(p→ℓN, |U|²) × ε_geom(p, cτ(|U|²))]
+  1. Simulation: output/csv/simulation/HNL_mass_2.6_muon_Meson.csv
+    - 8310 rows (HNLs)
+    - 13 columns
+  2. Geometry: output/csv/geometry/HNL_mass_2.6_muon_geom.csv
+    - 8310 rows (same)
+    - 17 columns (+4 geometry columns)
+  3. Summary: output/csv/analysis/HNL_U2_limits_summary.csv
+    - 37 rows (all mass points × flavors)
+    - 6 columns (mass, flavour, benchmark, limits, peak)
+  4. Final plot: output/images/HNL_moneyplot_island.png
+    - 2700×750 px PNG image
 
-Solve: N_sig(m, flavour, |U|²) = N_limit  (typically 3 events for 90% CL)
-```
+  ---
+  Supporting Documentation Files
 
-**Key Features:**
-- No BR_limit intermediate step (direct |U|² calculation)
-- Uses real HNLCalc physics (widths, BRs, production rates)
-- Per-parent tracking via `parent_id` column in CSV
-- Proper lifetime scaling: cτ(|U|²) = cτ₀/|U|²
+  - CLAUDE.md - Main project documentation
+  - analysis_pbc_test/README.md - PBC pipeline guide
+  - analysis_pbc_test/VALIDATION.md - Validation report
+  - analysis_pbc_test/limits/MULTI_HNL_METHODOLOGY.md - Per-parent counting
+  explanation
+  - analysis_pbc_test/limits/ROBUSTNESS_FIXES.md - Defensive programming
+  guide
 
-### Benchmark Curves
+  ---
+  Test Files
 
-**BC6:** Electron coupling (ve=1, vmu=0, vtau=0)
-**BC7:** Muon coupling (ve=0, vmu=1, vtau=0)
-**BC8:** Tau coupling (ve=0, vmu=0, vtau=1)
+  - analysis_pbc_test/tests/test_pipeline.py - Pipeline smoke tests
+  - analysis_pbc_test/tests/test_26gev_muon.py - Benchmark validation
 
-Comparing drainage gallery sensitivity to PBC proposals (ANUBIS, MATHUSLA, CODEX-b, AL3X, etc.)
-
-## Current Status
-
-**Production:** Dense mass grid simulation in progress (102 mass points)
-- 38 electron + 38 muon + 26 tau = 102 total
-- Using unified K+D+B meson production (< 5 GeV) and W/Z EW production (≥ 5 GeV)
-- Generating ~200k events per mass point
-
-**Analysis:** PBC pipeline framework complete
-- HNLCalc successfully installed and tested
-- Per-parent efficiency calculator ready
-- Direct |U|² limit solver implemented
-- Awaiting simulation completion for full analysis run

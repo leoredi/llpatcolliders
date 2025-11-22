@@ -12,14 +12,14 @@ for idx, flavour in enumerate(["electron", "muon", "tau"]):
     ax = axes[idx]
     sel = (df["flavour"] == flavour)
     df_sel = df[sel].sort_values("mass_GeV")
-    
-    # Remove NaN values
-    df_valid = df_sel[df_sel["U2_min"].notna() & df_sel["U2_max"].notna()]
+
+    # Remove NaN values (use eps2_min/eps2_max from PBC analysis)
+    df_valid = df_sel[df_sel["eps2_min"].notna() & df_sel["eps2_max"].notna()]
     
     if len(df_valid) > 0:
         mass = df_valid["mass_GeV"].values
-        u2_min = df_valid["U2_min"].values
-        u2_max = df_valid["U2_max"].values
+        u2_min = df_valid["eps2_min"].values
+        u2_max = df_valid["eps2_max"].values
         
         # Plot the excluded island/band
         ax.fill_between(mass, u2_min, u2_max, alpha=0.3, color='red', label='Excluded')

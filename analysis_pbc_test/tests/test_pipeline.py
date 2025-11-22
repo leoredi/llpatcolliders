@@ -71,7 +71,8 @@ import pandas as pd
 # ----------------------------------------------------------------------
 
 THIS_FILE = Path(__file__).resolve()
-ANALYSIS_DIR = THIS_FILE.parent                      # .../analysis_pbc_test
+TESTS_DIR = THIS_FILE.parent                         # .../analysis_pbc_test/tests
+ANALYSIS_DIR = TESTS_DIR.parent                      # .../analysis_pbc_test
 REPO_ROOT = ANALYSIS_DIR.parent                      # .../llpatcolliders
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
 SIM_DIR = OUTPUT_DIR / "simulation"

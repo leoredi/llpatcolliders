@@ -329,6 +329,25 @@ def _scan_single_mass(
     if len(geom_df) == 0:
         print(f"[WARN] m={mass_str} {flavour}: No valid events left after cleaning.")
         return None
+
+    # --- Weight Sanity Check ---
+    # Weights should be RELATIVE MC weights (typically 0.1-10), not absolute cross-sections.
+    # If weights are suspiciously large (>> 1000), they might be absolute σ values,
+    # which would cause double-counting since we normalize to get_parent_sigma_pb().
+    if "weight" in geom_df.columns:
+        w_mean = geom_df["weight"].mean()
+        w_max = geom_df["weight"].max()
+
+        if w_max > 1e6:
+            print(f"[ERROR] m={mass_str} {flavour}: Weights suspiciously large (max={w_max:.2e})!")
+            print(f"        This looks like absolute cross-section (pb), not relative MC weight.")
+            print(f"        Will cause DOUBLE-COUNTING of cross-section. Check CSV generation!")
+            print(f"        Expected: weight = pythia.info.weight() (relative, ~1.0)")
+            print(f"        NOT: weight = pythia.info.sigmaGen() (absolute σ in pb)")
+            return None
+        elif w_max > 1000:
+            print(f"[WARN] m={mass_str} {flavour}: Weights unusually large (max={w_max:.2e}, mean={w_mean:.2e})")
+            print(f"       Verify these are relative MC weights, not absolute cross-sections.")
     # ---------------------
 
     # Run Physics Scan

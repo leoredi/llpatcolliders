@@ -248,6 +248,31 @@ def preprocess_hnl_csv(
     mesons (e.g., event 44 might have D0→N, B0→N, Ds→N). We compute
     geometry for EACH HNL individually (one row per HNL), not per event.
     This enables per-parent counting in the analysis layer.
+
+    IMPORTANT - Weight Column Semantics
+    ------------------------------------
+    The 'weight' column is interpreted as a RELATIVE MC event weight
+    (e.g., for phase-space reweighting), NOT an absolute cross-section.
+
+    Absolute cross-sections come from production_xsecs.get_parent_sigma_pb().
+
+    The analysis computes efficiency as:
+        ε_parent = Σ(weight * P_decay) / Σ(weight)
+
+    Then multiplies by external cross-section:
+        N_sig = L × σ_parent × BR × ε_parent
+
+    If 'weight' contains absolute cross-sections (e.g., σ_gen from Pythia),
+    this will DOUBLE-COUNT the cross-section. Keep weights as relative!
+
+    Typical valid weight values:
+        - All 1.0 (unweighted MC)
+        - 0.1 - 10.0 (phase-space reweighting factors)
+        - pythia.info.weight() for weighted generation
+
+    Invalid weight values:
+        - pythia.info.sigmaGen() (absolute cross-section in pb)
+        - Any value >> 1000 (likely an absolute cross-section mistake)
     """
     df = pd.read_csv(csv_file)
 
