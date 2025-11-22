@@ -223,6 +223,11 @@ int main(int argc, char* argv[]) {
   int nLLPFound = 0;
   for (int iEvent = 0; iEvent < nEvents; ++iEvent) {
     if (!pythia.next()) continue;
+
+    // IMPORTANT: Use RELATIVE event weight, not absolute cross-section!
+    // pythia.info.weight() returns a relative MC weight (phase-space reweighting)
+    // Analysis normalizes to external σ from production_xsecs.get_parent_sigma_pb()
+    // DO NOT use pythia.info.sigmaGen() here - that would double-count cross-section!
     double weight = pythia.info.weight();
 
     for (int iPrt = 0; iPrt < pythia.event.size(); ++iPrt) {
