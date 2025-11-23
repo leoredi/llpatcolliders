@@ -67,6 +67,14 @@ FRAG_B_LAMBDA = 0.10  # Λb0 / Λb0bar
 SIGMA_KAON_PB = 5.0 * 1e10  # ~50 mb (very approximate, soft QCD)
 
 # ==========================================
+# ELECTROWEAK PRODUCTION (W/Z BOSONS)
+# ==========================================
+# W and Z boson production at 14 TeV LHC
+# Reference: ATLAS/CMS measurements + NLO calculations
+SIGMA_W_PB = 2.0 * 1e8  # σ(pp→W) ~ 200 nb (W+ + W- combined)
+SIGMA_Z_PB = 6.0 * 1e7  # σ(pp→Z) ~ 60 nb
+
+# ==========================================
 # PARENT PRODUCTION LOOKUP
 # Returns: Production Cross Section in pb
 # ==========================================
@@ -139,6 +147,12 @@ def get_parent_sigma_pb(parent_pdg: int) -> float:
     if pid == 15:
         return (SIGMA_CCBAR_PB * FRAG_C_DS * 2) * 0.055
 
+    # --- ELECTROWEAK BOSONS ---
+    if pid == 24:  # W± bosons
+        return SIGMA_W_PB
+    if pid == 23:  # Z boson
+        return SIGMA_Z_PB
+
     # Default fallback (shouldn't happen if inputs are clean)
     print(f"[WARNING] Unknown parent PDG {pid} in cross-section lookup. Returning 0.")
     return 0.0
@@ -161,6 +175,8 @@ def get_sigma_summary():
         (4122, "Λc+"),
         (5122, "Λb0"),
         (15, "τ"),
+        (24, "W±"),
+        (23, "Z"),
     ]
 
     print("=" * 70)

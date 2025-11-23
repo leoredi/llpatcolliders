@@ -3,7 +3,7 @@
 ! Includes: K, D, Ds, Λc, B+, B0, Bs, Λb
 ! HNL produced via forced meson decays (BR=1, real BR from HNLCalc)
 ! Mass range: m_N ≲ 5 GeV (but card itself has no explicit mass cut)
-! ---------------------------------------------------------------
+! -------------------------------------------------------------------
 
 ! 0) Beams & tune
 Beams:idA = 2212
@@ -19,7 +19,7 @@ Tune:ee = 7
 ! Soft inelastic for light hadrons (kaons, pions, etc.)
 SoftQCD:nonDiffractive = on
 
-! Explicit heavy flavour for good D/B stats
+! Explicit heavy flavour for good D/B stats (used for kinematic shapes)
 HardQCD:hardccbar = on
 HardQCD:hardbbbar = on
 
@@ -28,9 +28,6 @@ PhaseSpace:pTHatMin = 0.0
 
 ! Turn off electroweak bosons here; they live in the high-mass card
 WeakSingleBoson:all = off
-! (Optional) if you want *only* heavy flavour + ND:
-! HardQCD:all = off
-! and then keep only hardccbar/hardbbbar above
 
 ! 2) HNL definition (stable in Pythia)
 ! ------------------------------------
@@ -43,72 +40,98 @@ WeakSingleBoson:all = off
 ! 3) FORCED MESON DECAYS → ℓ N
 ! -----------------------------
 ! LEPTON_ID / NEUTRINO_ID are placeholders replaced in C++
-!   LEPTON_ID   = 11 (e), 13 (mu), 15 (tau)
-!   NEUTRINO_ID = 12, 14, 16 correspondingly
+!   LEPTON_ID   = 11 (e-), 13 (μ-), 15 (τ-)
+!   -LEPTON_ID  = e+, μ+, τ+
 !
 ! All BRs = 1.0 here; real BR(M→ℓN+X) comes from HNLCalc in analysis.
 
-! --- K ±, K0_S, K0_L (dominant below ~0.5 GeV) ---
-! Two-body K → ℓ N is physically allowed for light HNLs.
+! -------------------------------------------------------------------
+! Kaons
+! -------------------------------------------------------------------
+! --- K ± ---
+! Charge-conserving stand-in:
+!   K+ (Q=+1) → ℓ+ N
+!   K- (Q=-1) → ℓ- N
+321:onMode       = off
+321:addChannel   = 1 1.0 100 -LEPTON_ID 9900015      ! K+  → ℓ+ N
+-321:onMode      = off
+-321:addChannel  = 1 1.0 100  LEPTON_ID  9900015     ! K-  → ℓ- N
 
-321:onMode  = off
-321:addChannel  = 1 1.0 100 LEPTON_ID 9900015      ! K+  → ℓ+ N
--321:onMode = off
--321:addChannel = 1 1.0 100 -LEPTON_ID 9900015     ! K-  → ℓ- N
+! --- K0_L, K0_S ---
+! These are *toy* 2-body channels (charge not conserved).
+! Used only as kinematic stubs for HNL production.
+130:onMode       = off
+130:addChannel   = 1 1.0 100 LEPTON_ID 9900015       ! K0_L → ℓ- N (stub)
+310:onMode       = off
+310:addChannel   = 1 1.0 100 LEPTON_ID 9900015       ! K0_S → ℓ- N (stub)
 
-130:onMode  = off
-130:addChannel  = 1 1.0 100 LEPTON_ID 9900015      ! K0_L → ℓ+ N (stub)
-310:onMode  = off
-310:addChannel  = 1 1.0 100 LEPTON_ID 9900015      ! K0_S → ℓ+ N (stub)
-
-! --- Charm mesons & baryons (D family) ---
+! -------------------------------------------------------------------
+! Charm mesons & baryons (D family)
 ! D0, D+, Ds, Λc, rough production fractions ~60 / 25 / 10 / 5 %
+! -------------------------------------------------------------------
 
-421:onMode  = off
-421:addChannel  = 1 1.0 100 LEPTON_ID 9900015      ! D0  → ℓ+ N
--421:onMode = off
--421:addChannel = 1 1.0 100 -LEPTON_ID 9900015     ! D0bar → ℓ- N
+! --- D0, D0bar ---
+! Neutral D: again toy 2-body channels, charge not conserved.
+421:onMode       = off
+421:addChannel   = 1 1.0 100 LEPTON_ID 9900015       ! D0    → ℓ- N (stub)
+-421:onMode      = off
+-421:addChannel  = 1 1.0 100 -LEPTON_ID 9900015      ! D0bar → ℓ+ N (stub)
 
-411:onMode  = off
-411:addChannel  = 1 1.0 100 LEPTON_ID 9900015      ! D+  → ℓ+ N
--411:onMode = off
--411:addChannel = 1 1.0 100 -LEPTON_ID 9900015     ! D-  → ℓ- N
+! --- D ± ---
+! Charge-conserving stand-in:
+!   D+ (Q=+1) → ℓ+ N
+!   D- (Q=-1) → ℓ- N
+411:onMode       = off
+411:addChannel   = 1 1.0 100 -LEPTON_ID 9900015      ! D+  → ℓ+ N
+-411:onMode      = off
+-411:addChannel  = 1 1.0 100  LEPTON_ID  9900015     ! D-  → ℓ- N
 
-431:onMode  = off
-431:addChannel  = 1 1.0 100 LEPTON_ID 9900015      ! Ds+ → ℓ+ N
--431:onMode = off
--431:addChannel = 1 1.0 100 -LEPTON_ID 9900015     ! Ds- → ℓ- N
+! --- Ds ± ---
+! Charge-conserving stand-in:
+!   Ds+ (Q=+1) → ℓ+ N
+!   Ds- (Q=-1) → ℓ- N
+431:onMode       = off
+431:addChannel   = 1 1.0 100 -LEPTON_ID 9900015      ! Ds+ → ℓ+ N
+-431:onMode      = off
+-431:addChannel  = 1 1.0 100  LEPTON_ID  9900015     ! Ds- → ℓ- N
 
-4122:onMode  = off
-4122:addChannel  = 1 1.0 100 LEPTON_ID 9900015     ! Λc+ → ℓ+ N
--4122:onMode = off
--4122:addChannel = 1 1.0 100 -LEPTON_ID 9900015    ! Λc- → ℓ- N
+! --- Λc ± ---
+! Charge-conserving stand-in:
+!   Λc+ (Q=+1) → ℓ+ N
+!   Λc- (Q=-1) → ℓ- N
+4122:onMode      = off
+4122:addChannel  = 1 1.0 100 -LEPTON_ID 9900015      ! Λc+ → ℓ+ N
+-4122:onMode     = off
+-4122:addChannel = 1 1.0 100  LEPTON_ID  9900015     ! Λc- → ℓ- N
 
-! --- Beauty mesons & baryons (B family) ---
-! "CKM-favoured" 3-body stand-ins: Hb → Hc ℓ N
+! -------------------------------------------------------------------
+! Beauty mesons & baryons (B family)
+! CKM-favoured 3-body stand-ins: Hb → Hc ℓ N
+! These were already charge-consistent; kept as-is.
+! -------------------------------------------------------------------
 
 ! B+ / B- (~40 % of beauty)
-521:onMode  = off
-521:addChannel  = 1 1.0 100 -421 -LEPTON_ID 9900015 ! B+  → D0 ℓ+ N
--521:onMode = off
--521:addChannel = 1 1.0 100 421 LEPTON_ID 9900015   ! B-  → D0bar ℓ- N
+521:onMode       = off
+521:addChannel   = 1 1.0 100 -421 -LEPTON_ID 9900015 ! B+  → D0bar ℓ+ N
+-521:onMode      = off
+-521:addChannel  = 1 1.0 100  421  LEPTON_ID  9900015 ! B-  → D0    ℓ- N
 
 ! B0 / B0bar (~40 %)
-511:onMode  = off
-511:addChannel  = 1 1.0 100 -411 -LEPTON_ID 9900015 ! B0  → D- ℓ+ N
--511:onMode = off
--511:addChannel = 1 1.0 100 411 LEPTON_ID 9900015   ! B0bar → D+ ℓ- N
+511:onMode       = off
+511:addChannel   = 1 1.0 100 -411 -LEPTON_ID 9900015 ! B0  → D-  ℓ+ N
+-511:onMode      = off
+-511:addChannel  = 1 1.0 100  411  LEPTON_ID  9900015 ! B0bar → D+ ℓ- N
 
 ! Bs / Bsbar (~10 %)
-531:onMode  = off
-531:addChannel  = 1 1.0 100 -431 -LEPTON_ID 9900015 ! Bs0 → Ds- ℓ+ N
--531:onMode = off
--531:addChannel = 1 1.0 100 431 LEPTON_ID 9900015   ! Bs0bar → Ds+ ℓ- N
+531:onMode       = off
+531:addChannel   = 1 1.0 100 -431 -LEPTON_ID 9900015 ! Bs0  → Ds- ℓ+ N
+-531:onMode      = off
+-531:addChannel  = 1 1.0 100  431  LEPTON_ID  9900015 ! Bs0bar → Ds+ ℓ- N
 
 ! Λb / Λbbar (~10 %)
-5122:onMode  = off
-5122:addChannel  = 1 1.0 100 4122 LEPTON_ID 9900015 ! Λb0  → Λc+ ℓ- N
--5122:onMode = off
+5122:onMode      = off
+5122:addChannel  = 1 1.0 100 4122 LEPTON_ID  9900015 ! Λb0  → Λc+ ℓ- N
+-5122:onMode     = off
 -5122:addChannel = 1 1.0 100 -4122 -LEPTON_ID 9900015 ! Λb0bar → Λc- ℓ+ N
 
 ! 4) Run settings
