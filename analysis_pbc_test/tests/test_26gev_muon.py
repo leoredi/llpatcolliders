@@ -37,8 +37,10 @@ def main():
     print("=" * 70)
 
     # Load or compute geometry
-    csv_path = SIM_DIR / f"HNL_mass_{MASS_GEV}_{FLAVOUR}_Meson.csv"
-    geom_cache = GEOM_DIR / f"HNL_mass_{MASS_GEV}_{FLAVOUR}_geom.csv"
+    # Note: Simulation files use "p" instead of "." in filenames (e.g., 2p6 not 2.6)
+    mass_str = str(MASS_GEV).replace(".", "p")
+    csv_path = SIM_DIR / f"HNL_mass_{mass_str}_{FLAVOUR}_Meson.csv"
+    geom_cache = GEOM_DIR / f"HNL_mass_{mass_str}_{FLAVOUR}_geom.csv"
 
     if not csv_path.exists():
         print(f"ERROR: Simulation file not found: {csv_path}")
