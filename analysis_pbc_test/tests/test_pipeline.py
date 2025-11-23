@@ -151,12 +151,12 @@ def test_geometry_preprocessing() -> pd.DataFrame:
     )
 
     # Choose one CSV that should exist (adapt flavour/mass if needed)
-    csv_path = SIM_DIR / "HNL_mass_1.0_muon_Meson.csv"
+    csv_path = SIM_DIR / "HNL_mass_1p0_muon_Meson.csv"
     if not csv_path.exists():
         raise FileNotFoundError(f"Expected test CSV not found: {csv_path}")
 
     GEOM_DIR.mkdir(parents=True, exist_ok=True)
-    geom_cache = GEOM_DIR / "HNL_mass_1.0_muon_geom.csv"
+    geom_cache = GEOM_DIR / "HNL_mass_1p0_muon_geom.csv"
 
     print(f"Input CSV:      {csv_path}")
     print(f"Geometry cache: {geom_cache}")
