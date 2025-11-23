@@ -1,4 +1,4 @@
-Running simulation with electron (PDG ID: 11)
+Running simulation with m_N = 3 GeV, lepton = electron (PDG 11)
 
  *------------------------------------------------------------------------------------* 
  |                                                                                    | 
@@ -9,7 +9,7 @@ Running simulation with electron (PDG ID: 11)
  |  |   P  P   Y Y     T    H   H   I    A A     This is PYTHIA version 8.315      |  | 
  |  |   PPP     Y      T    HHHHH   I   AAAAA    Last date of change: 27 May 2025  |  | 
  |  |   P       Y      T    H   H   I   A   A                                      |  | 
- |  |   P       Y      T    H   H  III  A   A    Now is 21 Nov 2025 at 18:23:20    |  | 
+ |  |   P       Y      T    H   H  III  A   A    Now is 22 Nov 2025 at 20:49:04    |  | 
  |  |                                                                              |  | 
  |  |   Program documentation and an archive of historic versions is found on:     |  | 
  |  |                                                                              |  | 
@@ -516,5 +516,4 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 198000 events have been generated 
 
  Pythia::next(): 199000 events have been generated 
-Mass 3.000 GeV (electron): Done. (7889 HNLs)
-Cross-section: 6.2282e+10 ± 1.7910e+07 pb
+Mass 3.000 GeV (electron, Meson): Done. (7889 HNLs written to ../output/csv/simulation/HNL_mass_3p0_electron_Meson.csv)

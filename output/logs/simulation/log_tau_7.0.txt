@@ -1,4 +1,4 @@
-Running simulation with tau (PDG ID: 15)
+Running simulation with m_N = 7 GeV, lepton = tau (PDG 15)
 
  *------------------------------------------------------------------------------------* 
  |                                                                                    | 
@@ -9,7 +9,7 @@ Running simulation with tau (PDG ID: 15)
  |  |   P  P   Y Y     T    H   H   I    A A     This is PYTHIA version 8.315      |  | 
  |  |   PPP     Y      T    HHHHH   I   AAAAA    Last date of change: 27 May 2025  |  | 
  |  |   P       Y      T    H   H   I   A   A                                      |  | 
- |  |   P       Y      T    H   H  III  A   A    Now is 21 Nov 2025 at 20:02:31    |  | 
+ |  |   P       Y      T    H   H  III  A   A    Now is 22 Nov 2025 at 22:25:23    |  | 
  |  |                                                                              |  | 
  |  |   Program documentation and an archive of historic versions is found on:     |  | 
  |  |                                                                              |  | 
@@ -43,7 +43,7 @@ Running simulation with tau (PDG ID: 15)
  |                                                                                    | 
  *------------------------------------------------------------------------------------* 
 
-Production mode: ELECTROWEAK (W/Z/top) for m_N >= 5 GeV
+Production mode: ELECTROWEAK (W/Z/top) for m_N ≥ 5 GeV
 
  *-------  PYTHIA Process Initialization  --------------------------*
  |                                                                  |
@@ -512,5 +512,4 @@ Production mode: ELECTROWEAK (W/Z/top) for m_N >= 5 GeV
  Pythia::next(): 198000 events have been generated 
 
  Pythia::next(): 199000 events have been generated 
-Mass 7.000 GeV (tau): Done. (200388 HNLs)
-Cross-section: 8.0416e+04 ± 1.0091e+02 pb
+Mass 7.000 GeV (tau, EW): Done. (200388 HNLs written to ../output/csv/simulation/HNL_mass_7p0_tau_EW.csv)

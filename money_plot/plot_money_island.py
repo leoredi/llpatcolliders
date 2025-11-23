@@ -31,6 +31,7 @@ for idx, flavour in enumerate(["electron", "muon", "tau"]):
         ax.set_title(f"{flavour.capitalize()}-coupled HNL", fontsize=14)
         ax.set_yscale('log')
         ax.set_xscale('log')
+        ax.set_xlim([0.2, 50])
         ax.grid(True, which="both", alpha=0.3)
         ax.legend(fontsize=10)
     else:

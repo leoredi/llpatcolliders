@@ -1,4 +1,4 @@
-Running simulation with tau (PDG ID: 15)
+Running simulation with m_N = 2.8 GeV, lepton = tau (PDG 15)
 
  *------------------------------------------------------------------------------------* 
  |                                                                                    | 
@@ -9,7 +9,7 @@ Running simulation with tau (PDG ID: 15)
  |  |   P  P   Y Y     T    H   H   I    A A     This is PYTHIA version 8.315      |  | 
  |  |   PPP     Y      T    HHHHH   I   AAAAA    Last date of change: 27 May 2025  |  | 
  |  |   P       Y      T    H   H   I   A   A                                      |  | 
- |  |   P       Y      T    H   H  III  A   A    Now is 21 Nov 2025 at 19:56:37    |  | 
+ |  |   P       Y      T    H   H  III  A   A    Now is 22 Nov 2025 at 22:19:43    |  | 
  |  |                                                                              |  | 
  |  |   Program documentation and an archive of historic versions is found on:     |  | 
  |  |                                                                              |  | 
@@ -515,5 +515,4 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 198000 events have been generated 
 
  Pythia::next(): 199000 events have been generated 
-Mass 2.800 GeV (tau): Done. (0 HNLs)
-Cross-section: 6.2299e+10 ± 1.8014e+07 pb
+Mass 2.800 GeV (tau, Meson): Done. (0 HNLs written to ../output/csv/simulation/HNL_mass_2p8_tau_Meson.csv)

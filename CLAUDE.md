@@ -92,6 +92,11 @@ llpatcolliders/
 
 ### Running Production Simulations
 
+Activate conda enviroment
+```bash
+conda activate llpatcolliders
+```
+
 Navigate to the `production/` directory:
 ```bash
 cd production

@@ -179,10 +179,13 @@ class HNLModel:
         samples:
 
             weight_i_production = BR(parent_i -> N + X)
+
+        Note: HNLCalc only provides meson production channels. W/Z boson BRs
+        are computed analytically and added manually.
         """
         import numpy as np
 
-        # Get all 2-body and 3-body production channels
+        # Get all 2-body and 3-body production channels from HNLCalc (mesons only)
         channels_2body = sum(self._hnlcalc.get_channels_2body()["mode"].values(), [])
         channels_3body = sum(self._hnlcalc.get_channels_3body()["mode"].values(), [])
 
@@ -243,6 +246,41 @@ class HNLModel:
                 # Accumulate for this parent
                 parent_abs = abs(pid0)
                 br_per_parent[parent_abs] = br_per_parent.get(parent_abs, 0.0) + br_value
+
+        # ----------------------------------------------------------------
+        # ADD W AND Z BOSON PRODUCTION BRs (not in HNLCalc database)
+        # ----------------------------------------------------------------
+        # HNLCalc only has meson channels. For electroweak bosons,
+        # we use theoretical formulas: BR(W → ℓN) ~ |U_ℓ|² * (phase space)
+        #
+        # Approximation: BR(W± → ℓ± N) ≈ |U_ℓ|² * f(m_N/m_W)
+        # where f is a phase space suppression factor.
+        #
+        # For m_N << m_W: f ≈ 1
+        # For m_N → m_W: f → 0 (kinematic threshold)
+        #
+        # Conservative estimate: BR(W → ℓN) ≈ |U_ℓ|² for m_N < 60 GeV
+
+        m_W = 80.4  # GeV
+        m_Z = 91.2  # GeV
+
+        # W± → ℓ± N (kinematically allowed if m_N < m_W)
+        if mass < m_W:
+            # Phase space suppression: (1 - m_N²/m_W²)²
+            phase_space_W = (1.0 - (mass / m_W)**2)**2
+            # BR(W → ℓN) ≈ |U_ℓ|² × phase_space
+            # Sum over all active lepton flavors
+            br_W = (self.Ue2 + self.Umu2 + self.Utau2) * phase_space_W
+            br_per_parent[24] = br_W
+
+        # Z → ν N (kinematically allowed if m_N < m_Z)
+        if mass < m_Z:
+            # Phase space suppression
+            phase_space_Z = (1.0 - (mass / m_Z)**2)**2
+            # BR(Z → νN) ≈ |U_ℓ|² × phase_space
+            # Factor of 1/2 relative to W (Z has both ν and ℓ channels)
+            br_Z = (self.Ue2 + self.Umu2 + self.Utau2) * phase_space_Z * 0.5
+            br_per_parent[23] = br_Z
 
         return br_per_parent
 

@@ -1,4 +1,4 @@
-Running simulation with muon (PDG ID: 13)
+Running simulation with m_N = 2 GeV, lepton = muon (PDG 13)
 
  *------------------------------------------------------------------------------------* 
  |                                                                                    | 
@@ -9,7 +9,7 @@ Running simulation with muon (PDG ID: 13)
  |  |   P  P   Y Y     T    H   H   I    A A     This is PYTHIA version 8.315      |  | 
  |  |   PPP     Y      T    HHHHH   I   AAAAA    Last date of change: 27 May 2025  |  | 
  |  |   P       Y      T    H   H   I   A   A                                      |  | 
- |  |   P       Y      T    H   H  III  A   A    Now is 21 Nov 2025 at 19:15:32    |  | 
+ |  |   P       Y      T    H   H  III  A   A    Now is 22 Nov 2025 at 21:39:35    |  | 
  |  |                                                                              |  | 
  |  |   Program documentation and an archive of historic versions is found on:     |  | 
  |  |                                                                              |  | 
@@ -108,19 +108,18 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
 
  --------  End PYTHIA Event Listing  -----------------------------------------------------------------------------------------------
  PYTHIA Error in ParticleDecays::decay: failed to find workable decay channel for id = -411
- PYTHIA Error in Pythia::check: charge not conserved
- PYTHIA Error in Pythia::next: check of event revealed problems
 
  Pythia::next(): 1000 events have been generated 
- PYTHIA Warning in SimpleSpaceShower::pT2nextQCD: weight above unity
-
- Pythia::next(): 2000 events have been generated 
  PYTHIA Warning in Pythia::check: energy-momentum not quite conserved
-
- Pythia::next(): 3000 events have been generated 
  PYTHIA Error in SimpleSpaceShower::pT2nearThreshold: stuck in loop
 
+ Pythia::next(): 2000 events have been generated 
+
+ Pythia::next(): 3000 events have been generated 
+ PYTHIA Warning in SimpleSpaceShower::pT2nextQCD: weight above unity
+
  Pythia::next(): 4000 events have been generated 
+ PYTHIA Warning in SimpleSpaceShower::pT2nextQCD: small daughter PDF
 
  Pythia::next(): 5000 events have been generated 
 
@@ -129,6 +128,7 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 7000 events have been generated 
 
  Pythia::next(): 8000 events have been generated 
+ PYTHIA Warning in MultipartonInteractions::pTfirst: weight above unity
 
  Pythia::next(): 9000 events have been generated 
  PYTHIA Warning in MultipartonInteractions::pTnext: weight above unity
@@ -138,11 +138,8 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 11000 events have been generated 
 
  Pythia::next(): 12000 events have been generated 
- PYTHIA Error in Pythia::check: energy-momentum not conserved
 
  Pythia::next(): 13000 events have been generated 
- PYTHIA Error in StringFragmentation::fragment: stuck in joining
- PYTHIA Error in Pythia::next: hadronLevel failed; try again
 
  Pythia::next(): 14000 events have been generated 
 
@@ -187,7 +184,6 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 34000 events have been generated 
 
  Pythia::next(): 35000 events have been generated 
- PYTHIA Abort from Pythia::next: parton+hadronLevel failed; giving up
 
  Pythia::next(): 36000 events have been generated 
 
@@ -248,6 +244,7 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 64000 events have been generated 
 
  Pythia::next(): 65000 events have been generated 
+ PYTHIA Warning in PhaseSpace2to2tauyz::finalKin: failed after mass assignment
 
  Pythia::next(): 66000 events have been generated 
 
@@ -268,7 +265,6 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 74000 events have been generated 
 
  Pythia::next(): 75000 events have been generated 
- PYTHIA Warning in Pythia::check: not quite matched particle energy/momentum/mass
 
  Pythia::next(): 76000 events have been generated 
 
@@ -285,7 +281,6 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 82000 events have been generated 
 
  Pythia::next(): 83000 events have been generated 
- PYTHIA Warning in MultipartonInteractions::pTfirst: weight above unity
 
  Pythia::next(): 84000 events have been generated 
 
@@ -308,7 +303,6 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 93000 events have been generated 
 
  Pythia::next(): 94000 events have been generated 
- PYTHIA Warning in SimpleSpaceShower::pT2nextQCD: small daughter PDF
 
  Pythia::next(): 95000 events have been generated 
 
@@ -385,6 +379,8 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 131000 events have been generated 
 
  Pythia::next(): 132000 events have been generated 
+ PYTHIA Error in StringFragmentation::fragment: stuck in joining
+ PYTHIA Error in Pythia::next: hadronLevel failed; try again
 
  Pythia::next(): 133000 events have been generated 
 
@@ -519,5 +515,4 @@ Production mode: MESON (K/D/B) for m_N < 5 GeV
  Pythia::next(): 198000 events have been generated 
 
  Pythia::next(): 199000 events have been generated 
-Mass 2.000 GeV (muon): Done. (8078 HNLs)
-Cross-section: 6.2270e+10 ± 1.7913e+07 pb
+Mass 2.000 GeV (muon, Meson): Done. (12666 HNLs written to ../output/csv/simulation/HNL_mass_2p0_muon_Meson.csv)

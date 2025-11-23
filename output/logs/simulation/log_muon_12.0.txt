@@ -1,4 +1,4 @@
-Running simulation with muon (PDG ID: 13)
+Running simulation with m_N = 12 GeV, lepton = muon (PDG 13)
 
  *------------------------------------------------------------------------------------* 
  |                                                                                    | 
@@ -9,7 +9,7 @@ Running simulation with muon (PDG ID: 13)
  |  |   P  P   Y Y     T    H   H   I    A A     This is PYTHIA version 8.315      |  | 
  |  |   PPP     Y      T    HHHHH   I   AAAAA    Last date of change: 27 May 2025  |  | 
  |  |   P       Y      T    H   H   I   A   A                                      |  | 
- |  |   P       Y      T    H   H  III  A   A    Now is 21 Nov 2025 at 19:36:30    |  | 
+ |  |   P       Y      T    H   H  III  A   A    Now is 22 Nov 2025 at 21:59:59    |  | 
  |  |                                                                              |  | 
  |  |   Program documentation and an archive of historic versions is found on:     |  | 
  |  |                                                                              |  | 
@@ -43,7 +43,7 @@ Running simulation with muon (PDG ID: 13)
  |                                                                                    | 
  *------------------------------------------------------------------------------------* 
 
-Production mode: ELECTROWEAK (W/Z/top) for m_N >= 5 GeV
+Production mode: ELECTROWEAK (W/Z/top) for m_N ≥ 5 GeV
 
  *-------  PYTHIA Process Initialization  --------------------------*
  |                                                                  |
@@ -510,5 +510,4 @@ Production mode: ELECTROWEAK (W/Z/top) for m_N >= 5 GeV
  Pythia::next(): 198000 events have been generated 
 
  Pythia::next(): 199000 events have been generated 
-Mass 12.000 GeV (muon): Done. (200360 HNLs)
-Cross-section: 8.0233e+04 ± 1.0086e+02 pb
+Mass 12.000 GeV (muon, EW): Done. (200360 HNLs written to ../output/csv/simulation/HNL_mass_12p0_muon_EW.csv)

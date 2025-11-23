@@ -399,14 +399,23 @@ def run_reach_scan(
     ANALYSIS_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # 1. Auto-detect files and capture exact mass string
-    pattern = re.compile(f"HNL_mass_([0-9\.]+)_{flavour}_Meson\.csv")
-    
+    # Include BOTH Meson (m < 5 GeV) and EW (m >= 5 GeV) production modes
+    # Support both old (0.6) and new (0p6) filename formats
+    pattern_meson = re.compile(rf"HNL_mass_([0-9p\.]+)_{flavour}_Meson\.csv")
+    pattern_ew = re.compile(rf"HNL_mass_([0-9p\.]+)_{flavour}_EW\.csv")
+
     available_files = []
     for f in csv_dir.glob(f"*{flavour}*.csv"):
-        match = pattern.search(f.name)
-        if match:
-            mass_str = match.group(1)   # EXACT string from filename
-            mass_val = float(mass_str)  # Float for sorting
+        match_meson = pattern_meson.search(f.name)
+        match_ew = pattern_ew.search(f.name)
+
+        if match_meson:
+            mass_str = match_meson.group(1)   # EXACT string from filename (may have 'p')
+            mass_val = float(mass_str.replace('p', '.'))  # Convert 0p6 → 0.6 for sorting
+            available_files.append((mass_val, mass_str, f))
+        elif match_ew:
+            mass_str = match_ew.group(1)
+            mass_val = float(mass_str.replace('p', '.'))  # Convert 0p6 → 0.6
             available_files.append((mass_val, mass_str, f))
     
     # Sort by mass value
@@ -421,8 +430,10 @@ def run_reach_scan(
 
     tasks = []
     for mass_val, mass_str, csv_path in available_files:
-        # Use mass_str for filename to guarantee match
-        geom_path = geom_cache_dir / f"HNL_mass_{mass_str}_{flavour}_geom.csv"
+        # Determine production mode from filename
+        production_mode = "EW" if "_EW.csv" in csv_path.name else "Meson"
+        # Use mass_str and production mode for geometry cache filename
+        geom_path = geom_cache_dir / f"HNL_mass_{mass_str}_{flavour}_{production_mode}_geom.csv"
         tasks.append((mass_val, mass_str, flavour, benchmark, lumi_fb, csv_path, geom_path))
 
     results = []
