@@ -23,3 +23,12 @@ tmp/
 
 # Mac files
 .DS_Store
+
+# pythia local inst (version-independent patterns)
+pythia/**/lib/
+pythia/**/bin/
+pythia/**/config.log
+pythia/**/config.status
+pythia/**/Makefile.inc
+pythia/**/Makefile.local
+
