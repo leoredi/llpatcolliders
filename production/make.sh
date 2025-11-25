@@ -9,11 +9,27 @@ set -e
 cd "$(dirname "$0")"
 
 # 2. CONFIGURATION
-PYTHIA_DIR="/Users/fredi/cernbox/Physics/llpatcolliders/pythia-install"
+PYTHIA_RELDIR="pythia/pythia8315"
 CORES=10
 
 # Parse command line argument
 LEPTON="${1:-muon}"  # Default to muon if no argument
+
+# 2.5 AUTO-COMPILE PYTHIA IF NEEDED
+if [ ! -f "$PYTHIA_RELDIR/lib/libpythia8.a" ]; then
+    echo "======================================================="
+    echo "PYTHIA NOT COMPILED - Building Pythia 8.315..."
+    echo "======================================================="
+    cd "$PYTHIA_RELDIR"
+    ./configure --prefix=$(pwd)
+    make -j4
+    cd ../..
+    echo "Pythia compilation complete."
+    echo ""
+fi
+
+# Export absolute path for compiler
+export PYTHIA_DIR="$(pwd)/$PYTHIA_RELDIR"
 
 # 3. COMPILATION (ONCE)
 echo "======================================================="
@@ -23,8 +39,8 @@ echo "Step 1: Compiling main_hnl_single.cc..."
 echo "-------------------------------------------------------"
 
 g++ main_hnl_single.cc -o main_hnl_single \
-    -I${PYTHIA_DIR}/include \
-    -L${PYTHIA_DIR}/lib -Wl,-rpath,${PYTHIA_DIR}/lib -lpythia8 \
+    -I$PYTHIA_DIR/include \
+    -L$PYTHIA_DIR/lib -Wl,-rpath,$PYTHIA_DIR/lib -lpythia8 \
     -std=c++17 \
     -O2
 
@@ -135,10 +151,6 @@ case "$LEPTON" in
         echo "ERROR: Unknown lepton flavor '$LEPTON'"
         echo "Usage: ./make.sh [electron|muon|tau|all]"
         echo ""
-        echo "Or use the dedicated scripts:"
-        echo "  ./scan_electron.sh"
-        echo "  ./scan_muon.sh"
-        echo "  ./scan_tau.sh"
         exit 1
         ;;
 esac

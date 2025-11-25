@@ -109,6 +109,8 @@ pp → W/Z + X
 
 ### Prerequisites
 
+**PYTHIA 8.315 is included in this repository** at `production/pythia/pythia8315/`. The build script `make.sh` will automatically compile it on first run if needed.
+
 ```bash
 # Activate conda environment
 conda activate llpatcolliders
@@ -121,6 +123,8 @@ cd analysis_pbc_test
 git clone https://github.com/laroccod/HNLCalc.git
 pip install sympy mpmath particle numba 'scikit-hep==0.4.0'
 ```
+
+**Note:** No manual Pythia installation required - it's bundled with the repo!
 
 ### Run Complete Pipeline (3 Commands)
 
@@ -352,11 +356,13 @@ llpatcolliders/
 ├── environment.yml                 # Conda environment spec
 │
 ├── production/                     # Stage 1: Event generation (C++)
+│   ├── pythia/
+│   │   └── pythia8315/            # PYTHIA 8.315 source (included in repo)
 │   ├── main_hnl_single.cc         # Pythia simulation code
 │   ├── main_hnl_single            # Compiled executable
 │   ├── hnl_Meson_Inclusive_Template.cmnd   # Meson regime config (m < 5 GeV)
 │   ├── hnl_HighMass_Inclusive_Template.cmnd # EW regime config (m ≥ 5 GeV)
-│   └── make.sh                    # Compilation + mass scan driver
+│   └── make.sh                    # Compilation + mass scan driver (auto-compiles Pythia)
 │
 ├── analysis_pbc_test/             # Stage 2: Analysis pipeline (Python)
 │   ├── HNLCalc/                   # External package (arXiv:2405.07330)
