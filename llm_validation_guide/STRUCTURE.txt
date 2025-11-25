@@ -1,0 +1,43 @@
+LLM VALIDATION GUIDE - FINAL STRUCTURE
+======================================
+
+llm_validation_guide/
+├── README.md                    ← START HERE: Main navigation guide
+├── CLAUDE.md                    → Symlink to complete physics overview
+│
+├── production/                  ← STAGE 1: Event Generation (C++/Pythia)
+│   ├── README_PRODUCTION.md     ← Production validation guide
+│   ├── main_hnl_single.cc       → Main simulation code
+│   ├── make.sh                  → Build script
+│   ├── hnl_Meson_Template.cmnd  → Config for m < 5 GeV
+│   └── hnl_EW_Template.cmnd     → Config for m ≥ 5 GeV
+│
+└── analysis/                    ← STAGE 2: Limit Calculation (Python)
+    ├── README_ANALYSIS.md       ← Analysis validation guide
+    │
+    ├── MULTI_HNL_METHODOLOGY.md → Per-parent counting explanation
+    ├── VALIDATION.md            → Validation report
+    │
+    ├── u2_limit_calculator.py   → Main analysis driver
+    ├── per_parent_efficiency.py → Geometry ray-tracing
+    ├── hnl_model_hnlcalc.py     → HNLCalc wrapper
+    ├── production_xsecs.py      → Cross-sections
+    │
+    ├── test_26gev_muon.py       → Benchmark test
+    └── test_closure.py          → Closure test
+
+FILE COUNTS:
+- Production: 4 files (1 C++, 1 bash, 2 config)
+- Analysis: 7 files (5 Python, 2 markdown)
+- Total: 11 critical files + 3 README guides
+
+KEY CHECKS:
+1. main_hnl_single.cc:~231    → weight = .weight() not .sigmaGen()
+2. MULTI_HNL_METHODOLOGY.md   → Per-parent counting justified
+3. production_xsecs.py        → External cross-sections
+
+VALIDATION TIME:
+- Express (3 files): 5 minutes
+- Production only: 10 minutes
+- Analysis only: 20 minutes
+- Complete: 30 minutes
