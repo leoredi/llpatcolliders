@@ -1,0 +1,72 @@
+! ==========================================================================
+! HNL Production from W/Z decays (Drell-Yan)
+! For HNL masses: m_N > 5 GeV (up to ~80 GeV)
+!
+! Physics: pp -> W/Z X, W -> ℓ N, Z -> ν N
+!
+! Note: For publication-quality EW production, MadGraph5 with 
+! SM_HeavyN_CKM_AllMasses_LO model is recommended. This Pythia-only
+! approach is suitable for sensitivity estimates.
+!
+! Reference: arXiv:1805.08567, MATHUSLA methodology
+! ==========================================================================
+
+! -------------------------------------------------------------------------
+! 1) Beam Configuration: HL-LHC at 14 TeV
+! -------------------------------------------------------------------------
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 14000.
+
+! -------------------------------------------------------------------------
+! 2) Tune: Monash 2013
+! -------------------------------------------------------------------------
+Tune:pp = 14
+Tune:ee = 7
+
+! -------------------------------------------------------------------------
+! 3) Process Selection: Electroweak W/Z production
+! -------------------------------------------------------------------------
+SoftQCD:all = off
+HardQCD:all = off
+
+! W boson production (Drell-Yan)
+WeakSingleBoson:ffbar2W = on       ! qq̄' -> W±
+
+! Z boson production  
+WeakSingleBoson:ffbar2gmZ = on     ! qq̄ -> γ*/Z
+
+! Top pair production (for t -> b W -> b ℓ N)
+Top:gg2ttbar = on
+Top:qqbar2ttbar = on
+
+! Single top production
+Top:ffbar2tqW(s:W) = on            ! s-channel
+Top:ffbar2tW(t:b) = on             ! t-channel (tW associated)
+
+PhaseSpace:pTHatMin = 0.0
+
+! -------------------------------------------------------------------------
+! 4) HNL Definition
+! -------------------------------------------------------------------------
+9900015:new = N Nbar 2 0 0
+9900015:m0 = 10.0                  ! placeholder for high mass
+9900015:tau0 = 1.0e9
+9900015:isResonance = false
+9900015:mayDecay = off
+9900015:onMode = off
+
+! -------------------------------------------------------------------------
+! 5) Output Control
+! -------------------------------------------------------------------------
+Init:showChangedSettings = on
+Init:showChangedParticleData = on
+Next:numberCount = 10000
+Next:numberShowInfo = 1
+Next:numberShowProcess = 1
+Next:numberShowEvent = 1
+
+! -------------------------------------------------------------------------
+! 6) Run Configuration
+! -------------------------------------------------------------------------
+Main:numberOfEvents = 100000
