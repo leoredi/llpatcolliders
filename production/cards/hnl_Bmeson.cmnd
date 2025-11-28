@@ -43,15 +43,14 @@ PhaseSpace:pTHatMin = 0.0
 ! -------------------------------------------------------------------------
 ! 4) HNL Definition
 ! -------------------------------------------------------------------------
-! PDG ID 9900015 following SHiP/MATHUSLA convention
-! Mass and other properties set from C++ code
-
-9900015:new = N Nbar 2 0 0        ! spin 1/2, charge 0, color 0
-9900015:m0 = 1.0                   ! placeholder, set from C++
-9900015:tau0 = 1.0e9               ! very long lifetime (mm) -> stable in Pythia
-9900015:isResonance = false        ! not a resonance
-9900015:mayDecay = off             ! DO NOT decay - handled externally
-9900015:onMode = off               ! all decay channels off
+! NOTE: HNL particle (9900015) is defined in C++ code, not here.
+! This keeps mass/lifetime as single source of truth.
+!
+! The C++ code will define:
+!   - PDG ID: 9900015 (following SHiP/MATHUSLA convention)
+!   - Mass: set from command-line argument
+!   - Lifetime: very long (stable in Pythia)
+!   - Decay: disabled (handled externally)
 
 ! -------------------------------------------------------------------------
 ! 5) Parent meson handling

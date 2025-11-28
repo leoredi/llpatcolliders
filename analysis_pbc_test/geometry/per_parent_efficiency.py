@@ -276,6 +276,14 @@ def preprocess_hnl_csv(
     """
     df = pd.read_csv(csv_file)
 
+    # Handle both old and new CSV formats
+    # Old format: parent_id, momentum
+    # New format: parent_pdg, p
+    if "parent_pdg" in df.columns and "parent_id" not in df.columns:
+        df["parent_id"] = df["parent_pdg"].abs()  # Use absolute value
+    if "p" in df.columns and "momentum" not in df.columns:
+        df["momentum"] = df["p"]
+
     required_cols = ["event", "parent_id", "eta", "phi", "momentum", "mass"]
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
@@ -292,7 +300,11 @@ def preprocess_hnl_csv(
     df["path_length"] = np.nan
 
     # beta * gamma = p / m (in natural units)
-    df["beta_gamma"] = df["momentum"] / df["mass"]
+    # Use pre-computed boost_gamma if available, otherwise compute
+    if "boost_gamma" in df.columns:
+        df["beta_gamma"] = df["boost_gamma"]
+    else:
+        df["beta_gamma"] = df["momentum"] / df["mass"]
 
     origin_arr = np.array(origin, dtype=float)
 

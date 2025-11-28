@@ -17,7 +17,7 @@ THIS_FILE = Path(__file__).resolve()
 TESTS_DIR = THIS_FILE.parent
 ANALYSIS_DIR = TESTS_DIR.parent
 REPO_ROOT = ANALYSIS_DIR.parent
-SIM_DIR = REPO_ROOT / "output" / "csv" / "simulation"
+SIM_DIR = REPO_ROOT / "output" / "csv" / "simulation_new"
 GEOM_DIR = REPO_ROOT / "output" / "csv" / "geometry"
 
 sys.path.insert(0, str(ANALYSIS_DIR))
@@ -37,10 +37,10 @@ def main():
     print("=" * 70)
 
     # Load or compute geometry
-    # Note: Simulation files use "p" instead of "." in filenames (e.g., 2p6 not 2.6)
-    mass_str = str(MASS_GEV).replace(".", "p")
-    csv_path = SIM_DIR / f"HNL_mass_{mass_str}_{FLAVOUR}_Meson.csv"
-    geom_cache = GEOM_DIR / f"HNL_mass_{mass_str}_{FLAVOUR}_geom.csv"
+    # Note: Simulation files use "p" instead of "." in filenames (e.g., 2p60 not 2.6)
+    mass_str = str(MASS_GEV).replace(".", "p") + "0"  # 2.6 → 2p60
+    csv_path = SIM_DIR / f"HNL_{mass_str}GeV_{FLAVOUR}_beauty.csv"
+    geom_cache = GEOM_DIR / f"HNL_{mass_str}GeV_{FLAVOUR}_geom.csv"
 
     if not csv_path.exists():
         print(f"ERROR: Simulation file not found: {csv_path}")

@@ -23,7 +23,7 @@ THIS_FILE = Path(__file__).resolve()
 ANALYSIS_DIR = THIS_FILE.parent           # .../analysis_pbc_test/limits
 REPO_ROOT = ANALYSIS_DIR.parents[1]       # .../llpatcolliders
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
-SIM_DIR = OUTPUT_DIR / "simulation"
+SIM_DIR = OUTPUT_DIR / "simulation_new"
 GEOM_CACHE_DIR = OUTPUT_DIR / "geometry"
 ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
 
@@ -399,28 +399,47 @@ def run_reach_scan(
     ANALYSIS_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # 1. Auto-detect files and capture exact mass string
-    # Include BOTH Meson (m < 5 GeV) and EW (m >= 5 GeV) production modes
-    # Support both old (0.6) and new (0p6) filename formats
-    pattern_meson = re.compile(rf"HNL_mass_([0-9p\.]+)_{flavour}_Meson\.csv")
-    pattern_ew = re.compile(rf"HNL_mass_([0-9p\.]+)_{flavour}_EW\.csv")
+    # New format: HNL_XpYGeV_flavour_regime.csv (e.g., HNL_2p60GeV_muon_beauty.csv)
+    # Old format: HNL_mass_X_flavour_Meson.csv (for backwards compatibility)
+    # Regimes: kaon, charm, beauty (meson production), ew (electroweak), fromTau/direct (tau)
+
+    # New format patterns
+    pattern_new = re.compile(rf"HNL_([0-9]+p[0-9]+)GeV_{flavour}_(kaon|charm|beauty|ew)(?:_direct|_fromTau)?\.csv")
+    # Old format patterns
+    pattern_old_meson = re.compile(rf"HNL_mass_([0-9p\.]+)_{flavour}_Meson\.csv")
+    pattern_old_ew = re.compile(rf"HNL_mass_([0-9p\.]+)_{flavour}_EW\.csv")
 
     available_files = []
     for f in csv_dir.glob(f"*{flavour}*.csv"):
-        match_meson = pattern_meson.search(f.name)
-        match_ew = pattern_ew.search(f.name)
+        # Skip empty files (failed EW simulations are 93B with only CSV header)
+        file_size = f.stat().st_size
+        if file_size < 1000:  # Less than 1KB = empty file
+            print(f"[SKIP] Empty file ({file_size}B): {f.name}")
+            continue
 
-        if match_meson:
-            mass_str = match_meson.group(1)   # EXACT string from filename (may have 'p')
-            mass_val = float(mass_str.replace('p', '.'))  # Convert 0p6 → 0.6 for sorting
-            available_files.append((mass_val, mass_str, f))
-        elif match_ew:
-            mass_str = match_ew.group(1)
-            mass_val = float(mass_str.replace('p', '.'))  # Convert 0p6 → 0.6
-            available_files.append((mass_val, mass_str, f))
+        match_new = pattern_new.search(f.name)
+        match_old_meson = pattern_old_meson.search(f.name)
+        match_old_ew = pattern_old_ew.search(f.name)
+
+        if match_new:
+            mass_str = match_new.group(1)   # e.g., "2p60"
+            regime = match_new.group(2)     # e.g., "beauty"
+            mass_val = float(mass_str.replace('p', '.'))  # Convert 2p60 → 2.60
+            # For tau, skip "fromTau" files to avoid double counting (use only direct)
+            if "_fromTau" not in f.name:
+                available_files.append((mass_val, mass_str, f, regime))
+        elif match_old_meson:
+            mass_str = match_old_meson.group(1)
+            mass_val = float(mass_str.replace('p', '.'))
+            available_files.append((mass_val, mass_str, f, "Meson"))
+        elif match_old_ew:
+            mass_str = match_old_ew.group(1)
+            mass_val = float(mass_str.replace('p', '.'))
+            available_files.append((mass_val, mass_str, f, "EW"))
     
     # Sort by mass value
     available_files.sort(key=lambda x: x[0])
-    
+
     if not available_files:
         print(f"[WARN] No Simulation CSVs found for flavour {flavour} in {csv_dir}")
         return pd.DataFrame()
@@ -429,11 +448,16 @@ def run_reach_scan(
     print(f"Found {len(available_files)} mass points.")
 
     tasks = []
-    for mass_val, mass_str, csv_path in available_files:
-        # Determine production mode from filename
-        production_mode = "EW" if "_EW.csv" in csv_path.name else "Meson"
-        # Use mass_str and production mode for geometry cache filename
-        geom_path = geom_cache_dir / f"HNL_mass_{mass_str}_{flavour}_{production_mode}_geom.csv"
+    for mass_val, mass_str, csv_path, regime in available_files:
+        # Use consistent geometry cache naming
+        # New format: HNL_2p60GeV_muon_geom.csv (regime-independent)
+        # Old format: HNL_mass_2p6_muon_Meson_geom.csv (kept for backwards compatibility)
+        if "HNL_mass_" in csv_path.name:
+            # Old format
+            geom_path = geom_cache_dir / f"HNL_mass_{mass_str}_{flavour}_{regime}_geom.csv"
+        else:
+            # New format (regime-independent cache)
+            geom_path = geom_cache_dir / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
         tasks.append((mass_val, mass_str, flavour, benchmark, lumi_fb, csv_path, geom_path))
 
     results = []

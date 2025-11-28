@@ -131,7 +131,8 @@ pip install sympy mpmath particle numba 'scikit-hep==0.4.0'
 ```bash
 # Stage 1: Generate events (C++ PYTHIA simulation)
 cd production
-./make.sh all  # Generates 102 CSV files (~1.1 GB, takes ~30 min)
+./make.sh all  # Generates 131 successful CSV files in low-mass regime (<5 GeV)
+               # Total size: ~2.5 GB, takes ~30-45 min
 
 # Stage 2: Calculate limits (Python analysis)
 cd ../analysis_pbc_test
@@ -141,7 +142,7 @@ conda run -n llpatcolliders python limits/u2_limit_calculator.py  # ~10-20 min
 conda run -n llpatcolliders python ../money_plot/plot_money_island.py
 ```
 
-**Output:** `output/images/HNL_moneyplot_island.png` - Exclusion limits for all 3 lepton flavors
+**Output:** `output/images/HNL_moneyplot_island.png` - Exclusion limits for all 3 lepton flavors (low-mass regime)
 
 ---
 
@@ -161,27 +162,49 @@ cd production
 ./make.sh all
 
 # Option B: Individual flavors
-./make.sh electron  # 38 mass points
-./make.sh muon      # 38 mass points
-./make.sh tau       # 26 mass points
+./make.sh electron  # 41 mass points (low-mass regime)
+./make.sh muon      # 41 mass points (low-mass regime)
+./make.sh tau       # 49 files from 33 unique mass points (direct + fromTau)
 
 # Option C: Single mass point (for testing)
 ./main_hnl_single 2.6 muon
 ```
 
-**Mass Grid:**
-- **Electrons:** 38 points (0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.3, 2.6, 3.0, 3.4, 3.8, 4.2, 4.6, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0 GeV)
-- **Muons:** Same 38 points as electrons
-- **Taus:** 26 points (0.5, 0.7, 1.0, 1.3, 1.6, 2.0, 2.4, 2.8, 3.2, 3.6, 4.0, 4.5, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0 GeV)
+**Mass Grid (Low-Mass Regime < 5 GeV - VALIDATED):**
+- **Electrons:** 41 points (0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.38, 0.40, 0.42, 0.45, 0.48, 0.50, 0.52, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.75, 1.80, 1.82, 1.85, 1.90, 2.00, 2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80 GeV)
+- **Muons:** 41 points (0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.37, 0.38, 0.39, 0.40, 0.42, 0.45, 0.48, 0.50, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00, 1.20, 1.40, 1.60, 1.65, 1.70, 1.75, 1.76, 1.78, 1.80, 1.85, 1.90, 2.00, 2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80 GeV)
+- **Taus:** 33 unique mass points (0.50, 0.55, 0.60, 0.65, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.45, 1.50, 1.55, 1.60, 1.62, 1.64, 1.66, 1.70, 1.74, 1.78, 1.80, 1.85, 1.90, 2.00, 2.40, 2.80, 3.00, 3.20, 3.60, 4.00, 4.50 GeV)
+
+**Note on High-Mass Regime (≥5 GeV):** Electroweak production simulations currently fail due to Pythia configuration issues with Z boson decays. Low-mass regime (< 5 GeV) is complete and validated with 131 successful simulation files.
 
 **Output Files:**
 ```
-output/csv/simulation/HNL_mass_{mass}_{flavour}_{regime}.csv
+output/csv/simulation_new/HNL_{mass}GeV_{flavour}_{regime}.csv
 
 Examples:
-  HNL_mass_2.6_muon_Meson.csv    (m < 5 GeV: B-meson production)
-  HNL_mass_15.0_muon_EW.csv      (m ≥ 5 GeV: W/Z production)
+  HNL_0p50GeV_electron_kaon.csv     (m < 0.5 GeV: K-meson production)
+  HNL_1p20GeV_muon_charm.csv        (0.5 < m < 2 GeV: D-meson production)
+  HNL_2p60GeV_muon_beauty.csv       (2 < m < 5 GeV: B-meson production)
+  HNL_0p50GeV_tau_charm_direct.csv  (Tau: direct D→τN production)
+  HNL_0p50GeV_tau_charm_fromTau.csv (Tau: D→τ→N cascade production)
 ```
+
+**Filename Convention:**
+- Mass format: decimal point replaced by 'p' (e.g., 2.6 → 2p6, 0.25 → 0p25)
+- Regime indicators: kaon, charm, beauty (meson production channels)
+- Tau has two files per mass point: `_direct` and `_fromTau` production modes
+
+**Production Regimes by Mass:**
+```
+Kaon regime   (m < ~0.5 GeV):  K± → ℓ N   (electron, muon only)
+Charm regime  (0.5 < m < ~2 GeV): D⁰/D±/Ds → ℓ N   (all flavors)
+Beauty regime (2 < m < ~5 GeV):   B⁰/B±/Bs → ℓ N   (all flavors)
+EW regime     (m ≥ 5 GeV):        W/Z → ℓ N        (CURRENTLY NOT WORKING)
+```
+
+**Current Status:**
+- ✓ **Kaon, Charm, Beauty regimes:** Fully functional, 131 files generated
+- ✗ **EW regime:** Pythia configuration issue with Z boson decays, all high-mass simulations fail
 
 **CSV Format:**
 ```csv

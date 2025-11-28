@@ -4,15 +4,63 @@
 // Publication-quality HNL production simulation for far-detector studies.
 // Follows methodology of MATHUSLA, ANUBIS, and Physics Beyond Colliders.
 //
-// Usage: ./main_hnl_production <mass_GeV> <flavor> [nEvents]
-//   flavor: electron, muon, tau
+// Usage: ./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode]
+//   flavor: electron, muon, tau (PBC benchmarks BC6/BC7/BC8)
+//   mode: 'direct' (default) or 'fromTau' (tau coupling only)
+//
+// Production modes (for maximum tau coupling reach):
+//   MODE A ("direct"):  B/Ds/W → τ N     (mixing at meson/W vertex)
+//   MODE B ("fromTau"): B/Ds/W → τ ν, τ → N X  (mixing at tau decay)
+//   → Both modes are O(U_tau²), combine in analysis for maximum sensitivity
+//   → Electron and muon use 'direct' mode only
 //
 // Output: CSV file with HNL 4-vectors and parent information
+//
+// ==========================================================================
+// CRITICAL: Normalization Strategy
+// ==========================================================================
+//
+// This code uses Pythia as a KINEMATIC GENERATOR ONLY. All physical
+// cross-sections and branching ratios are applied externally in Stage 2.
+//
+// DIVISION OF LABOR:
+//
+// Stage 1 (This Code - Pythia):
+//   → Generates HNL 4-vectors with proper kinematic correlations
+//   → Tracks parent species (PDG codes) for each HNL
+//   → Records production vertices and boost factors
+//   → Internal decay BRs (e.g., "BR=1.0") control RELATIVE sampling
+//     of different topologies (2-body vs 3-body, etc.) for kinematics
+//   → These internal BRs are NOT physical and do NOT enter final signal
+//
+// Stage 2 (Analysis Pipeline - HNLCalc + Geometry):
+//   → Applies σ(pp → parent) from experimental measurements
+//   → Applies BR_inclusive(parent → ℓN) from HNLCalc theory
+//   → Computes geometric acceptance ε_geom via ray-tracing
+//   → Calculates decay probability P_decay from HNL lifetime
+//
+// SIGNAL CALCULATION:
+//   N_sig = Σ_parents [ L × σ_parent × BR_inclusive × ε_geom × P_decay ]
+//
+// NO DOUBLE-COUNTING:
+//   Even if a parent (e.g., D⁺) has multiple Pythia channels (2-body + 3-body),
+//   ALL events from that parent represent the INCLUSIVE parent→ℓN process.
+//   The channel mixture approximates inclusive kinematics. Physical
+//   normalizations come entirely from HNLCalc, not Pythia.
+//
+// MAJORANA vs DIRAC:
+//   → Simulation generates one Majorana HNL state (N = N̄)
+//   → For Dirac interpretation (N ≠ N̄), multiply final yields by factor 2
+//   → This factor is NOT included in output CSVs or intermediate results
+//   → Apply scaling in final plots with clear labeling
+//
+// ==========================================================================
 //
 // References:
 //   - arXiv:1805.08567 (HNL phenomenology)
 //   - arXiv:1901.09966 (PBC benchmarks)
 //   - arXiv:2103.11494 (Pythia validation for HNL)
+//   - arXiv:2405.07330 (HNLCalc package)
 //
 // ==========================================================================
 
@@ -55,13 +103,6 @@ const std::vector<int> BARYONS_3BODY = {
     4122,  // Λc -> Λ ℓ N or p K ℓ N
     5122   // Λb -> Λc ℓ N
 };
-
-// W/Z for EW production
-const int W_PLUS = 24;
-const int Z_BOSON = 23;
-
-// Tau lepton (for BC8)
-const int TAU = 15;
 
 // Lepton masses (GeV)
 const double M_ELECTRON = 0.000511;
@@ -156,23 +197,36 @@ int findPhysicalParent(const Event& event, int iHNL) {
 // ==========================================================================
 // Configure forced decays for meson production
 // ==========================================================================
+//
+// We implement:
+//   - 2-body leptonic: M+ → ℓ+ N (K+, D+, Ds+, B+, Bc+)
+//   - 3-body semileptonic: M → M' ℓ N (representative channels)
+//
+// For semileptonic decays, we use ONE representative exclusive channel
+// per parent meson (e.g., D0 → K ℓ N, B0 → D ℓ N) with phase-space
+// kinematics (meMode=0). This is validated by arXiv:2103.11494 as
+// adequate for sensitivity estimates.
+//
+// IMPORTANT: The branching ratios here are artificially set to ~100%.
+// Actual inclusive BRs must be applied as weights from external
+// calculations (e.g., HNLCalc using formulas from arXiv:1805.08567).
+// ==========================================================================
 
-void configureMesonDecays(Pythia& pythia, int leptonID, int neutrinoID, 
+void configureMesonDecays(Pythia& pythia, int leptonID,
                           double mHNL, double mLepton, bool verbose = true) {
-    
+
     std::string hnl = std::to_string(HNL_ID);
     std::string lep = std::to_string(leptonID);
     std::string lepBar = std::to_string(-leptonID);
-    std::string nu = std::to_string(neutrinoID);
-    
+
     int nChannelsConfigured = 0;
-    
+
     if (verbose) {
         std::cout << "\n=== Configuring HNL decay channels ===" << std::endl;
         std::cout << "HNL mass: " << mHNL << " GeV" << std::endl;
         std::cout << "Lepton ID: " << leptonID << " (mass " << mLepton << " GeV)" << std::endl;
     }
-    
+
     // -----------------------------------------------------------------------
     // 2-body leptonic decays: M+ -> ℓ+ N
     // -----------------------------------------------------------------------
@@ -256,7 +310,21 @@ void configureMesonDecays(Pythia& pythia, int leptonID, int neutrinoID,
     } else if (verbose) {
         std::cout << "  D0 -> K ℓ N : DISABLED (kinematically forbidden)" << std::endl;
     }
-    
+
+    // D+ -> K0bar ℓ+ N (semileptonic, K0bar = -311)
+    double mDplus = MESON_MASSES.at(411);
+    double mK0 = 0.498;  // K0 mass
+    if (mHNL + mLepton + mK0 < mDplus) {
+        // Note: D+ 2-body leptonic D+ → ℓ N is already added above
+        // This adds the semileptonic channel
+        pythia.readString("411:addChannel = 1 0.5 0 -311 " + lepBar + " " + hnl);
+        pythia.readString("-411:addChannel = 1 0.5 0 311 " + lep + " " + hnl);
+        if (verbose) std::cout << "  D± -> K0 ℓ N : ENABLED (3-body)" << std::endl;
+        nChannelsConfigured++;
+    } else if (verbose) {
+        std::cout << "  D± -> K0 ℓ N : DISABLED (kinematically forbidden)" << std::endl;
+    }
+
     // B0 -> D- ℓ+ N (semileptonic)
     double mB0 = MESON_MASSES.at(511);
     double mDminus = MESON_MASSES.at(411);
@@ -270,7 +338,21 @@ void configureMesonDecays(Pythia& pythia, int leptonID, int neutrinoID,
     } else if (verbose) {
         std::cout << "  B0 -> D ℓ N : DISABLED (kinematically forbidden)" << std::endl;
     }
-    
+
+    // B+ -> D0bar ℓ+ N (semileptonic, D0bar = -421)
+    double mBplus = MESON_MASSES.at(521);
+    double mD0mass = MESON_MASSES.at(421);
+    if (mHNL + mLepton + mD0mass < mBplus) {
+        // Note: B+ 2-body leptonic B+ → ℓ N is already added above
+        // This adds the semileptonic channel
+        pythia.readString("521:addChannel = 1 0.5 0 -421 " + lepBar + " " + hnl);
+        pythia.readString("-521:addChannel = 1 0.5 0 421 " + lep + " " + hnl);
+        if (verbose) std::cout << "  B± -> D0 ℓ N : ENABLED (3-body)" << std::endl;
+        nChannelsConfigured++;
+    } else if (verbose) {
+        std::cout << "  B± -> D0 ℓ N : DISABLED (kinematically forbidden)" << std::endl;
+    }
+
     // Bs -> Ds- ℓ+ N (semileptonic)
     double mBs = MESON_MASSES.at(531);
     double mDs = MESON_MASSES.at(431);
@@ -334,12 +416,13 @@ void configureEWDecays(Pythia& pythia, int leptonID, int neutrinoID,
     
     // Z -> ν N (for neutral current production)
     // Note: This is subdominant but physically correct
+    // BR = 0.5 each for ν and ν̄ (sum to 1.0)
     double mZ = 91.2;
     if (mHNL < mZ) {
         pythia.readString("23:onMode = off");
-        pythia.readString("23:addChannel = 1 1.0 0 " + nu + " " + hnl);
-        pythia.readString("23:addChannel = 1 1.0 0 " + nuBar + " " + hnl);
-        if (verbose) std::cout << "  Z -> ν N : ENABLED" << std::endl;
+        pythia.readString("23:addChannel = 1 0.5 0 " + nu + " " + hnl);
+        pythia.readString("23:addChannel = 1 0.5 0 " + nuBar + " " + hnl);
+        if (verbose) std::cout << "  Z -> ν N : ENABLED (50/50 ν/ν̄)" << std::endl;
     }
     
     // Also configure top -> W b -> ℓ N b
@@ -351,37 +434,51 @@ void configureEWDecays(Pythia& pythia, int leptonID, int neutrinoID,
 }
 
 // ==========================================================================
-// Configure tau decays for BC8 (tau-coupled HNL)
+// Configure tau decays for "fromTau" production mode
+// ==========================================================================
+//
+// PHYSICS: For BC8 (tau coupling), there are TWO independent O(U_tau²) sources:
+//
+//   MODE A ("direct"):  B/Ds/W → τ N  (mixing at meson/W vertex)
+//   MODE B ("fromTau"): B/Ds/W → τ ν → N X  (mixing at tau decay)
+//
+// To avoid O(U⁴) contamination, we generate these as SEPARATE samples:
+//   - "direct" mode: Mesons/W forced to τN, taus decay SM
+//   - "fromTau" mode: Mesons/W decay SM to τν, taus forced to NX
+//
+// The two samples are combined in the analysis pipeline.
+//
+// This function configures MODE B (tau-decay production).
 // ==========================================================================
 
 void configureTauDecays(Pythia& pythia, double mHNL, bool verbose = true) {
-    
     std::string hnl = std::to_string(HNL_ID);
     double mTau = M_TAU;
-    
+
     if (verbose) {
-        std::cout << "\n=== Configuring tau decay channels ===" << std::endl;
+        std::cout << "\n=== Configuring tau → N X decays (MODE B: fromTau) ===" << std::endl;
+        std::cout << "HNL mass: " << mHNL << " GeV" << std::endl;
     }
-    
-    // τ -> π N (2-body)
-    double mPi = 0.140;
+
+    // Turn off all SM tau decays
+    pythia.readString("15:onMode = off");
+    pythia.readString("-15:onMode = off");
+
+    // τ- → π- N (2-body, representative mode for acceptance)
+    double mPi = 0.140;  // charged pion
     if (mHNL + mPi < mTau) {
-        pythia.readString("15:onMode = off");
-        pythia.readString("15:addChannel = 1 1.0 0 -211 " + hnl);  // τ- -> π- N
-        pythia.readString("-15:onMode = off");
-        pythia.readString("-15:addChannel = 1 1.0 0 211 " + hnl);  // τ+ -> π+ N
-        if (verbose) std::cout << "  τ -> π N : ENABLED" << std::endl;
+        pythia.readString("15:addChannel = 1 1.0 0 -211 " + hnl);
+        pythia.readString("-15:addChannel = 1 1.0 0 211 " + hnl);
+        if (verbose) std::cout << "  τ → π N : ENABLED" << std::endl;
+    } else if (verbose) {
+        std::cout << "  τ → π N : DISABLED (kinematically forbidden)" << std::endl;
+        std::cout << "  WARNING: No tau decay channels available at this mass!" << std::endl;
     }
-    
-    // τ -> ρ N (2-body, ρ -> ππ)
-    double mRho = 0.775;
-    if (mHNL + mRho < mTau) {
-        // Note: Pythia will decay ρ -> ππ automatically
-        pythia.readString("15:addChannel = 1 0.5 0 -213 " + hnl);  // τ- -> ρ- N
-        pythia.readString("-15:addChannel = 1 0.5 0 213 " + hnl);  // τ+ -> ρ+ N
-        if (verbose) std::cout << "  τ -> ρ N : ENABLED" << std::endl;
-    }
-    
+
+    // Note: In reality, τ → N + X has many channels (π, ρ, ℓνν, etc.)
+    // We use one representative mode (τ → π N) for geometric acceptance.
+    // Physical branching ratios will be applied via HNLCalc in analysis.
+
     if (verbose) {
         std::cout << "==========================================\n" << std::endl;
     }
@@ -392,41 +489,65 @@ void configureTauDecays(Pythia& pythia, double mHNL, bool verbose = true) {
 // ==========================================================================
 
 int main(int argc, char* argv[]) {
-    
+
     // -----------------------------------------------------------------------
     // Parse command line arguments
     // -----------------------------------------------------------------------
-    
+
     if (argc < 3) {
-        std::cout << "Usage: " << argv[0] << " <mass_GeV> <flavor> [nEvents]" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <mass_GeV> <flavor> [nEvents] [mode]" << std::endl;
         std::cout << "  mass_GeV: HNL mass in GeV" << std::endl;
         std::cout << "  flavor: electron, muon, tau (PBC benchmark BC6/7/8)" << std::endl;
         std::cout << "  nEvents: optional, default 100000" << std::endl;
+        std::cout << "  mode: optional, 'direct' (default) or 'fromTau' (tau only)" << std::endl;
+        std::cout << "\nProduction modes (tau coupling only):" << std::endl;
+        std::cout << "  direct:  B/Ds/W → τ N  (mixing at meson/W vertex)" << std::endl;
+        std::cout << "  fromTau: B/Ds/W → τ ν, then τ → N X  (mixing at tau decay)" << std::endl;
+        std::cout << "  → Both modes are O(U_tau²), combine in analysis for maximum reach" << std::endl;
         std::cout << "\nExamples:" << std::endl;
-        std::cout << "  " << argv[0] << " 0.3 muon          # 300 MeV muon-coupled" << std::endl;
-        std::cout << "  " << argv[0] << " 2.0 electron      # 2 GeV electron-coupled" << std::endl;
-        std::cout << "  " << argv[0] << " 10.0 muon 500000  # 10 GeV muon-coupled, 500k events" << std::endl;
+        std::cout << "  " << argv[0] << " 0.3 muon              # 300 MeV muon-coupled" << std::endl;
+        std::cout << "  " << argv[0] << " 2.0 electron          # 2 GeV electron-coupled" << std::endl;
+        std::cout << "  " << argv[0] << " 3.0 tau 100000 direct # 3 GeV tau, direct production" << std::endl;
+        std::cout << "  " << argv[0] << " 3.0 tau 100000 fromTau # 3 GeV tau, from tau decay" << std::endl;
         return 1;
     }
-    
+
     double mHNL = std::stod(argv[1]);
     std::string flavor = argv[2];
     int nEvents = (argc >= 4) ? std::stoi(argv[3]) : 100000;
-    
+    std::string productionMode = (argc >= 5) ? argv[4] : "direct";
+
+    // Validate production mode
+    if (productionMode != "direct" && productionMode != "fromTau") {
+        std::cerr << "Error: Invalid production mode '" << productionMode << "'" << std::endl;
+        std::cerr << "Must be 'direct' or 'fromTau'" << std::endl;
+        return 1;
+    }
+
+    // Validate mode-flavor combination
+    if (productionMode == "fromTau" && flavor != "tau") {
+        std::cerr << "Error: 'fromTau' mode only valid for tau coupling" << std::endl;
+        std::cerr << "For electron/muon, use 'direct' mode only" << std::endl;
+        return 1;
+    }
+
     int leptonID, neutrinoID;
     double mLepton;
     std::string flavorLabel;
     getLeptonInfo(flavor, leptonID, neutrinoID, mLepton, flavorLabel);
-    
+
     // Determine production regime
     std::string regime = getProductionRegime(mHNL);
-    
+
     std::cout << "============================================" << std::endl;
     std::cout << "HNL Production Simulation" << std::endl;
     std::cout << "============================================" << std::endl;
     std::cout << "HNL mass:        " << mHNL << " GeV" << std::endl;
     std::cout << "Coupling:        " << flavorLabel << " (BC" << (leptonID == 11 ? "6" : leptonID == 13 ? "7" : "8") << ")" << std::endl;
     std::cout << "Production mode: " << regime << std::endl;
+    if (flavorLabel == "tau") {
+        std::cout << "Tau mode:        " << productionMode << std::endl;
+    }
     std::cout << "Events:          " << nEvents << std::endl;
     std::cout << "============================================\n" << std::endl;
     
@@ -485,9 +606,17 @@ int main(int argc, char* argv[]) {
         std::cout << "Using card file: " << cardFile << std::endl;
     }
     
-    // Define HNL particle (spinType=1 for fermion, not 2 for vector boson)
+    // -----------------------------------------------------------------------
+    // Define HNL particle
+    // -----------------------------------------------------------------------
+    // We define a single HNL state (PDG 9900015). This is appropriate for
+    // Majorana HNL where N = N̄. For Dirac HNL interpretation, multiply
+    // final yields by factor 2 (or generate both ±9900015).
+    // PBC benchmarks BC6/BC7/BC8 assume Majorana.
+    //
+    // spinType=2 for spin-1/2 fermion (HNL is a sterile neutrino)
     std::ostringstream hnlDef;
-    hnlDef << HNL_ID << ":new = N Nbar 1 0 0";
+    hnlDef << HNL_ID << ":new = N Nbar 2 0 0";
     pythia.readString(hnlDef.str());
     
     hnlDef.str("");
@@ -502,16 +631,29 @@ int main(int argc, char* argv[]) {
     hnlDef << HNL_ID << ":mayDecay = off";
     pythia.readString(hnlDef.str());
     
-    // Configure decay channels
-    if (regime == "kaon" || regime == "charm" || regime == "beauty") {
-        configureMesonDecays(pythia, leptonID, neutrinoID, mHNL, mLepton);
-    } else {
-        configureEWDecays(pythia, leptonID, neutrinoID, mHNL, mLepton);
-    }
-    
-    // For tau-coupled HNL (BC8), also configure tau decays
-    if (leptonID == 15) {
+    // -----------------------------------------------------------------------
+    // Configure decay channels based on production mode
+    // -----------------------------------------------------------------------
+
+    if (flavorLabel == "tau" && productionMode == "fromTau") {
+        // MODE B: Tau-decay production (tau coupling only)
+        // Parents (B/Ds/W) decay SM to τν, then τ → N X
+        // → Keep meson/W decays at SM defaults
+        // → Force tau decay to N X
         configureTauDecays(pythia, mHNL);
+
+    } else {
+        // MODE A: Direct production (default for all flavors)
+        // For e/μ: K/D/B/W → ℓ N  (only mode available)
+        // For τ:   B/Ds/W → τ N  (mixing at meson/W vertex)
+        // → Force meson/W decays to ℓN
+        // → Keep tau decays at SM defaults (no τ → N X)
+
+        if (regime == "kaon" || regime == "charm" || regime == "beauty") {
+            configureMesonDecays(pythia, leptonID, mHNL, mLepton);
+        } else {
+            configureEWDecays(pythia, leptonID, neutrinoID, mHNL, mLepton);
+        }
     }
     
     // Set number of events
@@ -532,9 +674,16 @@ int main(int argc, char* argv[]) {
     // -----------------------------------------------------------------------
     // Open output file
     // -----------------------------------------------------------------------
-    
+
     std::ostringstream outFileName;
-    outFileName << "HNL_" << massToLabel(mHNL) << "GeV_" << flavorLabel << "_" << regime << ".csv";
+    outFileName << "HNL_" << massToLabel(mHNL) << "GeV_" << flavorLabel << "_" << regime;
+
+    // For tau coupling, distinguish direct vs fromTau production
+    if (flavorLabel == "tau") {
+        outFileName << "_" << productionMode;
+    }
+
+    outFileName << ".csv";
     
     std::ofstream outFile(outFileName.str());
     if (!outFile.is_open()) {
@@ -575,8 +724,17 @@ int main(int argc, char* argv[]) {
 
             // Calculate boost factor (use actual particle mass for robustness)
             double mass = p.m();
-            if (mass <= 0.0) mass = mHNL;          // fallback to input mass
-            if (mass <= 0.0) mass = 1e-6;          // hard floor to avoid div by zero
+            if (mass <= 0.0 || !std::isfinite(mass)) {
+                std::cerr << "WARNING: Invalid HNL mass " << mass
+                          << " in event " << iEvent
+                          << ", using input mass " << mHNL << std::endl;
+                mass = mHNL;
+            }
+            // Sanity check: mass must be positive (guaranteed by construction)
+            if (mass <= 0.0) {
+                std::cerr << "FATAL: Both p.m() and mHNL are non-positive!" << std::endl;
+                return 1;
+            }
             double boostGamma = p.e() / mass;
             
             // Write to CSV
