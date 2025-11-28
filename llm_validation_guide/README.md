@@ -13,8 +13,8 @@ The HNL analysis has **two independent stages**:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  STAGE 1: PRODUCTION (C++ / Pythia 8.315)                   │
-│  Location: production/                                       │
-│  Output: CSV files with HNL kinematics                       │
+│  Location: production/                                      │
+│  Output: CSV files with HNL kinematics                      │
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐

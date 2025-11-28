@@ -71,17 +71,13 @@ class HNLModel:
         HNL mass in GeV.
     Ue2, Umu2, Utau2 : float
         Flavour-diagonal mixings |U_e|^2, |U_mu|^2, |U_tau|^2.
-    majorana : bool, optional
-        Whether to treat the HNL as Majorana (if relevant for HNLCalc).
-        Default: True.
     extra_args : dict, optional
         Any additional configuration options you may want to pass through
-        to the underlying HNLCalc object (e.g. toggles for specific
-        production/decay sets, Dirac vs Majorana, etc.).
+        to the underlying HNLCalc object.
 
     Attributes
     ----------
-    mass_GeV, Ue2, Umu2, Utau2, majorana
+    mass_GeV, Ue2, Umu2, Utau2
         Stored input values.
     _hnlcalc
         The underlying HNLCalc object (once _build_hnlcalc() is wired up).
@@ -93,14 +89,12 @@ class HNLModel:
         Ue2: float,
         Umu2: float,
         Utau2: float,
-        majorana: bool = True,
         **extra_args: Any,
     ) -> None:
         self.mass_GeV = float(mass_GeV)
         self.Ue2 = float(Ue2)
         self.Umu2 = float(Umu2)
         self.Utau2 = float(Utau2)
-        self.majorana = bool(majorana)
         self.extra_args = extra_args
 
         # Underlying HNLCalc object (to be constructed in _build_hnlcalc)
@@ -291,6 +285,5 @@ class HNLModel:
     def __repr__(self) -> str:
         return (
             f"HNLModel(mass_GeV={self.mass_GeV}, "
-            f"Ue2={self.Ue2}, Umu2={self.Umu2}, Utau2={self.Utau2}, "
-            f"majorana={self.majorana})"
+            f"Ue2={self.Ue2}, Umu2={self.Umu2}, Utau2={self.Utau2})"
         )

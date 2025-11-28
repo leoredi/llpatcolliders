@@ -75,7 +75,7 @@ TESTS_DIR = THIS_FILE.parent                         # .../analysis_pbc_test/tes
 ANALYSIS_DIR = TESTS_DIR.parent                      # .../analysis_pbc_test
 REPO_ROOT = ANALYSIS_DIR.parent                      # .../llpatcolliders
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
-SIM_DIR = OUTPUT_DIR / "simulation"
+SIM_DIR = OUTPUT_DIR / "simulation_new"
 GEOM_DIR = OUTPUT_DIR / "geometry"
 
 # Ensure we can import the local analysis modules
@@ -151,12 +151,12 @@ def test_geometry_preprocessing() -> pd.DataFrame:
     )
 
     # Choose one CSV that should exist (adapt flavour/mass if needed)
-    csv_path = SIM_DIR / "HNL_mass_1p0_muon_Meson.csv"
+    csv_path = SIM_DIR / "HNL_1p00GeV_muon_charm.csv"
     if not csv_path.exists():
         raise FileNotFoundError(f"Expected test CSV not found: {csv_path}")
 
     GEOM_DIR.mkdir(parents=True, exist_ok=True)
-    geom_cache = GEOM_DIR / "HNL_mass_1p0_muon_geom.csv"
+    geom_cache = GEOM_DIR / "HNL_1p00GeV_muon_geom.csv"
 
     print(f"Input CSV:      {csv_path}")
     print(f"Geometry cache: {geom_cache}")
