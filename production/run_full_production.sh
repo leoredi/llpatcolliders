@@ -1,22 +1,17 @@
 #!/bin/bash
-# Full HNL Production Run - Enhanced Mass Grid
-# Increased sampling near kinematic thresholds
-# Standard 200k events per point (no increase in simulation size)
+# Full HNL Production Run - Uniform 0.1 GeV Grid
+# Mass range: 0.2 - 10.0 GeV with 0.1 GeV spacing
+# Standard 200k events per point
 
 set -e  # Exit on error
 
 echo "============================================"
-echo "HNL Full Production - Enhanced Mass Grid"
+echo "HNL Full Production - Uniform Mass Grid"
 echo "============================================"
 echo ""
-echo "Enhanced sampling near thresholds:"
-echo "  - K threshold: m_K - m_lepton"
-echo "  - D threshold: m_D - m_lepton"
-echo "  - B threshold: m_B - m_lepton"
-echo "  - Tau threshold: m_tau = 1.777 GeV"
-echo "  - W threshold: m_W = 80 GeV"
-echo ""
-echo "Total events: 200k per mass point (unchanged)"
+echo "Mass grid: 0.1 GeV spacing from 0.2 to 10.0 GeV"
+echo "Total mass points: 99 per flavor"
+echo "Total events: 200k per mass point"
 echo ""
 
 # Configuration
@@ -37,72 +32,28 @@ echo "Log file: $LOGFILE"
 echo ""
 
 # ===========================================================================
-# Enhanced Mass Grid - Electron Coupling (BC6)
+# Uniform Mass Grid - Electron Coupling (BC6)
 # ===========================================================================
-# Standard: 38 points
-# Enhanced: 50 points (added threshold regions)
+# 0.1 GeV spacing from 0.2 to 10.0 GeV: 99 points
 
-ELECTRON_MASSES=(
-    # Ultra-low mass (kaon regime, below K threshold)
-    0.2 0.22 0.25 0.28 0.3 0.32 0.35
-    # K threshold region (m_K - m_e ≈ 0.493 GeV)
-    0.38 0.40 0.42 0.45 0.48 0.50 0.52
-    # Charm regime
-    0.55 0.6 0.7 0.8 0.9 1.0 1.1 1.2
-    # D threshold region (m_D - m_e ≈ 1.87 GeV)
-    1.3 1.4 1.5 1.6 1.7 1.75 1.8 1.82 1.85 1.9
-    # Intermediate
-    2.0 2.3 2.6 3.0 3.4 3.8 4.2 4.6
-    # B threshold approach (m_B - m_e ≈ 5.28 GeV)
-    4.8 5.0 5.2
-    # High mass (EW regime) - Enhanced granularity up to 40 GeV
-    6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0 20.0 22.0 25.0 28.0 30.0 32.0 35.0 38.0 40.0
-)
+ELECTRON_MASSES=($(seq 0.2 0.1 10.0))
 
 # ===========================================================================
-# Enhanced Mass Grid - Muon Coupling (BC7)
+# Uniform Mass Grid - Muon Coupling (BC7)
 # ===========================================================================
-# Standard: 38 points
-# Enhanced: 48 points (added threshold regions)
+# 0.1 GeV spacing from 0.2 to 10.0 GeV: 99 points
 
-MUON_MASSES=(
-    # Low mass (kaon regime, below K threshold)
-    0.2 0.22 0.25 0.28 0.3 0.32 0.35
-    # K threshold region (m_K - m_mu ≈ 0.388 GeV)
-    0.37 0.38 0.39 0.40 0.42 0.45 0.48 0.50
-    # Charm regime
-    0.55 0.6 0.7 0.8 0.9 1.0 1.2 1.4 1.6
-    # D threshold region (m_D - m_mu ≈ 1.76 GeV)
-    1.65 1.70 1.75 1.76 1.78 1.8 1.85 1.9
-    # Intermediate
-    2.0 2.3 2.6 3.0 3.4 3.8 4.2 4.6
-    # B threshold approach (m_B - m_mu ≈ 5.17 GeV)
-    4.8 5.0 5.2
-    # High mass (EW regime) - Enhanced granularity up to 40 GeV
-    6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0 20.0 22.0 25.0 28.0 30.0 32.0 35.0 38.0 40.0
-)
+MUON_MASSES=($(seq 0.2 0.1 10.0))
 
 # ===========================================================================
-# Enhanced Mass Grid - Tau Coupling (BC8)
+# Uniform Mass Grid - Tau Coupling (BC8)
 # ===========================================================================
-# Standard: 26 points (starts at 0.5 GeV)
-# Enhanced: 35 points (added tau threshold region)
+# 0.1 GeV spacing from 0.2 to 10.0 GeV: 99 points
 #
 # DUAL MODE: direct + fromTau where kinematically allowed
 # fromTau available when: m_HNL + m_pi < m_tau (m < 1.64 GeV)
 
-TAU_MASSES=(
-    # Charm regime
-    0.5 0.55 0.6 0.65 0.7 0.8 0.9 1.0 1.1 1.2 1.3
-    # Below tau mass (both modes available)
-    1.4 1.45 1.5 1.55 1.6 1.62 1.64
-    # Tau threshold region (m_tau = 1.777 GeV)
-    1.66 1.70 1.74 1.777 1.8 1.85 1.9
-    # Beauty regime
-    2.0 2.4 2.8 3.2 3.6 4.0 4.5
-    # High mass (EW regime)
-    5.0 6.0 7.0 8.0 10.0 12.0 15.0 20.0 30.0 40.0 50.0 60.0 80.0
-)
+TAU_MASSES=($(seq 0.2 0.1 10.0))
 
 # ===========================================================================
 # Execution
@@ -115,10 +66,10 @@ current_job=0
 echo "Total mass points:"
 echo "  Electron: ${#ELECTRON_MASSES[@]}"
 echo "  Muon: ${#MUON_MASSES[@]}"
-echo "  Tau: ${#TAU_MASSES[@]} (x2 for dual mode where applicable)"
-echo "  TOTAL: ~$total_jobs simulation runs"
+echo "  Tau: ${#TAU_MASSES[@]} (some with dual mode for m < 1.64 GeV)"
+echo "  TOTAL: ~312 simulation runs"
 echo ""
-echo "Estimated time: 120-150 hours (single core)"
+echo "Estimated time: ~10 hours (single core), ~1 hour (10 cores)"
 echo "Recommendation: Run in parallel on multi-core system"
 echo ""
 read -p "Continue with full production? (y/n) " -n 1 -r
