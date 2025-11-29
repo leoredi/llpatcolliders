@@ -391,13 +391,16 @@ def run_reach_scan(
     results_out: Path = None,
     n_jobs: int = 4,
 ) -> pd.DataFrame:
-    
+
+    print(f"[DEBUG] run_reach_scan called for flavour={flavour}, benchmark={benchmark}")
+
     if results_out is None:
         results_out = ANALYSIS_OUT_DIR / "HNL_U2_limits_summary.csv"
 
     geom_cache_dir.mkdir(parents=True, exist_ok=True)
     ANALYSIS_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    print(f"[DEBUG] Starting file scan in {csv_dir}")
     # 1. Auto-detect files and capture exact mass string
     # New format: HNL_XpYGeV_flavour_regime.csv (e.g., HNL_2p60GeV_muon_beauty.csv)
     # Old format: HNL_mass_X_flavour_Meson.csv (for backwards compatibility)
@@ -477,20 +480,21 @@ def run_reach_scan(
 
     df_res = pd.DataFrame(results).sort_values("mass_GeV")
 
-    # 3. Merge (Overwrite old results for this benchmark)
+    # 3. Merge (Overwrite old results for this flavour)
+    # Note: Each flavour only has one benchmark (electron=100, muon=010, tau=001)
+    # so we filter on flavour alone to handle corrupted benchmark values from old runs
     if results_out.exists():
         existing_df = pd.read_csv(results_out)
-        mask_keep = ~(
-            (existing_df["flavour"] == flavour) & 
-            (existing_df["benchmark"] == benchmark)
-        )
+        # Remove ALL old entries for this flavour (regardless of benchmark)
+        mask_keep = (existing_df["flavour"] != flavour)
         existing_df = existing_df[mask_keep]
+        print(f"[INFO] Removed {(~mask_keep).sum()} old entries for {flavour}")
         final_df = pd.concat([existing_df, df_res], ignore_index=True)
     else:
         final_df = df_res
 
     final_df.to_csv(results_out, index=False)
-    print(f"Saved {len(df_res)} points to {results_out}\n")
+    print(f"Saved {len(df_res)} new points for {flavour} to {results_out}\n")
     return df_res
 
 
@@ -499,14 +503,27 @@ def run_reach_scan(
 # ----------------------------------------------------------------------
 
 if __name__ == "__main__":
+    print("[MAIN] Starting u2_limit_calculator.py")
+    print(f"[MAIN] SIM_DIR = {SIM_DIR}")
+    print(f"[MAIN] GEOM_CACHE_DIR = {GEOM_CACHE_DIR}")
+    print(f"[MAIN] ANALYSIS_OUT_DIR = {ANALYSIS_OUT_DIR}")
+
     L_HL_LHC_FB = 3000.0
-    N_CORES = 4 
+    N_CORES = 4
 
     # 1. Electrons (Ve)
+    print("[MAIN] Starting electron scan...")
     run_reach_scan("electron", "100", L_HL_LHC_FB, n_jobs=N_CORES)
+    print("[MAIN] Electron scan complete")
 
     # 2. Muons (Vmu)
+    print("[MAIN] Starting muon scan...")
     run_reach_scan("muon", "010", L_HL_LHC_FB, n_jobs=N_CORES)
+    print("[MAIN] Muon scan complete")
 
     # 3. Taus (Vtau)
+    print("[MAIN] Starting tau scan...")
     run_reach_scan("tau", "001", L_HL_LHC_FB, n_jobs=N_CORES)
+    print("[MAIN] Tau scan complete")
+
+    print("[MAIN] All scans complete!")

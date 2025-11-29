@@ -13,6 +13,7 @@ main*Dct.cc
 pythiaStuff/hnlLL_m*GeV.cmnd
 pythiaStuff/test*.cmnd
 __pycache__
+__pycache__/
 
 # CSV files (too large for git)
 *.csv

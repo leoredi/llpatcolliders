@@ -1,0 +1,24 @@
+####################################################
+# Process card for HNL production (tau coupling)
+# pp → W± → τ± N1 and pp → Z → ντ N1
+# LHC 14 TeV
+####################################################
+
+# Import the HeavyN model
+import model SM_HeavyN_CKM_AllMasses_LO
+
+# Define the multiparticle sets
+define p = g u c d s u~ c~ d~ s~
+define j = g u c d s u~ c~ d~ s~
+
+# Generate EW HNL production processes
+# Charged current: pp → W+ → τ+ N1 and pp → W- → τ- N1
+generate p p > ta+ n1 @1
+add process p p > ta- n1 @2
+
+# Neutral current: pp → Z → vt N1 and pp → Z → vt~ N1
+add process p p > vt n1 @3
+add process p p > vt~ n1 @4
+
+# Output directory (will be set by driver script)
+output work/hnl_tau_MASS_PLACEHOLDER -nojpeg

@@ -1,0 +1,24 @@
+####################################################
+# Process card for HNL production (electron coupling)
+# pp → W± → e± N1 and pp → Z → νe N1
+# LHC 14 TeV
+####################################################
+
+# Import the HeavyN model
+import model SM_HeavyN_CKM_AllMasses_LO
+
+# Define the multiparticle sets
+define p = g u c d s u~ c~ d~ s~
+define j = g u c d s u~ c~ d~ s~
+
+# Generate EW HNL production processes
+# Charged current: pp → W+ → e+ N1 and pp → W- → e- N1
+generate p p > e+ n1 @1
+add process p p > e- n1 @2
+
+# Neutral current: pp → Z → ve N1 and pp → Z → ve~ N1
+add process p p > ve n1 @3
+add process p p > ve~ n1 @4
+
+# Output directory (will be set by driver script)
+output work/hnl_electron_MASS_PLACEHOLDER -nojpeg
