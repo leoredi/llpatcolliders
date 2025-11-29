@@ -62,16 +62,16 @@ Block ckmblock
 ###################################
 ## INFORMATION FOR HNLMIXING (CRITICAL FOR PRODUCTION)
 ###################################
-Block hnlmixing
+Block numixing
     1 VE1_PLACEHOLDER   # ve1 (electron mixing: 0 or 1)
     2 VMU1_PLACEHOLDER  # vmu1 (muon mixing: 0 or 1)
     3 VTAU1_PLACEHOLDER # vtau1 (tau mixing: 0 or 1)
-    4 0.000000e+00 # ve2 (n2 decoupled)
-    5 0.000000e+00 # vmu2 (n2 decoupled)
-    6 0.000000e+00 # vtau2 (n2 decoupled)
-    7 0.000000e+00 # ve3 (n3 decoupled)
-    8 0.000000e+00 # vmu3 (n3 decoupled)
-    9 0.000000e+00 # vtau3 (n3 decoupled)
+    4 0.000000e+00      # ve2 (n2 decoupled)
+    5 0.000000e+00      # vmu2 (n2 decoupled)
+    6 0.000000e+00      # vtau2 (n2 decoupled)
+    7 0.000000e+00      # ve3 (n3 decoupled)
+    8 0.000000e+00      # vmu3 (n3 decoupled)
+    9 0.000000e+00      # vtau3 (n3 decoupled)
 
 ###################################
 ## INFORMATION FOR DECAY (HNL stable in generation)

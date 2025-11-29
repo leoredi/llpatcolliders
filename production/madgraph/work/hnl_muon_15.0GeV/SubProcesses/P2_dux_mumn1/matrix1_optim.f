@@ -1,1 +1,0 @@
-/work/production/madgraph/work/hnl_muon_15.0GeV/SubProcesses/P2_dux_mumn1/matrix1_orig.f

@@ -1,1 +1,0 @@
-DIRNAME=P4_ssx_vln1
