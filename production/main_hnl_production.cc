@@ -159,8 +159,7 @@ bool isKinematicallyAllowed2Body(double mParent, double mLepton, double mHNL) {
 std::string getProductionRegime(double mHNL) {
     if (mHNL < 0.5) return "kaon";       // Kaon-dominated regime
     if (mHNL < 2.0) return "charm";      // Charm-dominated regime
-    if (mHNL < 5.0) return "beauty";     // Beauty-dominated regime
-    return "ew";                          // Electroweak regime
+    return "beauty";                      // Beauty regime (2.0-10.0 GeV)
 }
 
 // Convert mass to filename-safe label
@@ -388,52 +387,6 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
 }
 
 // ==========================================================================
-// Configure W/Z decays for EW production
-// ==========================================================================
-
-void configureEWDecays(Pythia& pythia, int leptonID, int neutrinoID, 
-                       double mHNL, double mLepton, bool verbose = true) {
-    
-    std::string hnl = std::to_string(HNL_ID);
-    std::string lep = std::to_string(leptonID);
-    std::string lepBar = std::to_string(-leptonID);
-    std::string nu = std::to_string(neutrinoID);
-    std::string nuBar = std::to_string(-neutrinoID);
-    
-    if (verbose) {
-        std::cout << "\n=== Configuring EW decay channels ===" << std::endl;
-    }
-    
-    // W+ -> ℓ+ N
-    double mW = 80.4;
-    if (mHNL + mLepton < mW) {
-        pythia.readString("24:onMode = off");
-        pythia.readString("24:addChannel = 1 1.0 0 " + lepBar + " " + hnl);
-        pythia.readString("-24:onMode = off");
-        pythia.readString("-24:addChannel = 1 1.0 0 " + lep + " " + hnl);
-        if (verbose) std::cout << "  W± -> ℓ N : ENABLED" << std::endl;
-    }
-    
-    // Z -> ν N (for neutral current production)
-    // Note: This is subdominant but physically correct
-    // BR = 0.5 each for ν and ν̄ (sum to 1.0)
-    double mZ = 91.2;
-    if (mHNL < mZ) {
-        pythia.readString("23:onMode = off");
-        pythia.readString("23:addChannel = 1 0.5 0 " + nu + " " + hnl);
-        pythia.readString("23:addChannel = 1 0.5 0 " + nuBar + " " + hnl);
-        if (verbose) std::cout << "  Z -> ν N : ENABLED (50/50 ν/ν̄)" << std::endl;
-    }
-    
-    // Also configure top -> W b -> ℓ N b
-    // The W from top decay will use the W decay channel above
-    if (verbose) {
-        std::cout << "  t -> W b -> ℓ N b : Uses W channel above" << std::endl;
-        std::cout << "==========================================\n" << std::endl;
-    }
-}
-
-// ==========================================================================
 // Configure tau decays for "fromTau" production mode
 // ==========================================================================
 //
@@ -566,7 +519,8 @@ int main(int argc, char* argv[]) {
     } else if (regime == "beauty") {
         cardName = "hnl_Bmeson.cmnd";
     } else {
-        cardName = "hnl_EW.cmnd";
+        std::cerr << "ERROR: Unknown regime '" << regime << "'. Cannot select card file." << std::endl;
+        return 1;
     }
 
     // Try to read card from current directory, then from parent/cards
@@ -596,11 +550,6 @@ int main(int argc, char* argv[]) {
             pythia.readString("HardQCD:hardccbar = on");
         } else if (regime == "beauty") {
             pythia.readString("HardQCD:hardbbbar = on");
-        } else {
-            pythia.readString("WeakSingleBoson:ffbar2W = on");
-            pythia.readString("WeakSingleBoson:ffbar2gmZ = on");
-            pythia.readString("Top:gg2ttbar = on");
-            pythia.readString("Top:qqbar2ttbar = on");
         }
     } else {
         std::cout << "Using card file: " << cardFile << std::endl;
@@ -644,16 +593,12 @@ int main(int argc, char* argv[]) {
 
     } else {
         // MODE A: Direct production (default for all flavors)
-        // For e/μ: K/D/B/W → ℓ N  (only mode available)
-        // For τ:   B/Ds/W → τ N  (mixing at meson/W vertex)
-        // → Force meson/W decays to ℓN
+        // For e/μ: K/D/B → ℓ N  (only mode available)
+        // For τ:   B/Ds → τ N  (mixing at meson vertex)
+        // → Force meson decays to ℓN
         // → Keep tau decays at SM defaults (no τ → N X)
 
-        if (regime == "kaon" || regime == "charm" || regime == "beauty") {
-            configureMesonDecays(pythia, leptonID, mHNL, mLepton);
-        } else {
-            configureEWDecays(pythia, leptonID, neutrinoID, mHNL, mLepton);
-        }
+        configureMesonDecays(pythia, leptonID, mHNL, mLepton);
     }
     
     // Set number of events
