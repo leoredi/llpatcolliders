@@ -1,0 +1,8 @@
+import model SM_HeavyN_CKM_AllMasses_LO
+define p = g u c d s u~ c~ d~ s~
+define j = g u c d s u~ c~ d~ s~
+generate p p > {l_plus} n1
+add process p p > {l_minus} n1
+add process p p > {vl} n1
+add process p p > {vl_tilde} n1
+output {output_dir}
