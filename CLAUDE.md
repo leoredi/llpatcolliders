@@ -131,18 +131,18 @@ pip install sympy mpmath particle numba 'scikit-hep==0.4.0'
 ```bash
 # Stage 1: Generate events (C++ PYTHIA simulation)
 cd production
-./make.sh all  # Generates 131 successful CSV files in low-mass regime (<5 GeV)
-               # Total size: ~2.5 GB, takes ~30-45 min
+./run_full_production.sh    # Base grid: ~300 CSV files, ~7 GB, ~10 hours
+./run_island_closure.sh      # Closure points: 22 CSV files, ~500 MB, ~2 hours
 
 # Stage 2: Calculate limits (Python analysis)
 cd ../analysis_pbc_test
-conda run -n llpatcolliders python limits/u2_limit_calculator.py  # ~10-20 min
+/opt/homebrew/Caskroom/miniconda/base/envs/llpatcolliders/bin/python -u limits/run_serial.py  # ~2-3 hours
 
 # Stage 3: Generate plot
-conda run -n llpatcolliders python ../money_plot/plot_money_island.py
+/opt/homebrew/Caskroom/miniconda/base/envs/llpatcolliders/bin/python ../money_plot/plot_money_island.py
 ```
 
-**Output:** `output/images/HNL_moneyplot_island.png` - Exclusion limits for all 3 lepton flavors (low-mass regime)
+**Output:** `output/images/HNL_moneyplot_island.png` - Exclusion limits with properly closed islands for all 3 lepton flavors
 
 ---
 
@@ -158,10 +158,11 @@ conda run -n llpatcolliders python ../money_plot/plot_money_island.py
 ```bash
 cd production
 
-# Option A: All flavors at once (recommended)
-./make.sh all
+# Option A: Full production (base + closure points)
+./run_full_production.sh     # Base grid: 99 points per flavor
+./run_island_closure.sh      # Closure points: 22 additional points
 
-# Option B: Individual flavors
+# Option B: Individual flavors (base grid)
 ./make.sh electron  # 41 mass points (low-mass regime)
 ./make.sh muon      # 41 mass points (low-mass regime)
 ./make.sh tau       # 49 files from 33 unique mass points (direct + fromTau)
@@ -170,12 +171,23 @@ cd production
 ./main_hnl_single 2.6 muon
 ```
 
-**Mass Grid (Low-Mass Regime < 5 GeV - VALIDATED):**
+**Mass Grid (Low-Mass Regime < 5.5 GeV - VALIDATED):**
+
+**Base Grid:**
 - **Electrons:** 41 points (0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.38, 0.40, 0.42, 0.45, 0.48, 0.50, 0.52, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.50, 1.60, 1.70, 1.75, 1.80, 1.82, 1.85, 1.90, 2.00, 2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80 GeV)
 - **Muons:** 41 points (0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.37, 0.38, 0.39, 0.40, 0.42, 0.45, 0.48, 0.50, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00, 1.20, 1.40, 1.60, 1.65, 1.70, 1.75, 1.76, 1.78, 1.80, 1.85, 1.90, 2.00, 2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80 GeV)
 - **Taus:** 33 unique mass points (0.50, 0.55, 0.60, 0.65, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40, 1.45, 1.50, 1.55, 1.60, 1.62, 1.64, 1.66, 1.70, 1.74, 1.78, 1.80, 1.85, 1.90, 2.00, 2.40, 2.80, 3.00, 3.20, 3.60, 4.00, 4.50 GeV)
 
-**Note on High-Mass Regime (≥5 GeV):** Electroweak production simulations currently fail due to Pythia configuration issues with Z boson decays. Low-mass regime (< 5 GeV) is complete and validated with 131 successful simulation files.
+**Island Closure Points (for properly closing exclusion contours):**
+- **Electrons:** +9 points (4.3, 4.4, 4.5, 4.7, 4.9, 5.1, 5.3, 5.4, 5.5 GeV)
+- **Muons:** +9 points (4.3, 4.4, 4.5, 4.7, 4.9, 5.1, 5.3, 5.4, 5.5 GeV)
+- **Taus:** +4 points (4.1, 4.2, 4.3, 4.4 GeV)
+
+**Total with Closure:** 50 electron + 50 muon + 37 tau = 137 mass points
+
+**Purpose of Closure Points:** Fill mass grid gaps in the 4.2-5.5 GeV region to properly close the exclusion islands on the right-hand side (where HNLs become too prompt and decay before reaching the detector).
+
+**Note on High-Mass Regime (≥5 GeV):** Electroweak production simulations currently fail due to Pythia configuration issues with Z boson decays. Low-mass regime (< 5.5 GeV) is complete and validated.
 
 **Output Files:**
 ```
