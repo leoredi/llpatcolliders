@@ -1,17 +1,17 @@
 #!/bin/bash
-# Full HNL Production Run - Uniform 0.1 GeV Grid
-# Mass range: 0.2 - 10.0 GeV with 0.1 GeV spacing
-# Standard 200k events per point
+# Full HNL Production Run
+# Generates all mass points including closure points for complete exclusion islands
+# Mass grids loaded from ../config_mass_grid.py
 
 set -e  # Exit on error
 
 echo "============================================"
-echo "HNL Full Production - Uniform Mass Grid"
+echo "HNL Production - Complete Mass Grid"
 echo "============================================"
 echo ""
-echo "Mass grid: 0.1 GeV spacing from 0.2 to 10.0 GeV"
-echo "Total mass points: 99 per flavor"
-echo "Total events: 200k per mass point"
+echo "Includes base points + island closure points"
+echo "Mass grid: config_mass_grid.py"
+echo "Events: 200k per mass point"
 echo ""
 
 # Configuration
@@ -32,28 +32,17 @@ echo "Log file: $LOGFILE"
 echo ""
 
 # ===========================================================================
-# Uniform Mass Grid - Electron Coupling (BC6)
+# Load Mass Grids from Central Configuration
 # ===========================================================================
-# 0.1 GeV spacing from 0.2 to 10.0 GeV: 99 points
+# Mass points are defined in ../config_mass_grid.py (SINGLE SOURCE OF TRUTH)
+# This ensures consistency across all production, analysis, and plotting scripts.
 
-ELECTRON_MASSES=($(seq 0.2 0.1 10.0))
+source ./load_mass_grid.sh
 
-# ===========================================================================
-# Uniform Mass Grid - Muon Coupling (BC7)
-# ===========================================================================
-# 0.1 GeV spacing from 0.2 to 10.0 GeV: 99 points
-
-MUON_MASSES=($(seq 0.2 0.1 10.0))
-
-# ===========================================================================
-# Uniform Mass Grid - Tau Coupling (BC8)
-# ===========================================================================
-# 0.1 GeV spacing from 0.2 to 10.0 GeV: 99 points
-#
-# DUAL MODE: direct + fromTau where kinematically allowed
-# fromTau available when: m_HNL + m_pi < m_tau (m < 1.64 GeV)
-
-TAU_MASSES=($(seq 0.2 0.1 10.0))
+# Use production-recommended mass arrays (base + closure, skip failing EW)
+ELECTRON_MASSES=("${ELECTRON_MASSES_PRODUCTION[@]}")
+MUON_MASSES=("${MUON_MASSES_PRODUCTION[@]}")
+TAU_MASSES=("${TAU_MASSES_PRODUCTION[@]}")
 
 # ===========================================================================
 # Execution
@@ -64,10 +53,11 @@ total_jobs=$((${#ELECTRON_MASSES[@]} + ${#MUON_MASSES[@]} + ${#TAU_MASSES[@]} * 
 current_job=0
 
 echo "Total mass points:"
-echo "  Electron: ${#ELECTRON_MASSES[@]}"
-echo "  Muon: ${#MUON_MASSES[@]}"
-echo "  Tau: ${#TAU_MASSES[@]} (some with dual mode for m < 1.64 GeV)"
-echo "  TOTAL: ~312 simulation runs"
+echo "  Electron: ${#ELECTRON_MASSES[@]} points"
+echo "  Muon: ${#MUON_MASSES[@]} points"
+echo "  Tau: ${#TAU_MASSES[@]} points (some with dual mode for m < 1.64 GeV)"
+total_sims=$((${#ELECTRON_MASSES[@]} + ${#MUON_MASSES[@]} + ${#TAU_MASSES[@]} * 2))
+echo "  TOTAL: ~${total_sims} simulation runs"
 echo ""
 echo "Estimated time: ~10 hours (single core), ~1 hour (10 cores)"
 echo "Recommendation: Run in parallel on multi-core system"

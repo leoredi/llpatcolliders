@@ -91,7 +91,11 @@ class ProjectPaths:
         self.cards = self.base / 'cards'
         self.scripts = self.base / 'scripts'
         self.lhe_dir = self.base / 'lhe'
-        self.csv_dir = self.base / 'csv'
+
+        # CSV output directory: use central output/csv/simulation_new/
+        # This matches the Pythia production output location
+        self.csv_dir = self.base.parent.parent / 'output' / 'csv' / 'simulation_new'
+
         self.work_dir = self.base / 'work'
         self.mg5_dir = self.base / 'mg5'  # unused in Docker but kept for completeness
 
@@ -107,8 +111,11 @@ class ProjectPaths:
         return self.lhe_dir / flavour / f"m_{mass}GeV"
 
     def csv_path(self, flavour, mass):
-        """Get CSV output path for (flavour, mass)"""
-        return self.csv_dir / flavour / f"HNL_mass_{mass}GeV_{flavour}_EW.csv"
+        """Get CSV output path for (flavour, mass) - matches Pythia format"""
+        # Use same directory structure as Pythia production for compatibility
+        # Format: HNL_{mass}GeV_{flavour}_EW.csv
+        mass_str = f"{mass:.1f}".replace('.', 'p')  # e.g., 15.0 → 15p0
+        return self.csv_dir / f"HNL_{mass_str}GeV_{flavour}_EW.csv"
 
     def summary_csv_path(self):
         """Get summary CSV path"""
@@ -468,7 +475,8 @@ def initialize_summary_csv(paths):
 def append_to_summary(paths, flavour, mass, xsec_data, n_events_csv):
     """Append result to summary CSV"""
     summary_path = paths.summary_csv_path()
-    csv_rel_path = paths.csv_path(flavour, mass).relative_to(paths.base)
+    # Use just filename since all CSVs are in same directory
+    csv_rel_path = paths.csv_path(flavour, mass).name
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     row = (

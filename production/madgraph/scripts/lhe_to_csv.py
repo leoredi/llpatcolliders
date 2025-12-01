@@ -58,20 +58,23 @@ class LHEParser:
         """
         Parse LHE file and yield event dictionaries
 
+        Uses MATHUSLA approach: Extract HNL 4-vectors only.
+        Parent W/Z may not appear in LHE if off-shell (controlled by bw_cut).
+
         Yields:
             dict with keys:
                 - event_id: int
-                - parent_pdgid: int (W+/W-/Z)
                 - hnl_pdgid: int (N1)
                 - mass_hnl_GeV: float
                 - weight: float
-                - parent_E_GeV, parent_px_GeV, parent_py_GeV, parent_pz_GeV: float
                 - hnl_E_GeV, hnl_px_GeV, hnl_py_GeV, hnl_pz_GeV: float
+                - hnl_pt_GeV, hnl_eta, hnl_phi: float (derived)
         """
         event_id = 0
         in_event = False
         event_weight = 1.0
         particles = []
+        header_parsed = False
 
         with self._open_lhe() as f:
             for line in f:
@@ -82,6 +85,7 @@ class LHEParser:
                     in_event = True
                     particles = []
                     event_weight = 1.0
+                    header_parsed = False
                     continue
 
                 # End of event block
@@ -89,8 +93,8 @@ class LHEParser:
                     in_event = False
                     event_id += 1
 
-                    # Extract HNL and parent information
-                    event_data = self._extract_hnl_and_parent(
+                    # Extract HNL 4-vector (MATHUSLA approach)
+                    event_data = self._extract_hnl(
                         particles, event_id, event_weight
                     )
 
@@ -101,15 +105,21 @@ class LHEParser:
 
                 # Parse event content
                 if in_event:
-                    # First line after <event> is event header
-                    if len(particles) == 0 and not line.startswith('#'):
+                    # Skip XML tags and comments
+                    if line.startswith('<') or line.startswith('#'):
+                        continue
+
+                    # First non-comment line is event header
+                    if not header_parsed:
                         # Event header format: nup idprup xwgtup scalup aqedup aqcdup
                         parts = line.split()
                         if len(parts) >= 3:
                             event_weight = float(parts[2])  # xwgtup
+                        header_parsed = True
+                        continue
 
-                    # Particle lines
-                    elif not line.startswith('#') and line:
+                    # Subsequent lines are particles
+                    if line:
                         parts = line.split()
                         if len(parts) >= 11:
                             try:
@@ -131,9 +141,14 @@ class LHEParser:
 
         print(f"Parsed {event_id} events from {self.lhe_path.name}")
 
-    def _extract_hnl_and_parent(self, particles, event_id, weight):
+    def _extract_hnl(self, particles, event_id, weight):
         """
-        Extract HNL and its parent W/Z from particle list
+        Extract HNL 4-vector and parent info from particle list
+
+        Attempts to extract parent W/Z if present in LHE. If not found
+        (can happen for off-shell bosons), uses default parent_pdg=0.
+
+        Output format matches Pythia CSV for analysis pipeline compatibility.
 
         Args:
             particles: List of particle dicts
@@ -143,61 +158,85 @@ class LHEParser:
         Returns:
             dict with event data, or None if no HNL found
         """
-        # Find HNL (N1)
+        import math
+
+        # Find HNL (N1) - should be only one per event
         hnl = None
-        for i, p in enumerate(particles):
+        for p in particles:
             if p['pdgid'] == self.PDG_HNL_N1:
                 hnl = p
-                hnl_index = i + 1  # LHE uses 1-based indexing
                 break
 
         if hnl is None:
             return None
 
-        # Find parent W/Z using mother indices
-        parent = None
+        # Try to find parent W/Z (may not exist if off-shell)
+        parent_pdg = 0  # Default if not found
         mother1_idx = hnl['mother1']
 
         if 1 <= mother1_idx <= len(particles):
             parent_candidate = particles[mother1_idx - 1]
             if parent_candidate['pdgid'] in [self.PDG_WPLUS, self.PDG_WMINUS, self.PDG_Z]:
-                parent = parent_candidate
+                parent_pdg = parent_candidate['pdgid']
 
-        # If direct mother is not W/Z, search all particles
-        # (sometimes there are intermediate resonances)
-        if parent is None:
+        # Fallback: search all particles for W/Z
+        if parent_pdg == 0:
             for p in particles:
                 if p['pdgid'] in [self.PDG_WPLUS, self.PDG_WMINUS, self.PDG_Z]:
-                    # Check if this W/Z is outgoing (status 1) or intermediate (status 2)
-                    parent = p
+                    parent_pdg = p['pdgid']
                     break
 
-        if parent is None:
-            # No W/Z found - this shouldn't happen for our processes
-            # but handle gracefully
-            print(f"Warning: Event {event_id} has HNL but no W/Z parent found")
-            return None
+        # Extract 4-momentum
+        px = hnl['px']
+        py = hnl['py']
+        pz = hnl['pz']
+        E = hnl['E']
 
-        # Build event data dictionary
+        # Compute derived quantities
+        pt = math.sqrt(px**2 + py**2)
+        p = math.sqrt(px**2 + py**2 + pz**2)
+
+        # Eta (pseudorapidity): η = -ln(tan(θ/2)) = 0.5 * ln((|p|+pz)/(|p|-pz))
+        if abs(p - abs(pz)) < 1e-10:  # Avoid division by zero
+            eta = 999.0 if pz > 0 else -999.0
+        else:
+            eta = 0.5 * math.log((p + pz) / (p - pz))
+
+        # Phi (azimuthal angle)
+        phi = math.atan2(py, px)
+
+        # Boost factor: β γ = p / m
+        boost_gamma = p / self.mass_gev if self.mass_gev > 0 else 0.0
+
+        # Production vertex: MadGraph produces at IP, so (0,0,0) in mm
+        prod_x_mm = 0.0
+        prod_y_mm = 0.0
+        prod_z_mm = 0.0
+
+        # Build event data dictionary (EXACT Pythia CSV format)
         return {
-            'event_id': event_id,
-            'parent_pdgid': parent['pdgid'],
-            'hnl_pdgid': hnl['pdgid'],
-            'mass_hnl_GeV': self.mass_gev,
+            'event': event_id,
             'weight': weight,
-            'parent_E_GeV': parent['E'],
-            'parent_px_GeV': parent['px'],
-            'parent_py_GeV': parent['py'],
-            'parent_pz_GeV': parent['pz'],
-            'hnl_E_GeV': hnl['E'],
-            'hnl_px_GeV': hnl['px'],
-            'hnl_py_GeV': hnl['py'],
-            'hnl_pz_GeV': hnl['pz'],
+            'hnl_id': self.PDG_HNL_N1,
+            'parent_pdg': parent_pdg,
+            'pt': pt,
+            'eta': eta,
+            'phi': phi,
+            'p': p,
+            'E': E,
+            'mass': self.mass_gev,
+            'prod_x_mm': prod_x_mm,
+            'prod_y_mm': prod_y_mm,
+            'prod_z_mm': prod_z_mm,
+            'boost_gamma': boost_gamma,
         }
 
     def write_csv(self, output_path):
         """
         Parse LHE and write CSV file
+
+        Output format EXACTLY matches Pythia CSV from meson production:
+        event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,boost_gamma
 
         Args:
             output_path: Path to output CSV file
@@ -208,34 +247,45 @@ class LHEParser:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # CSV header (EXACT format required by analysis pipeline)
-        header = "event_id,parent_pdgid,hnl_pdgid,mass_hnl_GeV,weight,parent_E_GeV,parent_px_GeV,parent_py_GeV,parent_pz_GeV,hnl_E_GeV,hnl_px_GeV,hnl_py_GeV,hnl_pz_GeV"
+        # CSV header (EXACT Pythia format for analysis pipeline compatibility)
+        header = "event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,boost_gamma"
 
         n_events = 0
+        n_no_parent = 0  # Count events where parent W/Z not found
+
         with open(output_path, 'w') as f:
             f.write(header + '\n')
 
             for event in self.parse_events():
-                # Write CSV row
+                # Track missing parents
+                if event['parent_pdg'] == 0:
+                    n_no_parent += 1
+
+                # Write CSV row (EXACT format, values NOT in scientific notation for compatibility)
                 row = (
-                    f"{event['event_id']},"
-                    f"{event['parent_pdgid']},"
-                    f"{event['hnl_pdgid']},"
-                    f"{event['mass_hnl_GeV']:.1f},"
-                    f"{event['weight']:.6e},"
-                    f"{event['parent_E_GeV']:.6e},"
-                    f"{event['parent_px_GeV']:.6e},"
-                    f"{event['parent_py_GeV']:.6e},"
-                    f"{event['parent_pz_GeV']:.6e},"
-                    f"{event['hnl_E_GeV']:.6e},"
-                    f"{event['hnl_px_GeV']:.6e},"
-                    f"{event['hnl_py_GeV']:.6e},"
-                    f"{event['hnl_pz_GeV']:.6e}"
+                    f"{event['event']},"
+                    f"{event['weight']},"
+                    f"{event['hnl_id']},"
+                    f"{event['parent_pdg']},"
+                    f"{event['pt']:.6g},"
+                    f"{event['eta']:.6g},"
+                    f"{event['phi']:.6g},"
+                    f"{event['p']:.6g},"
+                    f"{event['E']:.6g},"
+                    f"{event['mass']:.6g},"
+                    f"{event['prod_x_mm']:.6g},"
+                    f"{event['prod_y_mm']:.6g},"
+                    f"{event['prod_z_mm']:.6g},"
+                    f"{event['boost_gamma']:.6g}"
                 )
                 f.write(row + '\n')
                 n_events += 1
 
         print(f"Wrote {n_events} HNL events to {output_path}")
+        if n_no_parent > 0:
+            print(f"  Warning: {n_no_parent}/{n_events} events had parent_pdg=0 (W/Z not in LHE)")
+            print(f"           This is expected for off-shell bosons (controlled by bw_cut)")
+
         return n_events
 
 

@@ -1,194 +1,94 @@
-# MadGraph HNL Production Pipeline
+# MadGraph HNL Production Pipeline (Docker)
 
 **Electroweak Heavy Neutral Lepton (HNL) production at LHC 14 TeV**
 
-This pipeline generates HNL events via W/Z boson decays using MadGraph5_aMC@NLO with the HeavyN UFO model.
+This pipeline generates HNL events via W/Z boson production using MadGraph5_aMC@NLO with the HeavyN UFO model, running in a Docker container for reproducibility and portability.
 
----
+## ✅ Production Status
 
-## Table of Contents
-
-1. [Why MadGraph?](#why-madgraph)
-2. [Quick Start](#quick-start)
-3. [Installation](#installation)
-4. [Pipeline Overview](#pipeline-overview)
-5. [Usage](#usage)
-6. [Output Files](#output-files)
-7. [Physics Details](#physics-details)
-8. [Troubleshooting](#troubleshooting)
-
----
-
-## Why MadGraph?
-
-### The Pythia Problem
-
-The existing Pythia-based EW HNL production (`production/main_hnl_production.cc`) attempts to generate W/Z → ℓ N by:
-- Forcing W/Z production via Drell-Yan
-- Hacking W/Z decay tables to enable W → ℓ N and Z → ν N
-- Setting BR(W/Z → ℓN) = 1.0 for efficient sampling
-
-**This fails for HNL masses ≳ 13 GeV because:**
-
-1. **Off-shell W production**: At LHC, many W bosons are produced off-shell (W* with mass < m_W)
-2. **Kinematic blocking**: When m(W*) < m_HNL + m_ℓ, the decay W* → ℓ N is kinematically forbidden
-3. **No fallback channels**: Since we set BR(W → all other modes) = 0, Pythia has *no open decay channels*
-4. **Pythia aborts**: "Error: No allowed decay modes for particle W+"
-
-### The MadGraph Solution
-
-State-of-the-art LLP studies (MATHUSLA, CODEX-b, ANUBIS) use **MadGraph** because:
-
-✅ **Matrix element generation**: MadGraph computes pp → ℓ N via W/Z exchange at the matrix element level
-✅ **Off-shell handling**: Automatically handles W*/Z* propagators with proper kinematics
-✅ **Phase space**: Correctly samples full phase space including threshold regions
-✅ **PDFs**: Uses proper parton distribution functions (PDFs) for LHC
-✅ **No decay table hacks**: Process is pp → ℓ N, not pp → W → ℓ N (W is internal propagator)
-
-**Result**: Works seamlessly from threshold (m_HNL ~ 5 GeV) to high mass (80+ GeV)
+**Complete:** 96 CSV files generated covering 5-80 GeV (32 mass points × 3 flavors)
+- Output location: `../../output/csv/simulation_new/HNL_*_EW.csv`
+- Total events: ~4.8 million (50,000 per mass point)
+- See: `EW_PRODUCTION_SUCCESS.md` for full report
+- See: `QUICKSTART.md` for user guide
 
 ---
 
 ## Quick Start
 
-### Test Run (Single Point)
+### 1. Build the Docker Image (Once)
 
 ```bash
-# From project root
-cd production/madgraph
-
-# Test with 15 GeV muon (1000 events, ~5-10 minutes)
-conda run -n mg5env python scripts/run_hnl_scan.py --test
-
-# Check output
-ls csv/muon/
-cat csv/summary_HNL_EW_production.csv
+cd /path/to/llpatcolliders/production/madgraph
+docker build -t mg5-hnl .
 ```
 
-### Full Production Scan
+This creates a container with:
+- MadGraph5_aMC@NLO 3.6.6 at `/opt/MG5_aMC_v3_6_6`
+- Python 3 + required dependencies (numpy, pandas, pylhe)
+- Pythia8 and LHAPDF6 (auto-installed by MadGraph)
+
+### 2. Run the Container
 
 ```bash
-# All flavours, all masses (5-80 GeV, 50k events each)
-# WARNING: This takes ~10-20 hours
-conda run -n mg5env python scripts/run_hnl_scan.py
+# From llpatcolliders repository root:
+cd /path/to/llpatcolliders
 
-# Single flavour (e.g. muon only)
-conda run -n mg5env python scripts/run_hnl_scan.py --flavour muon
+# Launch container with repo mounted at /work
+docker run --rm -it -v "$(pwd)":/work mg5-hnl bash
+```
 
-# Custom mass points
-conda run -n mg5env python scripts/run_hnl_scan.py --masses 10 15 20 25 --nevents 10000
+Inside the container, navigate to the MadGraph pipeline:
+
+```bash
+cd /work/production/madgraph
+```
+
+### 3. Test with Single Point
+
+```bash
+# Inside container:
+python3 scripts/run_hnl_scan.py --test
+```
+
+This generates 1000 events for a 15 GeV muon-coupled HNL (~2-5 minutes).
+
+**Expected output:**
+```
+✓ Process directory created: /work/production/madgraph/work/hnl_muon_15.0GeV
+✓ Events generated: .../Events/run_01/unweighted_events.lhe.gz
+✓ Cross-section: ~45 pb
+✓ Converted 1000 events to CSV
 ```
 
 ---
 
-## Installation
+## Why MadGraph + Docker?
 
-### 1. MadGraph Installation
+### The Pythia Problem
 
-MadGraph is already installed at `production/madgraph/mg5/`.
+The existing Pythia pipeline (`production/main_hnl_production.cc`) works well for **meson production** (m < 5 GeV) but **fails** for electroweak production (m ≥ 5 GeV) because:
 
-If you need to reinstall or update:
+1. **Off-shell W/Z**: Many bosons produced below W/Z mass threshold
+2. **Kinematic blocking**: When m(W*) < m_HNL + m_ℓ, decay is forbidden
+3. **No fallback**: Setting BR(W → all other modes) = 0 leaves no open channels
+4. **Pythia aborts**: "Error: No allowed decay modes"
 
-```bash
-cd production/madgraph
+### The MadGraph Solution
 
-# Download MadGraph 3.6.6 (or latest)
-wget https://launchpad.net/mg5amcnlo/3.0/3.6.x/+download/MG5_aMC_v3.6.6.tar.gz
-tar -xzf MG5_aMC_v3.6.6.tar.gz
-mv MG5_aMC_v3_6_6 mg5
-```
+MadGraph computes **pp → ℓ N** via W/Z exchange at the matrix element level:
 
-### 2. Install HeavyN UFO Model
+✅ **Handles off-shell**: W*/Z* propagators with proper kinematics
+✅ **Phase space**: Correct sampling including threshold regions
+✅ **No decay hacks**: Process is pp → ℓ N (W is internal)
+✅ **Works 5-80 GeV**: Seamless across full EW regime
 
-The HeavyN model (`SM_HeavyN_CKM_AllMasses_LO`) is required for HNL processes.
+### Why Docker?
 
-**Option A: Install via MadGraph CLI**
-
-```bash
-conda run -n mg5env mg5/bin/mg5_aMC
-
-# In MadGraph prompt:
-install SM_HeavyN_CKM_AllMasses_LO
-exit
-```
-
-**Option B: Manual Installation**
-
-Download from FeynRules database or HEPForge and place in `mg5/models/`.
-
-**Verify Installation:**
-
-```bash
-ls mg5/models/ | grep -i heavy
-# Should show: SM_HeavyN_CKM_AllMasses_LO
-```
-
-### 3. Conda Environment
-
-Ensure `mg5env` conda environment exists and is activated:
-
-```bash
-# Check available environments
-conda env list
-
-# If mg5env doesn't exist, create it
-conda create -n mg5env python=3.11
-
-# Activate
-conda activate mg5env
-```
-
-### 4. Verify Setup
-
-```bash
-# Test MadGraph executable
-conda run -n mg5env mg5/bin/mg5_aMC --help
-
-# Test Python scripts
-conda run -n mg5env python scripts/lhe_to_csv.py --help
-```
-
----
-
-## Pipeline Overview
-
-### Architecture
-
-```
-User Script
-    │
-    ├─> prepare_cards()
-    │     ├─ Read templates from cards/
-    │     ├─ Fill placeholders (mass, mixing, n_events)
-    │     └─ Write to work/hnl_{flavour}_{mass}/
-    │
-    ├─> run_madgraph()
-    │     ├─ Execute MadGraph via conda
-    │     ├─ Generate events (LHE format)
-    │     └─ Store in work/hnl_{flavour}_{mass}/Events/
-    │
-    ├─> extract_cross_section()
-    │     ├─ Parse MadGraph banner/log
-    │     └─ Extract σ_LO ± δσ [pb]
-    │
-    ├─> convert_lhe_to_csv()
-    │     ├─ Parse LHE (XML format)
-    │     ├─ Extract HNL and parent W/Z 4-momenta
-    │     └─ Write CSV to csv/{flavour}/
-    │
-    └─> append_to_summary()
-          └─ Update csv/summary_HNL_EW_production.csv
-```
-
-### Key Components
-
-| Component | File | Purpose |
-|-----------|------|---------|
-| **Driver** | `scripts/run_hnl_scan.py` | Main orchestration script |
-| **LHE Parser** | `scripts/lhe_to_csv.py` | Converts LHE → CSV |
-| **Process Cards** | `cards/proc_card_{flavour}.dat` | Define pp → ℓ N processes |
-| **Run Card** | `cards/run_card_template.dat` | Collider settings (14 TeV, PDF) |
-| **Param Card** | `cards/param_card_template.dat` | HNL mass and mixing |
+✅ **Reproducibility**: Same environment on macOS/Linux/clusters
+✅ **No conda conflicts**: Isolated from host Python/Fortran
+✅ **Portable**: Share exact setup via Dockerfile
+✅ **Clean**: No permanent installation on host system
 
 ---
 
@@ -197,68 +97,54 @@ User Script
 ### Command-Line Interface
 
 ```bash
-python scripts/run_hnl_scan.py [OPTIONS]
+# Inside Docker container at /work/production/madgraph:
+
+python3 scripts/run_hnl_scan.py [OPTIONS]
 
 Options:
-  --test              Test mode (15 GeV muon, 1000 events)
+  --test                Test mode (15 GeV muon, 1000 events)
   --flavour {electron,muon,tau}
-                      Run single flavour only
-  --masses M1 M2 ...  Custom mass points in GeV
-  --nevents N         Events per mass point (default: 50000)
-  -h, --help          Show help message
+                        Run single flavour only
+  --masses M1 M2 ...    Custom mass points in GeV
+  --nevents N           Events per mass point (default: 50000)
+  -h, --help            Show help message
 ```
 
 ### Examples
 
-**1. Quick Test (Recommended First Run)**
+**1. Quick Test (5 minutes)**
 
 ```bash
-# 15 GeV muon, 1000 events (~5 min)
-python scripts/run_hnl_scan.py --test
+python3 scripts/run_hnl_scan.py --test
 ```
 
 **2. Single Mass Point**
 
 ```bash
-# 20 GeV electron, 10k events
-python scripts/run_hnl_scan.py --flavour electron --masses 20 --nevents 10000
+# 20 GeV electron, 10k events (~10 min)
+python3 scripts/run_hnl_scan.py --flavour electron --masses 20 --nevents 10000
 ```
 
-**3. Low-Mass Scan (5-20 GeV)**
+**3. Multiple Mass Points**
 
 ```bash
-# All flavours, 5-20 GeV in 5 GeV steps
-python scripts/run_hnl_scan.py --masses 5 10 15 20
+# All flavours, 5-20 GeV in 5 GeV steps (~2 hours)
+python3 scripts/run_hnl_scan.py --masses 5 10 15 20
 ```
 
-**4. Full Production Scan**
+**4. Single Flavour Scan**
+
+```bash
+# Muon only, default mass grid, 50k events each (~8 hours)
+python3 scripts/run_hnl_scan.py --flavour muon
+```
+
+**5. Full Production Run**
 
 ```bash
 # All masses (5-80 GeV), all flavours, 50k events each
-# WARNING: ~10-20 hours total
-python scripts/run_hnl_scan.py
-```
-
-**5. Resume After Failure**
-
-The pipeline appends to summary CSV and skips existing files. To resume:
-
-```bash
-# Just re-run the same command
-python scripts/run_hnl_scan.py --flavour muon
-```
-
-### Environment Variables
-
-- `MG5_PATH`: Path to MadGraph executable (default: `../mg5/bin/mg5_aMC`)
-- `MG5_CONDA_ENV`: Conda environment name (default: `mg5env`)
-
-Example:
-
-```bash
-export MG5_PATH=/custom/path/to/mg5_aMC
-export MG5_CONDA_ENV=my_mg5_env
-python scripts/run_hnl_scan.py
+# WARNING: ~20-40 hours total
+python3 scripts/run_hnl_scan.py
 ```
 
 ---
@@ -271,69 +157,64 @@ python scripts/run_hnl_scan.py
 production/madgraph/
 ├── csv/
 │   ├── electron/
-│   │   └── HNL_mass_15GeV_electron_EW.csv
+│   │   └── HNL_mass_15.0GeV_electron_EW.csv
 │   ├── muon/
-│   │   └── HNL_mass_15GeV_muon_EW.csv
+│   │   └── HNL_mass_15.0GeV_muon_EW.csv
 │   ├── tau/
-│   │   └── HNL_mass_15GeV_tau_EW.csv
+│   │   └── HNL_mass_15.0GeV_tau_EW.csv
 │   └── summary_HNL_EW_production.csv  ← Cross-sections & metadata
 │
-├── lhe/
-│   └── {flavour}/
-│       └── m_{mass}GeV/
-│           └── unweighted_events.lhe.gz
-│
-└── work/
-    └── hnl_{flavour}_{mass}GeV/
-        ├── proc_card.dat
-        ├── run_card.dat
-        ├── param_card.dat
-        └── madgraph.log
+├── work/
+│   └── hnl_{flavour}_{mass}GeV/
+│       ├── Cards/
+│       │   ├── param_card.dat
+│       │   └── run_card.dat
+│       ├── Events/
+│       │   └── run_01/
+│       │       └── unweighted_events.lhe.gz
+│       └── SubProcesses/
 ```
 
 ### CSV Format (Per-Event Files)
 
 **File**: `csv/{flavour}/HNL_mass_{mass}GeV_{flavour}_EW.csv`
 
-**Header** (EXACT format required by analysis):
+**Header**:
 ```csv
 event_id,parent_pdgid,hnl_pdgid,mass_hnl_GeV,weight,parent_E_GeV,parent_px_GeV,parent_py_GeV,parent_pz_GeV,hnl_E_GeV,hnl_px_GeV,hnl_py_GeV,hnl_pz_GeV
 ```
 
-**Example Row:**
+**Example Row**:
 ```csv
 1,24,9900012,15.0,1.234e-03,87.3,12.4,-8.7,86.5,45.2,8.1,-3.4,44.6
 ```
 
-**Column Definitions:**
+**Columns**:
+- `event_id`: Event number (1-indexed)
+- `parent_pdgid`: Parent boson (24=W⁺, -24=W⁻, 23=Z⁰)
+- `hnl_pdgid`: HNL PDG code (9900012 = n1)
+- `mass_hnl_GeV`: HNL mass [GeV]
+- `weight`: Event weight from MadGraph
+- `parent_E/px/py/pz_GeV`: Parent W/Z 4-momentum [GeV]
+- `hnl_E/px/py/pz_GeV`: HNL 4-momentum [GeV]
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `event_id` | int | Event number (1-indexed) |
-| `parent_pdgid` | int | Parent boson PDG (24=W+, -24=W-, 23=Z) |
-| `hnl_pdgid` | int | HNL PDG (9900012 = N1) |
-| `mass_hnl_GeV` | float | HNL mass [GeV] |
-| `weight` | float | Event weight from MadGraph |
-| `parent_E_GeV` | float | Parent W/Z energy [GeV] |
-| `parent_px/y/z_GeV` | float | Parent W/Z momentum [GeV] |
-| `hnl_E_GeV` | float | HNL energy [GeV] |
-| `hnl_px/y/z_GeV` | float | HNL momentum [GeV] |
+**Note**: Parent W/Z is **reconstructed** from ℓ + N 4-vectors (W/Z is internal propagator in MadGraph).
 
 ### Summary CSV
 
 **File**: `csv/summary_HNL_EW_production.csv`
 
-**Header:**
+**Header**:
 ```csv
 mass_hnl_GeV,flavour,xsec_pb,xsec_error_pb,k_factor,n_events_generated,csv_path,timestamp
 ```
 
-**Example:**
+**Example**:
 ```csv
-15.0,muon,4.532e+01,2.1e-01,1.30,50000,csv/muon/HNL_mass_15GeV_muon_EW.csv,2025-11-29 15:30:45
+15.0,muon,4.532e+01,2.1e-01,1.30,50000,csv/muon/HNL_mass_15.0GeV_muon_EW.csv,2025-11-29 15:30:45
 ```
 
-**Usage in Analysis:**
+**Usage in Analysis**:
 
 ```python
 import pandas as pd
@@ -341,13 +222,13 @@ import pandas as pd
 # Load summary
 summary = pd.read_csv('csv/summary_HNL_EW_production.csv')
 
-# Get NLO cross-section for 15 GeV muon
+# Get NLO cross-section for 15 GeV muon at |Uμ|² = 1
 row = summary[(summary['mass_hnl_GeV'] == 15) & (summary['flavour'] == 'muon')]
-xsec_nlo = row['xsec_pb'].values[0] * row['k_factor'].values[0]  # pb
+xsec_max = row['xsec_pb'].values[0] * row['k_factor'].values[0]  # pb
 
-# Cross-section scales with |U|²
-U2 = 1e-6
-xsec_actual = xsec_nlo * U2  # pb
+# Scale to actual mixing |Uμ|²
+U_mu_sq = 1e-6
+xsec_actual = xsec_max * U_mu_sq  # pb
 ```
 
 ---
@@ -358,46 +239,46 @@ xsec_actual = xsec_nlo * U2  # pb
 
 For each flavour ℓ ∈ {e, μ, τ}, we generate:
 
-**Charged Current (W):**
+**Charged Current (W)**:
 ```
-pp → W+ → ℓ+ N1
-pp → W- → ℓ- N1
-```
-
-**Neutral Current (Z):**
-```
-pp → Z → νℓ N1
-pp → Z → ν̄ℓ N1
+pp → W⁺ → ℓ⁺ N₁
+pp → W⁻ → ℓ⁻ N₁
 ```
 
-These are combined into a single MadGraph process per flavour.
-
-### Mass Range
-
-**EW Regime:** 5-80 GeV
-
-- **Lower bound (5 GeV)**: Below this, meson production (K/D/B → ℓ N) dominates
-- **Upper bound (80 GeV)**: Near W mass; above this, cross-sections become very small
-
-**Default Mass Grid:**
+**Neutral Current (Z)**:
 ```
-5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 25, 28, 30,
-32, 35, 38, 40, 45, 50, 55, 60, 65, 70, 75, 80  (GeV)
+pp → Z⁰ → νℓ N₁
+pp → Z⁰ → ν̄ℓ N₁
+```
+
+**MadGraph implementation**: These are treated as **2→2 hard processes** at the matrix element level (W/Z is internal propagator, not produced on-shell).
+
+### Mass Range & Grid
+
+**EW Regime**: 5-80 GeV
+
+- **Lower bound (5 GeV)**: Below this, meson production (K/D/B → ℓ N) dominates (use Pythia pipeline)
+- **Upper bound (80 GeV)**: Near W mass; above this, cross-sections become tiny
+
+**Default Mass Grid** (32 points):
+```
+5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+22, 25, 28, 30, 32, 35, 38, 40, 45, 50, 55, 60, 65, 70, 75, 80
 ```
 
 ### Mixing Parameters
 
 At generation time, we set **|U_ℓ|² = 1** to get maximum cross-section σ_max.
 
-**Benchmark Configurations:**
+**Benchmark Configurations**:
 
-| Benchmark | Ve1 | Vmu1 | Vtau1 | Interpretation |
+| Benchmark | ve1 | vmu1 | vtau1 | Interpretation |
 |-----------|-----|------|-------|----------------|
 | 100 (electron) | 1 | 0 | 0 | Pure e coupling |
 | 010 (muon) | 0 | 1 | 0 | Pure μ coupling |
 | 001 (tau) | 0 | 0 | 1 | Pure τ coupling |
 
-**Cross-Section Scaling:**
+**Cross-Section Scaling**:
 
 Since σ ∝ |U_ℓ|², the actual cross-section at mixing |U_ℓ|² is:
 
@@ -405,230 +286,272 @@ Since σ ∝ |U_ℓ|², the actual cross-section at mixing |U_ℓ|² is:
 σ(m_HNL, |U_ℓ|²) = σ_max(m_HNL) × |U_ℓ|²
 ```
 
-where σ_max is the value in the summary CSV.
-
-**Analysis rescaling:**
-
-```python
-# From summary CSV
-sigma_max_pb = summary['xsec_pb'] * summary['k_factor']  # NLO
-
-# For |U_mu|² = 1e-6
-U_mu_sq = 1e-6
-sigma_actual_pb = sigma_max_pb * U_mu_sq
-```
+where σ_max is stored in `summary_HNL_EW_production.csv`.
 
 ### K-Factor
 
-We apply a **K-factor = 1.3** to approximate NLO corrections:
+We apply **K-factor = 1.3** to approximate NLO corrections:
 
-- LO cross-sections from MadGraph
-- NLO corrections typically ~20-40% for W/Z production
-- Conservative K = 1.3 based on NNLO W/Z studies
+- MadGraph provides LO cross-sections
+- NLO corrections for W/Z production typically ~20-40%
+- Conservative K = 1.3 based on CMS/ATLAS measurements
 
-**Reference**: CMS/ATLAS W/Z production measurements show K_NLO ~ 1.2-1.4
+**Reference**: NNLO W/Z studies show K_NLO ~ 1.2-1.4 at LHC 14 TeV.
 
 ### Cross-Section Expectations
 
 Typical EW HNL production cross-sections at |U_ℓ|² = 1:
 
-| Mass [GeV] | σ_W [pb] | σ_Z [pb] | σ_total [pb] |
-|------------|----------|----------|--------------|
-| 5 | ~80 | ~20 | ~100 |
-| 15 | ~45 | ~12 | ~57 |
-| 30 | ~15 | ~5 | ~20 |
-| 60 | ~2 | ~0.8 | ~2.8 |
-| 80 | ~0.3 | ~0.1 | ~0.4 |
+| Mass [GeV] | σ_total [pb] | Dominant Channel |
+|------------|--------------|------------------|
+| 5          | ~100         | W⁺/W⁻            |
+| 15         | ~57          | W⁺/W⁻            |
+| 30         | ~20          | W⁺/W⁻            |
+| 60         | ~2.8         | W⁺/W⁻            |
+| 80         | ~0.4         | W⁺/W⁻            |
 
-**Note**: W production dominates over Z by factor ~3-4
+**Note**: W production dominates over Z by factor ~3-4.
+
+---
+
+## Model & PDG Codes
+
+**UFO Model**: `SM_HeavyN_CKM_AllMasses_LO`
+
+The Docker image includes this model with 3 heavy neutrinos:
+
+| Particle | PDG Code | Mass | Usage |
+|----------|----------|------|-------|
+| n1 | 9900012 | Scan parameter | **Active HNL** (used in processes) |
+| n2 | 9900014 | 1000 GeV | Decoupled (heavy) |
+| n3 | 9900016 | 1000 GeV | Decoupled (heavy) |
+
+**Why 3 generations?** The UFO model supports arbitrary mixing patterns. We set n2/n3 very heavy to decouple them, focusing on n1.
+
+**Mixing parameters** (in `param_card.dat`):
+- `Block numixing`: 3×3 matrix for (n1, n2, n3) × (e, μ, τ)
+- We set only one non-zero entry per flavour benchmark
+
+---
+
+## Pipeline Architecture
+
+### Three-Step Workflow
+
+```
+1. Generate Process
+   ├─ Call MadGraph: import model + generate p p > ℓ n1
+   ├─ Create process directory: work/hnl_{flavour}_{mass}GeV/
+   └─ Output: SubProcesses/, bin/, Cards/ structure
+
+2. Write Cards
+   ├─ Copy param_card_template.dat → Cards/param_card.dat
+   ├─ Replace placeholders: MASS_N1_PLACEHOLDER → {mass}
+   ├─ Replace mixing: VE1_PLACEHOLDER → 0 or 1
+   ├─ Copy run_card_template.dat → Cards/run_card.dat
+   └─ Replace N_EVENTS_PLACEHOLDER → {nevents}
+
+3. Run Event Generation
+   ├─ Execute: bin/generate_events -f --laststep=parton
+   ├─ MadGraph integrates matrix element, generates unweighted events
+   └─ Output: Events/run_01/unweighted_events.lhe.gz
+
+4. Convert LHE → CSV
+   ├─ Parse LHE (XML format)
+   ├─ Extract HNL (PDG 9900012) and charged lepton
+   ├─ Reconstruct parent W/Z from ℓ + N 4-vectors
+   └─ Write CSV to csv/{flavour}/
+
+5. Extract Cross-Section & Update Summary
+   ├─ Parse Events/run_01/run_01_tag_1_banner.txt
+   ├─ Extract σ_LO ± δσ [pb]
+   └─ Append to csv/summary_HNL_EW_production.csv
+```
 
 ---
 
 ## Troubleshooting
 
-### 1. "MadGraph executable not found"
+### 1. Docker Image Not Found
 
-**Symptom:**
+**Symptom**:
 ```
-ERROR: MadGraph not found at production/madgraph/mg5/bin/mg5_aMC
+docker: image mg5-hnl:latest not found
 ```
 
-**Solution:**
+**Solution**:
 ```bash
-# Check MG5_PATH
-echo $MG5_PATH
-
-# Set explicitly
-export MG5_PATH=/path/to/mg5/bin/mg5_aMC
-
-# Or install MadGraph (see Installation section)
+cd /path/to/llpatcolliders/production/madgraph
+docker build -t mg5-hnl .
 ```
 
-### 2. "Model SM_HeavyN_CKM_AllMasses_LO not found"
+### 2. MadGraph Hangs During Event Generation
 
-**Symptom:**
-```
-ImportError: Model SM_HeavyN_CKM_AllMasses_LO not found
-```
+**Symptom**: Process runs for >1 hour without output
 
-**Solution:**
+**Possible Causes**:
+- Very high mass (m > 70 GeV) → low cross-section → slow integration
+- First run → PDF download (LHAPDF)
+
+**Solutions**:
 ```bash
-# Install model via MadGraph
-conda run -n mg5env mg5/bin/mg5_aMC
-# In MadGraph prompt:
-install SM_HeavyN_CKM_AllMasses_LO
-exit
-```
-
-### 3. "Conda environment mg5env not found"
-
-**Symptom:**
-```
-CondaEnvironmentNotFoundError: Could not find conda environment: mg5env
-```
-
-**Solution:**
-```bash
-# Create environment
-conda create -n mg5env python=3.11
-conda activate mg5env
-
-# Or use different environment
-export MG5_CONDA_ENV=base
-```
-
-### 4. MadGraph hangs or times out
-
-**Symptom:**
-- MadGraph runs for >1 hour
-- Process killed with timeout
-
-**Possible causes:**
-- Very high multiplicity processes
-- Too many events requested
-- PDF download issues (first run)
-
-**Solutions:**
-```bash
-# Reduce events
-python scripts/run_hnl_scan.py --test --nevents 100
+# Reduce events for testing
+python3 scripts/run_hnl_scan.py --masses 15 --nevents 100
 
 # Check MadGraph log
-cat work/hnl_muon_15GeV/madgraph.log
+cat work/hnl_muon_15.0GeV/Events/run_01/*.log
 
-# Increase timeout in run_hnl_scan.py (line ~400)
+# If stuck downloading PDFs, wait ~10 min (first run only)
 ```
 
-### 5. "No LHE file found"
+### 3. "No LHE File Found"
 
-**Symptom:**
+**Symptom**:
 ```
-✗ No LHE file found in work/hnl_muon_15GeV
+✗ No LHE file found in work/hnl_muon_15.0GeV
 ```
 
-**Causes:**
-- MadGraph failed silently
-- Process generation failed
-- Output directory wrong
-
-**Debug:**
+**Debug**:
 ```bash
-# Check MadGraph log
-cat work/hnl_muon_15GeV/madgraph.log
+# Check MadGraph output
+ls -R work/hnl_muon_15.0GeV/Events/
 
-# Look for errors
-grep -i error work/hnl_muon_15GeV/madgraph.log
+# Look for errors in logs
+grep -i error work/hnl_muon_15.0GeV/Events/run_01/*.log
 
-# Check directory structure
-ls -R work/hnl_muon_15GeV/
+# Check if matrix elements compiled
+ls work/hnl_muon_15.0GeV/SubProcesses/P*/
 ```
 
-### 6. Cross-section extraction fails
+### 4. Low Event Counts in CSV
 
-**Symptom:**
+**Symptom**: Requested 10k events, CSV contains only 100
+
+**Cause**: MadGraph's `run_card.dat` has incorrect `nevents` setting
+
+**Solution**:
+```bash
+# Check run card
+cat work/hnl_muon_15.0GeV/Cards/run_card.dat | grep nevents
+
+# Should show:
+#   10000 = nevents
+```
+
+If template substitution failed, edit `cards/run_card_template.dat`.
+
+### 5. Cross-Section Extraction Fails
+
+**Symptom**:
 ```
 Warning: Could not extract cross-section from work/...
 ```
 
-**Solution:**
-- Check banner file exists: `ls work/hnl_*/Events/*/run_*_banner.txt`
-- Manually inspect banner for cross-section
-- Update regex pattern in `extract_cross_section()` if MG version differs
-
-### 7. Low event counts in CSV
-
-**Symptom:**
-- Requested 10k events
-- CSV contains only 100 events
-
-**Causes:**
-- MadGraph generated weighted events, not unweighted
-- Unweighting efficiency very low
-- Process phase space very restrictive
-
-**Solution:**
+**Solution**:
 ```bash
-# Check run_card.dat: should request unweighted events
-grep nevents work/hnl_muon_15GeV/run_card.dat
+# Manually check banner
+cat work/hnl_muon_15.0GeV/Events/run_01/run_01_tag_1_banner.txt | grep -A5 "Integrated weight"
 
-# Increase event request
-python scripts/run_hnl_scan.py --nevents 100000
-```
-
-### 8. "Permission denied" when running scripts
-
-**Solution:**
-```bash
-chmod +x scripts/*.py
+# Cross-section should be printed there
 ```
 
 ---
 
-## Comparison with Pythia Pipeline
+## Integration with Analysis Pipeline
 
-| Aspect | Pythia | MadGraph (this pipeline) |
-|--------|--------|--------------------------|
-| **Mass range** | 0.2-13 GeV | 5-80 GeV |
+This MadGraph pipeline is **complementary** to the Pythia meson production pipeline:
+
+| Aspect | Pythia (`production/`) | MadGraph (this pipeline) |
+|--------|------------------------|--------------------------|
+| **Mass range** | 0.2-5 GeV | 5-80 GeV |
 | **Production** | Meson decays (K/D/B) | EW bosons (W/Z) |
 | **Method** | Forced decays in Pythia | Matrix element generation |
-| **Off-shell** | Fails for m > 13 GeV | Handles automatically |
-| **Cross-sections** | Hardcoded from literature | Computed by MadGraph |
-| **Output** | production/csv/simulation/ | production/madgraph/csv/ |
-| **Use case** | Low-mass regime | High-mass (EW) regime |
+| **Output** | `production/csv/simulation/` | `production/madgraph/csv/` |
+| **Analysis** | `analysis_pbc_test/` | Same (compatible CSV format) |
 
-**Both pipelines are needed** to cover full 0.2-80 GeV mass range!
+**Both pipelines are needed** to cover the full 0.2-80 GeV mass range!
+
+The analysis code (`analysis_pbc_test/limits/u2_limit_calculator.py`) can consume CSV files from **both** sources (they use the same format).
+
+---
+
+## Development & Customization
+
+### Modifying the UFO Model
+
+If you need a different HNL model:
+
+1. **Install model** inside container:
+   ```bash
+   # Edit Dockerfile to add:
+   RUN echo "install YOUR_MODEL_NAME" > /tmp/model.mg5 && \
+       $MG5_DIR/bin/mg5_aMC /tmp/model.mg5
+   ```
+
+2. **Update process cards**:
+   Edit `cards/proc_card_*.dat` to use new model name.
+
+3. **Rebuild image**:
+   ```bash
+   docker build -t mg5-hnl .
+   ```
+
+### Changing Mass Grid
+
+Edit `scripts/run_hnl_scan.py` line 47-50:
+
+```python
+MASS_GRID_FULL = [
+    # Your custom mass points
+    5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80
+]
+```
+
+### Debugging Inside Container
+
+```bash
+# Run container with interactive shell
+docker run --rm -it -v "$(pwd)":/work mg5-hnl bash
+
+# Test MadGraph manually
+cd /work/production/madgraph
+/opt/MG5_aMC_v3_6_6/bin/mg5_aMC
+
+# In MG prompt:
+import model SM_HeavyN_CKM_AllMasses_LO
+display particles
+# Should show n1, n2, n3
+```
 
 ---
 
 ## References
 
-**MadGraph:**
+**MadGraph**:
 - MadGraph5_aMC@NLO: [arXiv:1405.0301](https://arxiv.org/abs/1405.0301)
 - Download: https://launchpad.net/mg5amcnlo
 
-**HeavyN UFO Model:**
+**HeavyN UFO Model**:
 - Based on: [arXiv:1802.02537](https://arxiv.org/abs/1802.02537) (HNL phenomenology)
-- Implementation: See `mg5/models/SM_HeavyN_CKM_AllMasses_LO/`
+- Model database: https://feynrules.irmp.ucl.ac.be/
 
-**LLP Detector Studies:**
+**LLP Detector Studies** (MadGraph usage examples):
 - MATHUSLA: [arXiv:1811.00927](https://arxiv.org/abs/1811.00927)
 - CODEX-b: [arXiv:1911.00481](https://arxiv.org/abs/1911.00481)
 - ANUBIS: [arXiv:1909.13022](https://arxiv.org/abs/1909.13022)
 
-**Analysis Pipeline:**
+**Analysis Pipeline**:
 - See `../../analysis_pbc_test/` for downstream analysis
 - HNLCalc physics model: [arXiv:2405.07330](https://arxiv.org/abs/2405.07330)
 
 ---
 
-## Contact & Contribution
+## Status
 
-For questions or issues:
-- Check MadGraph log files: `work/hnl_*/madgraph.log`
-- Verify HeavyN model installation: `ls mg5/models/`
-- Test with `--test` mode first
-- See main project documentation: `../../CLAUDE.md`
+**Pipeline Status**: ✅ Fully functional
+**Last Updated**: 2025-11-29
+**MadGraph Version**: 3.6.6
+**Docker Base**: Ubuntu 22.04
+**Python**: 3.10+
 
-**Pipeline implemented**: 2025-11-29
-**MadGraph version**: 3.6.6
-**Python**: 3.11+
+For questions or issues, see main project documentation: `../../CLAUDE.md`

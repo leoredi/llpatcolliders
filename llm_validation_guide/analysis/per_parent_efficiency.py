@@ -1,1 +1,0 @@
-../../analysis_pbc_test/geometry/per_parent_efficiency.py
