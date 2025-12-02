@@ -18,7 +18,7 @@ Adaptive spacing optimized for physics:
 # ===========================================================================
 
 # Electron coupling (Benchmark 100: Ue²=x, Uμ²=0, Uτ²=0)
-# 41 mass points in low-mass regime
+# Extended to 8 GeV for smooth meson→EW transition
 ELECTRON_MASSES_BASE = [
     # Kaon regime (0.2-0.5 GeV): Dense sampling near threshold
     0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.38, 0.40, 0.42, 0.45, 0.48,
@@ -26,12 +26,12 @@ ELECTRON_MASSES_BASE = [
     0.50, 0.52, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40,
     # D-meson threshold region (1.5-2.0 GeV): Dense near mD
     1.50, 1.60, 1.70, 1.75, 1.80, 1.82, 1.85, 1.90, 2.00,
-    # B-meson regime (2.0-5.0 GeV): Moderate spacing
-    2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80
+    # B-meson regime (2.0-8.0 GeV): Extended for better transition coverage
+    2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80, 5.00, 5.20, 5.50, 6.0, 6.5, 7.0, 7.5, 8.0
 ]
 
 # Muon coupling (Benchmark 010: Ue²=0, Uμ²=x, Uτ²=0)
-# 41 mass points in low-mass regime
+# Extended to 8 GeV for smooth meson→EW transition
 MUON_MASSES_BASE = [
     # Kaon regime (0.2-0.5 GeV): Dense sampling near threshold
     0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.37, 0.38, 0.39, 0.40, 0.42, 0.45, 0.48,
@@ -39,44 +39,44 @@ MUON_MASSES_BASE = [
     0.50, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00, 1.20, 1.40,
     # D-meson threshold region (1.6-2.0 GeV): Dense near mD
     1.60, 1.65, 1.70, 1.75, 1.76, 1.78, 1.80, 1.85, 1.90, 2.00,
-    # B-meson regime (2.0-5.0 GeV): Moderate spacing
-    2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80
+    # B-meson regime (2.0-8.0 GeV): Extended for better transition coverage
+    2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80, 5.00, 5.20, 5.50, 6.0, 6.5, 7.0, 7.5, 8.0
 ]
 
 # Tau coupling (Benchmark 001: Ue²=0, Uμ²=0, Uτ²=x)
-# 33 unique mass points in low-mass regime
+# Extended to 8 GeV for smooth meson→EW transition
 # Note: Below 1.64 GeV, tau simulations generate BOTH "_direct" and "_fromTau" files
 TAU_MASSES_BASE = [
     # D-meson regime (0.5-2.0 GeV): Tau threshold at 1.777 GeV
     0.50, 0.55, 0.60, 0.65, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30,
     # Near tau threshold (1.4-2.0 GeV): Dense sampling
     1.40, 1.45, 1.50, 1.55, 1.60, 1.62, 1.64, 1.66, 1.70, 1.74, 1.78, 1.80, 1.85, 1.90, 2.00,
-    # B-meson regime (2.0-4.5 GeV): Moderate spacing
-    2.40, 2.80, 3.00, 3.20, 3.60, 4.00, 4.50
+    # B-meson regime (2.0-8.0 GeV): Extended for better transition coverage
+    2.40, 2.80, 3.00, 3.20, 3.60, 4.00, 4.50, 5.00, 5.50, 6.0, 6.5, 7.0, 7.5, 8.0
 ]
 
 # ===========================================================================
-# ISLAND CLOSURE POINTS (4-5.5 GeV - NEEDED FOR SMOOTH CONTOURS)
+# ISLAND CLOSURE POINTS (4-5.5 GeV - NOW COVERED BY EXTENDED GRIDS)
 # ===========================================================================
 
-# Additional points to close exclusion islands on right-hand side
-# These fill gaps where eps2_max drops rapidly (too-prompt boundary)
+# No longer needed - transition region now covered by:
+# - Pythia meson production extended to 8 GeV
+# - MadGraph EW production extended down to 4 GeV
 
-ELECTRON_MASSES_CLOSURE = [4.3, 4.4, 4.5, 4.7, 4.9, 5.1, 5.3, 5.4, 5.5]
-MUON_MASSES_CLOSURE = [4.3, 4.4, 4.5, 4.7, 4.9, 5.1, 5.3, 5.4, 5.5]
-TAU_MASSES_CLOSURE = [4.1, 4.2, 4.3, 4.4]
+ELECTRON_MASSES_CLOSURE = []
+MUON_MASSES_CLOSURE = []
+TAU_MASSES_CLOSURE = []
 
 # ===========================================================================
 # HIGH-MASS REGIME (≥ 5 GeV - CURRENTLY FAILING IN PYTHIA)
 # ===========================================================================
 
-# Electroweak production (W/Z bosons)
-# WARNING: These masses currently fail in Pythia simulation due to Z decay config
-# All high-mass files are either empty (93 bytes) or very sparse (<1000 events)
+# Electroweak production (W/Z bosons) via MadGraph
+# Extended DOWN to 4 GeV for smooth overlap with meson production
 
-ELECTRON_MASSES_EW = [5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0]
-MUON_MASSES_EW = [5.0, 5.2, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0]
-TAU_MASSES_EW = [6.0, 7.0, 8.0, 10.0, 15.0, 20.0, 30.0, 40.0, 50.0, 60.0, 80.0]
+ELECTRON_MASSES_EW = [4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0]
+MUON_MASSES_EW = [4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0]
+TAU_MASSES_EW = [4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0]
 
 # ===========================================================================
 # COMBINED MASS GRIDS

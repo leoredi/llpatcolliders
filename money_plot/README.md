@@ -29,7 +29,7 @@ cd money_plot
 
 **Or from analysis directory:**
 ```bash
-cd analysis_pbc_test
+cd analysis_pbc
 /opt/homebrew/Caskroom/miniconda/base/envs/llpatcolliders/bin/python ../money_plot/plot_money_island.py
 ```
 
@@ -206,7 +206,7 @@ conda activate llpatcolliders
 ls -lh ../output/csv/analysis/HNL_U2_limits_summary.csv
 
 # If missing, run analysis first:
-cd ../analysis_pbc_test
+cd ../analysis_pbc
 /opt/homebrew/Caskroom/miniconda/base/envs/llpatcolliders/bin/python -u limits/run_serial.py
 ```
 
@@ -232,9 +232,9 @@ Expected features of a correct moneyplot:
 
 ## References
 
-- **Detector geometry:** `analysis_pbc_test/geometry/per_parent_efficiency.py`
-- **Limits calculation:** `analysis_pbc_test/limits/run_serial.py`
-- **HNL physics:** `analysis_pbc_test/models/hnl_model_hnlcalc.py`
+- **Detector geometry:** `analysis_pbc/geometry/per_parent_efficiency.py`
+- **Limits calculation:** `analysis_pbc/limits/run_serial.py`
+- **HNL physics:** `analysis_pbc/models/hnl_model_hnlcalc.py`
 
 ## Example Output
 
