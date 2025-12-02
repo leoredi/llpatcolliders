@@ -35,6 +35,24 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 
+# Import mass grid from central configuration
+# Add project root to path to import config_mass_grid
+SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent  # production/madgraph_production/scripts/ -> repo root
+sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from config_mass_grid import (
+        ELECTRON_MASSES_EW,
+        MUON_MASSES_EW,
+        TAU_MASSES_EW,
+    )
+except ImportError as e:
+    print(f"ERROR: Could not import mass grid from config_mass_grid.py")
+    print(f"  Project root: {PROJECT_ROOT}")
+    print(f"  Error: {e}")
+    sys.exit(1)
+
 
 # ============================================================================
 # CONFIGURATION
@@ -43,11 +61,9 @@ from datetime import datetime
 # Default MG5 path – matches your Dockerfile setup
 DEFAULT_MG5_EXE = os.environ.get("MG5_PATH", "/opt/MG5_aMC_v3_6_6/bin/mg5_aMC")
 
-# Mass grid for EW regime (5-80 GeV)
-MASS_GRID_FULL = [
-    5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-    22, 25, 28, 30, 32, 35, 38, 40, 45, 50, 55, 60, 65, 70, 75, 80
-]
+# Mass grid for EW regime (5-80 GeV) - loaded from config_mass_grid.py
+# Combine all flavours for backward compatibility (when --masses not specified)
+MASS_GRID_FULL = sorted(set(ELECTRON_MASSES_EW + MUON_MASSES_EW + TAU_MASSES_EW))
 
 # Flavours
 FLAVOURS = ['electron', 'muon', 'tau']
@@ -77,13 +93,13 @@ class ProjectPaths:
 
     def __init__(self, base_dir=None):
         """
-        Initialize paths relative to production/madgraph/
+        Initialize paths relative to production/madgraph_production/
 
         Args:
             base_dir: Base directory (default: auto-detect from script location)
         """
         if base_dir is None:
-            # Script is in production/madgraph/scripts/
+            # Script is in production/madgraph_production/scripts/
             script_dir = Path(__file__).parent
             base_dir = script_dir.parent
 
@@ -113,13 +129,13 @@ class ProjectPaths:
     def csv_path(self, flavour, mass):
         """Get CSV output path for (flavour, mass) - matches Pythia format"""
         # Use same directory structure as Pythia production for compatibility
-        # Format: HNL_{mass}GeV_{flavour}_EW.csv
+        # Format: HNL_{mass}GeV_{flavour}_ew.csv
         mass_str = f"{mass:.1f}".replace('.', 'p')  # e.g., 15.0 → 15p0
-        return self.csv_dir / f"HNL_{mass_str}GeV_{flavour}_EW.csv"
+        return self.csv_dir / f"HNL_{mass_str}GeV_{flavour}_ew.csv"
 
     def summary_csv_path(self):
         """Get summary CSV path"""
-        return self.csv_dir / "summary_HNL_EW_production.csv"
+        return self.csv_dir / "summary_HNL_ew_production.csv"
 
     def work_subdir(self, flavour, mass):
         """Get working directory for this run"""
