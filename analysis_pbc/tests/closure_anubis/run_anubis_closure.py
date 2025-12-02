@@ -29,8 +29,8 @@ import pandas as pd
 # ----------------------------------------------------------------------
 
 THIS_FILE = Path(__file__).resolve()
-# .../analysis_pbc_test/tests/closure_anubis/run_anubis_closure.py
-ANALYSIS_DIR = THIS_FILE.parents[2]  # .../analysis_pbc_test
+# .../analysis_pbc/tests/closure_anubis/run_anubis_closure.py
+ANALYSIS_DIR = THIS_FILE.parents[2]  # .../analysis_pbc
 REPO_ROOT = ANALYSIS_DIR.parent  # .../llpatcolliders
 
 if str(ANALYSIS_DIR) not in sys.path:

@@ -300,7 +300,7 @@ N_sig = L × σ_parent × BR × ε_parent
 
 1. **Run full mass scan:**
    ```bash
-   cd analysis_pbc_test
+   cd analysis_pbc
    conda run -n llpatcolliders python limits/u2_limit_calculator.py
    ```
 

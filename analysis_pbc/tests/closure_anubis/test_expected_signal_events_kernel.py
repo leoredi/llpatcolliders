@@ -7,7 +7,7 @@ limits.u2_limit_calculator so that expected_signal_events
 should reproduce a known analytic probability.
 
 Run with:
-  cd analysis_pbc_test
+  cd analysis_pbc
   python tests/closure_anubis/test_expected_signal_events_kernel.py
 """
 
@@ -22,12 +22,12 @@ import numpy as np
 import pandas as pd
 
 # ----------------------------------------------------------------------
-# 0. Ensure analysis_pbc_test is on sys.path
+# 0. Ensure analysis_pbc is on sys.path
 # ----------------------------------------------------------------------
 
 THIS_FILE = Path(__file__).resolve()
-# .../analysis_pbc_test/tests/closure_anubis/test_expected_signal_events_kernel.py
-ANALYSIS_DIR = THIS_FILE.parents[2]  # .../analysis_pbc_test
+# .../analysis_pbc/tests/closure_anubis/test_expected_signal_events_kernel.py
+ANALYSIS_DIR = THIS_FILE.parents[2]  # .../analysis_pbc
 if str(ANALYSIS_DIR) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_DIR))
 

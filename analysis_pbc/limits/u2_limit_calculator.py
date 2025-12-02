@@ -20,14 +20,14 @@ import pandas as pd
 # ----------------------------------------------------------------------
 
 THIS_FILE = Path(__file__).resolve()
-ANALYSIS_DIR = THIS_FILE.parent           # .../analysis_pbc_test/limits
+ANALYSIS_DIR = THIS_FILE.parent           # .../analysis_pbc/limits
 REPO_ROOT = ANALYSIS_DIR.parents[1]       # .../llpatcolliders
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
 SIM_DIR = OUTPUT_DIR / "simulation_new"
 GEOM_CACHE_DIR = OUTPUT_DIR / "geometry"
 ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
 
-# Ensure the analysis_pbc_test root is on sys.path
+# Ensure the analysis_pbc root is on sys.path
 ANALYSIS_ROOT = ANALYSIS_DIR.parent
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))

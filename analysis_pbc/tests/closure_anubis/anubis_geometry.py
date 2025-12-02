@@ -23,10 +23,10 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-# Ensure analysis_pbc_test is on sys.path so we can import geometry.per_parent_efficiency
+# Ensure analysis_pbc is on sys.path so we can import geometry.per_parent_efficiency
 THIS_FILE = Path(__file__).resolve()
-# .../analysis_pbc_test/tests/closure_anubis/anubis_geometry.py
-ANALYSIS_DIR = THIS_FILE.parents[2]  # .../analysis_pbc_test
+# .../analysis_pbc/tests/closure_anubis/anubis_geometry.py
+ANALYSIS_DIR = THIS_FILE.parents[2]  # .../analysis_pbc
 if str(ANALYSIS_DIR) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_DIR))
 

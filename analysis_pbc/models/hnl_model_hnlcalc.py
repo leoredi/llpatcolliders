@@ -16,8 +16,8 @@ simple interface:
 The *implementation details* (exact HNLCalc constructor, attribute names,
 and methods) must be filled in by looking at your local:
 
-    analysis_pbc_test/HNLCalc/HNLCalc.py
-    analysis_pbc_test/HNLCalc/Example.ipynb
+    analysis_pbc/HNLCalc/HNLCalc.py
+    analysis_pbc/HNLCalc/Example.ipynb
 
 I leave clear TODO / FIXME markers where you need to plug in the real API.
 """
@@ -34,7 +34,7 @@ from typing import Dict, Any
 # ----------------------------------------------------------------------
 
 THIS_FILE = Path(__file__).resolve()
-REPO_ROOT = THIS_FILE.parents[1]          # .../analysis_pbc_test
+REPO_ROOT = THIS_FILE.parents[1]          # .../analysis_pbc
 HNL_CALC_DIR = REPO_ROOT / "HNLCalc"
 
 # Put ./HNLCalc on sys.path so that "import HNLCalc" uses the local copy
@@ -52,7 +52,7 @@ try:
 except ImportError as exc:
     raise ImportError(
         "Could not import the local HNLCalc package. "
-        "Make sure analysis_pbc_test/HNLCalc exists and is a valid Python module."
+        "Make sure analysis_pbc/HNLCalc exists and is a valid Python module."
     ) from exc
 
 

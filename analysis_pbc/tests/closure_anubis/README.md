@@ -31,7 +31,7 @@ This directory contains closure tests and U² limit calculations for a simplifie
 ## Quick Start
 
 ```bash
-cd analysis_pbc_test
+cd analysis_pbc
 
 # 1. Run algorithmic closure tests (fast)
 conda run -n llpatcolliders python tests/closure_anubis/test_expected_signal_events_kernel.py

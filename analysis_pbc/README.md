@@ -11,7 +11,7 @@ Physics Beyond Colliders (PBC) compatible analysis for the CMS drainage gallery 
 conda activate llpatcolliders
 
 # Install HNLCalc (if not already installed)
-cd analysis_pbc_test
+cd analysis_pbc
 git clone https://github.com/laroccod/HNLCalc.git
 conda run -n llpatcolliders pip install sympy mpmath particle numba
 conda run -n llpatcolliders pip install 'scikit-hep==0.4.0'
@@ -20,7 +20,7 @@ conda run -n llpatcolliders pip install 'scikit-hep==0.4.0'
 ### 2. Run Pipeline Tests
 
 ```bash
-# From llpatcolliders/analysis_pbc_test/
+# From llpatcolliders/analysis_pbc/
 conda run -n llpatcolliders python tests/test_pipeline.py
 ```
 
@@ -98,7 +98,7 @@ See [`VALIDATION.md`](VALIDATION.md) for full report.
 ## Directory Structure
 
 ```
-analysis_pbc_test/
+analysis_pbc/
 ├── README.md                        # This file
 ├── VALIDATION.md                    # Full validation report
 ├── HNLCalc/                         # Cloned repository (arXiv:2405.07330)
@@ -190,7 +190,7 @@ Runtime checks prevent accidental use of absolute σ (w > 10⁶ → error).
 
 ### Import errors (HNLCalc not found)
 ```bash
-cd analysis_pbc_test
+cd analysis_pbc
 git clone https://github.com/laroccod/HNLCalc.git
 conda run -n llpatcolliders pip install sympy mpmath particle numba
 ```

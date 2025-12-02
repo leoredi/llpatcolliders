@@ -17,7 +17,7 @@ from typing import Set
 import pandas as pd
 import numpy as np
 
-# Add analysis_pbc_test to path
+# Add analysis_pbc to path
 THIS_FILE = Path(__file__).resolve()
 ANALYSIS_DIR = THIS_FILE.parent
 ANALYSIS_ROOT = ANALYSIS_DIR.parent
