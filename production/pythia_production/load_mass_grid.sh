@@ -16,7 +16,7 @@ fi
 # Helper function to load mass grid from Python config
 load_mass_grid() {
     local flavour=$1
-    local mode=${2:-production}  # Default to 'production' mode
+    local mode=${2:-meson}  # Default to meson mode
 
     # Get masses from Python config and convert to bash array
     local masses_str=$(cd "$PROJECT_ROOT" && $PYTHON -c "
@@ -32,32 +32,18 @@ print(' '.join(f'{m:.2f}' for m in masses))
 # Export mass grids as arrays
 # Usage in production scripts:
 #   source load_mass_grid.sh
-#   eval "ELECTRON_MASSES=$(load_mass_grid electron production)"
+#   eval "ELECTRON_MASSES=$(load_mass_grid electron meson)"
 
 # For convenience, also provide ready-to-use variables:
-eval "ELECTRON_MASSES_BASE=$(load_mass_grid electron base)"
-eval "ELECTRON_MASSES_CLOSURE=$(load_mass_grid electron closure)"
-eval "ELECTRON_MASSES_PRODUCTION=$(load_mass_grid electron production)"
-
-eval "MUON_MASSES_BASE=$(load_mass_grid muon base)"
-eval "MUON_MASSES_CLOSURE=$(load_mass_grid muon closure)"
-eval "MUON_MASSES_PRODUCTION=$(load_mass_grid muon production)"
-
-eval "TAU_MASSES_BASE=$(load_mass_grid tau base)"
-eval "TAU_MASSES_CLOSURE=$(load_mass_grid tau closure)"
-eval "TAU_MASSES_PRODUCTION=$(load_mass_grid tau production)"
+eval "ELECTRON_MASSES_MESON=$(load_mass_grid electron meson)"
+eval "MUON_MASSES_MESON=$(load_mass_grid muon meson)"
+eval "TAU_MASSES_MESON=$(load_mass_grid tau meson)"
 
 # Print loaded grids (for debugging)
 if [ "${VERBOSE_MASS_GRID:-0}" -eq 1 ]; then
     echo "Loaded mass grids from: $PROJECT_ROOT/config_mass_grid.py"
-    echo "  ELECTRON_MASSES_BASE: ${#ELECTRON_MASSES_BASE[@]} points"
-    echo "  ELECTRON_MASSES_CLOSURE: ${#ELECTRON_MASSES_CLOSURE[@]} points"
-    echo "  ELECTRON_MASSES_PRODUCTION: ${#ELECTRON_MASSES_PRODUCTION[@]} points"
-    echo "  MUON_MASSES_BASE: ${#MUON_MASSES_BASE[@]} points"
-    echo "  MUON_MASSES_CLOSURE: ${#MUON_MASSES_CLOSURE[@]} points"
-    echo "  MUON_MASSES_PRODUCTION: ${#MUON_MASSES_PRODUCTION[@]} points"
-    echo "  TAU_MASSES_BASE: ${#TAU_MASSES_BASE[@]} points"
-    echo "  TAU_MASSES_CLOSURE: ${#TAU_MASSES_CLOSURE[@]} points"
-    echo "  TAU_MASSES_PRODUCTION: ${#TAU_MASSES_PRODUCTION[@]} points"
+    echo "  ELECTRON_MASSES_MESON: ${#ELECTRON_MASSES_MESON[@]} points"
+    echo "  MUON_MASSES_MESON: ${#MUON_MASSES_MESON[@]} points"
+    echo "  TAU_MASSES_MESON: ${#TAU_MASSES_MESON[@]} points"
     echo ""
 fi

@@ -6,20 +6,20 @@ HNL Mass Grid Configuration
 SINGLE SOURCE OF TRUTH for all mass points.
 
 To add/modify mass points: Edit the lists below.
-Production script automatically uses PRODUCTION grids (base + closure).
+Meson (Pythia) and EW (MadGraph) grids are kept side-by-side and can be
+combined when both are needed.
 
 Adaptive spacing optimized for physics:
 - Dense near kinematic thresholds (K, D, B, tau masses)
-- Closure points (4-5.5 GeV) ensure smooth exclusion island boundaries
 """
 
 # ===========================================================================
-# BASE MASS GRIDS (Low-mass regime < 5 GeV - VALIDATED)
+# MESON (PYTHIA) MASS GRIDS  (validated, low-mass <~8 GeV)
 # ===========================================================================
 
 # Electron coupling (Benchmark 100: Ue²=x, Uμ²=0, Uτ²=0)
 # Extended to 8 GeV for smooth meson→EW transition
-ELECTRON_MASSES_BASE = [
+ELECTRON_MASSES_MESON = [
     # Kaon regime (0.2-0.5 GeV): Dense sampling near threshold
     0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.38, 0.40, 0.42, 0.45, 0.48,
     # D-meson regime (0.5-2.0 GeV): Peak sensitivity
@@ -32,7 +32,7 @@ ELECTRON_MASSES_BASE = [
 
 # Muon coupling (Benchmark 010: Ue²=0, Uμ²=x, Uτ²=0)
 # Extended to 8 GeV for smooth meson→EW transition
-MUON_MASSES_BASE = [
+MUON_MASSES_MESON = [
     # Kaon regime (0.2-0.5 GeV): Dense sampling near threshold
     0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.37, 0.38, 0.39, 0.40, 0.42, 0.45, 0.48,
     # D-meson regime (0.5-2.0 GeV): Peak sensitivity
@@ -46,7 +46,7 @@ MUON_MASSES_BASE = [
 # Tau coupling (Benchmark 001: Ue²=0, Uμ²=0, Uτ²=x)
 # Extended to 8 GeV for smooth meson→EW transition
 # Note: Below 1.64 GeV, tau simulations generate BOTH "_direct" and "_fromTau" files
-TAU_MASSES_BASE = [
+TAU_MASSES_MESON = [
     # D-meson regime (0.5-2.0 GeV): Tau threshold at 1.777 GeV
     0.50, 0.55, 0.60, 0.65, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30,
     # Near tau threshold (1.4-2.0 GeV): Dense sampling
@@ -56,41 +56,27 @@ TAU_MASSES_BASE = [
 ]
 
 # ===========================================================================
-# ISLAND CLOSURE POINTS (4-5.5 GeV - NOW COVERED BY EXTENDED GRIDS)
-# ===========================================================================
-
-# No longer needed - transition region now covered by:
-# - Pythia meson production extended to 8 GeV
-# - MadGraph EW production extended down to 4 GeV
-
-ELECTRON_MASSES_CLOSURE = []
-MUON_MASSES_CLOSURE = []
-TAU_MASSES_CLOSURE = []
-
-# ===========================================================================
-# HIGH-MASS REGIME (≥ 5 GeV - CURRENTLY FAILING IN PYTHIA)
+# ELECTROWEAK (MADGRAPH) MASS GRIDS (W/Z-mediated, high-mass)
 # ===========================================================================
 
 # Electroweak production (W/Z bosons) via MadGraph
-# Extended DOWN to 4 GeV for smooth overlap with meson production
+# Extended DOWN to 4 GeV for smooth overlap with meson production, UP to 80 GeV
 
-ELECTRON_MASSES_EW = [4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0]
-MUON_MASSES_EW = [4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0]
-TAU_MASSES_EW = [4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0]
+_EW_LOW_EDGE = [4.0, 4.2, 4.4, 4.6, 4.8]  # overlap with meson
+_EW_CORE = [5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0]
+
+ELECTRON_MASSES_EW = _EW_LOW_EDGE + _EW_CORE
+MUON_MASSES_EW = _EW_LOW_EDGE + _EW_CORE
+TAU_MASSES_EW = [4.0, 4.2, 4.4, 4.6, 4.8] + _EW_CORE
 
 # ===========================================================================
 # COMBINED MASS GRIDS
 # ===========================================================================
 
-# Full mass grids (base + closure + EW)
-ELECTRON_MASSES_ALL = sorted(set(ELECTRON_MASSES_BASE + ELECTRON_MASSES_CLOSURE + ELECTRON_MASSES_EW))
-MUON_MASSES_ALL = sorted(set(MUON_MASSES_BASE + MUON_MASSES_CLOSURE + MUON_MASSES_EW))
-TAU_MASSES_ALL = sorted(set(TAU_MASSES_BASE + TAU_MASSES_CLOSURE + TAU_MASSES_EW))
-
-# Recommended for production (base + closure only, skip failing EW regime)
-ELECTRON_MASSES_PRODUCTION = sorted(set(ELECTRON_MASSES_BASE + ELECTRON_MASSES_CLOSURE))
-MUON_MASSES_PRODUCTION = sorted(set(MUON_MASSES_BASE + MUON_MASSES_CLOSURE))
-TAU_MASSES_PRODUCTION = sorted(set(TAU_MASSES_BASE + TAU_MASSES_CLOSURE))
+# Full mass grids (meson + EW)
+ELECTRON_MASSES_COMBINED = sorted(set(ELECTRON_MASSES_MESON + ELECTRON_MASSES_EW))
+MUON_MASSES_COMBINED = sorted(set(MUON_MASSES_MESON + MUON_MASSES_EW))
+TAU_MASSES_COMBINED = sorted(set(TAU_MASSES_MESON + TAU_MASSES_EW))
 
 # ===========================================================================
 # HELPER FUNCTIONS
@@ -105,10 +91,11 @@ def get_mass_grid(flavour, mode='production'):
     flavour : str
         'electron', 'muon', or 'tau'
     mode : str
-        'base' - Only validated low-mass points (< 5 GeV)
-        'closure' - Only island closure points (4-5.5 GeV)
-        'production' - Base + closure (recommended for new simulations)
-        'all' - Base + closure + EW (includes failing high-mass points)
+        'meson'      - Only meson-driven points (Pythia, low mass)
+        'ew'         - Only electroweak points (MadGraph, high mass)
+        'combined'   - Union of meson + ew
+        Backward-compatible aliases:
+          'production'/'base' -> meson
 
     Returns:
     --------
@@ -117,39 +104,37 @@ def get_mass_grid(flavour, mode='production'):
     flavour = flavour.lower()
     mode = mode.lower()
 
+    # Backward-compatible aliases
+    if mode in ['production', 'base']:
+        mode = 'meson'
+
     if flavour == 'electron':
-        if mode == 'base':
-            return ELECTRON_MASSES_BASE
-        elif mode == 'closure':
-            return ELECTRON_MASSES_CLOSURE
-        elif mode == 'production':
-            return ELECTRON_MASSES_PRODUCTION
-        elif mode == 'all':
-            return ELECTRON_MASSES_ALL
+        if mode == 'meson':
+            return ELECTRON_MASSES_MESON
+        elif mode == 'ew':
+            return ELECTRON_MASSES_EW
+        elif mode == 'combined':
+            return ELECTRON_MASSES_COMBINED
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
     elif flavour == 'muon':
-        if mode == 'base':
-            return MUON_MASSES_BASE
-        elif mode == 'closure':
-            return MUON_MASSES_CLOSURE
-        elif mode == 'production':
-            return MUON_MASSES_PRODUCTION
-        elif mode == 'all':
-            return MUON_MASSES_ALL
+        if mode == 'meson':
+            return MUON_MASSES_MESON
+        elif mode == 'ew':
+            return MUON_MASSES_EW
+        elif mode == 'combined':
+            return MUON_MASSES_COMBINED
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
     elif flavour == 'tau':
-        if mode == 'base':
-            return TAU_MASSES_BASE
-        elif mode == 'closure':
-            return TAU_MASSES_CLOSURE
-        elif mode == 'production':
-            return TAU_MASSES_PRODUCTION
-        elif mode == 'all':
-            return TAU_MASSES_ALL
+        if mode == 'meson':
+            return TAU_MASSES_MESON
+        elif mode == 'ew':
+            return TAU_MASSES_EW
+        elif mode == 'combined':
+            return TAU_MASSES_COMBINED
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
@@ -182,7 +167,7 @@ def export_to_bash(flavour, mode='production'):
     flavour : str
         'electron', 'muon', or 'tau'
     mode : str
-        'base', 'closure', 'production', or 'all'
+        'meson', 'ew', or 'combined'
 
     Returns:
     --------
@@ -205,10 +190,9 @@ if __name__ == "__main__":
 
     for flavour in ['electron', 'muon', 'tau']:
         print(f"{flavour.upper()} COUPLING:")
-        print(f"  Base (< 5 GeV):     {len(get_mass_grid(flavour, 'base'))} points")
-        print(f"  Closure (4-5.5):    {len(get_mass_grid(flavour, 'closure'))} points")
-        print(f"  Production (rec):   {len(get_mass_grid(flavour, 'production'))} points")
-        print(f"  All (inc. EW):      {len(get_mass_grid(flavour, 'all'))} points")
+        print(f"  Meson (Pythia):     {len(get_mass_grid(flavour, 'meson'))} points")
+        print(f"  EW (MadGraph):      {len(get_mass_grid(flavour, 'ew'))} points")
+        print(f"  Combined:           {len(get_mass_grid(flavour, 'combined'))} points")
         print()
 
     print("=" * 70)
@@ -217,8 +201,8 @@ if __name__ == "__main__":
     print()
     print("# Python:")
     print("from config_mass_grid import get_mass_grid")
-    print("masses = get_mass_grid('electron', 'production')")
+    print("masses = get_mass_grid('electron', 'meson')")
     print()
     print("# Bash:")
-    print("python -c 'from config_mass_grid import export_to_bash; print(export_to_bash(\"electron\", \"production\"))'")
+    print("python -c 'from config_mass_grid import export_to_bash; print(export_to_bash(\"electron\", \"meson\"))'")
     print()

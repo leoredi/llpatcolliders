@@ -1,7 +1,6 @@
 #!/bin/bash
 # Full HNL Production Run
-# Generates all mass points including closure points for complete exclusion islands
-# Mass grids loaded from ../config_mass_grid.py
+# Generates all meson (Pythia) mass points from central config_mass_grid.py
 
 set -e  # Exit on error
 
@@ -9,8 +8,8 @@ echo "============================================"
 echo "HNL Production - Complete Mass Grid"
 echo "============================================"
 echo ""
-echo "Includes base points + island closure points"
-echo "Mass grid: config_mass_grid.py"
+echo "Includes meson (Pythia) grid from config_mass_grid.py"
+echo "Mass grid: config_mass_grid.py (meson mode)"
 echo "Events: 200k per mass point"
 echo ""
 
@@ -39,10 +38,10 @@ echo ""
 
 source ./load_mass_grid.sh
 
-# Use production-recommended mass arrays (base + closure, skip failing EW)
-ELECTRON_MASSES=("${ELECTRON_MASSES_PRODUCTION[@]}")
-MUON_MASSES=("${MUON_MASSES_PRODUCTION[@]}")
-TAU_MASSES=("${TAU_MASSES_PRODUCTION[@]}")
+# Use meson (Pythia) mass arrays
+ELECTRON_MASSES=("${ELECTRON_MASSES_MESON[@]}")
+MUON_MASSES=("${MUON_MASSES_MESON[@]}")
+TAU_MASSES=("${TAU_MASSES_MESON[@]}")
 
 # ===========================================================================
 # Execution
