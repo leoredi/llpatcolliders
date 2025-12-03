@@ -49,7 +49,7 @@ Options:
   --test                      Test mode (15 GeV muon, 1k events)
   --flavour {e,mu,tau}        Single flavor
   --masses M1 M2 ...          Custom masses in GeV
-  --nevents N                 Events per point (default: 50k)
+  --nevents N                 Events per point (default: 100k)
 ```
 
 **Examples**:

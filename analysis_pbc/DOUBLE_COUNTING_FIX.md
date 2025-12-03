@@ -1,0 +1,137 @@
+# Meson-EW Production Channel Combination
+
+## Issue Summary
+
+In the transition region (4-8 GeV), HNLs can be produced from BOTH:
+1. **Meson production** (Pythia): B/D → ℓN
+   - Parent PDG codes: 511 (B⁰), 521 (B±), 421 (D⁰), 431 (Ds), etc.
+   - Files: `HNL_5p0GeV_muon_beauty.csv`
+
+2. **Electroweak production** (MadGraph): W/Z → ℓN
+   - Parent PDG codes: 23 (Z), 24 (W±)
+   - Files: `HNL_5p0GeV_muon_ew.csv`
+
+## Is This Double-Counting?
+
+**NO!** These are DIFFERENT production mechanisms:
+- σ(pp → B) × BR(B → μN) ~ O(10⁸ pb) × O(|U|²) at 5 GeV
+- σ(pp → W) × BR(W → μN) ~ O(10⁸ pb) × O(0.1|U|²) at 5 GeV
+
+They contribute to the SAME final state (HNL in detector) but through different processes. Both should be included and ADDED.
+
+## Current Status (2025-12-02)
+
+**✓ No issue currently**
+- Only EW files exist in `output/csv/simulation_new/`
+- Pythia meson production has not been completed yet
+- Therefore, no overlapping files to combine
+
+## Future Action Required
+
+When Pythia production completes, follow these steps:
+
+### 1. Check for Overlapping Files
+
+```bash
+cd output/csv/simulation_new
+ls HNL_*GeV_muon_*.csv | grep -E "(4p|5p|6p|7p|8p)"
+```
+
+If you see BOTH beauty and ew files at the same mass:
+```
+HNL_5p0GeV_muon_beauty.csv
+HNL_5p0GeV_muon_ew.csv
+```
+
+Then you need to combine them.
+
+### 2. Combine Production Channels
+
+```bash
+cd analysis_pbc
+python limits/combine_production_channels.py --dry-run  # Preview
+python limits/combine_production_channels.py            # Execute
+```
+
+This will:
+- Find all masses with multiple production files
+- Concatenate CSVs (preserving all parent PDG codes)
+- Create unified files: `HNL_5p0GeV_muon_combined.csv`
+
+### 3. Clean Up Original Files
+
+```bash
+# Archive regime-specific files
+mkdir -p output/csv/simulation_backup
+mv output/csv/simulation_new/HNL_*_beauty.csv simulation_backup/
+mv output/csv/simulation_new/HNL_*_ew.csv simulation_backup/
+
+# Move combined files to main directory
+mv output/csv/simulation_new/combined/* output/csv/simulation_new/
+```
+
+### 4. Re-run Analysis
+
+```bash
+cd analysis_pbc
+python limits/run_serial.py
+```
+
+The per-parent counting in `u2_limit_calculator.py` will correctly sum:
+```python
+N_sig = Σ_parents [ L × σ(parent) × BR(parent→ℓN) × ε_geom(parent) ]
+      = L × [σ(B) × BR(B→μN) × ε_B] + [σ(W) × BR(W→μN) × ε_W]
+```
+
+## Why This Approach is Correct
+
+The analysis uses **per-parent counting** (not per-event):
+
+```python
+# From u2_limit_calculator.py:190-215
+for pid in unique_parents:
+    BR_parent = br_per_parent.get(int(pid), 0.0)      # Different for B vs W
+    sigma_parent_pb = get_parent_sigma_pb(int(pid))   # Different for B vs W
+
+    mask_parent = np.abs(parent_id) == pid
+    eff_parent = np.sum(weights[mask_parent] * P_decay[mask_parent]) / w_sum
+
+    total_expected += lumi_fb * (sigma_parent_pb * 1e3) * BR_parent * eff_parent
+```
+
+Each parent species (B⁰, B±, W±, Z) is weighted by its OWN cross-section and branching ratio. No double-counting!
+
+## Example at m = 5 GeV
+
+Suppose at 5 GeV:
+- Pythia generates 10k HNLs from B mesons
+- MadGraph generates 5k HNLs from W bosons
+
+**Combined CSV has 15k rows:**
+```csv
+event,weight,hnl_id,parent_pdg,pt,eta,phi,...
+1,1.0,9900014,511,12.3,1.5,0.8,...     # From B⁰
+2,1.0,9900014,521,8.7,-0.5,2.1,...     # From B±
+...
+10001,1.0,9900014,24,45.2,2.1,-1.3,... # From W⁺
+10002,1.0,9900014,-24,38.5,-1.8,0.6,...# From W⁻
+...
+```
+
+**Analysis correctly sums:**
+```
+N_sig(|U|²) = N_B(|U|²) + N_W(|U|²)
+            = [σ_B × BR_B(|U|²) × ε_B] + [σ_W × BR_W(|U|²) × ε_W]
+            ✓ Correct!
+```
+
+## References
+
+- Review: `PHYSICS_REVIEW.md` Section 2.2
+- Tool: `analysis_pbc/limits/combine_production_channels.py`
+- Analysis: `analysis_pbc/limits/u2_limit_calculator.py:190-215`
+
+---
+
+**Status:** Documented and resolved for future production runs
+**Date:** 2025-12-02

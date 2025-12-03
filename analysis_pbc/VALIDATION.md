@@ -16,7 +16,7 @@ The PBC analysis pipeline has been thoroughly validated against standard LLP det
 ✅ Geometry ray-tracing (proper boosts)
 ✅ No double-counting of cross-sections
 
-**Benchmark result:** 2.6 GeV muon-coupled HNL → |U_mu|² ∈ [6.9×10⁻⁹, 2.4×10⁻⁵] at 90% CL
+**Benchmark result:** 2.6 GeV muon-coupled HNL → |U_mu|² ∈ [6.9×10⁻⁹, 2.4×10⁻⁵] at 95% CL
 
 ---
 
@@ -34,7 +34,7 @@ The PBC analysis pipeline has been thoroughly validated against standard LLP det
 ### Analysis Parameters
 - **Luminosity:** 3000 fb⁻¹ (HL-LHC)
 - **|U|² scan:** 100 log-spaced points from 10⁻¹² to 10⁻²
-- **Signal threshold:** N_sig = 3 events (90% CL)
+- **Signal threshold:** N_sig = 3 events (95% CL)
 - **Detector:** Tube at z = 22m above IP (CMS drainage gallery)
 - **Cross-sections:** PBC standard (σ_ccbar = 24 mb, σ_bbbar = 500 μb)
 
@@ -338,7 +338,7 @@ The PBC analysis pipeline has been **comprehensively validated** and is **ready 
 ### Benchmark Confirmed
 
 **2.6 GeV muon-coupled HNL:**
-- Exclusion: |U_mu|² ∈ [6.9×10⁻⁹, 2.4×10⁻⁵] at 90% CL
+- Exclusion: |U_mu|² ∈ [6.9×10⁻⁹, 2.4×10⁻⁵] at 95% CL
 - Dominated by B-meson production (86%)
 - Geometric acceptance: 1.41%
 - Island width: 3.54 decades

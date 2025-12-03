@@ -2,9 +2,9 @@
 # Mass Grid Loader for Production Scripts
 # Sources mass grids from central config_mass_grid.py
 
-# Find project root (one level up from production/)
+# Find project root (two levels up from production/pythia_production/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Python executable (use conda env if available)
 if [ -n "$CONDA_DEFAULT_ENV" ] && [ "$CONDA_DEFAULT_ENV" = "llpatcolliders" ]; then
