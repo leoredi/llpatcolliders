@@ -1,0 +1,55 @@
+! ==========================================================================
+! HNL Production from D-meson decays  
+! For HNL masses: 0.5 GeV < m_N < 2 GeV
+!
+! Physics: pp -> cc̄ X, D -> ℓ N (2-body) or D -> K ℓ N (3-body)
+!
+! Reference: arXiv:1805.08567, MATHUSLA methodology
+! ==========================================================================
+
+! -------------------------------------------------------------------------
+! 1) Beam Configuration: HL-LHC at 14 TeV
+! -------------------------------------------------------------------------
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 14000.
+
+! -------------------------------------------------------------------------
+! 2) Tune: Monash 2013
+! -------------------------------------------------------------------------
+Tune:pp = 14
+Tune:ee = 7
+
+! -------------------------------------------------------------------------
+! 3) Process Selection: Hard cc̄ production
+! -------------------------------------------------------------------------
+SoftQCD:all = off
+
+HardQCD:all = off
+HardQCD:hardccbar = on             ! gg -> cc̄, qq̄ -> cc̄
+HardQCD:hardbbbar = off
+
+WeakSingleBoson:all = off
+
+PhaseSpace:pTHatMin = 0.0
+
+! -------------------------------------------------------------------------
+! 4) HNL Definition
+! -------------------------------------------------------------------------
+! NOTE: HNL particle (9900015) is defined in C++ code, not here.
+! This keeps mass/lifetime as single source of truth.
+
+! -------------------------------------------------------------------------
+! 5) Output Control
+! -------------------------------------------------------------------------
+Init:showChangedSettings = on
+Init:showChangedParticleData = on
+Next:numberCount = 10000
+Next:numberShowInfo = 1
+Next:numberShowProcess = 1
+Next:numberShowEvent = 1
+
+! -------------------------------------------------------------------------
+! 6) Run Configuration
+! -------------------------------------------------------------------------
+Main:numberOfEvents = 100000

@@ -1,0 +1,16 @@
+# Generated files
+work/
+lhe/
+archive/
+*.log
+
+# MadGraph process directories
+hnl_*/
+
+# Temporary files
+*.pyc
+__pycache__/
+.DS_Store
+
+# Large files (already in git)
+# MG5_aMC_v3.6.6.tar.gz is kept for reproducibility
