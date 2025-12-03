@@ -2,6 +2,11 @@
 """
 Serial version of u2_limit_calculator (no multiprocessing)
 Regenerates HNL_U2_limits_summary.csv from today's simulation data
+
+Usage:
+    python run_serial.py              # Serial processing
+    python run_serial.py --parallel   # Parallel processing (uses all cores)
+    python run_serial.py --parallel --workers 8  # Use 8 cores
 """
 
 import sys
@@ -9,6 +14,9 @@ import re
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import argparse
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 
 # Setup paths
 THIS_FILE = Path(__file__).resolve()
@@ -49,7 +57,11 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, g
         print(f"  Computing geometry (caching to {geom_csv.name})...")
         mesh = build_drainage_gallery_mesh()
         geom_df = preprocess_hnl_csv(sim_csv, mesh)
-        geom_df.to_csv(geom_csv, index=False)
+
+        # Double-check pattern to prevent race condition in parallel execution
+        # (Another worker might have created it while we were computing)
+        if not geom_csv.exists():
+            geom_df.to_csv(geom_csv, index=False)
 
     n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
     print(f"  Loaded {len(geom_df)} HNLs, {n_hits} hit detector")
@@ -98,14 +110,15 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, g
         "peak_events": peak_events
     }
 
-def run_flavour(flavour, benchmark, lumi_fb):
+def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None):
     """Run scan for one flavour"""
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
     print(f"{'='*60}")
 
     # Find simulation files
-    pattern = re.compile(rf"HNL_([0-9]+p[0-9]+)GeV_{flavour}_(kaon|charm|beauty|ew)(?:_direct|_fromTau)?\.csv")
+    # Accept both 1 and 2 decimal formats: 5p0 or 5p00 (transitioning to 2-decimal standard)
+    pattern = re.compile(rf"HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_(kaon|charm|beauty|ew|combined)(?:_direct|_fromTau)?\.csv")
 
     files = []
     for f in SIM_DIR.glob(f"*{flavour}*.csv"):
@@ -123,19 +136,46 @@ def run_flavour(flavour, benchmark, lumi_fb):
     print(f"Found {len(files)} mass points")
 
     # Process each file
-    results = []
-    for mass_val, mass_str, sim_csv in files:
-        geom_csv = GEOM_CACHE_DIR / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
+    if use_parallel:
+        if n_workers is None:
+            n_workers = multiprocessing.cpu_count()
+        print(f"Using {n_workers} parallel workers")
 
-        res = scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, geom_csv)
-        if res:
-            results.append(res)
+        # Prepare arguments for parallel processing
+        args_list = []
+        for mass_val, mass_str, sim_csv in files:
+            geom_csv = GEOM_CACHE_DIR / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
+            args_list.append((mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, geom_csv))
+
+        # Process in parallel
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            results = list(executor.map(scan_single_mass_wrapper, args_list))
+
+        # Filter out None results
+        results = [r for r in results if r is not None]
+    else:
+        results = []
+        for mass_val, mass_str, sim_csv in files:
+            geom_csv = GEOM_CACHE_DIR / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
+            res = scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, geom_csv)
+            if res:
+                results.append(res)
 
     return pd.DataFrame(results)
 
+def scan_single_mass_wrapper(args):
+    """Wrapper for parallel processing"""
+    return scan_single_mass(*args)
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Calculate U² limits for HNL search")
+    parser.add_argument("--parallel", action="store_true", help="Use parallel processing")
+    parser.add_argument("--workers", type=int, default=None, help="Number of workers (default: all CPU cores)")
+    args = parser.parse_args()
+
+    mode_str = f"PARALLEL ({args.workers if args.workers else multiprocessing.cpu_count()} workers)" if args.parallel else "SERIAL"
     print("="*60)
-    print("SERIAL U² LIMIT CALCULATOR")
+    print(f"U² LIMIT CALCULATOR ({mode_str})")
     print("="*60)
 
     GEOM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -148,7 +188,7 @@ if __name__ == "__main__":
 
     # Process each flavour
     for flavour, benchmark in [("electron", "100"), ("muon", "010"), ("tau", "001")]:
-        df = run_flavour(flavour, benchmark, L_HL_LHC_FB)
+        df = run_flavour(flavour, benchmark, L_HL_LHC_FB, use_parallel=args.parallel, n_workers=args.workers)
         all_results.append(df)
 
     # Combine and save

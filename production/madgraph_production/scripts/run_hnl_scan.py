@@ -68,8 +68,8 @@ MASS_GRID_FULL = sorted(set(ELECTRON_MASSES_EW + MUON_MASSES_EW + TAU_MASSES_EW)
 # Flavours
 FLAVOURS = ['electron', 'muon', 'tau']
 
-# Number of events per mass point
-N_EVENTS_DEFAULT = 50000
+# Number of events per mass point (default run)
+N_EVENTS_DEFAULT = 100000
 
 # K-factor for NLO correction (approximate)
 K_FACTOR = 1.3
@@ -130,7 +130,8 @@ class ProjectPaths:
         """Get CSV output path for (flavour, mass) - matches Pythia format"""
         # Use same directory structure as Pythia production for compatibility
         # Format: HNL_{mass}GeV_{flavour}_ew.csv
-        mass_str = f"{mass:.1f}".replace('.', 'p')  # e.g., 15.0 → 15p0
+        # Use 2 decimal places to match Pythia convention: 15.0 → 15p00 (not 15p0)
+        mass_str = f"{mass:.2f}".replace('.', 'p')  # e.g., 15.0 → 15p00, 5.2 → 5p20
         return self.csv_dir / f"HNL_{mass_str}GeV_{flavour}_ew.csv"
 
     def summary_csv_path(self):

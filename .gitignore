@@ -19,6 +19,14 @@ production/madgraph/work/
 # CSV files (too large for git)
 *.csv
 
+# Run outputs (logs, CSVs, intermediates)
+output/
+production/output/
+production/madgraph_production/csv/
+production/madgraph_production/work/
+production/pythia_production/HNL_*.csv
+production/pythia_production/HNL_*.log
+
 # Temporary
 auto_analyze.sh
 tmp/
@@ -33,4 +41,3 @@ pythia/**/config.log
 pythia/**/config.status
 pythia/**/Makefile.inc
 pythia/**/Makefile.local
-

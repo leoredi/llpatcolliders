@@ -73,7 +73,7 @@ Where:
 - **BR(parent→ℓN)** = Branching ratio from HNLCalc (∝ |U_ℓ|²)
 - **ε_geom** = Geometric acceptance (ray-tracing + decay probability)
 
-**Exclusion threshold:** N_sig ≥ 3 (90% CL)
+**Exclusion threshold:** N_sig ≥ 3 (95% CL)
 
 ---
 

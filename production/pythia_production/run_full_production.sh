@@ -10,13 +10,19 @@ echo "============================================"
 echo ""
 echo "Includes meson (Pythia) grid from config_mass_grid.py"
 echo "Mass grid: config_mass_grid.py (meson mode)"
-echo "Events: 200k per mass point"
+echo "Events: 100k per mass point"
 echo ""
 
 # Configuration
-NEVENTS=200000
-OUTPUT_DIR="../output/csv/simulation_new"
-LOG_DIR="../output/logs/simulation_new"
+NEVENTS=100000
+
+# Pythia library path (needed on macOS for libpythia8.dylib lookup)
+PYTHIA_ROOT="$(cd "$(dirname "$0")/../pythia/pythia8315" && pwd)"
+export DYLD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${DYLD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${LD_LIBRARY_PATH:-}"
+# Write alongside MadGraph outputs (repo-root/output/...)
+OUTPUT_DIR="../../output/csv/simulation_new"
+LOG_DIR="../../output/logs/simulation_new"
 
 # Create directories
 mkdir -p "$OUTPUT_DIR"

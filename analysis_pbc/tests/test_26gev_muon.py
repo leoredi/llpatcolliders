@@ -72,7 +72,7 @@ def main():
         print(f"    PDG {int(pid):>4}: {count:>6} events ({100*count/n_total:>5.1f}%)")
 
     # Scan U²
-    print(f"\n[2/2] Scanning |U_mu|² for 90% CL limit (N_sig = 3 events)")
+    print(f"\n[2/2] Scanning |U_mu|² for 95% CL limit (N_sig = 3 events)")
     print(f"  Luminosity: {LUMI_FB:.0f} fb⁻¹")
 
     eps2_grid, Nsig, eps2_min, eps2_max = scan_eps2_for_mass(
@@ -93,7 +93,7 @@ def main():
     print(f"Peak N_sig: {Nsig.max():.2e} events")
 
     if eps2_min is not None:
-        print(f"\n90% CL Exclusion Range:")
+        print(f"\n95% CL Exclusion Range:")
         print(f"  |U_mu|²_min = {eps2_min:.3e}")
         print(f"  |U_mu|²_max = {eps2_max:.3e}")
         print(f"  Island width: {np.log10(eps2_max/eps2_min):.2f} decades")

@@ -75,7 +75,7 @@ The analysis follows a **three-stage** workflow matching PBC methodology (MATHUS
 - HNLCalc provides BR(parent→ℓN, |U|²) and cτ₀(mass, |U|²)
 - Per-parent counting: `N_sig = Σ_parents [L × σ_parent × BR × ε_geom]`
 - Scans 100 |U|² values (10⁻¹² to 10⁻²) to find N_sig = 3 crossings
-- Output: Exclusion range [|U|²_min, |U|²_max] at 90% CL
+- Output: Exclusion range [|U|²_min, |U|²_max] at 95% CL
 
 **Key:** Cross-sections from `config/production_xsecs.py` (PBC standard).
 
@@ -133,7 +133,7 @@ Flavour:   muon (benchmark 010)
 Lumi:      3000 fb⁻¹
 Peak N_sig: 2.88e+03 events
 
-90% CL Exclusion Range:
+95% CL Exclusion Range:
   |U_mu|²_min = 6.893e-09
   |U_mu|²_max = 2.364e-05
   Island width: 3.54 decades
