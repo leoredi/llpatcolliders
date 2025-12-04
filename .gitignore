@@ -26,6 +26,7 @@ production/madgraph_production/csv/
 production/madgraph_production/work/
 production/pythia_production/HNL_*.csv
 production/pythia_production/HNL_*.log
+output/logs/
 
 # Temporary
 auto_analyze.sh
