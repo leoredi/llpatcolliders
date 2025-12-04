@@ -10,8 +10,8 @@
 
 ```bash
 # 1. Generate events (Pythia meson + MadGraph EW)
-cd production/pythia_production && ./run_full_production.sh
-cd production/madgraph_production && python3 scripts/run_hnl_scan.py
+cd production/pythia_production && ./run_full_production.sh          # conda env required
+cd production/madgraph_production && python3 scripts/run_hnl_scan.py # uses MG5/madgraph env (NOT conda)
 
 # 2. Calculate limits
 cd analysis_pbc && conda run -n llpatcolliders python limits/run_serial.py
@@ -21,6 +21,17 @@ cd money_plot && conda run -n llpatcolliders python plot_money_island.py
 ```
 
 **Output:** `output/images/HNL_moneyplot_island.png`
+
+---
+
+## Environment (Important)
+
+- **Default:** All analysis/plotting scripts **must** run inside the `llpatcolliders` conda env.
+  - Interactive shell: `conda activate llpatcolliders`
+  - One-off command: `conda run -n llpatcolliders python <script>.py`
+- **Exception:** `production/madgraph_production` uses its own MG5 setup; keep using `python3 scripts/run_hnl_scan.py` there (do *not* switch to the conda env).
+- If Matplotlib cache complains about permissions, set `MPLCONFIGDIR` to a writable path, e.g. `export MPLCONFIGDIR=$PWD/.mplcache`.
+- **HNLCalc cwd:** HNLCalc writes/reads relative `model/br` and `model/ctau` caches; always `cd analysis_pbc` before running anything that constructs `HNLModel`/HNLCalc. Running from repo root will recreate a stray `./model` folder (deleted now).
 
 ---
 

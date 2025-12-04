@@ -60,10 +60,10 @@ TAU_MASSES_MESON = [
 # ===========================================================================
 
 # Electroweak production (W/Z bosons) via MadGraph
-# Extended DOWN to 4 GeV for smooth overlap with meson production, UP to 80 GeV
+# Extended DOWN to 1 GeV (0.5 GeV steps) for smooth overlap with meson production, UP to 80 GeV
 
-_EW_LOW_EDGE = [4.0, 4.2, 4.4, 4.6, 4.8]  # overlap with meson
-_EW_CORE = [5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0]
+_EW_LOW_EDGE = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5]  # overlap with meson
+_EW_CORE = [5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0]  # stop above 20 GeV
 
 ELECTRON_MASSES_EW = _EW_LOW_EDGE + _EW_CORE
 MUON_MASSES_EW = _EW_LOW_EDGE + _EW_CORE
