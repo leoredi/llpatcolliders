@@ -17,11 +17,14 @@ for idx, flavour in enumerate(["electron", "muon", "tau"]):
     df_valid = df_sel[df_sel["eps2_min"].notna() & df_sel["eps2_max"].notna()]
 
     # Remove duplicates by keeping best sensitivity for each mass
+    # Deduplicate per-mass entries and enforce sensible ordering/positivity before plotting
     df_dedup = df_valid.groupby("mass_GeV", as_index=False).agg({
         "eps2_min": "min",
         "eps2_max": "max",
         "peak_events": "max"
-    })
+    }).sort_values("mass_GeV").reset_index(drop=True)
+    df_dedup = df_dedup[(df_dedup["eps2_min"] > 0) & (df_dedup["eps2_max"] > 0)]
+    df_dedup = df_dedup[df_dedup["eps2_min"] <= df_dedup["eps2_max"]]
 
     if len(df_dedup) > 0:
         # Split at 5 GeV to handle meson→EW transition discontinuity
