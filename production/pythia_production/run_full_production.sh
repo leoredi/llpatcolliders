@@ -21,8 +21,8 @@ PYTHIA_ROOT="$(cd "$(dirname "$0")/../pythia/pythia8315" && pwd)"
 export DYLD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${DYLD_LIBRARY_PATH:-}"
 export LD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${LD_LIBRARY_PATH:-}"
 # Write alongside MadGraph outputs (repo-root/output/...)
-OUTPUT_DIR="../../output/csv/simulation_new"
-LOG_DIR="../../output/logs/simulation_new"
+OUTPUT_DIR="../../output/csv/simulation"
+LOG_DIR="../../output/logs/simulation"
 
 # Create directories
 mkdir -p "$OUTPUT_DIR"
