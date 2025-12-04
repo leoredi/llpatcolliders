@@ -91,7 +91,10 @@ def main():
 
     # Paths
     repo_root = Path(__file__).parent.parent.parent
-    sim_dir = repo_root / "output" / "csv" / "simulation_new"
+    # Prefer current path (simulation); fall back to legacy (simulation_new).
+    sim_dir = repo_root / "output" / "csv" / "simulation"
+    if not sim_dir.exists():
+        sim_dir = repo_root / "output" / "csv" / "simulation_new"
     combined_dir = sim_dir / "combined"
     backup_dir = sim_dir / "originals_backup"
 

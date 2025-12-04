@@ -23,7 +23,11 @@ THIS_FILE = Path(__file__).resolve()
 ANALYSIS_DIR = THIS_FILE.parent
 REPO_ROOT = ANALYSIS_DIR.parents[1]
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
-SIM_DIR = OUTPUT_DIR / "simulation_new"
+
+# Prefer current path (simulation); fall back to legacy (simulation_new) if needed.
+SIM_DIR = OUTPUT_DIR / "simulation"
+if not SIM_DIR.exists():
+    SIM_DIR = OUTPUT_DIR / "simulation_new"
 GEOM_CACHE_DIR = OUTPUT_DIR / "geometry"
 ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
 
