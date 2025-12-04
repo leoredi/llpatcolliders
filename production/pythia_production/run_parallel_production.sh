@@ -1,11 +1,24 @@
 #!/bin/bash
 # Parallel HNL Production Run
-# Generates all meson (Pythia) mass points using parallel job execution
+# Generates meson (Pythia) mass points using parallel job execution
+# Usage: ./run_parallel_production.sh [flavour]
+#   flavour: electron, muon, tau, or all (default: all)
 
 set -e  # Exit on error
 
+# Parse command line arguments
+FLAVOUR="${1:-all}"
+FLAVOUR=$(echo "$FLAVOUR" | tr '[:upper:]' '[:lower:]')
+
+if [[ ! "$FLAVOUR" =~ ^(electron|muon|tau|all)$ ]]; then
+    echo "Error: Invalid flavour '$FLAVOUR'"
+    echo "Usage: $0 [electron|muon|tau|all]"
+    exit 1
+fi
+
 echo "============================================"
 echo "HNL Production - Parallel Execution"
+echo "Flavour: $FLAVOUR"
 echo "============================================"
 echo ""
 
@@ -14,11 +27,12 @@ NEVENTS=100000
 MAX_PARALLEL=8  # Adjust based on your CPU cores (leave 1-2 for system)
 
 # Pythia library path (needed on macOS for libpythia8.dylib lookup)
-PYTHIA_ROOT="$(cd "$(dirname "$0")/../pythia/pythia8315" && pwd)"
+PYTHIA_ROOT="$(cd "$(dirname "$0")/pythia/pythia8315" && pwd)"
 export DYLD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${DYLD_LIBRARY_PATH:-}"
 export LD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${LD_LIBRARY_PATH:-}"
-OUTPUT_DIR="../../output/csv/simulation_new"
-LOG_DIR="../../output/logs/simulation_new"
+export PYTHIA8DATA="$PYTHIA_ROOT/share/Pythia8/xmldoc"
+OUTPUT_DIR="../../output/csv/simulation"
+LOG_DIR="../../output/logs/simulation"
 
 # Create directories
 mkdir -p "$OUTPUT_DIR"
@@ -68,17 +82,20 @@ run_production_job() {
     local mode=${3:-direct}  # direct or fromTau
 
     local log_file="${LOG_DIR}/HNL_${mass}GeV_${flavour}_${mode}_${TIMESTAMP}.log"
+    local script_dir=$(pwd)
 
     {
         echo "[$(date +%H:%M:%S)] Starting: $mass GeV $flavour ($mode)"
 
+        cd "$OUTPUT_DIR"
         if [ "$mode" = "fromTau" ]; then
-            ./main_hnl_production ${mass} ${flavour} $NEVENTS fromTau 2>&1
+            "$script_dir/main_hnl_production" ${mass} ${flavour} $NEVENTS fromTau 2>&1
         else
-            ./main_hnl_production ${mass} ${flavour} $NEVENTS 2>&1
+            "$script_dir/main_hnl_production" ${mass} ${flavour} $NEVENTS 2>&1
         fi
 
         local exit_code=$?
+        cd "$script_dir"
 
         if [ $exit_code -eq 0 ]; then
             # Find the generated CSV - wait a moment for filesystem sync
@@ -87,16 +104,7 @@ run_production_job() {
             # Convert mass to filename format (e.g., 2.6 → 2p6)
             local mass_label=$(echo "$mass" | sed 's/\.0*$//' | sed 's/\./p/')
 
-            # Search for CSV file matching this job
-            local output_file=$(find . -maxdepth 1 -name "HNL_${mass_label}GeV_${flavour}_*.csv" -type f -mmin -2 2>/dev/null | head -1)
-
-            if [ -n "$output_file" ] && [ -f "$output_file" ]; then
-                mv "$output_file" "$OUTPUT_DIR/" 2>/dev/null
-                local basename=$(basename "$output_file")
-                echo "[$(date +%H:%M:%S)] SUCCESS: $basename → simulation_new/"
-            else
-                echo "[$(date +%H:%M:%S)] WARNING: No CSV found for $mass GeV $flavour (searched: HNL_${mass_label}GeV_${flavour}_*.csv)"
-            fi
+            echo "[$(date +%H:%M:%S)] SUCCESS: HNL_${mass_label}GeV_${flavour} → simulation/"
         else
             echo "[$(date +%H:%M:%S)] FAILED: $mass GeV $flavour (exit code $exit_code)"
         fi
@@ -153,57 +161,63 @@ completed_jobs=0
 # Electron Production
 # ===========================================================================
 
-echo "============================================" | tee -a "$LOGFILE"
-echo "ELECTRON COUPLING (BC6)" | tee -a "$LOGFILE"
-echo "============================================" | tee -a "$LOGFILE"
+if [[ "$FLAVOUR" == "electron" || "$FLAVOUR" == "all" ]]; then
+    echo "============================================" | tee -a "$LOGFILE"
+    echo "ELECTRON COUPLING (BC6)" | tee -a "$LOGFILE"
+    echo "============================================" | tee -a "$LOGFILE"
 
-for mass in "${ELECTRON_MASSES[@]}"; do
-    wait_for_slot
-    run_production_job "$mass" "electron" "direct" &
-    completed_jobs=$((completed_jobs + 1))
-    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV electron" | tee -a "$LOGFILE"
-done
+    for mass in "${ELECTRON_MASSES[@]}"; do
+        wait_for_slot
+        run_production_job "$mass" "electron" "direct" &
+        completed_jobs=$((completed_jobs + 1))
+        echo "[$completed_jobs/$total_jobs] Queued: $mass GeV electron" | tee -a "$LOGFILE"
+    done
+fi
 
 # ===========================================================================
 # Muon Production
 # ===========================================================================
 
-echo "" | tee -a "$LOGFILE"
-echo "============================================" | tee -a "$LOGFILE"
-echo "MUON COUPLING (BC7)" | tee -a "$LOGFILE"
-echo "============================================" | tee -a "$LOGFILE"
+if [[ "$FLAVOUR" == "muon" || "$FLAVOUR" == "all" ]]; then
+    echo "" | tee -a "$LOGFILE"
+    echo "============================================" | tee -a "$LOGFILE"
+    echo "MUON COUPLING (BC7)" | tee -a "$LOGFILE"
+    echo "============================================" | tee -a "$LOGFILE"
 
-for mass in "${MUON_MASSES[@]}"; do
-    wait_for_slot
-    run_production_job "$mass" "muon" "direct" &
-    completed_jobs=$((completed_jobs + 1))
-    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV muon" | tee -a "$LOGFILE"
-done
+    for mass in "${MUON_MASSES[@]}"; do
+        wait_for_slot
+        run_production_job "$mass" "muon" "direct" &
+        completed_jobs=$((completed_jobs + 1))
+        echo "[$completed_jobs/$total_jobs] Queued: $mass GeV muon" | tee -a "$LOGFILE"
+    done
+fi
 
 # ===========================================================================
 # Tau Production (DUAL MODE)
 # ===========================================================================
 
-echo "" | tee -a "$LOGFILE"
-echo "============================================" | tee -a "$LOGFILE"
-echo "TAU COUPLING (BC8) - DUAL MODE" | tee -a "$LOGFILE"
-echo "============================================" | tee -a "$LOGFILE"
+if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
+    echo "" | tee -a "$LOGFILE"
+    echo "============================================" | tee -a "$LOGFILE"
+    echo "TAU COUPLING (BC8) - DUAL MODE" | tee -a "$LOGFILE"
+    echo "============================================" | tee -a "$LOGFILE"
 
-for mass in "${TAU_MASSES[@]}"; do
-    # MODE A: Direct production (all masses)
-    wait_for_slot
-    run_production_job "$mass" "tau" "direct" &
-    completed_jobs=$((completed_jobs + 1))
-    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (direct)" | tee -a "$LOGFILE"
-
-    # MODE B: fromTau cascade (only m < 1.64 GeV)
-    if (( $(echo "$mass < 1.64" | bc -l) )); then
+    for mass in "${TAU_MASSES[@]}"; do
+        # MODE A: Direct production (all masses)
         wait_for_slot
-        run_production_job "$mass" "tau" "fromTau" &
+        run_production_job "$mass" "tau" "direct" &
         completed_jobs=$((completed_jobs + 1))
-        echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
-    fi
-done
+        echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (direct)" | tee -a "$LOGFILE"
+
+        # MODE B: fromTau cascade (only m < 1.64 GeV)
+        if (( $(echo "$mass < 1.64" | bc -l) )); then
+            wait_for_slot
+            run_production_job "$mass" "tau" "fromTau" &
+            completed_jobs=$((completed_jobs + 1))
+            echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
+        fi
+    done
+fi
 
 # ===========================================================================
 # Wait for All Jobs to Complete
