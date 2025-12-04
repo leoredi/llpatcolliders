@@ -23,16 +23,17 @@ echo "============================================"
 echo ""
 
 # Configuration
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NEVENTS=100000
 MAX_PARALLEL=8  # Adjust based on your CPU cores (leave 1-2 for system)
 
-# Pythia library path (needed on macOS for libpythia8.dylib lookup)
-PYTHIA_ROOT="$(cd "$(dirname "$0")/pythia/pythia8315" && pwd)"
+# Pythia library path (pythia sits inside production/pythia_production/)
+PYTHIA_ROOT="$SCRIPT_DIR/pythia8315"
 export DYLD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${DYLD_LIBRARY_PATH:-}"
 export LD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${LD_LIBRARY_PATH:-}"
 export PYTHIA8DATA="$PYTHIA_ROOT/share/Pythia8/xmldoc"
-OUTPUT_DIR="../../output/csv/simulation"
-LOG_DIR="../../output/logs/simulation"
+OUTPUT_DIR="$SCRIPT_DIR/../../output/csv/simulation"
+LOG_DIR="$SCRIPT_DIR/../../output/logs/simulation"
 
 # Create directories
 mkdir -p "$OUTPUT_DIR"
@@ -58,6 +59,13 @@ source ./load_mass_grid.sh
 ELECTRON_MASSES=("${ELECTRON_MASSES_MESON[@]}")
 MUON_MASSES=("${MUON_MASSES_MESON[@]}")
 TAU_MASSES=("${TAU_MASSES_MESON[@]}")
+
+# Filter arrays when running a single flavour so job counts/logs reflect reality
+if [[ "$FLAVOUR" != "all" ]]; then
+    [[ "$FLAVOUR" != "electron" ]] && ELECTRON_MASSES=()
+    [[ "$FLAVOUR" != "muon" ]] && MUON_MASSES=()
+    [[ "$FLAVOUR" != "tau" ]] && TAU_MASSES=()
+fi
 
 # ===========================================================================
 # Job Control Functions
@@ -87,26 +95,29 @@ run_production_job() {
     {
         echo "[$(date +%H:%M:%S)] Starting: $mass GeV $flavour ($mode)"
 
-        cd "$OUTPUT_DIR"
+        # Run from current directory
         if [ "$mode" = "fromTau" ]; then
-            "$script_dir/main_hnl_production" ${mass} ${flavour} $NEVENTS fromTau 2>&1
+            ./main_hnl_production ${mass} ${flavour} $NEVENTS fromTau 2>&1
         else
-            "$script_dir/main_hnl_production" ${mass} ${flavour} $NEVENTS 2>&1
+            ./main_hnl_production ${mass} ${flavour} $NEVENTS 2>&1
         fi
 
         local exit_code=$?
-        cd "$script_dir"
 
         if [ $exit_code -eq 0 ]; then
-            # Find the generated CSV - wait a moment for filesystem sync
             sleep 0.5
+            # Match the C++ massToLabel formatting: two decimals with '.' → 'p'
+            local mass_label=$(printf "%.2f" "$mass" | tr '.' 'p')
+            local csv_file=$(ls HNL_${mass_label}GeV_${flavour}_*.csv 2>/dev/null | head -1)
 
-            # Convert mass to filename format (e.g., 2.6 → 2p6)
-            local mass_label=$(echo "$mass" | sed 's/\.0*$//' | sed 's/\./p/')
-
-            echo "[$(date +%H:%M:%S)] SUCCESS: HNL_${mass_label}GeV_${flavour} → simulation/"
+            if [ -n "$csv_file" ]; then
+                mv "$csv_file" "$OUTPUT_DIR/"
+                echo "[$(date +%H:%M:%S)] SUCCESS: $csv_file → simulation/"
+            else
+                echo "[$(date +%H:%M:%S)] WARNING: CSV not found"
+            fi
         else
-            echo "[$(date +%H:%M:%S)] FAILED: $mass GeV $flavour (exit code $exit_code)"
+            echo "[$(date +%H:%M:%S)] FAILED: $mass GeV $flavour (exit $exit_code)"
         fi
     } > "$log_file" 2>&1
 }
@@ -115,19 +126,21 @@ run_production_job() {
 # Calculate Total Jobs
 # ===========================================================================
 
+count_tau_runs() {
+    local count=0
+    for mass in "${TAU_MASSES[@]}"; do
+        count=$((count + 1))
+        # Check if this mass needs fromTau mode (m < 1.64 GeV)
+        if (( $(echo "$mass < 1.64" | bc -l) )); then
+            count=$((count + 1))
+        fi
+    done
+    echo $count
+}
+
 total_electron=${#ELECTRON_MASSES[@]}
 total_muon=${#MUON_MASSES[@]}
-total_tau=0
-
-# Count tau jobs (some masses have dual mode)
-for mass in "${TAU_MASSES[@]}"; do
-    total_tau=$((total_tau + 1))
-    # Check if this mass needs fromTau mode (m < 1.64 GeV)
-    if (( $(echo "$mass < 1.64" | bc -l) )); then
-        total_tau=$((total_tau + 1))
-    fi
-done
-
+total_tau=$(count_tau_runs)
 total_jobs=$((total_electron + total_muon + total_tau))
 
 echo "Total mass points:" | tee -a "$LOGFILE"
