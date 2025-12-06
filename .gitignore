@@ -27,8 +27,9 @@ output/logs/
 auto_analyze.sh
 tmp/
 
-# Mac files
+# Misc files
 .DS_Store
+.mplcache/
 
 # pythia local inst (version-independent patterns)
 pythia/**/lib/
