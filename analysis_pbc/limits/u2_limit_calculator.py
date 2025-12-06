@@ -23,7 +23,11 @@ THIS_FILE = Path(__file__).resolve()
 ANALYSIS_DIR = THIS_FILE.parent           # .../analysis_pbc/limits
 REPO_ROOT = ANALYSIS_DIR.parents[1]       # .../llpatcolliders
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
-SIM_DIR = OUTPUT_DIR / "simulation_new"
+
+# Prefer current path (simulation); fall back to legacy (simulation_new) if needed.
+SIM_DIR = OUTPUT_DIR / "simulation"
+if not SIM_DIR.exists():
+    SIM_DIR = OUTPUT_DIR / "simulation_new"
 GEOM_CACHE_DIR = OUTPUT_DIR / "geometry"
 ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
 
@@ -239,7 +243,7 @@ def scan_eps2_for_mass(
     mass_GeV: float,
     benchmark: str,
     lumi_fb: float,
-    N_limit: float = 3.0,
+    N_limit: float = 2.996,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
     
     # Log grid from 1e-12 to 1e-2
@@ -356,7 +360,7 @@ def _scan_single_mass(
         mass_GeV=float(mass_val),
         benchmark=benchmark,
         lumi_fb=lumi_fb,
-        N_limit=3.0,
+        N_limit=2.996,
     )
 
     peak_evts = Nsig.max()

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Monitor parallel production progress
 
-OUTPUT_DIR="../../output/csv/simulation_new"
-LOG_DIR="../../output/logs/simulation_new"
+OUTPUT_DIR="../../output/csv/simulation"
+LOG_DIR="../../output/logs/simulation"
 
 echo "============================================"
 echo "PRODUCTION MONITORING"

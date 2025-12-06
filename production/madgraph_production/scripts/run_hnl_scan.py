@@ -108,9 +108,9 @@ class ProjectPaths:
         self.scripts = self.base / 'scripts'
         self.lhe_dir = self.base / 'lhe'
 
-        # CSV output directory: use central output/csv/simulation_new/
+        # CSV output directory: use central output/csv/simulation/
         # This matches the Pythia production output location
-        self.csv_dir = self.base.parent.parent / 'output' / 'csv' / 'simulation_new'
+        self.csv_dir = self.base.parent.parent / 'output' / 'csv' / 'simulation'
 
         self.work_dir = self.base / 'work'
         self.mg5_dir = self.base / 'mg5'  # unused in Docker but kept for completeness

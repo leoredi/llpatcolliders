@@ -23,7 +23,11 @@ THIS_FILE = Path(__file__).resolve()
 ANALYSIS_DIR = THIS_FILE.parent
 REPO_ROOT = ANALYSIS_DIR.parents[1]
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
-SIM_DIR = OUTPUT_DIR / "simulation_new"
+
+# Prefer current path (simulation); fall back to legacy (simulation_new) if needed.
+SIM_DIR = OUTPUT_DIR / "simulation"
+if not SIM_DIR.exists():
+    SIM_DIR = OUTPUT_DIR / "simulation_new"
 GEOM_CACHE_DIR = OUTPUT_DIR / "geometry"
 ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
 
@@ -46,27 +50,52 @@ def couplings_from_eps2(eps2, benchmark):
     else:
         raise ValueError(f"Unknown benchmark: {benchmark}")
 
-def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, geom_csv):
-    """Process one mass point"""
-    print(f"\n[{flavour} {mass_val} GeV] Processing...")
+def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files):
+    """
+    Process one mass point, combining all available production regimes (kaon/charm/beauty/ew).
+    sim_files: list of tuples (sim_csv_path, regime)
+    """
+    print(f"\n[{flavour} {mass_val} GeV] Processing ({len(sim_files)} production file(s))...")
 
-    # 1. Load/compute geometry
-    if geom_csv.exists():
-        geom_df = pd.read_csv(geom_csv)
-    else:
-        print(f"  Computing geometry (caching to {geom_csv.name})...")
-        mesh = build_drainage_gallery_mesh()
-        geom_df = preprocess_hnl_csv(sim_csv, mesh)
+    # 1. Load/compute geometry for each production file, then concatenate
+    geom_dfs = []
+    mesh = None  # Build only if needed
 
-        # Double-check pattern to prevent race condition in parallel execution
-        # (Another worker might have created it while we were computing)
-        if not geom_csv.exists():
-            geom_df.to_csv(geom_csv, index=False)
+    for sim_csv, regime in sim_files:
+        # Regime-specific geometry cache to avoid collisions
+        geom_cache_name = f"{sim_csv.stem}_geom.csv"
+        geom_csv = GEOM_CACHE_DIR / geom_cache_name
 
-    n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
-    print(f"  Loaded {len(geom_df)} HNLs, {n_hits} hit detector")
+        # Backward compatibility: fall back to old cache naming if present
+        legacy_geom_csv = GEOM_CACHE_DIR / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
+        if not geom_csv.exists() and legacy_geom_csv.exists():
+            geom_csv = legacy_geom_csv
 
-    if len(geom_df) == 0 or n_hits == 0:
+        if geom_csv.exists():
+            geom_df = pd.read_csv(geom_csv)
+        else:
+            if mesh is None:
+                mesh = build_drainage_gallery_mesh()
+            print(f"  Computing geometry for {sim_csv.name} (caching to {geom_csv.name})...")
+            geom_df = preprocess_hnl_csv(sim_csv, mesh)
+
+            # Double-check pattern to prevent race condition in parallel execution
+            if not geom_csv.exists():
+                geom_df.to_csv(geom_csv, index=False)
+
+        n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
+        print(f"  Loaded {len(geom_df)} HNLs from {regime}, {n_hits} hit detector")
+        geom_dfs.append(geom_df)
+
+    if len(geom_dfs) == 0:
+        print(f"  WARNING: No geometry loaded, skipping")
+        return None
+
+    geom_df = pd.concat(geom_dfs, ignore_index=True)
+    n_hits_total = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
+    print(f"  Total combined: {len(geom_df)} HNLs, {n_hits_total} hit detector")
+
+    if len(geom_df) == 0 or n_hits_total == 0:
         print(f"  WARNING: No hits, skipping")
         return None
 
@@ -80,8 +109,8 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, g
 
     N_scan = np.array(N_scan)
 
-    # 3. Find exclusion range (N >= 3)
-    mask_excluded = (N_scan >= 3.0)
+    # 3. Find exclusion range (N >= 2.996)
+    mask_excluded = (N_scan >= 2.996)
 
     if not mask_excluded.any():
         print(f"  No sensitivity (peak = {N_scan.max():.1f})")
@@ -130,10 +159,16 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None)
         if match and "_fromTau" not in f.name:  # Skip fromTau to avoid double counting
             mass_str = match.group(1)
             mass_val = float(mass_str.replace('p', '.'))
-            files.append((mass_val, mass_str, f))
+            regime = match.group(2)
+            files.append((mass_val, mass_str, regime, f))
 
-    files.sort(key=lambda x: x[0])
-    print(f"Found {len(files)} mass points")
+    # Group by mass to combine production channels
+    files_by_mass = {}
+    for mass_val, mass_str, regime, path in files:
+        files_by_mass.setdefault((mass_val, mass_str), []).append((path, regime))
+
+    mass_points = sorted(files_by_mass.keys(), key=lambda x: x[0])
+    print(f"Found {len(mass_points)} mass points")
 
     # Process each file
     if use_parallel:
@@ -143,9 +178,9 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None)
 
         # Prepare arguments for parallel processing
         args_list = []
-        for mass_val, mass_str, sim_csv in files:
-            geom_csv = GEOM_CACHE_DIR / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
-            args_list.append((mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, geom_csv))
+        for (mass_val, mass_str) in mass_points:
+            sim_list = files_by_mass[(mass_val, mass_str)]
+            args_list.append((mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list))
 
         # Process in parallel
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
@@ -155,9 +190,9 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None)
         results = [r for r in results if r is not None]
     else:
         results = []
-        for mass_val, mass_str, sim_csv in files:
-            geom_csv = GEOM_CACHE_DIR / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
-            res = scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_csv, geom_csv)
+        for (mass_val, mass_str) in mass_points:
+            sim_list = files_by_mass[(mass_val, mass_str)]
+            res = scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list)
             if res:
                 results.append(res)
 

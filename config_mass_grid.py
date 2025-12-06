@@ -17,57 +17,56 @@ Adaptive spacing optimized for physics:
 # MESON (PYTHIA) MASS GRIDS  (validated, low-mass <~8 GeV)
 # ===========================================================================
 
-# Electron coupling (Benchmark 100: Ue²=x, Uμ²=0, Uτ²=0)
-# Extended to 8 GeV for smooth meson→EW transition
-ELECTRON_MASSES_MESON = [
-    # Kaon regime (0.2-0.5 GeV): Dense sampling near threshold
-    0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.38, 0.40, 0.42, 0.45, 0.48,
-    # D-meson regime (0.5-2.0 GeV): Peak sensitivity
-    0.50, 0.52, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.40,
-    # D-meson threshold region (1.5-2.0 GeV): Dense near mD
-    1.50, 1.60, 1.70, 1.75, 1.80, 1.82, 1.85, 1.90, 2.00,
-    # B-meson regime (2.0-8.0 GeV): Extended for better transition coverage
-    2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80, 5.00, 5.20, 5.50, 6.0, 6.5, 7.0, 7.5, 8.0
+# Dense, inclusive mass grid for all regimes (meson + EW):
+# Union of legacy + new production points to avoid sensitivity gaps
+_COMMON_GRID = [
+    # K-regime (0.2-0.5 GeV): 0.05 GeV steps near kaon threshold
+    0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50,
+
+    # D-regime (0.5-2.0 GeV): 0.1-0.2 GeV steps through charm transition
+    0.60, 0.70, 0.80, 0.90, 1.00,
+    1.10, 1.20, 1.25, 1.30, 1.40,
+    1.50, 1.60, 1.70, 1.80, 1.90, 2.00,
+
+    # B-regime (2.0-5.0 GeV): 0.2 GeV steps through beauty transition
+    2.20, 2.30, 2.40, 2.60, 2.80, 3.00,
+    3.20, 3.40, 3.60, 3.80, 4.00,
+    4.20, 4.40, 4.60, 4.80, 5.00,
+
+    # EW transition (5.0-8.0 GeV): 0.2 GeV steps through critical beauty→EW transition
+    5.20, 5.40, 5.50, 5.60, 5.80, 6.00,
+    6.20, 6.40, 6.60, 6.80, 7.00,
+    7.20, 7.40, 7.60, 7.70, 7.80, 8.00,
+
+    # High-mass EW (8-17 GeV): 0.5 GeV steps through tail
+    8.50, 8.70, 9.00, 9.50, 10.00,
+    10.50, 11.00, 11.50, 12.00, 12.50,
+    13.00, 13.50, 14.00, 14.50, 15.00,
+    15.50, 16.00, 16.50, 17.00,
 ]
 
-# Muon coupling (Benchmark 010: Ue²=0, Uμ²=x, Uτ²=0)
-# Extended to 8 GeV for smooth meson→EW transition
-MUON_MASSES_MESON = [
-    # Kaon regime (0.2-0.5 GeV): Dense sampling near threshold
-    0.20, 0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.37, 0.38, 0.39, 0.40, 0.42, 0.45, 0.48,
-    # D-meson regime (0.5-2.0 GeV): Peak sensitivity
-    0.50, 0.55, 0.60, 0.70, 0.80, 0.90, 1.00, 1.20, 1.40,
-    # D-meson threshold region (1.6-2.0 GeV): Dense near mD
-    1.60, 1.65, 1.70, 1.75, 1.76, 1.78, 1.80, 1.85, 1.90, 2.00,
-    # B-meson regime (2.0-8.0 GeV): Extended for better transition coverage
-    2.30, 2.60, 3.00, 3.40, 3.80, 4.20, 4.60, 4.80, 5.00, 5.20, 5.50, 6.0, 6.5, 7.0, 7.5, 8.0
-]
+# Meson grids now use the common grid
+ELECTRON_MASSES_MESON = _COMMON_GRID
+MUON_MASSES_MESON = _COMMON_GRID
 
-# Tau coupling (Benchmark 001: Ue²=0, Uμ²=0, Uτ²=x)
-# Extended to 8 GeV for smooth meson→EW transition
-# Note: Below 1.64 GeV, tau simulations generate BOTH "_direct" and "_fromTau" files
-TAU_MASSES_MESON = [
-    # D-meson regime (0.5-2.0 GeV): Tau threshold at 1.777 GeV
-    0.50, 0.55, 0.60, 0.65, 0.70, 0.80, 0.90, 1.00, 1.10, 1.20, 1.30,
-    # Near tau threshold (1.4-2.0 GeV): Dense sampling
-    1.40, 1.45, 1.50, 1.55, 1.60, 1.62, 1.64, 1.66, 1.70, 1.74, 1.78, 1.80, 1.85, 1.90, 2.00,
-    # B-meson regime (2.0-8.0 GeV): Extended for better transition coverage
-    2.40, 2.80, 3.00, 3.20, 3.60, 4.00, 4.50, 5.00, 5.50, 6.0, 6.5, 7.0, 7.5, 8.0
-]
+# Tau: only B mesons can produce tau-coupled HNL (m_N < m_B - m_τ ≈ 3.5 GeV)
+# D mesons are kinematically forbidden (m_D - m_τ < 0.2 GeV)
+TAU_MASSES_MESON = [m for m in _COMMON_GRID if 1.777 < m < 3.5]
 
 # ===========================================================================
 # ELECTROWEAK (MADGRAPH) MASS GRIDS (W/Z-mediated, high-mass)
 # ===========================================================================
 
-# Electroweak production (W/Z bosons) via MadGraph
-# Extended DOWN to 4 GeV for smooth overlap with meson production, UP to 80 GeV
-
-_EW_LOW_EDGE = [4.0, 4.2, 4.4, 4.6, 4.8]  # overlap with meson
-_EW_CORE = [5.0, 5.2, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 22.0, 25.0, 28.0, 30.0, 32.0, 35.0, 38.0, 40.0, 45.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0]
+# Electroweak production (W/Z bosons) via MadGraph uses the same grid
+_EW_LOW_EDGE = _COMMON_GRID  # naming kept for backward compatibility; splits no longer used
+_EW_CORE = []  # unused; full grid is _COMMON_GRID
 
 ELECTRON_MASSES_EW = _EW_LOW_EDGE + _EW_CORE
 MUON_MASSES_EW = _EW_LOW_EDGE + _EW_CORE
-TAU_MASSES_EW = [4.0, 4.2, 4.4, 4.6, 4.8] + _EW_CORE
+
+# Tau: only masses > m_τ = 1.777 GeV are physically meaningful
+# (D mesons cannot produce tau-coupled HNL due to phase space)
+TAU_MASSES_EW = [m for m in _COMMON_GRID if m > 1.777]
 
 # ===========================================================================
 # COMBINED MASS GRIDS

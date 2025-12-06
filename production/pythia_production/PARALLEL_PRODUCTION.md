@@ -6,23 +6,16 @@ The Pythia production stage generates ~150 HNL samples (different masses and fla
 
 ## Quick Start
 
-### 1. Test First (Recommended)
+### 1. Use Bash (fish/zsh users)
 
-Run a quick test with 3 mass points:
+The script uses Bash-only features (`read -p`, arrays). If your login shell is fish or zsh, launch it via Bash:
 
 ```bash
 cd production/pythia_production
-./test_parallel.sh
+bash -lc 'source activate llpatcolliders && ./run_parallel_production.sh muon'
 ```
 
-This will:
-- Generate 3 samples (10k events each) in ~3 minutes
-- Verify that Pythia is working correctly
-- Test parallel execution and file handling
-- Output goes to `output/csv/simulation_test/`
-
-✅ If test passes → proceed to full production
-❌ If test fails → check logs in `output/logs/simulation_test/`
+(Or open a Bash shell, `conda activate llpatcolliders`, then run the script.)
 
 ### 2. Configure Parallelism
 
@@ -46,15 +39,15 @@ cd production/pythia_production
 ```
 
 **What it does:**
-- Generates all meson mass points (electron, muon, tau)
+- Runs the meson production grid (electron, muon, tau)
 - Runs jobs in parallel (respects `MAX_PARALLEL` limit)
 - Each job: 100k events → ~10 minutes
 - Total time: ~2-3 hours (vs ~20 hours sequential)
 
 **Output:**
-- CSV files: `output/csv/simulation_new/HNL_*.csv`
-- Logs: `output/logs/simulation_new/HNL_*.log`
-- Summary log: `output/logs/simulation_new/production_run_TIMESTAMP.log`
+- CSV files: `../../output/csv/simulation/HNL_*.csv` (from `production/pythia_production`)
+- Logs: `../../output/logs/simulation/HNL_*.log`
+- Summary log: `../../output/logs/simulation/production_run_TIMESTAMP.log`
 
 ### 4. Monitor Progress
 
@@ -65,10 +58,10 @@ In a separate terminal:
 watch -n 5 "jobs -r | wc -l"
 
 # Watch CSV files being created
-watch -n 10 "ls output/csv/simulation_new/*.csv | wc -l"
+watch -n 10 "ls ../../output/csv/simulation/*.csv | wc -l"
 
 # Check recent completions
-tail -f output/logs/simulation_new/production_run_*.log
+tail -f ../../output/logs/simulation/production_run_*.log
 ```
 
 ### 5. Verify Results
@@ -77,13 +70,13 @@ After completion:
 
 ```bash
 # Count output files (should be ~150)
-ls output/csv/simulation_new/HNL_*.csv | wc -l
+ls ../../output/csv/simulation/HNL_*.csv | wc -l
 
 # Check for failures
-grep -l "FAILED\|ERROR" output/logs/simulation_new/*.log
+grep -l "FAILED\|ERROR" ../../output/logs/simulation/*.log
 
 # Check file sizes (should all be > 1 MB)
-find output/csv/simulation_new -name "*.csv" -size -1M
+find ../../output/csv/simulation -name "*.csv" -size -1M
 
 # Check for overlaps with MadGraph EW files
 cd ../../analysis_pbc
@@ -167,10 +160,10 @@ MAX_PARALLEL=4  # Lower value
 
 **Check available space:**
 ```bash
-df -h output/csv/simulation_new
+df -h ../../output/csv/simulation
 ```
 
-**Each CSV is ~5-50 MB**, total ~5 GB for all files.
+**Each CSV is ~5-50 MB**; the full meson set is ~5 GB. If you also add EW files later, plan for more headroom.
 
 ### Issue: Jobs hang or freeze
 
@@ -235,7 +228,7 @@ wait  # Wait for all jobs
 
 ## Best Practices
 
-1. **Always test first** with `test_parallel.sh`
+1. **Test first** (run a small subset or `test_parallel.sh` if present)
 2. **Monitor disk space** during production
 3. **Don't exceed** `(N_cores - 2)` for `MAX_PARALLEL`
 4. **Check logs** after completion for failures
@@ -246,9 +239,9 @@ wait  # Wait for all jobs
 
 - [ ] Pythia executable compiled? (`ls -lh main_hnl_production`)
 - [ ] Library path set? (`echo $DYLD_LIBRARY_PATH`)
-- [ ] Output directory writable? (`touch output/csv/simulation_new/test.txt`)
+- [ ] Output directory writable? (`touch ../../output/csv/simulation/test.txt`)
 - [ ] Enough disk space? (`df -h output/`)
-- [ ] Test script passes? (`./test_parallel.sh`)
+- [ ] Test script passes? (`./test_parallel.sh`, if available)
 
 ## References
 
