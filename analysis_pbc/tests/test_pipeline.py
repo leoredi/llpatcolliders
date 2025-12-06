@@ -75,7 +75,7 @@ TESTS_DIR = THIS_FILE.parent                         # .../analysis_pbc/tests
 ANALYSIS_DIR = TESTS_DIR.parent                      # .../analysis_pbc
 REPO_ROOT = ANALYSIS_DIR.parent                      # .../llpatcolliders
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
-SIM_DIR = OUTPUT_DIR / "simulation_new"
+SIM_DIR = OUTPUT_DIR / "simulation"
 GEOM_DIR = OUTPUT_DIR / "geometry"
 
 # Ensure we can import the local analysis modules

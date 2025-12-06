@@ -22,7 +22,7 @@ They contribute to the SAME final state (HNL in detector) but through different 
 ## Current Status (2025-12-02)
 
 **✓ No issue currently**
-- Only EW files exist in `output/csv/simulation_new/`
+- Only EW files exist in `output/csv/simulation/`
 - Pythia meson production has not been completed yet
 - Therefore, no overlapping files to combine
 
@@ -33,7 +33,7 @@ When Pythia production completes, follow these steps:
 ### 1. Check for Overlapping Files
 
 ```bash
-cd output/csv/simulation_new
+cd output/csv/simulation
 ls HNL_*GeV_muon_*.csv | grep -E "(4p|5p|6p|7p|8p)"
 ```
 
@@ -63,11 +63,11 @@ This will:
 ```bash
 # Archive regime-specific files
 mkdir -p output/csv/simulation_backup
-mv output/csv/simulation_new/HNL_*_beauty.csv simulation_backup/
-mv output/csv/simulation_new/HNL_*_ew.csv simulation_backup/
+mv output/csv/simulation/HNL_*_beauty.csv simulation_backup/
+mv output/csv/simulation/HNL_*_ew.csv simulation_backup/
 
 # Move combined files to main directory
-mv output/csv/simulation_new/combined/* output/csv/simulation_new/
+mv output/csv/simulation/combined/* output/csv/simulation/
 ```
 
 ### 4. Re-run Analysis

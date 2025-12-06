@@ -23,7 +23,7 @@ print("✓ Imports successful")
 
 # Load simulation
 print("\n[2/5] Loading simulation CSV...")
-sim_csv = Path("../output/csv/simulation_new/HNL_2p60GeV_muon_beauty.csv")
+sim_csv = Path("../output/csv/simulation/HNL_2p60GeV_muon_beauty.csv")
 geom_csv = Path("../output/csv/geometry/HNL_2p60GeV_muon_geom.csv")
 
 if not sim_csv.exists():

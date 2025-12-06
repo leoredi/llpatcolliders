@@ -174,7 +174,7 @@ Complete pipeline:
 
 ```
 1. Pythia Simulation
-   └→ output/csv/simulation_new/HNL_*.csv
+   └→ output/csv/simulation/HNL_*.csv
 
 2. Geometry Preprocessing (cached)
    └→ output/csv/geometry/HNL_*_geom.csv

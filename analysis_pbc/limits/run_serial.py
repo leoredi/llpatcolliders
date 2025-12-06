@@ -24,10 +24,8 @@ ANALYSIS_DIR = THIS_FILE.parent
 REPO_ROOT = ANALYSIS_DIR.parents[1]
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
 
-# Prefer current path (simulation); fall back to legacy (simulation_new) if needed.
+# Current simulation output directory (Pythia + MadGraph)
 SIM_DIR = OUTPUT_DIR / "simulation"
-if not SIM_DIR.exists():
-    SIM_DIR = OUTPUT_DIR / "simulation_new"
 GEOM_CACHE_DIR = OUTPUT_DIR / "geometry"
 ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
 

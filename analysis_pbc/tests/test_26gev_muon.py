@@ -17,7 +17,7 @@ THIS_FILE = Path(__file__).resolve()
 TESTS_DIR = THIS_FILE.parent
 ANALYSIS_DIR = TESTS_DIR.parent
 REPO_ROOT = ANALYSIS_DIR.parent
-SIM_DIR = REPO_ROOT / "output" / "csv" / "simulation_new"
+SIM_DIR = REPO_ROOT / "output" / "csv" / "simulation"
 GEOM_DIR = REPO_ROOT / "output" / "csv" / "geometry"
 
 sys.path.insert(0, str(ANALYSIS_DIR))

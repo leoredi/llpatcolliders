@@ -49,6 +49,9 @@ try:
     #
     # below in _build_hnlcalc().
     import HNLCalc as _hnlcalc_module  # noqa: F401
+    # Force HNLCalc to write its cache under analysis_pbc/model
+    if hasattr(_hnlcalc_module, "MODEL_DIR"):
+        _hnlcalc_module.MODEL_DIR = HNL_CALC_DIR.parent / "model"
 except ImportError as exc:
     raise ImportError(
         "Could not import the local HNLCalc package. "

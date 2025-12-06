@@ -91,6 +91,11 @@ MIXING_CONFIGS = {
 class ProjectPaths:
     """Manage project directory structure"""
 
+    @staticmethod
+    def mass_label(mass):
+        """Format mass as 2-decimal string with 'p' separator (e.g. 5.20 -> 5p20)."""
+        return f"{mass:.2f}".replace('.', 'p')
+
     def __init__(self, base_dir=None):
         """
         Initialize paths relative to production/madgraph_production/
@@ -124,14 +129,15 @@ class ProjectPaths:
 
     def lhe_path(self, flavour, mass):
         """Get LHE output directory for (flavour, mass) (not strictly used)"""
-        return self.lhe_dir / flavour / f"m_{mass}GeV"
+        mass_label = self.mass_label(mass)
+        return self.lhe_dir / flavour / f"m_{mass_label}GeV"
 
     def csv_path(self, flavour, mass):
         """Get CSV output path for (flavour, mass) - matches Pythia format"""
         # Use same directory structure as Pythia production for compatibility
         # Format: HNL_{mass}GeV_{flavour}_ew.csv
         # Use 2 decimal places to match Pythia convention: 15.0 → 15p00 (not 15p0)
-        mass_str = f"{mass:.2f}".replace('.', 'p')  # e.g., 15.0 → 15p00, 5.2 → 5p20
+        mass_str = self.mass_label(mass)  # e.g., 15.0 → 15p00, 5.2 → 5p20
         return self.csv_dir / f"HNL_{mass_str}GeV_{flavour}_ew.csv"
 
     def summary_csv_path(self):
@@ -140,7 +146,8 @@ class ProjectPaths:
 
     def work_subdir(self, flavour, mass):
         """Get working directory for this run"""
-        return self.work_dir / f"hnl_{flavour}_{mass}GeV"
+        mass_label = self.mass_label(mass)
+        return self.work_dir / f"hnl_{flavour}_{mass_label}GeV"
 
 
 # ============================================================================
@@ -163,6 +170,7 @@ def generate_process(paths, flavour, mass):
         Path: work directory
     """
     print(f"  Step 1: Generating process for {flavour}, m = {mass} GeV")
+    mass_label = paths.mass_label(mass)
 
     # Read process card template
     proc_template_path = paths.cards / f"proc_card_{flavour}.dat"
@@ -173,7 +181,7 @@ def generate_process(paths, flavour, mass):
     work_dir = paths.work_subdir(flavour, mass)
     work_dir.parent.mkdir(parents=True, exist_ok=True)
 
-    mg5_cmd_file = work_dir.parent / f"mg5_gen_{flavour}_{mass}.txt"
+    mg5_cmd_file = work_dir.parent / f"mg5_gen_{flavour}_{mass_label}.txt"
 
     # Read process definition from template
     with open(proc_template_path) as f:
@@ -202,7 +210,7 @@ def generate_process(paths, flavour, mass):
             str(mg5_cmd_file)
         ]
 
-        log_file = work_dir.parent / f"mg5_gen_{flavour}_{mass}.log"
+        log_file = work_dir.parent / f"mg5_gen_{flavour}_{mass_label}.log"
         with open(log_file, 'w') as log:
             result = subprocess.run(
                 cmd,
@@ -511,6 +519,16 @@ def append_to_summary(paths, flavour, mass, xsec_data, n_events_csv):
         f.write(row + '\n')
 
 
+def cleanup_workdir(work_dir):
+    """Remove the MadGraph working directory to save space after success."""
+    if work_dir and work_dir.exists():
+        try:
+            shutil.rmtree(work_dir)
+            print(f"  ✓ Cleaned work dir: {work_dir}")
+        except Exception as e:
+            print(f"  Warning: could not remove {work_dir}: {e}")
+
+
 # ============================================================================
 # MAIN PIPELINE
 # ============================================================================
@@ -572,6 +590,9 @@ def run_single_point(paths, flavour, mass, n_events):
         # Step 6: Update summary
         append_to_summary(paths, flavour, mass, xsec_data, n_events_csv)
         print(f"  ✓ Added to summary CSV")
+
+        # Step 7: Cleanup work directory
+        cleanup_workdir(work_dir)
 
         return True
 

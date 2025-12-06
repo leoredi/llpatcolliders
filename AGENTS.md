@@ -121,7 +121,7 @@ event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm
 - `eta`, `phi`: For ray-tracing trajectory
 - `weight`: Relative MC weight (typically 1.0)
 
-**Location:** `output/csv/simulation_new/`
+**Location:** `output/csv/simulation/`
 
 ---
 
@@ -229,7 +229,7 @@ pip install sympy mpmath particle numba 'scikit-hep==0.4.0'
 ```
 
 ### 2. Empty CSV Files
-- Check logs in `output/logs/simulation_new/`
+- Check logs in `output/logs/simulation/`
 - High-mass Pythia (m ≥ 5 GeV) fails → use MadGraph instead
 
 ### 3. Geometry Cache Corrupt
@@ -283,8 +283,8 @@ wait
 ### Validation
 ```bash
 # Check output
-ls output/csv/simulation_new/*.csv | wc -l  # Expected: ~180 files
-find output/csv/simulation_new/ -name "*.csv" -size 0  # No empty files
+ls output/csv/simulation/*.csv | wc -l  # Expected: ~180 files
+find output/csv/simulation/ -name "*.csv" -size 0  # No empty files
 
 # Verify parent PDGs
 awk -F',' 'NR>1 {print $4}' HNL_2p60GeV_muon_beauty.csv | sort | uniq -c
