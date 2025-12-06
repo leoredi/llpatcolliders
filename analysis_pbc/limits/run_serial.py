@@ -109,8 +109,8 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files)
 
     N_scan = np.array(N_scan)
 
-    # 3. Find exclusion range (N >= 3)
-    mask_excluded = (N_scan >= 3.0)
+    # 3. Find exclusion range (N >= 2.996)
+    mask_excluded = (N_scan >= 2.996)
 
     if not mask_excluded.any():
         print(f"  No sensitivity (peak = {N_scan.max():.1f})")

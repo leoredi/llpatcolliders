@@ -18,9 +18,9 @@ This document consolidates all physics validation findings for the HNL LLP detec
 | 🔴 **Critical** (Fixed) | 1 | W/Z branching ratio formula — **RESOLVED** |
 | ⚠️ **Validation Needed** | 4 | Cross-sections, fragmentation fractions, double counting, tube radius |
 | 📝 **Documentation Only** | 1 | Unit conversion comment (code correct) |
-| ✅ **Validated Correct** | 3 | η→θ conversion, decay probability, per-parent counting |
+| ✅ **Validated Correct** | 4 | η→θ conversion, decay probability, per-parent counting, **HNLCalc usage** |
 
-**Overall Assessment:** The codebase shows solid physics implementation. The major W/Z branching ratio bug has been identified and fixed. Remaining issues are primarily validation of input parameters and documentation improvements rather than formula bugs.
+**Overall Assessment:** The codebase shows solid physics implementation. The major W/Z branching ratio bug has been identified and fixed. HNLCalc external package usage has been verified as correct (Dec 2024). Remaining issues are primarily validation of input parameters and documentation improvements rather than formula bugs.
 
 ---
 
@@ -459,6 +459,7 @@ Pythia events can have **multiple HNLs from different parents** (e.g., B0→N, B
 | 7 | ✅ OK | `geometry/per_parent_efficiency.py:27` | Pseudorapidity conversion | **VALIDATED** | `VALIDATION.md` |
 | 8 | ✅ OK | `limits/u2_limit_calculator.py:166-179` | Decay probability (numerical stability) | **VALIDATED** | `VALIDATION.md:150` |
 | 9 | ✅ OK | `limits/u2_limit_calculator.py:80-98` | Per-parent counting methodology | **VALIDATED** | `MULTI_HNL_METHODOLOGY.md` |
+| 10 | ✅ OK | `models/hnl_model_hnlcalc.py` | HNLCalc external package usage | **VALIDATED** | See VALIDATED #4 above |
 
 ---
 
@@ -565,10 +566,126 @@ This audit report consolidates findings from multiple sources. For detailed info
 
 ---
 
+---
+
+## ✅ VALIDATED #4: HNLCalc Package Usage
+
+**Status:** ✅ **VALIDATED** — External package usage verified as correct
+
+**Date Added:** December 5, 2024
+
+**Files:**
+- `analysis_pbc/HNLCalc/` (external package, not developed by us)
+- `analysis_pbc/models/hnl_model_hnlcalc.py` (our wrapper)
+
+### Package Source & Credibility
+
+**HNLCalc** is a published, peer-reviewed package for HNL physics calculations:
+- **Authors**: Jonathan L. Feng, Alec Hewitt, Felix Kling, Daniel La Rocco (UC Irvine)
+- **Publication**: [arXiv:2405.07330](https://arxiv.org/abs/2405.07330) "Simulating Heavy Neutral Leptons with General Couplings at Collider and Fixed Target Experiments"
+- **Scope**: 150+ production modes, 100+ decay modes
+- **Mass Range**: Validated up to 10 GeV
+- **Applications**: Used in FORESEE package for forward experiment studies
+
+### Physics References (from HNLCalc)
+
+1. **HNL Production BRs**: [arXiv:0705.1729](https://arxiv.org/abs/0705.1729)
+   - Form factors: [hep-ph/0001113](https://arxiv.org/pdf/hep-ph/0001113)
+2. **HNL Decay BRs**: [arXiv:2007.03701](https://arxiv.org/abs/2007.03701), [arXiv:1805.08567](https://arxiv.org/abs/1805.08567)
+3. **Hadronic Decay Constants**: [arXiv:1212.3167](https://arxiv.org/abs/1212.3167), [hep-ph/0007169](https://arxiv.org/abs/hep-ph/0007169), and others
+
+### Our Implementation Verification
+
+#### ✅ Coupling Transformation (lines 111-127)
+```python
+ve = np.sqrt(self.Ue2)
+vmu = np.sqrt(self.Umu2)
+vtau = np.sqrt(self.Utau2)
+hnl = _HNLCalcClass(ve=ve, vmu=vmu, vtau=vtau)
+```
+**Physics Check**: HNLCalc takes coupling ratios and normalizes internally. Our transformation |U_α|² → √(U_α²) is **correct**.
+
+#### ✅ Lifetime Calculation (lines 129-136)
+```python
+epsilon = np.sqrt(self.Ue2 + self.Umu2 + self.Utau2)
+hnl.get_br_and_ctau(mpts=np.array([self.mass_GeV]), coupling=epsilon)
+```
+**Physics Check**: ctau scales as 1/ε². Passing total coupling ε = √(Σ U²) ensures **correct scaling**.
+
+#### ✅ ctau Property (lines 144-155)
+```python
+return self._hnlcalc.ctau[0]  # in metres
+```
+**Physics Check**: Units are correct (metres). Indexing is correct (single mass point).
+
+#### ✅ Meson Production BRs (lines 161-254)
+- Extracts 2-body and 3-body channels from HNLCalc database
+- Checks kinematic thresholds: m_N < m_parent - m_daughter
+- Accumulates BRs per parent PDG
+- **Validated**: Uses HNLCalc's published formulas
+
+#### ✅ W/Z Boson Production (lines 255-299)
+```python
+# W → lN
+BR_W_to_lnu_SM = 0.1086  # PDG 2024
+phase_space_W = (1.0 - r_W**2)**2
+helicity_W = (1.0 + r_W**2)
+br_W = (Ue2 + Umu2 + Utau2) * BR_W_to_lnu_SM * phase_space_W * helicity_W
+```
+**Physics Check**:
+- Formula from [arXiv:1805.08567](https://arxiv.org/abs/1805.08567) Eq. 2.11-2.12 ✓
+- Validated against MadGraph (agrees within 15%) ✓
+- See BUG #1 above for detailed validation
+
+### Mass Range Considerations
+
+| Mass Range | Production Mechanism | Calculation Method | Status |
+|------------|---------------------|-------------------|--------|
+| 0.25-10 GeV | Meson (K, D, B) | HNLCalc database | ✅ Within validated range |
+| 0.25-10 GeV | W/Z (if kinematic) | Analytic formulas | ✅ Literature formulas |
+| 10-20 GeV | W/Z only | Analytic formulas | ✅ Well-established |
+
+**Note**: HNLCalc is validated up to 10 GeV for **meson production**. Our mass grid extends to 20 GeV, but:
+- 10-20 GeV range relies only on W/Z production (not HNLCalc)
+- W/Z formulas are well-established in literature (arXiv:1805.08567)
+- Validated against our MadGraph simulations
+- **No physics error** — appropriate use of different tools for different regimes
+
+### Summary Table
+
+| Component | Implementation | Physics Reference | Status |
+|-----------|----------------|------------------|--------|
+| HNLCalc package | External (Feng et al.) | arXiv:2405.07330 | ✅ Published |
+| Coupling conversion | `√(U²)` transformation | HNLCalc API spec | ✅ Correct |
+| Lifetime scaling | ctau ∝ 1/ε² | Standard HNL physics | ✅ Correct |
+| Meson BRs | HNLCalc database | arXiv:0705.1729 | ✅ Validated |
+| W/Z BRs | Analytic formulas | arXiv:1805.08567 | ✅ Validated |
+| Kinematic cuts | m_N < m_parent - m_daughter | Standard kinematics | ✅ Correct |
+| Units | ctau [m], mass [GeV] | Consistent throughout | ✅ Correct |
+
+### Conclusion
+
+✅ **HNLCalc usage is physics-correct and properly implemented.**
+
+The code correctly:
+1. Uses the published HNLCalc package for meson production/decay (within validated range)
+2. Supplements with analytic W/Z formulas from literature for EW production
+3. Handles coupling transformations and normalizations properly
+4. Respects kinematic thresholds
+5. Uses correct units throughout
+6. Separates meson (HNLCalc) from EW (analytic) appropriately by mass range
+
+**No physics errors detected.** Implementation follows best practices for combining different calculation methods in complementary kinematic regimes.
+
+**Reference**: Verification details documented in `/tmp/hnlcalc_verification.md` (Dec 5, 2024)
+
+---
+
 ## Metadata
 
-**Document Version:** 1.0
-**Last Updated:** December 3, 2024
+**Document Version:** 1.1
+**Last Updated:** December 5, 2024
+**Changes in v1.1:** Added HNLCalc validation section (VALIDATED #4)
 **Next Review:** Before paper submission or major code release
 **Validation Status:** Most issues documented/fixed — remaining items are validation tasks
 **Contact:** See repository maintainers
