@@ -31,7 +31,7 @@ cd money_plot && conda run -n llpatcolliders python plot_money_island.py
   - One-off command: `conda run -n llpatcolliders python <script>.py`
 - **Exception:** `production/madgraph_production` uses its own MG5 setup; keep using `python3 scripts/run_hnl_scan.py` there (do *not* switch to the conda env).
 - If Matplotlib cache complains about permissions, set `MPLCONFIGDIR` to a writable path, e.g. `export MPLCONFIGDIR=$PWD/.mplcache`.
-- **HNLCalc cwd:** HNLCalc writes/reads relative `model/br` and `model/ctau` caches; always `cd analysis_pbc` before running anything that constructs `HNLModel`/HNLCalc. Running from repo root will recreate a stray `./model` folder (deleted now).
+- **HNLCalc caches:** Cache paths are now anchored to `analysis_pbc/model` so they won't pollute the repo root. Still prefer running from inside `analysis_pbc` to keep outputs tidy and consistent.
 
 ---
 

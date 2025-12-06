@@ -10,9 +10,6 @@ main_hnl_scan
 main*Dct.cc
 
 # Auto-generated PYTHIA config files and cache
-pythiaStuff/hnlLL_m*GeV.cmnd
-pythiaStuff/test*.cmnd
-__pycache__
 __pycache__/
 production/madgraph/work/
 
@@ -22,9 +19,7 @@ production/madgraph/work/
 # Run outputs (logs, CSVs, intermediates)
 output/
 production/output/
-production/madgraph_production/csv/
 production/madgraph_production/work/
-production/pythia_production/HNL_*.csv
 production/pythia_production/HNL_*.log
 output/logs/
 

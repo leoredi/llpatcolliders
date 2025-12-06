@@ -66,4 +66,4 @@ The 1.0 GeV point shows exceptional sensitivity (~1.5 million peak events), demo
 - All files are self-contained and do **not** modify existing pipeline code
 - Uses the same physics models (HNLCalc), cross-sections, and Pythia samples as PBC
 - The vertical shaft geometry is simplified for closure testing; not the final ANUBIS design
-- The ctau cache file (`model/ctau/ctau.txt`) may be updated when running these scripts
+- The ctau cache file (`analysis_pbc/model/ctau/ctau.txt`) may be updated when running these scripts
