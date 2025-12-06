@@ -243,7 +243,7 @@ def scan_eps2_for_mass(
     mass_GeV: float,
     benchmark: str,
     lumi_fb: float,
-    N_limit: float = 3.0,
+    N_limit: float = 2.996,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
     
     # Log grid from 1e-12 to 1e-2
@@ -360,7 +360,7 @@ def _scan_single_mass(
         mass_GeV=float(mass_val),
         benchmark=benchmark,
         lumi_fb=lumi_fb,
-        N_limit=3.0,
+        N_limit=2.996,
     )
 
     peak_evts = Nsig.max()
