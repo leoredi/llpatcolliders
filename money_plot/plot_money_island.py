@@ -27,27 +27,14 @@ for idx, flavour in enumerate(["electron", "muon", "tau"]):
     df_dedup = df_dedup[df_dedup["eps2_min"] <= df_dedup["eps2_max"]]
 
     if len(df_dedup) > 0:
-        # Split at 5 GeV to handle meson→EW transition discontinuity
-        df_low = df_dedup[df_dedup["mass_GeV"] < 5.0]
-        df_high = df_dedup[df_dedup["mass_GeV"] >= 5.0]
+        # Plot all data with a single fill_between
+        mass = df_dedup["mass_GeV"].values
+        u2_min = df_dedup["eps2_min"].values
+        u2_max = df_dedup["eps2_max"].values
 
-        # Plot low-mass regime (meson production)
-        if len(df_low) > 0:
-            mass_low = df_low["mass_GeV"].values
-            u2_min_low = df_low["eps2_min"].values
-            u2_max_low = df_low["eps2_max"].values
-            ax.fill_between(mass_low, u2_min_low, u2_max_low, alpha=0.3, color='red')
-            ax.plot(mass_low, u2_min_low, 'r-', linewidth=2, marker='o', markersize=3)
-            ax.plot(mass_low, u2_max_low, 'b-', linewidth=2, marker='o', markersize=3)
-
-        # Plot high-mass regime (EW production)
-        if len(df_high) > 0:
-            mass_high = df_high["mass_GeV"].values
-            u2_min_high = df_high["eps2_min"].values
-            u2_max_high = df_high["eps2_max"].values
-            ax.fill_between(mass_high, u2_min_high, u2_max_high, alpha=0.3, color='red')
-            ax.plot(mass_high, u2_min_high, 'r-', linewidth=2, marker='s', markersize=4)
-            ax.plot(mass_high, u2_max_high, 'b-', linewidth=2, marker='s', markersize=4)
+        ax.fill_between(mass, u2_min, u2_max, alpha=0.3, color='red')
+        ax.plot(mass, u2_min, 'r-', linewidth=2, marker='o', markersize=3)
+        ax.plot(mass, u2_max, 'b-', linewidth=2, marker='o', markersize=3)
 
         # Legend
         from matplotlib.patches import Patch

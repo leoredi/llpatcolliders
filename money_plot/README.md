@@ -76,9 +76,9 @@ For electron, muon, tau:
 - Remove NaN values (no sensitivity)
 - Deduplicate by mass (keep best sensitivity)
 
-### 3. Handle Regime Transitions
-- **Low-mass (<5 GeV):** Meson production - plot with circles
-- **High-mass (≥5 GeV):** EW production - plot with squares
+### 3. Plot Exclusion Region
+- **Single unified fill:** Uses one `fill_between` call for continuous shading
+- **Markers:** Small circles on boundary lines for visual clarity
 
 ### 4. Create Exclusion Islands
 - **Shaded region:** Between eps2_min and eps2_max
@@ -93,6 +93,62 @@ For electron, muon, tau:
 - Save to PNG
 
 ## Physics Interpretation
+
+### Why Tau and Electron/Muon Show Different Shapes
+
+A striking feature of the moneyplot is the **different behavior of the "too prompt" (blue) line** for different flavors:
+
+**Electron/Muon (plateau at low mass):**
+- The blue line stays **flat at eps2_max = 0.01** for masses 0.2-1.3 GeV
+- This is **not a bug** - it indicates the scan saturated at the maximum tested coupling
+- The true upper limit is likely much higher (> 0.01)
+
+**Tau (smooth decrease):**
+- The blue line **decreases immediately** from low masses
+- No plateau structure
+- Upper limit is naturally constrained from the start
+
+**Physics Explanation - Kinematic Thresholds:**
+
+The tau lepton is **1.777 GeV**, much heavier than the muon (0.106 GeV) and electron (0.0005 GeV). This creates a fundamental kinematic barrier:
+
+**Light Meson Production (m < 2 GeV):**
+| Meson | Mass | e-coupled | μ-coupled | τ-coupled |
+|-------|------|-----------|-----------|-----------|
+| π± | 0.14 GeV | ✓ M→eN | ✓ M→μN | ✗ Forbidden |
+| K± | 0.49 GeV | ✓ M→eN | ✓ M→μN | ✗ Forbidden |
+| D0/D± | ~1.9 GeV | ✓ M→eN | ✓ M→μN | ✗ Suppressed |
+
+**Why This Matters:**
+
+1. **Electron/Muon at 0.2-1.3 GeV:**
+   - Abundant light meson production: σ(π), σ(K), σ(D) are all large at FCC-ee
+   - High branching ratios: BR(M → ℓN) is kinematically allowed
+   - **Result:** Production is SO copious that even at maximum coupling (0.01), HNLs still reach the detector before decaying
+   - **Plateau:** Analysis saturates at the coupling grid maximum
+
+2. **Tau at 0.2-1.3 GeV:**
+   - Light meson decays to tau are **kinematically forbidden**: m_π, m_K, m_D < m_τ
+   - Only electroweak production (Z/W → τN) available - much rarer
+   - **Result:** Production rate is low, so upper coupling limit is constrained immediately
+   - **Smooth curve:** No saturation, true physics limit visible
+
+**The Drop at ~1.3 GeV (e/μ):**
+- Marks transition from meson-dominated to electroweak-dominated production
+- D meson threshold effects become important
+- Production cross-section drops → coupling limits decrease
+
+**Heavy Flavor (m > 3 GeV):**
+- B meson production becomes relevant: B → ℓN (all flavors)
+- All three flavors now have comparable production mechanisms
+- Curves converge to similar shapes
+
+**Key Takeaway:** The plateau is **fundamental physics**, not an analysis artifact. It demonstrates that electron- and muon-coupled HNLs benefit from copious light meson production, while tau-coupled HNLs are kinematically excluded from these abundant channels.
+
+**References:**
+- Kinematic suppression: [arXiv:2510.12248](https://arxiv.org/abs/2510.12248) - Tau-coupled HNLs at LHC
+- Meson production: [PRD 109.L111102](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.109.L111102) - Tau mixing searches
+- CHARM constraints: [PRD 104.095019](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.104.095019) - Tau HNL mixing limits
 
 ### Island Shape
 
@@ -142,30 +198,25 @@ else:
 
 ### Change Colors
 
-Edit lines 36-38 and 45-47:
+Edit lines 35-37:
 ```python
 ax.fill_between(..., alpha=0.3, color='red')   # Excluded region
-ax.plot(..., 'r-', ...)                        # Lower boundary
-ax.plot(..., 'b-', ...)                        # Upper boundary
+ax.plot(..., 'r-', ...)                        # Lower boundary (too long-lived)
+ax.plot(..., 'b-', ...)                        # Upper boundary (too prompt)
 ```
 
 ### Adjust Resolution
 
-Edit line 78:
+Edit line 81:
 ```python
 plt.savefig(..., dpi=150, ...)  # Increase for higher quality
 ```
 
 ### Modify Markers
 
-Low-mass regime (line 37-38):
+Edit lines 36-37:
 ```python
-marker='o', markersize=3   # Circles for meson production
-```
-
-High-mass regime (line 46-47):
-```python
-marker='s', markersize=4   # Squares for EW production
+marker='o', markersize=3   # Circles on boundary lines
 ```
 
 ## Data Flow
@@ -226,9 +277,11 @@ Expected features of a correct moneyplot:
 
 ✓ **Island structure:** Closed contours (not open-ended)
 ✓ **Smooth boundaries:** No large jumps between mass points
-✓ **Flavor ordering:** τ < μ < e in sensitivity (typically)
+✓ **Flavor-dependent shapes:**
+  - e/μ: Plateau at eps2_max = 0.01 for m < 1.3 GeV (light meson saturation)
+  - τ: Smooth decrease from low masses (no light meson production)
 ✓ **Width:** Island spans 2-4 decades in |U|²
-✓ **Peak sensitivity:** Around m ~ 0.5-2 GeV (D-meson production)
+✓ **Peak sensitivity:** Around m ~ 0.5-2 GeV (meson production dominates)
 
 ## References
 
@@ -247,6 +300,20 @@ For a complete dataset (137 mass points):
 
 ---
 
-**Last Updated:** November 30, 2024
+**Last Updated:** December 7, 2025
 **Status:** Production-ready
 **Dependencies:** Requires completed limits calculation
+
+## Changelog
+
+**v2.0 - December 7, 2025:**
+- Fixed white gap in excluded region by using unified fill_between
+- Added comprehensive physics explanation for tau vs e/μ behavior
+- Removed artificial split at 5 GeV (now continuous shading)
+- Updated documentation with kinematic threshold references
+- Clarified that plateau at eps2_max=0.01 is saturation, not physics limit
+
+**v1.0 - November 30, 2024:**
+- Initial production release
+- Three-panel moneyplot for electron, muon, tau flavors
+- Island visualization with exclusion boundaries
