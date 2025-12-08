@@ -224,16 +224,23 @@ marker='o', markersize=3   # Circles on boundary lines
 Complete pipeline:
 
 ```
-1. Pythia Simulation
-   └→ output/csv/simulation/HNL_*.csv
+1. Production (Pythia + MadGraph)
+   └→ output/csv/simulation/HNL_*_{kaon,charm,beauty,ew}.csv
 
-2. Geometry Preprocessing (cached)
+2. Combine Production Channels (REQUIRED!)
+   └→ python analysis_pbc/limits/combine_production_channels.py
+   └→ output/csv/simulation/HNL_*_combined.csv
+   └→ (deletes original separate files to save space)
+
+3. Geometry Preprocessing (cached)
    └→ output/csv/geometry/HNL_*_geom.csv
 
-3. Limits Calculation
+4. Limits Calculation
+   └→ python analysis_pbc/limits/run_serial.py --parallel
    └→ output/csv/analysis/HNL_U2_limits_summary.csv
 
-4. Moneyplot Generation ← THIS SCRIPT
+5. Moneyplot Generation ← THIS SCRIPT
+   └→ python money_plot/plot_money_island.py
    └→ output/images/HNL_moneyplot_island.png
 ```
 
@@ -256,9 +263,13 @@ conda activate llpatcolliders
 # Check limits file exists
 ls -lh ../output/csv/analysis/HNL_U2_limits_summary.csv
 
-# If missing, run analysis first:
-cd ../analysis_pbc
-/opt/homebrew/Caskroom/miniconda/base/envs/llpatcolliders/bin/python -u limits/run_serial.py
+# If missing, run the full pipeline:
+# 1. Combine production channels (REQUIRED!)
+cd analysis_pbc
+conda run -n llpatcolliders python limits/combine_production_channels.py
+
+# 2. Run analysis
+conda run -n llpatcolliders python limits/run_serial.py --parallel
 ```
 
 **Problem:** Empty or incomplete plot

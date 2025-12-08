@@ -31,11 +31,40 @@ conda run -n llpatcolliders python tests/test_pipeline.py
 ✓ TEST 3 passed (Expected signal events)
 ```
 
-### 3. Calculate |U|² Limits
+### 3. Combine Production Channels
+
+**IMPORTANT:** Before running analysis, you must combine MadGraph (EW) and Pythia (meson) production files to avoid double-counting:
 
 ```bash
-# For all mass points (muon coupling)
-conda run -n llpatcolliders python limits/u2_limit_calculator.py
+# Combine all overlapping production channels
+conda run -n llpatcolliders python limits/combine_production_channels.py
+
+# Expected output:
+# - Creates combined files for masses with multiple production regimes
+# - Deletes original separate files (data preserved in combined files)
+# - Saves ~2 GB of disk space by removing duplicates
+```
+
+**What this does:**
+- At overlapping masses (e.g., 2-6 GeV), HNLs are produced from BOTH:
+  - Meson decays (B/D/K → ℓN) via Pythia
+  - EW decays (W/Z → ℓN) via MadGraph
+- These are different production mechanisms that must be ADDED (not double-counted)
+- The script combines CSV files at each mass into a single unified file
+
+**Why this is critical:**
+- Without combining: Analysis would only use one production channel per mass
+- After combining: Analysis correctly includes all production mechanisms
+- Disk space: Original files are deleted after combining (data preserved)
+
+### 4. Calculate |U|² Limits
+
+```bash
+# For all mass points, all flavors (parallel processing)
+conda run -n llpatcolliders python limits/run_serial.py --parallel
+
+# Or serial processing (slower)
+conda run -n llpatcolliders python limits/run_serial.py
 
 # Or run benchmark test (2.6 GeV muon)
 conda run -n llpatcolliders python tests/test_26gev_muon.py
@@ -110,9 +139,11 @@ analysis_pbc/
 ├── geometry/
 │   └── per_parent_efficiency.py    # Ray-tracing and boost calculations
 ├── limits/
-│   ├── u2_limit_calculator.py      # Main analysis driver
-│   ├── MULTI_HNL_METHODOLOGY.md    # Per-parent counting explanation
-│   └── ROBUSTNESS_FIXES.md         # Defensive programming guide
+│   ├── combine_production_channels.py  # Combine MadGraph + Pythia (run FIRST!)
+│   ├── run_serial.py                   # Main analysis driver (parallel/serial)
+│   ├── u2_limit_calculator.py          # Legacy single-flavor analysis
+│   ├── MULTI_HNL_METHODOLOGY.md        # Per-parent counting explanation
+│   └── ROBUSTNESS_FIXES.md             # Defensive programming guide
 └── tests/
     ├── test_pipeline.py            # Smoke tests (1.0 GeV muon)
     └── test_26gev_muon.py          # Benchmark (2.6 GeV muon)

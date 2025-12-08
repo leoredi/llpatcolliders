@@ -2,6 +2,8 @@
 """
 Combine Pythia (meson) and MadGraph (EW) production channels at overlapping masses.
 
+**IMPORTANT: Run this BEFORE analysis to avoid undercounting signal!**
+
 At masses like 4-8 GeV, HNLs can be produced from BOTH:
 1. B/D-meson decays (Pythia) → parent_pdg = 511, 521, 421, 431, etc.
 2. W/Z-boson decays (MadGraph) → parent_pdg = 23, 24
@@ -12,9 +14,32 @@ This script:
 - Identifies masses with multiple production files (e.g., beauty + ew)
 - Combines CSV files at each mass into a single unified file
 - Preserves all parent PDG codes for proper per-parent counting
+- DELETES original separate files (data preserved in combined files)
+- Saves ~2 GB of disk space by removing duplicates
+
+Why this is critical:
+- WITHOUT combining: Analysis uses only one production channel → undercounts signal
+- WITH combining: Analysis includes all production mechanisms → correct sensitivity
 
 Usage:
-    python combine_production_channels.py [--flavour electron|muon|tau] [--dry-run]
+    # Combine all flavors (recommended)
+    python combine_production_channels.py
+
+    # Single flavor only
+    python combine_production_channels.py --flavour electron
+
+    # Preview changes without writing files
+    python combine_production_channels.py --dry-run
+
+    # Create combined files but don't delete originals
+    python combine_production_channels.py --no-cleanup
+
+Typical workflow:
+    1. Run Pythia production (kaon/charm/beauty regimes)
+    2. Run MadGraph production (EW regime)
+    3. **Run this script** ← YOU ARE HERE
+    4. Run analysis: python limits/run_serial.py --parallel
+    5. Generate plots: python ../money_plot/plot_money_island.py
 """
 
 import pandas as pd
@@ -121,12 +146,9 @@ def main():
     # Current simulation output directory (Pythia + MadGraph)
     sim_dir = repo_root / "output" / "csv" / "simulation"
     combined_dir = sim_dir / "combined"
-    backup_dir = sim_dir / "originals_backup"
 
     if not args.dry_run:
         combined_dir.mkdir(exist_ok=True)
-        if not args.no_cleanup:
-            backup_dir.mkdir(exist_ok=True)
 
     print("=" * 70)
     print("PRODUCTION CHANNEL COMBINATION")
@@ -177,16 +199,16 @@ def main():
         n_total = combine_csvs(csv_list, output_path)
         total_combined += 1
 
-        # Track original files for backup
+        # Track original files for deletion
         for regime, fpath in csv_list:
             files_to_backup.append(fpath)
 
         print()
 
-    # Cleanup: move combined files and backup originals
+    # Cleanup: move combined files and delete originals
     if not args.dry_run and not args.no_cleanup:
         print(f"\n{'-' * 70}")
-        print("CLEANUP: Moving files")
+        print("CLEANUP: Moving files and removing duplicates")
         print(f"{'-' * 70}\n")
 
         # Move combined files to main directory
@@ -196,13 +218,12 @@ def main():
             f.rename(dest)
             print(f"  ✓ {f.name} → {sim_dir.name}/")
 
-        # Move original overlapping files to backup
+        # Delete original overlapping files (they're now combined)
         print()
         for f in files_to_backup:
             if f.exists():  # Check still exists (not already moved)
-                dest = backup_dir / f.name
-                f.rename(dest)
-                print(f"  ✓ {f.name} → originals_backup/")
+                f.unlink()
+                print(f"  ✓ Deleted: {f.name}")
 
         # Remove empty combined directory
         if combined_dir.exists() and not any(combined_dir.iterdir()):
@@ -211,16 +232,16 @@ def main():
     print("\n" + "=" * 70)
     if args.dry_run:
         print(f"DRY RUN: Would create {len(multi_channel_masses)} combined files")
-        print(f"         Would backup {len(set(files_to_backup))} original files")
+        print(f"         Would delete {len(set(files_to_backup))} original files")
     elif args.no_cleanup:
         print(f"✓ Created {total_combined} combined files in: {combined_dir}")
         print(f"\nManual steps needed:")
         print(f"1. Move combined files to {sim_dir}")
-        print(f"2. Backup original files to avoid double-counting")
+        print(f"2. Delete original files to avoid double-counting")
     else:
         print(f"✓ Created {total_combined} combined files")
         print(f"✓ Moved to {sim_dir}")
-        print(f"✓ Backed up {len(set(files_to_backup))} original files to {backup_dir}")
+        print(f"✓ Deleted {len(set(files_to_backup))} original files (data preserved in combined files)")
         print(f"\n✅ Ready to run analysis: python limits/run_serial.py")
     print("=" * 70)
 

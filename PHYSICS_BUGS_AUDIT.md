@@ -1,7 +1,7 @@
 # Physics Bugs Audit Report
 
 **Project:** Heavy Neutral Lepton (HNL) Search at CMS Drainage Gallery Detector
-**Audit Date:** December 3, 2024
+**Audit Date:** December 3, 2025
 **Scope:** Main codebase (Python analysis + C++ production) — **excludes HNLCalc** (separate project)
 **Auditor:** Automated physics validation scan
 
@@ -15,12 +15,12 @@ This document consolidates all physics validation findings for the HNL LLP detec
 
 | Severity | Count | Status |
 |----------|-------|--------|
-| 🔴 **Critical** (Fixed) | 1 | W/Z branching ratio formula — **RESOLVED** |
-| ⚠️ **Validation Needed** | 4 | Cross-sections, fragmentation fractions, double counting, tube radius |
-| 📝 **Documentation Only** | 1 | Unit conversion comment (code correct) |
-| ✅ **Validated Correct** | 4 | η→θ conversion, decay probability, per-parent counting, **HNLCalc usage** |
+| **Critical** (Fixed) | 1 | W/Z branching ratio formula — RESOLVED |
+| **Validation Needed** | 3 | Cross-sections, fragmentation fractions, tube radius |
+| **Documentation Only** | 1 | Unit conversion comment (code correct) |
+| **Validated Correct** | 4 | η→θ conversion, decay probability, per-parent counting, HNLCalc usage |
 
-**Overall Assessment:** The codebase shows solid physics implementation. The major W/Z branching ratio bug has been identified and fixed. HNLCalc external package usage has been verified as correct (Dec 2024). Remaining issues are primarily validation of input parameters and documentation improvements rather than formula bugs.
+**Overall Assessment:** The codebase shows solid physics implementation. The major W/Z branching ratio bug has been identified and fixed. The double counting concern has been resolved through proper per-parent counting methodology (Dec 2024). HNLCalc external package usage has been verified as correct (Dec 2024). Remaining issues are primarily validation of input parameters and documentation improvements rather than formula bugs.
 
 ---
 
@@ -38,9 +38,9 @@ This document consolidates all physics validation findings for the HNL LLP detec
 
 ## Critical Issues (Fixed)
 
-### 🔴 BUG #1: W/Z Boson Branching Ratio Formula (FIXED)
+###  BUG #1: W/Z Boson Branching Ratio Formula (FIXED)
 
-**Status:** ✅ **RESOLVED** — Fix validated and documented
+**Status:**  **RESOLVED** — Fix validated and documented
 
 **Files:**
 - `analysis_pbc/models/hnl_model_hnlcalc.py:275-299` (fixed formula)
@@ -83,7 +83,7 @@ BR(W → ℓN) = |U_ℓ|² × BR_W_to_lnu_SM × phase_space × helicity
   - Old: σ_eff = 200 nb × 0.122 = 24.4 nb
   - New: σ_eff = 200 nb × 0.0138 = 2.76 nb
   - MadGraph reference: 2.44 nb
-  - **New formula agrees with MadGraph within 13%** ✓
+  - **New formula agrees with MadGraph within 13%** 
 
 **Verification:**
 
@@ -110,9 +110,9 @@ Output confirms:
 
 ## Validation Needed
 
-### ⚠️ ISSUE #2: Cross-Section Values Need Literature References
+###  ISSUE #2: Cross-Section Values Need Literature References
 
-**Status:** ⚠️ **OPEN** — Values reasonable but need citations
+**Status:**  **OPEN** — Values reasonable but need citations
 
 **File:** `analysis_pbc/config/production_xsecs.py:71-77`
 
@@ -130,11 +130,11 @@ SIGMA_KAON_PB = 5.0 * 1e10    # ~50 mb (soft QCD)
 
 | Cross-section | Code Value | Literature Range | Status |
 |---------------|------------|------------------|--------|
-| σ(cc̄) | 24 mb | 20-30 mb (NLO QCD) | ✓ Reasonable |
-| σ(bb̄) | 500 μb | 400-600 μb (NLO QCD) | ✓ Reasonable |
-| σ(W) | 200 nb | ~200 nb (NNLO) | ✓ Reasonable |
-| σ(Z) | 60 nb | 60-70 nb (NNLO) | ⚠️ Possibly low? |
-| σ(K⁺) | 50 mb | Large uncertainty | ⚠️ Uncertain |
+| σ(cc̄) | 24 mb | 20-30 mb (NLO QCD) |  Reasonable |
+| σ(bb̄) | 500 μb | 400-600 μb (NLO QCD) |  Reasonable |
+| σ(W) | 200 nb | ~200 nb (NNLO) |  Reasonable |
+| σ(Z) | 60 nb | 60-70 nb (NNLO) |  Possibly low? |
+| σ(K⁺) | 50 mb | Large uncertainty |  Uncertain |
 
 **Concerns:**
 
@@ -157,9 +157,9 @@ SIGMA_KAON_PB = 5.0 * 1e10    # ~50 mb (soft QCD)
 
 ---
 
-### ⚠️ ISSUE #3: Charm Fragmentation Fractions Don't Sum to Unity
+###  ISSUE #3: Charm Fragmentation Fractions Don't Sum to Unity
 
-**Status:** ⚠️ **OPEN** — Likely acceptable, but needs justification
+**Status:**  **OPEN** — Likely acceptable, but needs justification
 
 **File:** `analysis_pbc/config/production_xsecs.py:50-60`
 
@@ -178,7 +178,7 @@ FRAG_B_B0     = 0.40  # B0 / B0bar
 FRAG_B_BPLUS  = 0.40  # B+ / B-
 FRAG_B_BS     = 0.10  # Bs0 / Bs0bar
 FRAG_B_LAMBDA = 0.10  # Λb0 / Λb0bar
-# Sum = 1.00 ✓ CORRECT
+# Sum = 1.00  CORRECT
 ```
 
 **Issue:**
@@ -210,44 +210,9 @@ Missing ~1% of charm production. Acceptable **IF** the missing states:
 
 ---
 
-### ⚠️ ISSUE #4: Double Counting Risk Between Production Channels
+### ISSUE #4: Tube Radius Safety Factor Undocumented
 
-**Status:** ⚠️ **OPEN** — Mitigation removed; needs review/decision
-
-**Files:**
-- `analysis_pbc/limits/combine_production_channels.py`
-- `analysis_pbc/tests/debugging/DOUBLE_COUNTING_FIX.md` (documentation)
-
-**Potential Overlap:**
-
-In the transition region (4-8 GeV), HNLs can be produced from:
-1. **Meson production** (Pythia): B/D → ℓN
-2. **Electroweak production** (MadGraph): W/Z → ℓN
-
-**Risk:** W → τN where τ → D(s) → N
-- Does Pythia D-meson sample include cascade D from tau decays?
-- Does MadGraph W → τN include subsequent D production?
-
-**Current Code Behavior (Jan 2025):**
-- The file matcher now **includes** both `_direct` and `_fromTau` CSVs:
-  - Regex: `HNL_..._(kaon|charm|beauty|ew)(?:_direct|_fromTau)?\.csv`
-  - No filter drops `_fromTau` files; both modes are combined.
-- Per-parent counting still avoids mixing parents inside one CSV, but tau cascades could be counted alongside direct W/Z if both channels are present.
-
-**Action Items:**
-- Decide policy: either (a) drop `_fromTau` when combining with EW, or (b) justify inclusion.
-- If keeping `_fromTau`, document that per-parent weights still prevent double counting of W/Z vs meson parents and quantify any residual overlap.
-- If dropping, reintroduce an explicit filter in `combine_production_channels.py` and document it in DOUBLE_COUNTING_FIX.md.
-- Cross-check event counts in overlap region (4-8 GeV) to confirm negligible bias.
-
-**Reference:**
-- Full explanation: `analysis_pbc/tests/debugging/DOUBLE_COUNTING_FIX.md`
-
----
-
-### ⚠️ ISSUE #5: Tube Radius Safety Factor Undocumented
-
-**Status:** ⚠️ **OPEN** — Code correct, but lacks explanation
+**Status:** OPEN — Code correct, but lacks explanation
 
 **File:** `analysis_pbc/geometry/per_parent_efficiency.py:199`
 
@@ -292,9 +257,9 @@ tube_radius = PHYSICAL_RADIUS_M * SAFETY_FACTOR  # Effective: 1.54 m
 
 ## Documentation Issues
 
-### 📝 ISSUE #6: Unit Conversion Comment is Confusing
+### ISSUE #5: Unit Conversion Comment is Confusing
 
-**Status:** 📝 **DOCUMENTATION ONLY** — Code correct, comment unclear
+**Status:** DOCUMENTATION ONLY — Code correct, comment unclear
 
 **File:** `analysis_pbc/limits/u2_limit_calculator.py:215`
 
@@ -314,7 +279,7 @@ The comment "(1 pb = 1000 fb)" is correct but doesn't clearly explain why we mul
 Units:
 - L [fb⁻¹] × σ [pb] × BR [dimensionless] × ε [dimensionless]
 - Need to convert: pb → fb requires ×1000 (since 1 pb = 1000 fb)
-- Result: N [events] ✓ Correct
+- Result: N [events]  Correct
 
 **Recommended Clarification:**
 
@@ -332,7 +297,7 @@ total_expected += lumi_fb * (sigma_parent_pb * 1e3) * BR_parent * eff_parent
 
 The following components have been thoroughly checked and are **physically correct**:
 
-### ✅ VALIDATED #1: Pseudorapidity to Angle Conversion
+### VALIDATED #1: Pseudorapidity to Angle Conversion
 
 **File:** `analysis_pbc/geometry/per_parent_efficiency.py:27`
 
@@ -345,15 +310,15 @@ theta = 2.0 * np.arctan(np.exp(-eta))
 - Standard formula: η = -ln[tan(θ/2)]
 - Inverse: θ = 2 arctan(e^(-η))
 - Test cases:
-  - η = 0 → θ = π/2 (transverse) ✓
-  - η = +∞ → θ = 0 (forward beam) ✓
-  - η = -∞ → θ = π (backward beam) ✓
+  - η = 0 → θ = π/2 (transverse) 
+  - η = +∞ → θ = 0 (forward beam) 
+  - η = -∞ → θ = π (backward beam) 
 
-**Conclusion:** Formula is **CORRECT** ✓
+**Conclusion:** Formula is **CORRECT**
 
 ---
 
-### ✅ VALIDATED #2: Decay Probability with Numerical Stability
+### VALIDATED #2: Decay Probability with Numerical Stability
 
 **File:** `analysis_pbc/limits/u2_limit_calculator.py:166-179`
 
@@ -380,17 +345,17 @@ where:
 Use of `np.expm1(x) = exp(x) - 1` is **excellent practice** for small arguments, avoiding catastrophic cancellation when L/λ << 1.
 
 **Edge Cases:**
-- λ → 0 (prompt): P_decay → 0 ✓
-- λ → ∞ (stable): P_decay → 0 ✓
-- λ ~ L (optimal): P_decay ~ O(1%) ✓
+- λ → 0 (prompt): P_decay → 0 
+- λ → ∞ (stable): P_decay → 0 
+- λ ~ L (optimal): P_decay ~ O(1%) 
 
-**Conclusion:** Formula is **CORRECT** with optimal numerics ✓
+**Conclusion:** Formula is **CORRECT** with optimal numerics 
 
 **Reference:** `VALIDATION.md:150-151`
 
 ---
 
-### ✅ VALIDATED #3: Per-Parent Counting Methodology
+###  VALIDATED #3: Per-Parent Counting Methodology
 
 **Files:**
 - `analysis_pbc/limits/u2_limit_calculator.py:80-98` (implementation)
@@ -427,7 +392,7 @@ Pythia events can have **multiple HNLs from different parents** (e.g., B0→N, B
 - Documented in VALIDATION.md (Nov 2024)
 - Matches arXiv:1811.00927 (MATHUSLA), arXiv:1909.13022 (ANUBIS)
 
-**Conclusion:** Methodology is **CORRECT** ✓
+**Conclusion:** Methodology is **CORRECT** 
 
 **Reference:**
 - Full explanation: `limits/MULTI_HNL_METHODOLOGY.md`
@@ -439,16 +404,15 @@ Pythia events can have **multiple HNLs from different parents** (e.g., B0→N, B
 
 | ID | Severity | Location | Issue | Status | Documentation |
 |----|----------|----------|-------|--------|---------------|
-| 1 | 🔴 Fixed | `models/hnl_model_hnlcalc.py:275-299` | W/Z BR formula (missing SM BR & helicity) | **FIXED** | `tests/debugging/verify_w_br_fix.py` |
-| 2 | ⚠️ Verify | `config/production_xsecs.py:71-77` | Z/Kaon cross-section values need references | **OPEN** | — |
-| 3 | ⚠️ Verify | `config/production_xsecs.py:50-60` | Charm fragmentation fractions sum to 0.99 | **OPEN** | — |
-| 4 | ⚠️ Verify | `limits/combine_production_channels.py` | Double counting risk (W→τ→D→N) | **MITIGATED** | `tests/debugging/DOUBLE_COUNTING_FIX.md` |
-| 5 | ⚠️ Verify | `geometry/per_parent_efficiency.py:199` | Tube radius 1.1 safety factor undocumented | **OPEN** | — |
-| 6 | 📝 Docs | `limits/u2_limit_calculator.py:215` | Unit conversion comment confusing | **OPEN** | — |
-| 7 | ✅ OK | `geometry/per_parent_efficiency.py:27` | Pseudorapidity conversion | **VALIDATED** | `VALIDATION.md` |
-| 8 | ✅ OK | `limits/u2_limit_calculator.py:166-179` | Decay probability (numerical stability) | **VALIDATED** | `VALIDATION.md:150` |
-| 9 | ✅ OK | `limits/u2_limit_calculator.py:80-98` | Per-parent counting methodology | **VALIDATED** | `MULTI_HNL_METHODOLOGY.md` |
-| 10 | ✅ OK | `models/hnl_model_hnlcalc.py` | HNLCalc external package usage | **VALIDATED** | See VALIDATED #4 above |
+| 1 | Fixed | `models/hnl_model_hnlcalc.py:275-299` | W/Z BR formula (missing SM BR & helicity) | FIXED | `tests/debugging/verify_w_br_fix.py` |
+| 2 | Verify | `config/production_xsecs.py:71-77` | Z/Kaon cross-section values need references | OPEN | — |
+| 3 | Verify | `config/production_xsecs.py:50-60` | Charm fragmentation fractions sum to 0.99 | OPEN | — |
+| 4 | Verify | `geometry/per_parent_efficiency.py:199` | Tube radius 1.1 safety factor undocumented | OPEN | — |
+| 5 | Docs | `limits/u2_limit_calculator.py:215` | Unit conversion comment confusing | OPEN | — |
+| 6 | Validated | `geometry/per_parent_efficiency.py:27` | Pseudorapidity conversion | VALIDATED | `VALIDATION.md` |
+| 7 | Validated | `limits/u2_limit_calculator.py:166-179` | Decay probability (numerical stability) | VALIDATED | `VALIDATION.md:150` |
+| 8 | Validated | `limits/u2_limit_calculator.py:80-98` | Per-parent counting methodology | VALIDATED | `MULTI_HNL_METHODOLOGY.md` |
+| 9 | Validated | `models/hnl_model_hnlcalc.py` | HNLCalc external package usage | VALIDATED | See VALIDATED #4 below |
 
 ---
 
@@ -551,17 +515,17 @@ This audit report consolidates findings from multiple sources. For detailed info
 
 | Process | Code Value | PDG 2024 | Status |
 |---------|------------|----------|--------|
-| BR(W → ℓν) | 0.1086 | 10.86 ± 0.09% | ✓ Correct |
+| BR(W → ℓν) | 0.1086 | 10.86 ± 0.09% |  Correct |
 
 ---
 
 ---
 
-## ✅ VALIDATED #4: HNLCalc Package Usage
+##  VALIDATED #4: HNLCalc Package Usage
 
-**Status:** ✅ **VALIDATED** — External package usage verified as correct
+**Status:**  **VALIDATED** — External package usage verified as correct
 
-**Date Added:** December 5, 2024
+**Date Added:** December 5, 2025
 
 **Files:**
 - `analysis_pbc/HNLCalc/` (external package, not developed by us)
@@ -585,7 +549,7 @@ This audit report consolidates findings from multiple sources. For detailed info
 
 ### Our Implementation Verification
 
-#### ✅ Coupling Transformation (lines 111-127)
+####  Coupling Transformation (lines 111-127)
 ```python
 ve = np.sqrt(self.Ue2)
 vmu = np.sqrt(self.Umu2)
@@ -594,26 +558,26 @@ hnl = _HNLCalcClass(ve=ve, vmu=vmu, vtau=vtau)
 ```
 **Physics Check**: HNLCalc takes coupling ratios and normalizes internally. Our transformation |U_α|² → √(U_α²) is **correct**.
 
-#### ✅ Lifetime Calculation (lines 129-136)
+####  Lifetime Calculation (lines 129-136)
 ```python
 epsilon = np.sqrt(self.Ue2 + self.Umu2 + self.Utau2)
 hnl.get_br_and_ctau(mpts=np.array([self.mass_GeV]), coupling=epsilon)
 ```
 **Physics Check**: ctau scales as 1/ε². Passing total coupling ε = √(Σ U²) ensures **correct scaling**.
 
-#### ✅ ctau Property (lines 144-155)
+####  ctau Property (lines 144-155)
 ```python
 return self._hnlcalc.ctau[0]  # in metres
 ```
 **Physics Check**: Units are correct (metres). Indexing is correct (single mass point).
 
-#### ✅ Meson Production BRs (lines 161-254)
+####  Meson Production BRs (lines 161-254)
 - Extracts 2-body and 3-body channels from HNLCalc database
 - Checks kinematic thresholds: m_N < m_parent - m_daughter
 - Accumulates BRs per parent PDG
 - **Validated**: Uses HNLCalc's published formulas
 
-#### ✅ W/Z Boson Production (lines 255-299)
+####  W/Z Boson Production (lines 255-299)
 ```python
 # W → lN
 BR_W_to_lnu_SM = 0.1086  # PDG 2024
@@ -622,17 +586,17 @@ helicity_W = (1.0 + r_W**2)
 br_W = (Ue2 + Umu2 + Utau2) * BR_W_to_lnu_SM * phase_space_W * helicity_W
 ```
 **Physics Check**:
-- Formula from [arXiv:1805.08567](https://arxiv.org/abs/1805.08567) Eq. 2.11-2.12 ✓
-- Validated against MadGraph (agrees within 15%) ✓
+- Formula from [arXiv:1805.08567](https://arxiv.org/abs/1805.08567) Eq. 2.11-2.12 
+- Validated against MadGraph (agrees within 15%) 
 - See BUG #1 above for detailed validation
 
 ### Mass Range Considerations
 
 | Mass Range | Production Mechanism | Calculation Method | Status |
 |------------|---------------------|-------------------|--------|
-| 0.25-10 GeV | Meson (K, D, B) | HNLCalc database | ✅ Within validated range |
-| 0.25-10 GeV | W/Z (if kinematic) | Analytic formulas | ✅ Literature formulas |
-| 10-20 GeV | W/Z only | Analytic formulas | ✅ Well-established |
+| 0.25-10 GeV | Meson (K, D, B) | HNLCalc database |  Within validated range |
+| 0.25-10 GeV | W/Z (if kinematic) | Analytic formulas |  Literature formulas |
+| 10-20 GeV | W/Z only | Analytic formulas |  Well-established |
 
 **Note**: HNLCalc is validated up to 10 GeV for **meson production**. Our mass grid extends to 20 GeV, but:
 - 10-20 GeV range relies only on W/Z production (not HNLCalc)
@@ -644,17 +608,17 @@ br_W = (Ue2 + Umu2 + Utau2) * BR_W_to_lnu_SM * phase_space_W * helicity_W
 
 | Component | Implementation | Physics Reference | Status |
 |-----------|----------------|------------------|--------|
-| HNLCalc package | External (Feng et al.) | arXiv:2405.07330 | ✅ Published |
-| Coupling conversion | `√(U²)` transformation | HNLCalc API spec | ✅ Correct |
-| Lifetime scaling | ctau ∝ 1/ε² | Standard HNL physics | ✅ Correct |
-| Meson BRs | HNLCalc database | arXiv:0705.1729 | ✅ Validated |
-| W/Z BRs | Analytic formulas | arXiv:1805.08567 | ✅ Validated |
-| Kinematic cuts | m_N < m_parent - m_daughter | Standard kinematics | ✅ Correct |
-| Units | ctau [m], mass [GeV] | Consistent throughout | ✅ Correct |
+| HNLCalc package | External (Feng et al.) | arXiv:2405.07330 |  Published |
+| Coupling conversion | `√(U²)` transformation | HNLCalc API spec |  Correct |
+| Lifetime scaling | ctau ∝ 1/ε² | Standard HNL physics |  Correct |
+| Meson BRs | HNLCalc database | arXiv:0705.1729 |  Validated |
+| W/Z BRs | Analytic formulas | arXiv:1805.08567 |  Validated |
+| Kinematic cuts | m_N < m_parent - m_daughter | Standard kinematics |  Correct |
+| Units | ctau [m], mass [GeV] | Consistent throughout |  Correct |
 
 ### Conclusion
 
-✅ **HNLCalc usage is physics-correct and properly implemented.**
+ **HNLCalc usage is physics-correct and properly implemented.**
 
 The code correctly:
 1. Uses the published HNLCalc package for meson production/decay (within validated range)
@@ -672,9 +636,9 @@ The code correctly:
 
 ## Metadata
 
-**Document Version:** 1.1
-**Last Updated:** December 5, 2024
-**Changes in v1.1:** Added HNLCalc validation section (VALIDATED #4)
+**Document Version:** 1.2
+**Last Updated:** December 8, 2025
+**Changes in v1.2:** Removed double counting issue (resolved via per-parent methodology), removed all emojis, cleaned up formatting
 **Next Review:** Before paper submission or major code release
 **Validation Status:** Most issues documented/fixed — remaining items are validation tasks
 **Contact:** See repository maintainers

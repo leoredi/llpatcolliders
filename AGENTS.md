@@ -6,21 +6,26 @@
 
 ---
 
-## Quick Start (3 Commands)
+## Quick Start (4 Commands)
 
 ```bash
 # 1. Generate events (Pythia meson + MadGraph EW)
 cd production/pythia_production && ./run_full_production.sh          # conda env required
 cd production/madgraph_production && python3 scripts/run_hnl_scan.py # uses MG5/madgraph env (NOT conda)
 
-# 2. Calculate limits
-cd analysis_pbc && conda run -n llpatcolliders python limits/run_serial.py
+# 2. Combine production channels ⚠️ REQUIRED!
+cd analysis_pbc && conda run -n llpatcolliders python limits/combine_production_channels.py
 
-# 3. Generate plot
+# 3. Calculate limits
+cd analysis_pbc && conda run -n llpatcolliders python limits/run_serial.py --parallel
+
+# 4. Generate plot
 cd money_plot && conda run -n llpatcolliders python plot_money_island.py
 ```
 
 **Output:** `output/images/HNL_moneyplot_island.png`
+
+**⚠️ Critical:** Step 2 (combine) is REQUIRED to avoid undercounting signal at overlapping masses!
 
 ---
 
@@ -49,7 +54,9 @@ cd money_plot && conda run -n llpatcolliders python plot_money_island.py
 │   ├── config/                   # Cross-sections (σ_K, σ_D, σ_B, σ_W, σ_Z)
 │   ├── geometry/                 # Ray-tracing detector mesh
 │   ├── models/                   # HNLCalc wrapper
-│   └── limits/run_serial.py      # Main analysis driver
+│   └── limits/
+│       ├── combine_production_channels.py  # Combine meson + EW (RUN FIRST!)
+│       └── run_serial.py                   # Main analysis driver
 └── money_plot/                   # Exclusion plots
 ```
 
@@ -127,6 +134,34 @@ event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm
 
 ## Analysis Pipeline
 
+### Stage 0: Combine Production Channels (Required!)
+
+**Why:** At overlapping masses (2-6 GeV), HNLs are produced from BOTH meson and EW decays:
+- Meson production: B/D/K → ℓN (Pythia)
+- EW production: W/Z → ℓN (MadGraph)
+
+These are **different physics channels** that must be ADDED, not double-counted.
+
+```bash
+cd analysis_pbc
+conda run -n llpatcolliders python limits/combine_production_channels.py
+```
+
+**What it does:**
+- Finds masses with multiple production files (e.g., `*_beauty.csv` + `*_ew.csv`)
+- Combines them into `*_combined.csv`
+- Deletes original separate files (saves ~2 GB)
+- Preserves all parent PDG codes for proper per-parent counting
+
+**Example:**
+```
+Before:  HNL_4p00GeV_muon_beauty.csv  (86,615 HNLs from B mesons)
+         HNL_4p00GeV_muon_ew.csv      (100,000 HNLs from W/Z)
+After:   HNL_4p00GeV_muon_combined.csv (186,615 HNLs total)
+```
+
+**Critical:** Without combining, analysis would only see one channel → undercounts signal by ~50%!
+
 ### Stage 1: Geometry Preprocessing (Automatic, Cached)
 
 ```python
@@ -142,7 +177,7 @@ for each HNL:
 ### Stage 2: Limit Calculation
 
 ```python
-# analysis_pbc/limits/run_serial.py
+# analysis_pbc/limits/run_serial.py --parallel
 for mass, flavour, |U|² in scan:
     N_sig = Σ_parents [σ × BR(|U|²) × ε_geom]
     if N_sig ≥ 3: excluded
@@ -221,23 +256,37 @@ python tests/test_26gev_muon.py
 
 ## Common Issues
 
-### 1. Missing HNLCalc
+### 1. Forgot to Combine Production Channels ← MOST COMMON!
+**Symptom:** Analysis results look weak, missing mass points
+
+**Solution:**
+```bash
+cd analysis_pbc
+conda run -n llpatcolliders python limits/combine_production_channels.py
+```
+
+**Check:** After combining, you should see `*_combined.csv` files:
+```bash
+ls output/csv/simulation/*_combined.csv | wc -l  # Should be ~122
+```
+
+### 2. Missing HNLCalc
 ```bash
 cd analysis_pbc
 git clone https://github.com/laroccod/HNLCalc.git
 pip install sympy mpmath particle numba 'scikit-hep==0.4.0'
 ```
 
-### 2. Empty CSV Files
+### 3. Empty CSV Files
 - Check logs in `output/logs/simulation/`
 - High-mass Pythia (m ≥ 5 GeV) fails → use MadGraph instead
 
-### 3. Geometry Cache Corrupt
+### 4. Geometry Cache Corrupt
 ```bash
 rm output/csv/geometry/HNL_*_geom.csv  # Force recompute
 ```
 
-### 4. Wrong Parent PDGs
+### 5. Wrong Parent PDGs
 - Check `limits/diagnostic_pdg_coverage.py` for missing BRs
 - PDG 310 (K_S⁰) not in HNLCalc → <0.1% loss
 
@@ -245,14 +294,14 @@ rm output/csv/geometry/HNL_*_geom.csv  # Force recompute
 
 ## File Naming Conventions
 
-**Simulation CSVs:**
+**Simulation CSVs (after combining):**
 ```
 HNL_{mass}GeV_{flavour}_{regime}[_mode].csv
 
-Examples:
-  HNL_2p60GeV_muon_beauty.csv
-  HNL_10p0GeV_electron_ew.csv
-  HNL_1p00GeV_tau_charm_fromTau.csv
+Examples (post-combine):
+  HNL_2p60GeV_muon_combined.csv    ← beauty + ew merged
+  HNL_10p0GeV_electron_ew.csv      ← EW only (no overlap)
+  HNL_0p50GeV_tau_combined.csv     ← kaon + charm + ew merged
 ```
 
 **Regimes:**
@@ -260,10 +309,13 @@ Examples:
 - `charm` (0.5-2 GeV)
 - `beauty` (2-5 GeV)
 - `ew` (≥ 5 GeV)
+- `combined` (multiple regimes merged)
 
 **Tau modes:**
 - `direct`: B/D/W → τN (all masses)
 - `fromTau`: τ → πN cascade (m < 1.64 GeV only)
+
+**Note:** After running `combine_production_channels.py`, overlapping masses will have `*_combined.csv` files instead of separate regime files.
 
 ---
 
@@ -298,7 +350,9 @@ awk -F',' 'NR>1 {print $4}' HNL_2p60GeV_muon_beauty.csv | sort | uniq -c
 **Code:**
 - `production/pythia_production/main_hnl_production.cc` - Pythia simulation
 - `production/madgraph_production/scripts/run_hnl_scan.py` - MadGraph driver
-- `analysis_pbc/limits/u2_limit_calculator.py` - Core analysis logic
+- `analysis_pbc/limits/combine_production_channels.py` - Combine meson + EW (REQUIRED!)
+- `analysis_pbc/limits/run_serial.py` - Main analysis driver
+- `analysis_pbc/limits/u2_limit_calculator.py` - Legacy single-flavor analysis
 - `config_mass_grid.py` - Mass grid definitions
 
 **Physics:**
@@ -313,5 +367,5 @@ awk -F',' 'NR>1 {print $4}' HNL_2p60GeV_muon_beauty.csv | sort | uniq -c
 
 ---
 
-**Last Updated:** December 2024
-**Status:** ✅ Production-ready (meson + EW regimes)
+**Last Updated:** December 8, 2024
+**Status:** ✅ Production-ready (meson + EW regimes with channel combining)
