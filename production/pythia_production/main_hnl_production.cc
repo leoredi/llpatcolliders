@@ -80,7 +80,10 @@ using namespace Pythia8;
 // Physical constants and PDG IDs
 // ==========================================================================
 
-const int HNL_ID = 9900015;
+// HNL PDG ID: 9900012 (matches MadGraph convention for consistency across production modes)
+// Note: Some experiments use 9900015 (SHiP/MATHUSLA), but we use 9900012 to match
+// our MadGraph model (SM_HeavyN_CKM_AllMasses_LO) and ensure unified analysis
+const int HNL_ID = 9900012;
 
 // Charged mesons that can produce HNL via M -> ℓ N (2-body leptonic)
 const std::vector<int> CHARGED_MESONS_2BODY = {
@@ -558,9 +561,9 @@ int main(int argc, char* argv[]) {
     // -----------------------------------------------------------------------
     // Define HNL particle
     // -----------------------------------------------------------------------
-    // We define a single HNL state (PDG 9900015). This is appropriate for
+    // We define a single HNL state (PDG 9900012). This is appropriate for
     // Majorana HNL where N = N̄. For Dirac HNL interpretation, multiply
-    // final yields by factor 2 (or generate both ±9900015).
+    // final yields by factor 2 (or generate both ±9900012).
     // PBC benchmarks BC6/BC7/BC8 assume Majorana.
     //
     // spinType=2 for spin-1/2 fermion (HNL is a sterile neutrino)
@@ -638,7 +641,7 @@ int main(int argc, char* argv[]) {
     
     // CSV header
     outFile << "event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,"
-            << "prod_x_mm,prod_y_mm,prod_z_mm,boost_gamma" << std::endl;
+            << "prod_x_mm,prod_y_mm,prod_z_mm,beta_gamma" << std::endl;
     
     // -----------------------------------------------------------------------
     // Event loop
@@ -680,10 +683,12 @@ int main(int argc, char* argv[]) {
                 std::cerr << "FATAL: Both p.m() and mHNL are non-positive!" << std::endl;
                 return 1;
             }
-            double boostGamma = p.e() / mass;
+            // Compute β γ = p / m (NOT the Lorentz factor γ = E / m)
+            // This is the quantity needed for decay length calculations: λ = βγ cτ₀
+            double betaGamma = p.pAbs() / mass;
             
             // Write to CSV
-            outFile << iEvent << "," 
+            outFile << iEvent << ","
                     << weight << ","
                     << p.id() << ","
                     << parentPdg << ","
@@ -696,7 +701,7 @@ int main(int argc, char* argv[]) {
                     << prodX << ","
                     << prodY << ","
                     << prodZ << ","
-                    << boostGamma << std::endl;
+                    << betaGamma << std::endl;
             
             nHNLfound++;
         }

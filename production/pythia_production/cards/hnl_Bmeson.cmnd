@@ -43,11 +43,11 @@ PhaseSpace:pTHatMin = 0.0
 ! -------------------------------------------------------------------------
 ! 4) HNL Definition
 ! -------------------------------------------------------------------------
-! NOTE: HNL particle (9900015) is defined in C++ code, not here.
+! NOTE: HNL particle (PDG ID 9900012) is defined in C++ code, not here.
 ! This keeps mass/lifetime as single source of truth.
 !
 ! The C++ code will define:
-!   - PDG ID: 9900015 (following SHiP/MATHUSLA convention)
+!   - PDG ID: 9900012 (matches MadGraph convention for consistency)
 !   - Mass: set from command-line argument
 !   - Lifetime: very long (stable in Pythia)
 !   - Decay: disabled (handled externally)

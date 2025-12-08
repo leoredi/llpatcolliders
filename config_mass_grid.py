@@ -14,11 +14,29 @@ Adaptive spacing optimized for physics:
 """
 
 # ===========================================================================
+# KINEMATIC LIMITS FOR MESON DECAYS
+# ===========================================================================
+
+# Kinematic limits for meson decays M → ℓ N (2-body)
+# m_N < m_M - m_ℓ
+KINEMATIC_LIMITS = {
+    'K': {'electron': 0.493 - 0.000511, 'muon': 0.493 - 0.106},  # ~0.493, ~0.387 GeV
+    'D': {'electron': 1.870 - 0.000511, 'muon': 1.870 - 0.106},  # ~1.87, ~1.76 GeV
+    'B': {'electron': 5.279 - 0.000511, 'muon': 5.279 - 0.106, 'tau': 5.279 - 1.777},  # ~5.28, ~5.17, ~3.50 GeV
+}
+
+# ===========================================================================
 # MESON (PYTHIA) MASS GRIDS  (validated, low-mass <~8 GeV)
 # ===========================================================================
 
 # Dense, inclusive mass grid for all regimes (meson + EW):
 # Union of legacy + new production points to avoid sensitivity gaps
+#
+# Mass grid usage by meson type:
+#   K mesons: m_N < 0.39 GeV (muon), < 0.49 GeV (electron)
+#   D mesons: m_N < 1.76 GeV (muon), < 1.87 GeV (electron)
+#   B mesons: m_N < 5.17 GeV (muon), < 5.28 GeV (electron), < 3.50 GeV (tau)
+# The C++ Pythia code handles kinematic filtering; mass points outside valid ranges produce zero events.
 _COMMON_GRID = [
     # K-regime (0.2-0.5 GeV): 0.05 GeV steps near kaon threshold
     0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50,
@@ -49,9 +67,10 @@ _COMMON_GRID = [
 ELECTRON_MASSES_MESON = _COMMON_GRID
 MUON_MASSES_MESON = _COMMON_GRID
 
-# Tau: only B mesons can produce tau-coupled HNL (m_N < m_B - m_τ ≈ 3.5 GeV)
+# Tau: only B mesons can produce tau-coupled HNL
+# Kinematic constraint: B → τ N requires m_N + m_τ < m_B, so m_N < m_B - m_τ ≈ 3.5 GeV
 # D mesons are kinematically forbidden (m_D - m_τ < 0.2 GeV)
-TAU_MASSES_MESON = [m for m in _COMMON_GRID if 1.777 < m < 3.5]
+TAU_MASSES_MESON = [m for m in _COMMON_GRID if m < 3.5]
 
 # ===========================================================================
 # ELECTROWEAK (MADGRAPH) MASS GRIDS (W/Z-mediated, high-mass)
@@ -64,9 +83,10 @@ _EW_CORE = []  # unused; full grid is _COMMON_GRID
 ELECTRON_MASSES_EW = _EW_LOW_EDGE + _EW_CORE
 MUON_MASSES_EW = _EW_LOW_EDGE + _EW_CORE
 
-# Tau: only masses > m_τ = 1.777 GeV are physically meaningful
-# (D mesons cannot produce tau-coupled HNL due to phase space)
-TAU_MASSES_EW = [m for m in _COMMON_GRID if m > 1.777]
+# Tau: EW production W → τ N
+# Kinematic constraint: m_N + m_τ < m_W, so m_N < m_W - m_τ ≈ 78.5 GeV
+# All masses in the common grid (up to 17 GeV) are kinematically allowed
+TAU_MASSES_EW = _COMMON_GRID
 
 # ===========================================================================
 # COMBINED MASS GRIDS
@@ -143,7 +163,7 @@ def get_mass_grid(flavour, mode='production'):
 
 def format_mass_for_filename(mass):
     """
-    Convert mass (float) to filename format (e.g., 2.6 -> '2p6', 0.25 -> '0p25')
+    Convert mass (float) to filename format (e.g., 2.6 -> '2p60', 0.25 -> '0p25')
 
     Parameters:
     -----------
@@ -152,9 +172,9 @@ def format_mass_for_filename(mass):
 
     Returns:
     --------
-    str : Mass formatted for filename (e.g., '2p6', '0p25')
+    str : Mass formatted for filename with 2 decimal places (e.g., '2p60', '0p25', '15p00')
     """
-    return f"{mass:.2f}".replace('.', 'p').rstrip('0').rstrip('p')
+    return f"{mass:.2f}".replace('.', 'p')
 
 
 def export_to_bash(flavour, mode='production'):

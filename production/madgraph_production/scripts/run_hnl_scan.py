@@ -71,7 +71,10 @@ FLAVOURS = ['electron', 'muon', 'tau']
 # Number of events per mass point (default run)
 N_EVENTS_DEFAULT = 100000
 
-# K-factor for NLO correction (approximate)
+# K_FACTOR = 1.3 is recorded in summary CSV for reference only.
+# The summary CSV stores LO cross-sections; K-factor is NOT pre-applied.
+# Actual NLO cross-sections used in analysis are defined in:
+#   analysis_pbc/config/production_xsecs.py
 K_FACTOR = 1.3
 
 # Mixing parameter configurations
@@ -492,13 +495,13 @@ def initialize_summary_csv(paths):
     summary_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not summary_path.exists():
-        header = "mass_hnl_GeV,flavour,xsec_pb,xsec_error_pb,k_factor,n_events_generated,csv_path,timestamp"
+        header = "mass_hnl_GeV,flavour,xsec_pb,xsec_error_pb,k_factor,n_events_generated,csv_path,timestamp,status"
         with open(summary_path, 'w') as f:
             f.write(header + '\n')
 
 
 def append_to_summary(paths, flavour, mass, xsec_data, n_events_csv):
-    """Append result to summary CSV"""
+    """Append successful result to summary CSV"""
     summary_path = paths.summary_csv_path()
     # Use just filename since all CSVs are in same directory
     csv_rel_path = paths.csv_path(flavour, mass).name
@@ -512,7 +515,41 @@ def append_to_summary(paths, flavour, mass, xsec_data, n_events_csv):
         f"{K_FACTOR:.2f},"
         f"{n_events_csv},"
         f"{csv_rel_path},"
-        f"{timestamp}"
+        f"{timestamp},"
+        f"SUCCESS"
+    )
+
+    with open(summary_path, 'a') as f:
+        f.write(row + '\n')
+
+
+def append_failure_to_summary(paths, flavour, mass, error_message):
+    """
+    Log failed mass point to summary CSV.
+
+    Args:
+        paths: ProjectPaths object
+        flavour: Lepton flavour
+        mass: HNL mass in GeV
+        error_message: Description of failure
+    """
+    summary_path = paths.summary_csv_path()
+    csv_rel_path = paths.csv_path(flavour, mass).name
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Escape any commas in error message
+    safe_error = error_message.replace('"', "'").replace(',', ';')
+
+    row = (
+        f"{mass:.1f},"
+        f"{flavour},"
+        f"NaN,"
+        f"NaN,"
+        f"{K_FACTOR:.2f},"
+        f"0,"
+        f"{csv_rel_path},"
+        f"{timestamp},"
+        f"FAILED: {safe_error}"
     )
 
     with open(summary_path, 'a') as f:
@@ -562,22 +599,26 @@ def run_single_point(paths, flavour, mass, n_events):
         # Step 1: Generate process directory
         work_dir = generate_process(paths, flavour, mass)
         if work_dir is None:
+            append_failure_to_summary(paths, flavour, mass, "Failed to generate MadGraph process directory")
             return False
 
         # Step 2: Write cards into Cards/ directory
         success = write_cards_to_process(paths, work_dir, flavour, mass, n_events)
         if not success:
+            append_failure_to_summary(paths, flavour, mass, "Failed to write run_card/param_card to process")
             return False
 
         # Step 3: Run event generation
         lhe_file = generate_events(paths, work_dir)
         if lhe_file is None:
+            append_failure_to_summary(paths, flavour, mass, "Failed to generate LHE events (MadGraph error)")
             return False
 
         # Step 4: Extract cross-section
         xsec_data = extract_cross_section(work_dir)
         if xsec_data is None:
             print("  ✗ Failed to extract cross-section")
+            append_failure_to_summary(paths, flavour, mass, "Failed to extract cross-section from MadGraph output")
             return False
 
         print(f"  Cross-section: {xsec_data['xsec_pb']:.3e} ± {xsec_data['xsec_error_pb']:.3e} pb")
@@ -585,6 +626,7 @@ def run_single_point(paths, flavour, mass, n_events):
         # Step 5: Convert LHE → CSV
         n_events_csv = convert_lhe_to_csv(paths, flavour, mass, lhe_file)
         if n_events_csv is None:
+            append_failure_to_summary(paths, flavour, mass, "Failed to convert LHE to CSV")
             return False
 
         # Step 6: Update summary
@@ -600,6 +642,7 @@ def run_single_point(paths, flavour, mass, n_events):
         print(f"  ✗ Failed: {e}")
         import traceback
         traceback.print_exc()
+        append_failure_to_summary(paths, flavour, mass, f"Unhandled exception: {str(e)}")
         return False
 
 

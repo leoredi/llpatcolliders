@@ -55,17 +55,44 @@ def find_production_files(sim_dir, flavour=None):
     return files_by_mass
 
 
+def normalize_boost_column(df):
+    """
+    Normalize boost factor column naming for backward compatibility.
+
+    Production CSVs generated before Dec 2025 used 'boost_gamma'.
+    Current production uses 'beta_gamma' (physically correct: βγ = p/m, not γ = E/m).
+    This function ensures both formats are accepted.
+
+    Args:
+        df: DataFrame loaded from production CSV
+
+    Returns:
+        DataFrame with 'beta_gamma' column (renames 'boost_gamma' if present)
+    """
+    if 'boost_gamma' in df.columns and 'beta_gamma' not in df.columns:
+        df = df.rename(columns={'boost_gamma': 'beta_gamma'})
+    elif 'boost_gamma' in df.columns and 'beta_gamma' in df.columns:
+        # Both present - drop the legacy column
+        df = df.drop(columns=['boost_gamma'])
+    # If only beta_gamma present, no action needed
+    return df
+
+
 def combine_csvs(csv_paths, output_path):
     """
     Combine multiple CSV files into one, preserving all columns.
 
     All files should have the same column structure (Pythia/MadGraph format):
-    event, weight, hnl_id, parent_pdg, pt, eta, phi, p, E, mass, prod_x_mm, prod_y_mm, prod_z_mm, boost_gamma
+    event, weight, hnl_id, parent_pdg, pt, eta, phi, p, E, mass, prod_x_mm, prod_y_mm, prod_z_mm, beta_gamma
+
+    Note: Legacy files using 'boost_gamma' column name are automatically converted to 'beta_gamma'.
     """
     dfs = []
 
     for regime, path in csv_paths:
         df = pd.read_csv(path)
+        # Normalize column naming for backward compatibility
+        df = normalize_boost_column(df)
         # Add regime column for tracking
         df['source_regime'] = regime
         dfs.append(df)

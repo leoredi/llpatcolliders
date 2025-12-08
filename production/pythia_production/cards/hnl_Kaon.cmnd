@@ -41,8 +41,9 @@ WeakSingleBoson:all = off
 ! -------------------------------------------------------------------------
 ! 4) HNL Definition
 ! -------------------------------------------------------------------------
-! NOTE: HNL particle (9900015) is defined in C++ code, not here.
+! NOTE: HNL particle (PDG ID 9900012) is defined in C++ code, not here.
 ! This keeps mass/lifetime as single source of truth.
+! PDG 9900012 matches MadGraph convention for consistency across production modes.
 
 ! -------------------------------------------------------------------------
 ! 5) Output Control

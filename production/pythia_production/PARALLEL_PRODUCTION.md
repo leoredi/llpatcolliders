@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Pythia production stage generates ~150 HNL samples (different masses and flavours) which takes **~20 hours on a single core**. The parallel production script reduces this to **~2-3 hours** on an 8-core machine.
+The Pythia production stage now generates ~200 HNL samples (different masses and flavours, including tau `fromTau` mode) which takes **~33 hours on a single core**. The parallel production script reduces this to **~4-5 hours** on an 8-core machine.
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ cd production/pythia_production
 - Runs the meson production grid (electron, muon, tau)
 - Runs jobs in parallel (respects `MAX_PARALLEL` limit)
 - Each job: 100k events → ~10 minutes
-- Total time: ~2-3 hours (vs ~20 hours sequential)
+- Total time: ~4-5 hours on 8 cores (vs ~33 hours sequential)
 
 **Output:**
 - CSV files: `../../output/csv/simulation/HNL_*.csv` (from `production/pythia_production`)
@@ -69,7 +69,7 @@ tail -f ../../output/logs/simulation/production_run_*.log
 After completion:
 
 ```bash
-# Count output files (should be ~150)
+# Count output files (should be ~200 with fromTau enabled)
 ls ../../output/csv/simulation/HNL_*.csv | wc -l
 
 # Check for failures
@@ -128,10 +128,10 @@ HNL_2p6GeV_muon_direct_20251202_143022.log
 
 | CPU Cores | MAX_PARALLEL | Time (est.) | Speedup |
 |-----------|--------------|-------------|---------|
-| 1 (single)| 1           | ~20 hours   | 1×      |
-| 4 cores   | 3           | ~7 hours    | 3×      |
-| 8 cores   | 7           | ~3 hours    | 7×      |
-| 16 cores  | 14          | ~1.5 hours  | 13×     |
+| 1 (single)| 1           | ~33 hours   | 1×      |
+| 4 cores   | 3           | ~11 hours   | 3×      |
+| 8 cores   | 7           | ~5 hours    | 6.5×    |
+| 16 cores  | 14          | ~2.5 hours  | 13×     |
 
 **Notes:**
 - Time per job varies: kaon (5 min) < charm (8 min) < beauty (12 min)
@@ -211,7 +211,7 @@ done
 ```
 
 ✅ **Pros:** Simple, safe, guaranteed order
-❌ **Cons:** Very slow (~20 hours)
+❌ **Cons:** Very slow (~33 hours)
 
 ### Parallel (run_parallel_production.sh)
 
@@ -223,7 +223,7 @@ done
 wait  # Wait for all jobs
 ```
 
-✅ **Pros:** Fast (~3 hours), efficient CPU usage
+✅ **Pros:** Fast (~4-5 hours on 8 cores), efficient CPU usage
 ❌ **Cons:** More complex, requires monitoring
 
 ## Best Practices

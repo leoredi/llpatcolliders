@@ -212,7 +212,7 @@ Missing ~1% of charm production. Acceptable **IF** the missing states:
 
 ### ⚠️ ISSUE #4: Double Counting Risk Between Production Channels
 
-**Status:** ⚠️ **MITIGATED** — Code handles correctly, but needs verification
+**Status:** ⚠️ **OPEN** — Mitigation removed; needs review/decision
 
 **Files:**
 - `analysis_pbc/limits/combine_production_channels.py`
@@ -228,28 +228,17 @@ In the transition region (4-8 GeV), HNLs can be produced from:
 - Does Pythia D-meson sample include cascade D from tau decays?
 - Does MadGraph W → τN include subsequent D production?
 
-**Mitigation in Code:**
-
-```python
-# Line 432: Skips "_fromTau" files to avoid double counting
-if "_fromTau" not in f.name:
-    files.append((mass_val, mass_str, regime, f))
-```
-
-**Why This Works:**
-
-The analysis uses **per-parent counting**:
-```python
-N_sig = Σ_parents [ L × σ(parent) × BR(parent→ℓN) × ε_geom(parent) ]
-```
-
-Each parent species (B0, W+, Z) is weighted by its **own** cross-section and branching ratio. No double-counting at the formula level.
+**Current Code Behavior (Jan 2025):**
+- The file matcher now **includes** both `_direct` and `_fromTau` CSVs:
+  - Regex: `HNL_..._(kaon|charm|beauty|ew)(?:_direct|_fromTau)?\.csv`
+  - No filter drops `_fromTau` files; both modes are combined.
+- Per-parent counting still avoids mixing parents inside one CSV, but tau cascades could be counted alongside direct W/Z if both channels are present.
 
 **Action Items:**
-- Verify Pythia generation: does `HNL_*_beauty.csv` include pp → W → τ → D → N?
-- Check MadGraph generation: does it stop at W → τN or continue cascade?
-- Cross-check event counts in overlap region (4-8 GeV)
-- Document Pythia/MadGraph generation settings
+- Decide policy: either (a) drop `_fromTau` when combining with EW, or (b) justify inclusion.
+- If keeping `_fromTau`, document that per-parent weights still prevent double counting of W/Z vs meson parents and quantify any residual overlap.
+- If dropping, reintroduce an explicit filter in `combine_production_channels.py` and document it in DOUBLE_COUNTING_FIX.md.
+- Cross-check event counts in overlap region (4-8 GeV) to confirm negligible bias.
 
 **Reference:**
 - Full explanation: `analysis_pbc/tests/debugging/DOUBLE_COUNTING_FIX.md`

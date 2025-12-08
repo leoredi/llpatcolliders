@@ -27,6 +27,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NEVENTS=100000
 MAX_PARALLEL=8  # Adjust based on your CPU cores (leave 1-2 for system)
 
+# Kinematic threshold for tau → π N cascade production
+# m_N < m_τ - m_π = 1.777 - 0.140 = 1.637 GeV
+FROMTAU_MASS_THRESHOLD=1.64  # Conservative rounding of 1.637 GeV
+
 # Pythia library path (pythia sits inside production/pythia_production/)
 PYTHIA_ROOT="$SCRIPT_DIR/pythia8315"
 export DYLD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${DYLD_LIBRARY_PATH:-}"
@@ -130,8 +134,9 @@ count_tau_runs() {
     local count=0
     for mass in "${TAU_MASSES[@]}"; do
         count=$((count + 1))
-        # Check if this mass needs fromTau mode (m < 1.64 GeV)
-        if (( $(echo "$mass < 1.64" | bc -l) )); then
+        # fromTau mode: τ → π N cascade production
+        # Kinematic limit: m_N < m_τ - m_π ≈ 1.637 GeV
+        if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
             count=$((count + 1))
         fi
     done
@@ -222,8 +227,8 @@ if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
         completed_jobs=$((completed_jobs + 1))
         echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (direct)" | tee -a "$LOGFILE"
 
-        # MODE B: fromTau cascade (only m < 1.64 GeV)
-        if (( $(echo "$mass < 1.64" | bc -l) )); then
+        # MODE B: fromTau cascade (τ → π N, only kinematically allowed for m_N < m_τ - m_π)
+        if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
             wait_for_slot
             run_production_job "$mass" "tau" "fromTau" &
             completed_jobs=$((completed_jobs + 1))

@@ -18,14 +18,26 @@ load_mass_grid() {
     local flavour=$1
     local mode=${2:-meson}  # Default to meson mode
 
-    # Get masses from Python config and convert to bash array
+    # Capture stdout only, redirect stderr to /dev/null to avoid polluting output
     local masses_str=$(cd "$PROJECT_ROOT" && $PYTHON -c "
 from config_mass_grid import get_mass_grid
 masses = get_mass_grid('$flavour', '$mode')
 print(' '.join(f'{m:.2f}' for m in masses))
-")
+" 2>/dev/null)
 
-    # Convert space-separated string to array
+    # Validate output contains only numbers, dots, and spaces
+    if [[ -z "$masses_str" ]]; then
+        echo "ERROR: Empty mass grid returned for $flavour $mode" >&2
+        echo "()"
+        return 1
+    fi
+
+    if [[ ! "$masses_str" =~ ^[0-9.\ ]+$ ]]; then
+        echo "ERROR: Invalid mass grid format for $flavour $mode: $masses_str" >&2
+        echo "()"
+        return 1
+    fi
+
     echo "($masses_str)"
 }
 
@@ -38,6 +50,20 @@ print(' '.join(f'{m:.2f}' for m in masses))
 eval "ELECTRON_MASSES_MESON=$(load_mass_grid electron meson)"
 eval "MUON_MASSES_MESON=$(load_mass_grid muon meson)"
 eval "TAU_MASSES_MESON=$(load_mass_grid tau meson)"
+
+# Validate arrays were loaded successfully
+if [ ${#ELECTRON_MASSES_MESON[@]} -eq 0 ]; then
+    echo "FATAL: Failed to load ELECTRON_MASSES_MESON from config_mass_grid.py" >&2
+    exit 1
+fi
+if [ ${#MUON_MASSES_MESON[@]} -eq 0 ]; then
+    echo "FATAL: Failed to load MUON_MASSES_MESON from config_mass_grid.py" >&2
+    exit 1
+fi
+if [ ${#TAU_MASSES_MESON[@]} -eq 0 ]; then
+    echo "FATAL: Failed to load TAU_MASSES_MESON from config_mass_grid.py" >&2
+    exit 1
+fi
 
 # Print loaded grids (for debugging)
 if [ "${VERBOSE_MASS_GRID:-0}" -eq 1 ]; then

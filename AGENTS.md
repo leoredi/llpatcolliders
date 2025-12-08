@@ -97,14 +97,14 @@ python config_mass_grid.py  # View all grids
 ```
 
 **Production grids (base + closure):**
-- Electron: 50 points (0.2-5.5 GeV)
-- Muon: 50 points (0.2-5.5 GeV)
-- Tau: 37 points (0.5-4.4 GeV)
+- Electron: 75 points (0.2-17 GeV common grid)
+- Muon: 75 points (0.2-17 GeV common grid)
+- Tau: 31 points (m < 3.5 GeV, tau kinematic cap)
 
 **EW grids (MadGraph):**
-- Electron: 15 points (5-80 GeV)
-- Muon: 13 points (5-80 GeV)
-- Tau: 11 points (6-80 GeV)
+- Electron: 75 points (common grid, currently up to 17 GeV)
+- Muon: 75 points (common grid, currently up to 17 GeV)
+- Tau: 75 points (common grid, currently up to 17 GeV)
 
 ---
 
@@ -112,7 +112,7 @@ python config_mass_grid.py  # View all grids
 
 **Pythia/MadGraph Output:**
 ```csv
-event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,boost_gamma
+event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,beta_gamma
 ```
 
 **Key columns for analysis:**

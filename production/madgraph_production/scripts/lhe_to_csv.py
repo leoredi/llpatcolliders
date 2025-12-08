@@ -141,6 +141,29 @@ class LHEParser:
 
         print(f"Parsed {event_id} events from {self.lhe_path.name}")
 
+    def _find_parent_boson(self, particles, hnl):
+        """
+        Traverse mother chain to find parent W/Z boson.
+
+        Args:
+            particles: List of particle dicts from LHE event
+            hnl: HNL particle dict
+
+        Returns:
+            int: PDG ID of parent W/Z, or 0 if not found
+        """
+        visited = set()
+        current_idx = hnl['mother1']
+
+        while 1 <= current_idx <= len(particles) and current_idx not in visited:
+            visited.add(current_idx)
+            parent = particles[current_idx - 1]  # LHE indices are 1-based
+            if parent['pdgid'] in [self.PDG_WPLUS, self.PDG_WMINUS, self.PDG_Z]:
+                return parent['pdgid']
+            current_idx = parent['mother1']
+
+        return 0  # Parent boson not found in chain
+
     def _extract_hnl(self, particles, event_id, weight):
         """
         Extract HNL 4-vector and parent info from particle list
@@ -179,12 +202,9 @@ class LHEParser:
             if parent_candidate['pdgid'] in [self.PDG_WPLUS, self.PDG_WMINUS, self.PDG_Z]:
                 parent_pdg = parent_candidate['pdgid']
 
-        # Fallback: search all particles for W/Z
+        # Fallback: traverse mother chain to find parent W/Z
         if parent_pdg == 0:
-            for p in particles:
-                if p['pdgid'] in [self.PDG_WPLUS, self.PDG_WMINUS, self.PDG_Z]:
-                    parent_pdg = p['pdgid']
-                    break
+            parent_pdg = self._find_parent_boson(particles, hnl)
 
         # Extract 4-momentum
         px = hnl['px']
@@ -196,17 +216,24 @@ class LHEParser:
         pt = math.sqrt(px**2 + py**2)
         p = math.sqrt(px**2 + py**2 + pz**2)
 
-        # Eta (pseudorapidity): η = -ln(tan(θ/2)) = 0.5 * ln((|p|+pz)/(|p|-pz))
-        if abs(p - abs(pz)) < 1e-10:  # Avoid division by zero
+        # Eta (pseudorapidity): η = -ln(tan(θ/2))
+        # Use theta-based calculation for numerical stability (avoids log of negative numbers)
+        if pt < 1e-10:
             eta = 999.0 if pz > 0 else -999.0
         else:
-            eta = 0.5 * math.log((p + pz) / (p - pz))
+            theta = math.atan2(pt, pz)
+            if theta < 1e-10:
+                eta = 999.0
+            elif theta > math.pi - 1e-10:
+                eta = -999.0
+            else:
+                eta = -math.log(math.tan(theta / 2.0))
 
         # Phi (azimuthal angle)
         phi = math.atan2(py, px)
 
-        # Boost factor: β γ = p / m
-        boost_gamma = p / self.mass_gev if self.mass_gev > 0 else 0.0
+        # Boost factor: β γ = p / m (NOT the Lorentz factor γ = E / m)
+        beta_gamma = p / self.mass_gev if self.mass_gev > 0 else 0.0
 
         # Production vertex: MadGraph produces at IP, so (0,0,0) in mm
         prod_x_mm = 0.0
@@ -228,7 +255,7 @@ class LHEParser:
             'prod_x_mm': prod_x_mm,
             'prod_y_mm': prod_y_mm,
             'prod_z_mm': prod_z_mm,
-            'boost_gamma': boost_gamma,
+            'beta_gamma': beta_gamma,
         }
 
     def write_csv(self, output_path):
@@ -236,7 +263,7 @@ class LHEParser:
         Parse LHE and write CSV file
 
         Output format EXACTLY matches Pythia CSV from meson production:
-        event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,boost_gamma
+        event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,beta_gamma
 
         Args:
             output_path: Path to output CSV file
@@ -248,7 +275,7 @@ class LHEParser:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # CSV header (EXACT Pythia format for analysis pipeline compatibility)
-        header = "event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,boost_gamma"
+        header = "event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,beta_gamma"
 
         n_events = 0
         n_no_parent = 0  # Count events where parent W/Z not found
@@ -276,7 +303,7 @@ class LHEParser:
                     f"{event['prod_x_mm']:.6g},"
                     f"{event['prod_y_mm']:.6g},"
                     f"{event['prod_z_mm']:.6g},"
-                    f"{event['boost_gamma']:.6g}"
+                    f"{event['beta_gamma']:.6g}"
                 )
                 f.write(row + '\n')
                 n_events += 1

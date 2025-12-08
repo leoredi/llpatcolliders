@@ -18,6 +18,11 @@ Block ckmblock
     4 1.200000e+00 # del13 
 
 ###################################
+## PDG ID Convention: HNL uses 9900012 (n1 = lightest HNL)
+## This matches the SM_HeavyN_CKM_AllMasses_LO model convention
+## and ensures consistency between MadGraph (EW) and Pythia (meson) production.
+## Note: Some experiments use 9900015 (SHiP/MATHUSLA), but we standardize on 9900012.
+
 ## INFORMATION FOR MASS
 ###################################
 Block mass 
