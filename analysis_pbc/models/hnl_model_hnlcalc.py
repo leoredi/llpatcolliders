@@ -251,8 +251,45 @@ class HNLModel:
                 )
 
                 # Accumulate for this parent
-                parent_abs = abs(pid0)
-                br_per_parent[parent_abs] = br_per_parent.get(parent_abs, 0.0) + br_value
+            parent_abs = abs(pid0)
+            br_per_parent[parent_abs] = br_per_parent.get(parent_abs, 0.0) + br_value
+
+        # ----------------------------------------------------------------
+        # ADD TAU → π N PRODUCTION BR (for "fromTau" samples)
+        # ----------------------------------------------------------------
+        # Pythia "fromTau" production uses τ → π N as the representative
+        # decay channel; without an explicit BR here those events would
+        # contribute zero signal. We use the leading-order expression from
+        # Atre et al. (arXiv:0901.3589 / 1805.08567 Eq. 2.19) for
+        # τ → π N:
+        #   Γ = |U_tau|² * (G_F² f_π² |V_ud|² m_τ³ / 16π) *
+        #       λ^(1/2)(1, r_π², r_N²) *
+        #       [(1 + r_N² - r_π²)(1 + r_N²) - 4 r_N²]
+        # BR = Γ / Γ_total(τ)
+        m_tau = 1.77686  # GeV
+        m_pi = 0.13957   # GeV (charged pion)
+        if mass < m_tau - m_pi and self.Utau2 > 0.0:
+            G_F = 1.1663787e-5  # GeV^-2
+            f_pi = 0.1302       # GeV
+            V_ud = 0.97420
+            gamma_tau_total = 2.267e-12  # GeV (from PDG lifetime)
+
+            r_N = mass / m_tau
+            r_pi = m_pi / m_tau
+            # Källén function λ^(1/2)
+            kallen = np.sqrt(max(0.0, (1.0 - (r_N + r_pi) ** 2) * (1.0 - (r_N - r_pi) ** 2)))
+            matrix_elem = ((1 + r_N**2 - r_pi**2) * (1 + r_N**2) - 4 * r_N**2)
+
+            width_tau_pi_N = (
+                self.Utau2
+                * (G_F**2 * f_pi**2 * (V_ud**2) * (m_tau**3) / (16.0 * np.pi))
+                * kallen
+                * matrix_elem
+            )
+
+            br_tau_pi_N = width_tau_pi_N / gamma_tau_total if gamma_tau_total > 0 else 0.0
+            # Guard against tiny negative due to numerical precision
+            br_per_parent[15] = max(br_tau_pi_N, 0.0)
 
         # ----------------------------------------------------------------
         # ADD W AND Z BOSON PRODUCTION BRs (not in HNLCalc database)

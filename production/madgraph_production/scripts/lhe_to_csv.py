@@ -169,7 +169,8 @@ class LHEParser:
         Extract HNL 4-vector and parent info from particle list
 
         Attempts to extract parent W/Z if present in LHE. If not found
-        (can happen for off-shell bosons), uses default parent_pdg=0.
+        (can happen for off-shell bosons), we fall back to W (24) to
+        avoid dropping the event downstream.
 
         Output format matches Pythia CSV for analysis pipeline compatibility.
 
@@ -195,6 +196,7 @@ class LHEParser:
 
         # Try to find parent W/Z (may not exist if off-shell)
         parent_pdg = 0  # Default if not found
+        parent_inferred = False
         mother1_idx = hnl['mother1']
 
         if 1 <= mother1_idx <= len(particles):
@@ -205,6 +207,11 @@ class LHEParser:
         # Fallback: traverse mother chain to find parent W/Z
         if parent_pdg == 0:
             parent_pdg = self._find_parent_boson(particles, hnl)
+
+        # If still unknown (off-shell boson removed from record), default to W
+        if parent_pdg == 0:
+            parent_pdg = self.PDG_WPLUS  # use +24 as neutral sign choice
+            parent_inferred = True
 
         # Extract 4-momentum
         px = hnl['px']
@@ -246,6 +253,7 @@ class LHEParser:
             'weight': weight,
             'hnl_id': self.PDG_HNL_N1,
             'parent_pdg': parent_pdg,
+            'parent_inferred': parent_inferred,
             'pt': pt,
             'eta': eta,
             'phi': phi,
@@ -279,6 +287,7 @@ class LHEParser:
 
         n_events = 0
         n_no_parent = 0  # Count events where parent W/Z not found
+        n_parent_inferred = 0  # Count events where we defaulted parent to W
 
         with open(output_path, 'w') as f:
             f.write(header + '\n')
@@ -287,6 +296,8 @@ class LHEParser:
                 # Track missing parents
                 if event['parent_pdg'] == 0:
                     n_no_parent += 1
+                if event.get('parent_inferred', False):
+                    n_parent_inferred += 1
 
                 # Write CSV row (EXACT format, values NOT in scientific notation for compatibility)
                 row = (
@@ -312,6 +323,8 @@ class LHEParser:
         if n_no_parent > 0:
             print(f"  Warning: {n_no_parent}/{n_events} events had parent_pdg=0 (W/Z not in LHE)")
             print(f"           This is expected for off-shell bosons (controlled by bw_cut)")
+        if n_parent_inferred > 0:
+            print(f"  Note: {n_parent_inferred}/{n_events} events inferred parent_pdg=24 (off-shell W/Z not explicit in LHE)")
 
         return n_events
 

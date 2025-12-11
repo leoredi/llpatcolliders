@@ -57,7 +57,7 @@ def find_production_files(sim_dir, flavour=None):
         dict: {mass_val: [(regime, filepath), ...]}
     """
     # Accept both 1 and 2 decimal formats during transition: 5p0 or 5p00
-    pattern = re.compile(r"HNL_([0-9]+p[0-9]{1,2})GeV_([a-z]+)_(kaon|charm|beauty|ew)(?:_direct|_fromTau)?\.csv")
+    pattern = re.compile(r"HNL_([0-9]+p[0-9]{1,2})GeV_([a-z]+)_((?:kaon|charm|beauty|ew)(?:_ff)?)(?:_direct|_fromTau)?\.csv")
 
     files_by_mass = defaultdict(list)
 
@@ -69,7 +69,7 @@ def find_production_files(sim_dir, flavour=None):
         if match:
             mass_str = match.group(1)
             file_flavour = match.group(2)
-            regime = match.group(3)
+            regime = match.group(3)  # e.g., beauty or beauty_ff
 
             if flavour and file_flavour != flavour:
                 continue
@@ -78,6 +78,21 @@ def find_production_files(sim_dir, flavour=None):
             files_by_mass[(mass_val, file_flavour)].append((regime, f))
 
     return files_by_mass
+
+
+def prefer_ff(regime_files):
+    """
+    If both base and *_ff versions exist for the same regime, keep only the *_ff version.
+    regime_files: list of (regime, path)
+    Returns filtered list.
+    """
+    chosen = {}
+    for regime, path in regime_files:
+        base = regime.replace("_ff", "")
+        keep_current = base not in chosen or regime.endswith("_ff")
+        if keep_current:
+            chosen[base] = (regime, path)
+    return list(chosen.values())
 
 
 def normalize_boost_column(df):
@@ -162,6 +177,10 @@ def main():
 
     # Find all files grouped by mass
     files_by_mass = find_production_files(sim_dir, args.flavour)
+    # Prefer *_ff replacements over base regimes to avoid double counting
+    files_by_mass = {
+        key: prefer_ff(regimes) for key, regimes in files_by_mass.items()
+    }
 
     # Find masses with multiple production channels
     multi_channel_masses = {k: v for k, v in files_by_mass.items() if len(v) > 1}

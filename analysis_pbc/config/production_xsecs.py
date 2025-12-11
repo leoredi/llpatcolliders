@@ -107,10 +107,11 @@ def get_parent_sigma_pb(parent_pdg: int) -> float:
     pid = abs(int(parent_pdg))
 
     # --- KAON SECTOR (Light QCD) ---
+    # NOTE: Only K± (321) is configured in Pythia for HNL production.
+    # K_S (310) and K_L (130) are NOT configured, so we don't include them here
+    # to avoid inconsistency (having xsec but no events).
     if pid == 321:  # K+ / K-
         return SIGMA_KAON_PB
-    if pid in [130, 310]:  # KL0, KS0
-        return SIGMA_KAON_PB * 0.5  # Neutral kaons are roughly half
 
     # --- CHARM SECTOR ---
     if pid == 421:  # D0 / D0bar

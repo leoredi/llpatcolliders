@@ -75,6 +75,7 @@ def expected_signal_events(
     eps2: float,
     benchmark: str,
     lumi_fb: float,
+    dirac: bool = False,
 ) -> float:
     """
     Compute expected signal events N_sig using per-parent counting.
@@ -112,6 +113,9 @@ def expected_signal_events(
         Coupling pattern: "100" (electron), "010" (muon), "001" (tau)
     lumi_fb : float
         Integrated luminosity in fb⁻¹
+    dirac : bool
+        If True, multiply yield by 2 for Dirac HNL interpretation (N ≠ N̄).
+        Default False assumes Majorana HNL.
 
     Returns
     -------
@@ -229,6 +233,10 @@ def expected_signal_events(
         print(f"[WARN] Mass {mass_GeV:.2f} GeV: {len(missing_xsec_pdgs)} parent PDG(s) have no cross-section: {missing_xsec_pdgs}")
         print(f"       → Discarding {n_lost} events (silent data loss)")
 
+    # Dirac HNL: factor 2 because N ≠ N̄ (both produced, both can decay visibly)
+    if dirac:
+        total_expected *= 2.0
+
     return float(total_expected)
 
 
@@ -242,8 +250,9 @@ def scan_eps2_for_mass(
     benchmark: str,
     lumi_fb: float,
     N_limit: float = 2.996,
+    dirac: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
-    
+
     # Log grid from 1e-12 to 1e-2
     eps2_grid = np.logspace(-12, -2, 100)
     Nsig = np.zeros_like(eps2_grid, dtype=float)
@@ -255,6 +264,7 @@ def scan_eps2_for_mass(
             eps2=float(eps2),
             benchmark=benchmark,
             lumi_fb=lumi_fb,
+            dirac=dirac,
         )
 
     mask = Nsig >= N_limit

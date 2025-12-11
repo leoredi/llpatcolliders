@@ -4,13 +4,16 @@ Serial version of u2_limit_calculator (no multiprocessing)
 Regenerates HNL_U2_limits_summary.csv from today's simulation data
 
 Usage:
-    python run_serial.py              # Serial processing
+    python run_serial.py              # Serial processing (Majorana, default)
     python run_serial.py --parallel   # Parallel processing (uses all cores)
     python run_serial.py --parallel --workers 8  # Use 8 cores
+    python run_serial.py --dirac      # Dirac HNL interpretation (×2 yield)
 """
 
 import sys
 import re
+import os
+import tempfile
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -48,10 +51,11 @@ def couplings_from_eps2(eps2, benchmark):
     else:
         raise ValueError(f"Unknown benchmark: {benchmark}")
 
-def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files):
+def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files, dirac=False):
     """
     Process one mass point, combining all available production regimes (kaon/charm/beauty/ew).
     sim_files: list of tuples (sim_csv_path, regime)
+    dirac: if True, multiply yield by 2 for Dirac HNL interpretation
     """
     print(f"\n[{flavour} {mass_val} GeV] Processing ({len(sim_files)} production file(s))...")
 
@@ -77,9 +81,11 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files)
             print(f"  Computing geometry for {sim_csv.name} (caching to {geom_csv.name})...")
             geom_df = preprocess_hnl_csv(sim_csv, mesh)
 
-            # Double-check pattern to prevent race condition in parallel execution
-            if not geom_csv.exists():
-                geom_df.to_csv(geom_csv, index=False)
+            # Atomic write to prevent race condition in parallel execution
+            with tempfile.NamedTemporaryFile(mode='w', dir=geom_csv.parent,
+                                              suffix='.tmp', delete=False) as tmp:
+                geom_df.to_csv(tmp.name, index=False)
+            os.replace(tmp.name, geom_csv)
 
         n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
         print(f"  Loaded {len(geom_df)} HNLs from {regime}, {n_hits} hit detector")
@@ -102,7 +108,7 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files)
     N_scan = []
 
     for eps2 in eps2_scan:
-        N = expected_signal_events(geom_df, mass_val, eps2, benchmark, lumi_fb)
+        N = expected_signal_events(geom_df, mass_val, eps2, benchmark, lumi_fb, dirac=dirac)
         N_scan.append(N)
 
     N_scan = np.array(N_scan)
@@ -137,7 +143,7 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files)
         "peak_events": peak_events
     }
 
-def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None):
+def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None, dirac=False):
     """Run scan for one flavour"""
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
@@ -145,7 +151,7 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None)
 
     # Find simulation files
     # Accept both 1 and 2 decimal formats: 5p0 or 5p00 (transitioning to 2-decimal standard)
-    pattern = re.compile(rf"HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_(kaon|charm|beauty|ew|combined)(?:_direct|_fromTau)?\.csv")
+    pattern = re.compile(rf"HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_((?:kaon|charm|beauty|ew|combined)(?:_ff)?)(?:_direct|_fromTau)?\.csv")
 
     files = []
     for f in SIM_DIR.glob(f"*{flavour}*.csv"):
@@ -162,8 +168,20 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None)
 
     # Group by mass to combine production channels
     files_by_mass = {}
+    # Prefer *_ff replacements over base regimes to avoid double counting
     for mass_val, mass_str, regime, path in files:
-        files_by_mass.setdefault((mass_val, mass_str), []).append((path, regime))
+        base_regime = regime.replace("_ff", "")
+        key = (mass_val, mass_str)
+        if key not in files_by_mass:
+            files_by_mass[key] = {}
+        # Prefer ff version if both exist
+        if base_regime not in files_by_mass[key] or regime.endswith("_ff"):
+            files_by_mass[key][base_regime] = (path, regime)
+
+    # Flatten dict for processing
+    files_by_mass = {
+        k: list(v.values()) for k, v in files_by_mass.items()
+    }
 
     mass_points = sorted(files_by_mass.keys(), key=lambda x: x[0])
     print(f"Found {len(mass_points)} mass points")
@@ -178,7 +196,7 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None)
         args_list = []
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
-            args_list.append((mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list))
+            args_list.append((mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac))
 
         # Process in parallel
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
@@ -190,7 +208,7 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None)
         results = []
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
-            res = scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list)
+            res = scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac=dirac)
             if res:
                 results.append(res)
 
@@ -204,11 +222,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate U² limits for HNL search")
     parser.add_argument("--parallel", action="store_true", help="Use parallel processing")
     parser.add_argument("--workers", type=int, default=None, help="Number of workers (default: all CPU cores)")
+    parser.add_argument("--dirac", action="store_true", help="Dirac HNL interpretation (×2 yield vs Majorana)")
     args = parser.parse_args()
 
     mode_str = f"PARALLEL ({args.workers if args.workers else multiprocessing.cpu_count()} workers)" if args.parallel else "SERIAL"
+    hnl_type = "DIRAC" if args.dirac else "MAJORANA"
     print("="*60)
-    print(f"U² LIMIT CALCULATOR ({mode_str})")
+    print(f"U² LIMIT CALCULATOR ({mode_str}, {hnl_type})")
     print("="*60)
 
     GEOM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -221,7 +241,7 @@ if __name__ == "__main__":
 
     # Process each flavour
     for flavour, benchmark in [("electron", "100"), ("muon", "010"), ("tau", "001")]:
-        df = run_flavour(flavour, benchmark, L_HL_LHC_FB, use_parallel=args.parallel, n_workers=args.workers)
+        df = run_flavour(flavour, benchmark, L_HL_LHC_FB, use_parallel=args.parallel, n_workers=args.workers, dirac=args.dirac)
         all_results.append(df)
 
     # Combine and save

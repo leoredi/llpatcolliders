@@ -382,6 +382,19 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     } else if (verbose) {
         std::cout << "  Λb -> Λc ℓ N : DISABLED (kinematically forbidden)" << std::endl;
     }
+
+    // Λc -> Λ ℓ+ N (baryon semileptonic)
+    double mLambda0 = 1.115;  // Lambda^0 mass
+    if (mHNL + mLepton + mLambda0 < mLc) {
+        pythia.readString("4122:onMode = off");
+        pythia.readString("4122:addChannel = 1 1.0 0 3122 " + lep + " " + hnl);
+        pythia.readString("-4122:onMode = off");
+        pythia.readString("-4122:addChannel = 1 1.0 0 -3122 " + lepBar + " " + hnl);
+        if (verbose) std::cout << "  Λc -> Λ ℓ N : ENABLED (3-body)" << std::endl;
+        nChannelsConfigured++;
+    } else if (verbose) {
+        std::cout << "  Λc -> Λ ℓ N : DISABLED (kinematically forbidden)" << std::endl;
+    }
     
     if (verbose) {
         std::cout << "Total channels configured: " << nChannelsConfigured << std::endl;
@@ -422,9 +435,34 @@ void configureTauDecays(Pythia& pythia, double mHNL, bool verbose = true) {
 
     // τ- → π- N (2-body, representative mode for acceptance)
     double mPi = 0.140;  // charged pion
+    double mRho = 0.775; // rho mass for harder spectrum representative
+    double m3Pi = 3 * mPi;
+
+    double pi_weight = 1.0;
+    double rho_weight = 0.0;
+    double tripi_weight = 0.0;
+
+    // Enable rho channel if kinematically allowed; split weight with pion
+    if (mHNL + mRho < mTau) {
+        rho_weight = 0.4;
+        pi_weight = 0.4;
+        pythia.readString("15:addChannel = 1 0.5 0 -213 " + hnl);
+        pythia.readString("-15:addChannel = 1 0.5 0 213 " + hnl);
+        if (verbose) std::cout << "  τ → ρ N : ENABLED" << std::endl;
+    }
+
+    // Add 3π representative if kinematically allowed (harder hadronic)
+    if (mHNL + m3Pi < mTau) {
+        tripi_weight = rho_weight > 0.0 ? 0.2 : 0.3;  // redistribute a slice
+        pi_weight = std::max(0.0, pi_weight - 0.1);    // keep total ≈1
+        pythia.readString("15:addChannel = 1 " + std::to_string(tripi_weight) + " 0 -211 -211 211 " + hnl);
+        pythia.readString("-15:addChannel = 1 " + std::to_string(tripi_weight) + " 0 211 211 -211 " + hnl);
+        if (verbose) std::cout << "  τ → 3π N : ENABLED" << std::endl;
+    }
+
     if (mHNL + mPi < mTau) {
-        pythia.readString("15:addChannel = 1 1.0 0 -211 " + hnl);
-        pythia.readString("-15:addChannel = 1 1.0 0 211 " + hnl);
+        pythia.readString("15:addChannel = 1 " + std::to_string(pi_weight) + " 0 -211 " + hnl);
+        pythia.readString("-15:addChannel = 1 " + std::to_string(pi_weight) + " 0 211 " + hnl);
         if (verbose) std::cout << "  τ → π N : ENABLED" << std::endl;
     } else if (verbose) {
         std::cout << "  τ → π N : DISABLED (kinematically forbidden)" << std::endl;
@@ -432,8 +470,8 @@ void configureTauDecays(Pythia& pythia, double mHNL, bool verbose = true) {
     }
 
     // Note: In reality, τ → N + X has many channels (π, ρ, ℓνν, etc.)
-    // We use one representative mode (τ → π N) for geometric acceptance.
-    // Physical branching ratios will be applied via HNLCalc in analysis.
+    // We use representative modes (π and, when allowed, ρ) for geometric
+    // acceptance. Physical branching ratios are applied via HNLCalc in analysis.
 
     if (verbose) {
         std::cout << "==========================================\n" << std::endl;
@@ -538,25 +576,13 @@ int main(int argc, char* argv[]) {
     }
 
     if (!cardOK) {
-        std::cerr << "Warning: Could not read " << cardFile << std::endl;
-        std::cerr << "Using default settings..." << std::endl;
-
-        // Fallback: set basic parameters directly
-        pythia.readString("Beams:idA = 2212");
-        pythia.readString("Beams:idB = 2212");
-        pythia.readString("Beams:eCM = 14000.");
-        pythia.readString("Tune:pp = 14");
-
-        if (regime == "kaon") {
-            pythia.readString("SoftQCD:nonDiffractive = on");
-        } else if (regime == "charm") {
-            pythia.readString("HardQCD:hardccbar = on");
-        } else if (regime == "beauty") {
-            pythia.readString("HardQCD:hardbbbar = on");
-        }
-    } else {
-        std::cout << "Using card file: " << cardFile << std::endl;
+        std::cerr << "ERROR: Could not read card file '" << cardName << "'" << std::endl;
+        std::cerr << "Searched in: cards/" << cardName << " and ../cards/" << cardName << std::endl;
+        std::cerr << "Card files are required for reproducible physics settings." << std::endl;
+        std::cerr << "Please ensure the cards/ directory is present." << std::endl;
+        return 1;
     }
+    std::cout << "Using card file: " << cardFile << std::endl;
     
     // -----------------------------------------------------------------------
     // Define HNL particle
