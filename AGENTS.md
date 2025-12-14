@@ -241,16 +241,13 @@ cd analysis_pbc
 # Level 0: Math kernel (~1 sec)
 python tests/closure_anubis/test_expected_signal_events_kernel.py
 
-# Level 1: Integration (~30 sec)
-python tests/test_pipeline.py
-
-# Level 2: Physics benchmark (~3 min)
+# Level 1: Physics benchmark (~3 min)
 python tests/test_26gev_muon.py
 ```
 
 **Validation:** 2.6 GeV muon benchmark
-- **Expected:** |Uμ|² ∈ [6.9×10⁻⁹, 2.4×10⁻⁵]
-- **Peak signal:** 2880 events at |Uμ|² ~ 1×10⁻⁶
+- **Expected (repo sample):** |Uμ|² ∈ [5.5×10⁻⁹, 9.5×10⁻⁵]
+- **Peak signal (repo sample):** ~2.8×10⁵ events (EW+meson combined)
 
 ---
 
@@ -287,8 +284,8 @@ rm output/csv/geometry/HNL_*_geom.csv  # Force recompute
 ```
 
 ### 5. Wrong Parent PDGs
-- Check `limits/diagnostic_pdg_coverage.py` for missing BRs
-- PDG 310 (K_S⁰) not in HNLCalc → <0.1% loss
+- Run `limits/run_serial.py` and watch for `[WARN] ... have no HNLCalc BR` / `no cross-section` messages from `limits/expected_signal.py`
+- PDG 310 (K_S⁰) not in HNLCalc → <0.1% loss (events dropped)
 
 ---
 
@@ -339,8 +336,8 @@ ls output/csv/simulation/*.csv | wc -l  # Expected: ~180 files
 find output/csv/simulation/ -name "*.csv" -size 0  # No empty files
 
 # Verify parent PDGs
-awk -F',' 'NR>1 {print $4}' HNL_2p60GeV_muon_beauty.csv | sort | uniq -c
-# Should see: 511 (B⁰), 521 (B±), 531 (Bs)
+awk -F',' 'NR>1 {print $4}' output/csv/simulation/HNL_2p60GeV_muon_combined.csv | sort | uniq -c | head
+# Should include e.g. 511 (B⁰), 521 (B±), 531 (Bs) (and possibly 24/23 if EW is present).
 ```
 
 ---
@@ -352,7 +349,7 @@ awk -F',' 'NR>1 {print $4}' HNL_2p60GeV_muon_beauty.csv | sort | uniq -c
 - `production/madgraph_production/scripts/run_hnl_scan.py` - MadGraph driver
 - `analysis_pbc/limits/combine_production_channels.py` - Combine meson + EW (REQUIRED!)
 - `analysis_pbc/limits/run_serial.py` - Main analysis driver
-- `analysis_pbc/limits/u2_limit_calculator.py` - Legacy single-flavor analysis
+- `analysis_pbc/limits/expected_signal.py` - Signal-yield kernel (expected_signal_events)
 - `config_mass_grid.py` - Mass grid definitions
 
 **Physics:**

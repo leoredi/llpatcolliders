@@ -31,5 +31,8 @@ RUN echo "install pythia8\ninstall lhapdf6\nquit" > /tmp/install_cards.mg5 && \
     $MG5_DIR/bin/mg5_aMC /tmp/install_cards.mg5 && \
     rm /tmp/install_cards.mg5
 
+# Copy the HNL model (SM_HeavyN_CKM_AllMasses_LO) into MadGraph models directory
+COPY mg5/models/SM_HeavyN_CKM_AllMasses_LO $MG5_DIR/models/SM_HeavyN_CKM_AllMasses_LO
+
 # Mount point for your repo
 WORKDIR /work

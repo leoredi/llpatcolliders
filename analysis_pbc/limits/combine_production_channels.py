@@ -54,10 +54,12 @@ def find_production_files(sim_dir, flavour=None):
     Find all production CSV files and group by mass.
 
     Returns:
-        dict: {mass_val: [(regime, filepath), ...]}
+        dict: {(mass_val, flavour): [(base_regime, mode, is_ff, filepath), ...]}
     """
     # Accept both 1 and 2 decimal formats during transition: 5p0 or 5p00
-    pattern = re.compile(r"HNL_([0-9]+p[0-9]{1,2})GeV_([a-z]+)_((?:kaon|charm|beauty|ew)(?:_ff)?)(?:_direct|_fromTau)?\.csv")
+    pattern = re.compile(
+        r"HNL_([0-9]+p[0-9]{1,2})GeV_([a-z]+)_((?:kaon|charm|beauty|ew)(?:_ff)?)(?:_(direct|fromTau))?\.csv"
+    )
 
     files_by_mass = defaultdict(list)
 
@@ -70,12 +72,15 @@ def find_production_files(sim_dir, flavour=None):
             mass_str = match.group(1)
             file_flavour = match.group(2)
             regime = match.group(3)  # e.g., beauty or beauty_ff
+            mode = match.group(4)    # direct/fromTau (tau only) or None
 
             if flavour and file_flavour != flavour:
                 continue
 
             mass_val = float(mass_str.replace('p', '.'))
-            files_by_mass[(mass_val, file_flavour)].append((regime, f))
+            is_ff = regime.endswith("_ff")
+            base_regime = regime.replace("_ff", "")
+            files_by_mass[(mass_val, file_flavour)].append((base_regime, mode, is_ff, f))
 
     return files_by_mass
 
@@ -83,15 +88,15 @@ def find_production_files(sim_dir, flavour=None):
 def prefer_ff(regime_files):
     """
     If both base and *_ff versions exist for the same regime, keep only the *_ff version.
-    regime_files: list of (regime, path)
+    regime_files: list of (base_regime, mode, is_ff, path)
     Returns filtered list.
     """
     chosen = {}
-    for regime, path in regime_files:
-        base = regime.replace("_ff", "")
-        keep_current = base not in chosen or regime.endswith("_ff")
+    for base_regime, mode, is_ff, path in regime_files:
+        key = (base_regime, mode)
+        keep_current = key not in chosen or is_ff
         if keep_current:
-            chosen[base] = (regime, path)
+            chosen[key] = (base_regime, mode, is_ff, path)
     return list(chosen.values())
 
 
@@ -118,6 +123,15 @@ def normalize_boost_column(df):
     return df
 
 
+def _format_source_label(base_regime: str, mode: str | None, is_ff: bool) -> str:
+    label = base_regime
+    if is_ff:
+        label += "_ff"
+    if mode:
+        label += f"_{mode}"
+    return label
+
+
 def combine_csvs(csv_paths, output_path):
     """
     Combine multiple CSV files into one, preserving all columns.
@@ -129,14 +143,16 @@ def combine_csvs(csv_paths, output_path):
     """
     dfs = []
 
-    for regime, path in csv_paths:
+    for base_regime, mode, is_ff, path in csv_paths:
         df = pd.read_csv(path)
         # Normalize column naming for backward compatibility
         df = normalize_boost_column(df)
-        # Add regime column for tracking
-        df['source_regime'] = regime
+        # Add provenance columns for tracking
+        df["source_regime"] = base_regime
+        df["source_mode"] = mode if mode is not None else ""
+        df["source_is_ff"] = bool(is_ff)
         dfs.append(df)
-        print(f"    {regime:10s}: {len(df):6d} HNLs")
+        print(f"    {_format_source_label(base_regime, mode, is_ff):16s}: {len(df):6d} HNLs")
 
     combined = pd.concat(dfs, ignore_index=True)
 
@@ -193,7 +209,7 @@ def main():
     print(f"Found {len(multi_channel_masses)} masses with multiple production channels:\n")
 
     for (mass_val, flavour), regimes in sorted(multi_channel_masses.items()):
-        regime_names = [r for r, _ in regimes]
+        regime_names = [_format_source_label(r, m, ff) for r, m, ff, _ in regimes]
         print(f"  m = {mass_val:5.1f} GeV ({flavour}): {', '.join(regime_names)}")
 
     print(f"\n{'-' * 70}\n")
@@ -211,15 +227,15 @@ def main():
 
         if args.dry_run:
             print(f"    [DRY RUN] Would combine {len(csv_list)} files")
-            for regime, fpath in csv_list:
-                print(f"              - {fpath.name}")
+            for base_regime, mode, is_ff, fpath in csv_list:
+                print(f"              - {_format_source_label(base_regime, mode, is_ff)}: {fpath.name}")
             continue
 
         n_total = combine_csvs(csv_list, output_path)
         total_combined += 1
 
         # Track original files for deletion
-        for regime, fpath in csv_list:
+        for _, _, _, fpath in csv_list:
             files_to_backup.append(fpath)
 
         print()

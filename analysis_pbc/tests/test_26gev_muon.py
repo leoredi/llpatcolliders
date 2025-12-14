@@ -7,6 +7,7 @@ This test demonstrates the full PBC methodology for a single mass point.
 from __future__ import annotations
 
 import sys
+import re
 from pathlib import Path
 
 import numpy as np
@@ -23,7 +24,7 @@ GEOM_DIR = REPO_ROOT / "output" / "csv" / "geometry"
 sys.path.insert(0, str(ANALYSIS_DIR))
 
 from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
-from limits.u2_limit_calculator import scan_eps2_for_mass
+from limits.expected_signal import scan_eps2_for_mass
 
 
 def main():
@@ -36,29 +37,66 @@ def main():
     print(f"U² Limit Calculation: m_HNL = {MASS_GEV} GeV, {FLAVOUR} coupling")
     print("=" * 70)
 
-    # Load or compute geometry
-    # Note: Simulation files use "p" instead of "." in filenames (e.g., 2p60 not 2.6)
-    mass_str = str(MASS_GEV).replace(".", "p") + "0"  # 2.6 → 2p60
-    csv_path = SIM_DIR / f"HNL_{mass_str}GeV_{FLAVOUR}_beauty.csv"
-    geom_cache = GEOM_DIR / f"HNL_{mass_str}GeV_{FLAVOUR}_geom.csv"
+    # Resolve simulation inputs (prefer *_combined.csv if present; otherwise use all regimes).
+    pattern = re.compile(
+        rf"^HNL_([0-9]+p[0-9]{{1,2}})GeV_{FLAVOUR}_"
+        r"((?:kaon|charm|beauty|ew|combined)(?:_ff)?)"
+        r"(?:_(direct|fromTau))?"
+        r"\.csv$"
+    )
 
-    if not csv_path.exists():
-        print(f"ERROR: Simulation file not found: {csv_path}")
+    candidates = []
+    for f in SIM_DIR.glob(f"*{FLAVOUR}*.csv"):
+        if f.stat().st_size < 1000:
+            continue
+        m = pattern.search(f.name)
+        if not m:
+            continue
+        mass_val = float(m.group(1).replace("p", "."))
+        if abs(mass_val - MASS_GEV) > 1e-9:
+            continue
+        regime_token = m.group(2)
+        is_ff = regime_token.endswith("_ff")
+        base_regime = regime_token.replace("_ff", "")
+        candidates.append((base_regime, is_ff, f))
+
+    if not candidates:
+        print(f"ERROR: No simulation CSVs found for m={MASS_GEV} GeV, flavour={FLAVOUR} in {SIM_DIR}")
         return
+
+    chosen = {}
+    for base_regime, is_ff, path in candidates:
+        if base_regime not in chosen or is_ff:
+            chosen[base_regime] = (base_regime, is_ff, path)
+
+    selected = []
+    if "combined" in chosen:
+        selected = [chosen["combined"]]
+    else:
+        selected = [chosen[k] for k in sorted(chosen.keys())]
 
     GEOM_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"\n[1/2] Geometry Processing")
-    print(f"  CSV: {csv_path.name}")
+    print("  Inputs:")
+    for base_regime, is_ff, path in selected:
+        label = f"{base_regime}{'_ff' if is_ff else ''}"
+        print(f"   - {label:10s} {path.name}")
 
-    if geom_cache.exists():
-        print(f"  Loading cached geometry...")
-        geom_df = pd.read_csv(geom_cache)
-    else:
-        print(f"  Computing geometry (first run, may take time)...")
-        mesh = build_drainage_gallery_mesh()
-        geom_df = preprocess_hnl_csv(str(csv_path), mesh, origin=(0.0, 0.0, 0.0))
-        geom_df.to_csv(geom_cache, index=False)
+    geom_dfs = []
+    mesh = None
+    for _, _, csv_path in selected:
+        geom_cache = GEOM_DIR / f"{csv_path.stem}_geom.csv"
+        if geom_cache.exists():
+            geom_df_part = pd.read_csv(geom_cache)
+        else:
+            if mesh is None:
+                mesh = build_drainage_gallery_mesh()
+            geom_df_part = preprocess_hnl_csv(str(csv_path), mesh, origin=(0.0, 0.0, 0.0))
+            geom_df_part.to_csv(geom_cache, index=False)
+        geom_dfs.append(geom_df_part)
+
+    geom_df = pd.concat(geom_dfs, ignore_index=True)
 
     n_total = len(geom_df)
     n_hits = geom_df["hits_tube"].sum()

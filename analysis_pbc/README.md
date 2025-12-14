@@ -21,14 +21,8 @@ conda run -n llpatcolliders pip install 'scikit-hep==0.4.0'
 
 ```bash
 # From llpatcolliders/analysis_pbc/
-conda run -n llpatcolliders python tests/test_pipeline.py
-```
-
-**Expected output:**
-```
-✓ TEST 1 passed (HNL model wrapper)
-✓ TEST 2 passed (Geometry preprocessing)
-✓ TEST 3 passed (Expected signal events)
+conda run -n llpatcolliders python tests/closure_anubis/test_expected_signal_events_kernel.py
+conda run -n llpatcolliders python tests/test_26gev_muon.py
 ```
 
 ### 3. Combine Production Channels
@@ -77,7 +71,7 @@ conda run -n llpatcolliders python tests/test_26gev_muon.py
 The analysis follows a **three-stage** workflow matching PBC methodology (MATHUSLA/CODEX-b/ANUBIS):
 
 ### Stage 1: Production (Pythia C++)
-**Location:** `../production/main_hnl_single.cc`
+**Location:** `../production/pythia_production/main_hnl_production.cc`
 
 - Pythia 8.315 generates pp collisions at √s = 14 TeV
 - Two regimes: Mesons (K/D/B, m < 5 GeV) and EW (W/Z, m ≥ 5 GeV)
@@ -99,7 +93,7 @@ The analysis follows a **three-stage** workflow matching PBC methodology (MATHUS
 **Key:** Each HNL processed individually (per-parent counting).
 
 ### Stage 3: Limits (Python + HNLCalc)
-**Location:** `limits/u2_limit_calculator.py`, `models/hnl_model_hnlcalc.py`
+**Location:** `limits/run_serial.py`, `limits/expected_signal.py`, `models/hnl_model_hnlcalc.py`
 
 - HNLCalc provides BR(parent→ℓN, |U|²) and cτ₀(mass, |U|²)
 - Per-parent counting: `N_sig = Σ_parents [L × σ_parent × BR × ε_geom]`
@@ -118,7 +112,7 @@ The analysis follows a **three-stage** workflow matching PBC methodology (MATHUS
 ✅ **Geometry:** Ray-tracing with relativistic boosts
 ✅ **No double-counting:** External cross-sections from literature
 
-**Validation test:** 2.6 GeV muon coupling → |U_mu|² ∈ [6.9×10⁻⁹, 2.4×10⁻⁵]
+**Validation test (repo sample):** 2.6 GeV muon coupling → |U_mu|² ∈ [5.5×10⁻⁹, 9.5×10⁻⁵]
 
 See [`VALIDATION.md`](VALIDATION.md) for full report.
 
@@ -141,11 +135,10 @@ analysis_pbc/
 ├── limits/
 │   ├── combine_production_channels.py  # Combine MadGraph + Pythia (run FIRST!)
 │   ├── run_serial.py                   # Main analysis driver (parallel/serial)
-│   ├── u2_limit_calculator.py          # Legacy single-flavor analysis
+│   ├── expected_signal.py              # Signal-yield kernel (expected_signal_events)
 │   ├── MULTI_HNL_METHODOLOGY.md        # Per-parent counting explanation
 │   └── ROBUSTNESS_FIXES.md             # Defensive programming guide
 └── tests/
-    ├── test_pipeline.py            # Smoke tests (1.0 GeV muon)
     └── test_26gev_muon.py          # Benchmark (2.6 GeV muon)
 ```
 
@@ -162,17 +155,17 @@ conda run -n llpatcolliders python tests/test_26gev_muon.py
 Mass:      2.6 GeV
 Flavour:   muon (benchmark 010)
 Lumi:      3000 fb⁻¹
-Peak N_sig: 2.88e+03 events
+Peak N_sig: 2.81e+05 events
 
 95% CL Exclusion Range:
-  |U_mu|²_min = 6.893e-09
-  |U_mu|²_max = 2.364e-05
-  Island width: 3.54 decades
+  |U_mu|²_min = 5.462e-09
+  |U_mu|²_max = 9.545e-05
+  Island width: 4.24 decades
 ```
 
 **Interpretation:**
-- **Parent composition:** 86% B-mesons (B⁰/B⁺/Bs), 14% Λb (heavy flavor production)
-- **Geometric acceptance:** 1.41% of HNLs reach z = 22m detector
+- **Parent composition:** mixed heavy-flavor + EW (`B` mesons plus `W/Z` in the combined sample)
+- **Geometric acceptance:** ~1–2% of HNLs hit the detector (sample-dependent)
 - **Island structure:** Lifetime sweet spot at cτ ~ 10-100m
   - Too short-lived (|U|² > 10⁻⁵): Decays before detector
   - Too long-lived (|U|² < 10⁻⁹): Flies through without decaying
@@ -207,13 +200,13 @@ Pythia CSV contains `weight` column used for **relative MC reweighting** (not ab
 
 **Current:** All weights = 1.0 (unweighted generation)
 
-**Validated at:** `production/main_hnl_single.cc:231`
+**Validated at:** `production/pythia_production/main_hnl_production.cc`
 ```cpp
 double weight = pythia.info.weight();  // ✅ Relative weight
 // NOT pythia.info.sigmaGen()          // ❌ Would double-count σ
 ```
 
-Runtime checks prevent accidental use of absolute σ (w > 10⁶ → error).
+If you ever see extremely large `weight` values, it likely means absolute σ was written into the CSV (which would double-count σ in the analysis).
 
 ---
 
@@ -238,10 +231,7 @@ Geometry will be recomputed on next run.
 [WARN] Mass 2.60 GeV: 1 parent PDG(s) have no HNLCalc BR: [310]
 ```
 
-This is expected (KS0 not modeled in HNLCalc). Run diagnostic:
-```bash
-conda run -n llpatcolliders python limits/diagnostic_pdg_coverage.py
-```
+This is expected (KS0 not modeled in HNLCalc). These events are dropped; impact is typically negligible.
 
 ---
 

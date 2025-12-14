@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """
-Serial version of u2_limit_calculator (no multiprocessing)
-Regenerates HNL_U2_limits_summary.csv from today's simulation data
+U² limit calculator driver (serial / multiprocessing).
 
 Usage:
     python run_serial.py              # Serial processing (Majorana, default)
@@ -37,19 +36,7 @@ if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
 
 from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
-from models.hnl_model_hnlcalc import HNLModel
-from config.production_xsecs import get_parent_sigma_pb
-from limits.u2_limit_calculator import expected_signal_events
-
-def couplings_from_eps2(eps2, benchmark):
-    if benchmark == "100":
-        return eps2, 0.0, 0.0
-    elif benchmark == "010":
-        return 0.0, eps2, 0.0
-    elif benchmark == "001":
-        return 0.0, 0.0, eps2
-    else:
-        raise ValueError(f"Unknown benchmark: {benchmark}")
+from limits.expected_signal import expected_signal_events
 
 def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files, dirac=False):
     """
@@ -151,7 +138,12 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None,
 
     # Find simulation files
     # Accept both 1 and 2 decimal formats: 5p0 or 5p00 (transitioning to 2-decimal standard)
-    pattern = re.compile(rf"HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_((?:kaon|charm|beauty|ew|combined)(?:_ff)?)(?:_direct|_fromTau)?\.csv")
+    pattern = re.compile(
+        rf"^HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_"
+        r"((?:kaon|charm|beauty|ew|combined)(?:_ff)?)"
+        r"(?:_(direct|fromTau))?"
+        r"\.csv$"
+    )
 
     files = []
     for f in SIM_DIR.glob(f"*{flavour}*.csv"):
@@ -160,28 +152,121 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None,
             continue
 
         match = pattern.search(f.name)
-        if match and "_fromTau" not in f.name:  # Skip fromTau to avoid double counting
-            mass_str = match.group(1)
-            mass_val = float(mass_str.replace('p', '.'))
-            regime = match.group(2)
-            files.append((mass_val, mass_str, regime, f))
+        if not match:
+            continue
 
-    # Group by mass to combine production channels
+        mass_str = match.group(1)
+        mass_val = float(mass_str.replace("p", "."))
+        regime_token = match.group(2)          # e.g. charm, charm_ff, combined
+        mode = match.group(3)                 # direct/fromTau (tau only) or None
+
+        is_ff = regime_token.endswith("_ff")
+        base_regime = regime_token.replace("_ff", "")
+
+        files.append((mass_val, mass_str, base_regime, mode, is_ff, f))
+
+    # Group by mass and select files to avoid double counting:
+    # - If *_combined.csv exists for a mass, use ONLY that file.
+    # - Otherwise, include all regimes; for tau, include both direct and fromTau modes.
+    # - Prefer *_ff files over base files for the same (regime, mode).
     files_by_mass = {}
-    # Prefer *_ff replacements over base regimes to avoid double counting
-    for mass_val, mass_str, regime, path in files:
-        base_regime = regime.replace("_ff", "")
+    for mass_val, mass_str, base_regime, mode, is_ff, path in files:
         key = (mass_val, mass_str)
-        if key not in files_by_mass:
-            files_by_mass[key] = {}
-        # Prefer ff version if both exist
-        if base_regime not in files_by_mass[key] or regime.endswith("_ff"):
-            files_by_mass[key][base_regime] = (path, regime)
+        files_by_mass.setdefault(key, []).append((base_regime, mode, is_ff, path))
 
-    # Flatten dict for processing
-    files_by_mass = {
-        k: list(v.values()) for k, v in files_by_mass.items()
-    }
+    def _label(base_regime: str, mode: str | None, is_ff: bool) -> str:
+        label = base_regime
+        if is_ff:
+            label += "_ff"
+        if mode:
+            label += f"_{mode}"
+        return label
+
+    def _sort_key(item):
+        base_regime, mode, _, _ = item
+        regime_order = {"kaon": 0, "charm": 1, "beauty": 2, "ew": 3, "combined": 4}
+        mode_order = {None: 0, "direct": 1, "fromTau": 2}
+        return (regime_order.get(base_regime, 99), mode_order.get(mode, 99), base_regime, mode or "")
+
+    selected_by_mass = {}
+    for key, items in files_by_mass.items():
+        combined = [it for it in items if it[0] == "combined"]
+        if combined:
+            # Prefer combined_ff if it ever exists, otherwise take first.
+            chosen = next((it for it in combined if it[2]), combined[0])
+
+            selected = [(chosen[3], _label(chosen[0], chosen[1], chosen[2]))]
+
+            # Transitional support for legacy combined files:
+            # If tau fromTau files exist alongside a combined file, include them only
+            # if the combined file does NOT already contain tau-parent (PDG 15) rows.
+            # This prevents silently dropping τ→NX samples while still avoiding
+            # double counting when users run combine with --no-cleanup.
+            if flavour == "tau":
+                fromtau_candidates = [it for it in items if it[1] == "fromTau" and it[0] != "combined"]
+                if fromtau_candidates:
+                    import csv
+
+                    def _combined_has_tau_parent(csv_path: Path) -> bool:
+                        try:
+                            with csv_path.open(newline="") as f:
+                                reader = csv.DictReader(f)
+                                for row in reader:
+                                    try:
+                                        pid = int(row["parent_pdg"])
+                                    except Exception:
+                                        continue
+                                    if abs(pid) == 15:
+                                        return True
+                        except Exception:
+                            # If we can't inspect it reliably, be conservative and assume it has tau.
+                            return True
+                        return False
+
+                    has_tau = _combined_has_tau_parent(chosen[3])
+                    if not has_tau:
+                        extra = {}
+                        for base_regime, mode, is_ff, path in fromtau_candidates:
+                            k2 = (base_regime, mode)
+                            if k2 not in extra or is_ff:
+                                extra[k2] = (base_regime, mode, is_ff, path)
+                        extras_sorted = [v for _, v in sorted(extra.items(), key=lambda kv: _sort_key(kv[1]))]
+                        selected.extend(
+                            [(path, _label(base_regime, mode, is_ff)) for base_regime, mode, is_ff, path in extras_sorted]
+                        )
+                        extra_names = ", ".join(_label(r, m, ff) for r, m, ff, _ in extras_sorted)
+                        print(
+                            f"[INFO] m={key[0]:.2f} tau: combined file has no PDG 15 rows; "
+                            f"including additional fromTau file(s): {extra_names}"
+                        )
+                    else:
+                        print(
+                            f"[WARN] m={key[0]:.2f} tau: found fromTau file(s) but combined already contains PDG 15 rows; "
+                            "skipping extra fromTau files to avoid double counting."
+                        )
+
+            if len(items) > 1:
+                other_names = ", ".join(
+                    _label(r, m, ff) for r, m, ff, _ in sorted(items, key=_sort_key) if r != "combined"
+                )
+                print(
+                    f"[WARN] m={key[0]:.2f} {flavour}: found combined + other files ({other_names}); "
+                    "using combined (and any needed fromTau) to avoid double counting."
+                )
+
+            selected_by_mass[key] = selected
+            continue
+
+        chosen = {}
+        for base_regime, mode, is_ff, path in items:
+            k2 = (base_regime, mode)
+            if k2 not in chosen or is_ff:
+                chosen[k2] = (base_regime, mode, is_ff, path)
+
+        selected = [v for _, v in sorted(chosen.items(), key=lambda kv: _sort_key(kv[1]))]
+        selected_by_mass[key] = [(path, _label(base_regime, mode, is_ff)) for base_regime, mode, is_ff, path in selected]
+
+    files_by_mass = selected_by_mass
 
     mass_points = sorted(files_by_mass.keys(), key=lambda x: x[0])
     print(f"Found {len(mass_points)} mass points")

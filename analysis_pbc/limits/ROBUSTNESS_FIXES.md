@@ -72,32 +72,9 @@ if missing_br_pdgs and eps2 == 1e-12:
 
 **Smart logging**: Only warn once per mass point (at eps2=1e-12), avoiding spam during 100-point scans.
 
-### Diagnostic Tool
-Created `diagnostic_pdg_coverage.py` to audit coverage across simulation, HNLCalc, and cross-sections.
-
-**Usage**:
-```bash
-conda run -n llpatcolliders python limits/diagnostic_pdg_coverage.py
-```
-
-**Output**:
-```
-⚠️  WARNING: 1 PDG codes in CSV but NOT in HNLCalc:
-   [310]  # KS0
-   → These events will have BR=0.0 and contribute nothing to signal
-
-PDG      Name       In CSV   HNLCalc    Has σ    Status
---------------------------------------------------------------------------------
-310      KS0        ✓        ✗          ✓        ⚠️  LOST
-411      D+         ✓        ✓          ✓        OK
-421      D0         ✓        ✓          ✓        OK
-```
-
-### Benefits
-- **Visibility**: No more silent data loss
-- **Actionable**: Identifies exactly which PDG codes are missing
-- **Preventive**: Run before analysis to catch coverage gaps
-- **Maintainable**: Catches mismatches when updating HNLCalc or Pythia
+### Practical workflow
+Rely on the per-mass-point warnings emitted by `limits/expected_signal.py` (logged at the
+first eps² scan point) and investigate any missing PDGs that are non-negligible.
 
 ---
 
@@ -164,16 +141,15 @@ Each HNL is treated independently according to its parent's production cross-sec
 
 ## 5. Files Modified
 
-1. **limits/u2_limit_calculator.py**
-   - Lines 309-328: Comprehensive NaN filtering
-   - Lines 186-228: PDG coverage diagnostics
-   - Lines 77-118: Multi-HNL methodology docstring
+1. **limits/expected_signal.py**
+   - NaN/inf filtering for parent IDs
+   - PDG coverage warnings (missing BR / missing σ)
+   - Per-parent counting implementation
 
-2. **limits/diagnostic_pdg_coverage.py** (New)
-   - Standalone diagnostic tool
-   - Audits PDG coverage across simulation/HNLCalc/cross-sections
+2. **limits/run_serial.py**
+   - Driver: file selection + geometry caching + eps² scan orchestration
 
-3. **limits/MULTI_HNL_METHODOLOGY.md** (New)
+3. **limits/MULTI_HNL_METHODOLOGY.md**
    - Comprehensive explanation of per-parent counting
    - Example calculations and comparisons
 
@@ -183,8 +159,8 @@ Each HNL is treated independently according to its parent's production cross-sec
 
 ### Before Analysis
 ```bash
-# Run diagnostic to check PDG coverage
-conda run -n llpatcolliders python limits/diagnostic_pdg_coverage.py
+# Combine overlapping production channels (required)
+conda run -n llpatcolliders python limits/combine_production_channels.py
 ```
 
 ### During Analysis
@@ -192,7 +168,7 @@ conda run -n llpatcolliders python limits/diagnostic_pdg_coverage.py
 - Check if missing PDG codes are significant (>1% of events)
 
 ### After Adding New Simulations
-- Re-run diagnostic to verify coverage
+- Re-run analysis and check logs for missing PDGs / missing σ warnings
 - Update production_xsecs.py if new parents appear
 
 ---
@@ -202,9 +178,9 @@ conda run -n llpatcolliders python limits/diagnostic_pdg_coverage.py
 ### Test NaN filtering:
 ```python
 # Manually corrupt a geometry CSV
-df = pd.read_csv("output/csv/geometry/HNL_mass_1.0_muon_geom.csv")
+df = pd.read_csv("output/csv/geometry/HNL_1p00GeV_muon_charm_geom.csv")
 df.loc[0:10, "beta_gamma"] = np.nan
-df.to_csv("output/csv/geometry/HNL_mass_1.0_muon_geom.csv", index=False)
+df.to_csv("output/csv/geometry/HNL_1p00GeV_muon_charm_geom.csv", index=False)
 
 # Run analysis - should see:
 # [INFO] m=1.0 muon: Dropping 11 rows with NaNs in geometry/weights.
@@ -212,8 +188,8 @@ df.to_csv("output/csv/geometry/HNL_mass_1.0_muon_geom.csv", index=False)
 
 ### Test PDG diagnostics:
 ```bash
-conda run -n llpatcolliders python limits/diagnostic_pdg_coverage.py
-# Should report KS0 (310) as LOST
+# Run any analysis driver and inspect warnings printed by expected_signal.py, e.g.
+conda run -n llpatcolliders python limits/run_serial.py
 ```
 
 ---
@@ -226,7 +202,7 @@ These fixes transform the analysis from "silently failing" to "loudly diagnosing
 |--------------|--------|-------|
 | NaN in geometry CSV | Silent NaN propagation → "No sensitivity" | Early filtering + clear warning |
 | Unknown parent PDG | Silent discard (BR=0 or σ=0) | Warning logged with event count |
-| Missing cross-section | Silent discard | Diagnostic tool catches gaps |
+| Missing cross-section | Silent discard | Warning logged with event count |
 | Corrupt CSV | Mysterious failures | Clear error messages |
 
 **Key principles**:

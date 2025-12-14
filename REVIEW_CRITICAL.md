@@ -40,7 +40,7 @@
 
 **Issue:** When W/Z bosons are off-shell (controlled by `bw_cut` in MadGraph), they may not appear in the LHE record. The parser sets `parent_pdg=0`. Downstream, `production_brs()` has no entry for PDG=0, so these events contribute BR=0.
 
-**Logging:** Warnings ARE printed at `lhe_to_csv.py:312-314` and `u2_limit_calculator.py:222-225`, but the latter only prints at the first eps2 scan point (1e-12), so can be missed in logs.
+**Logging:** Warnings ARE printed at `lhe_to_csv.py:312-314` and in the signal-yield kernel (`analysis_pbc/limits/expected_signal.py`), but the latter only prints at the first eps² scan point (1e-12), so can be missed in logs.
 
 **Risk:** For high HNL masses near m_W threshold, some events could have off-shell W, causing underestimated sensitivity. Severity depends on `bw_cut` setting in MadGraph.
 
@@ -133,15 +133,15 @@ locations, _, _ = mesh.ray.intersects_location(ray_origins=origins, ray_directio
 
 ---
 
-### 1B.3 — Weight sanity check (working correctly)
+### 1B.3 — Weight sanity check (legacy-only)
 
-**File:** `analysis_pbc/limits/u2_limit_calculator.py:343-352`
+**File:** (historical) legacy driver (removed); consider re-adding to `analysis_pbc/limits/run_serial.py` if needed.
 
 **Behavior:**
 - `w_max > 1e6`: prints ERROR, returns None (correctly stops processing)
 - `w_max > 1000`: prints WARN, continues (appropriate for unusual but possibly valid weights)
 
-**Status:** This is working as intended. The two-tier approach (ERROR/stop vs WARN/continue) is reasonable.
+**Status:** The two-tier approach (ERROR/stop vs WARN/continue) is reasonable; it is not currently enforced in the simplified pipeline.
 
 **Note:** Original review incorrectly stated this "logs ERROR but continues" - that was wrong. The ERROR case correctly returns None.
 
@@ -149,7 +149,7 @@ locations, _, _ = mesh.ray.intersects_location(ray_origins=origins, ray_directio
 
 ### 1B.4 — eps2 grid resolution may miss sensitivity edges
 
-**File:** `analysis_pbc/limits/u2_limit_calculator.py:248`
+**File:** `analysis_pbc/limits/expected_signal.py` (scan grid in `scan_eps2_for_mass`)
 
 **Issue:** Fixed 100-point log grid from 10^-12 to 10^-2. For very weak couplings, the first excluded point may not be at the true boundary.
 
@@ -272,12 +272,13 @@ if mass < m_tau - m_pi:
 The code doesn't distinguish Majorana vs Dirac, and PBC benchmarks assume Majorana. This is fine for Majorana-only, but if users want Dirac interpretation, there's no mechanism.
 
 **Fix:** Add `--majorana/--dirac` flag to analysis that applies ×2 factor if Dirac.
+**Status:** Implemented in `analysis_pbc/limits/run_serial.py` as `--dirac`.
 
 ---
 
 ### 2B.2 — No detector/reconstruction efficiency
 
-**File:** `analysis_pbc/limits/u2_limit_calculator.py:72-120`
+**File:** `analysis_pbc/limits/expected_signal.py`
 
 **Issue:** The signal formula is:
 ```
@@ -341,7 +342,7 @@ This is leading-order. Missing: NLO QCD corrections (~10%), finite-width effects
 | **2** | [BOTH] | `lhe_to_csv.py:196-207`, `production_brs()` | **parent_pdg=0 causes signal loss** — off-shell W/Z events get BR=0 (warnings logged but can be missed) | Force parent_pdg=24 for all EW events, or add fallback in BR lookup |
 | **3** | [CODE] | `run_serial.py:80-82` | **Race condition in geometry cache** — parallel workers can corrupt cache files | Use atomic write (tempfile + rename) |
 | **4** | [PHYSICS] | `main_hnl_production.cc:424-436` | **τ → πN only** — missing ρ channel biases acceptance | Add τ → ρN (PDG 213) channel |
-| **5** | [PHYSICS] | `u2_limit_calculator.py:72` | **No ε_reco or background** — limits are over-optimistic projections | Document as "B=0 projected sensitivity"; add ε_reco parameter |
+| **5** | [PHYSICS] | `expected_signal.py` | **No ε_reco or background** — limits are over-optimistic projections | Document as "B=0 projected sensitivity"; add ε_reco parameter |
 
 ---
 

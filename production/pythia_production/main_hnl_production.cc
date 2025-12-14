@@ -438,34 +438,57 @@ void configureTauDecays(Pythia& pythia, double mHNL, bool verbose = true) {
     double mRho = 0.775; // rho mass for harder spectrum representative
     double m3Pi = 3 * mPi;
 
-    double pi_weight = 1.0;
+    const bool allow_pi = (mHNL + mPi < mTau);
+    const bool allow_rho = (mHNL + mRho < mTau);
+    const bool allow_tripi = (mHNL + m3Pi < mTau);
+
+    // Representative kinematics mixture weights (NOT physical BRs).
+    // Physical τ→NX branching is applied later by HNLCalc in the analysis.
+    double pi_weight = 0.0;
     double rho_weight = 0.0;
     double tripi_weight = 0.0;
 
-    // Enable rho channel if kinematically allowed; split weight with pion
-    if (mHNL + mRho < mTau) {
-        rho_weight = 0.4;
-        pi_weight = 0.4;
-        pythia.readString("15:addChannel = 1 0.5 0 -213 " + hnl);
-        pythia.readString("-15:addChannel = 1 0.5 0 213 " + hnl);
+    if (allow_pi) {
+        if (allow_rho && allow_tripi) {
+            rho_weight = 0.50;
+            tripi_weight = 0.30;
+            pi_weight = 0.20;
+        } else if (allow_rho && !allow_tripi) {
+            rho_weight = 0.60;
+            pi_weight = 0.40;
+        } else if (!allow_rho && allow_tripi) {
+            tripi_weight = 0.30;
+            pi_weight = 0.70;
+        } else {
+            pi_weight = 1.00;
+        }
+    }
+
+    if (verbose) {
+        std::cout << "  τ→NX representative channels (weights sum to 1): "
+                  << "π=" << pi_weight
+                  << ", ρ=" << rho_weight
+                  << ", 3π=" << tripi_weight
+                  << std::endl;
+    }
+
+    if (rho_weight > 0.0) {
+        pythia.readString("15:addChannel = 1 " + std::to_string(rho_weight) + " 0 -213 " + hnl);
+        pythia.readString("-15:addChannel = 1 " + std::to_string(rho_weight) + " 0 213 " + hnl);
         if (verbose) std::cout << "  τ → ρ N : ENABLED" << std::endl;
     }
 
-    // Add 3π representative if kinematically allowed (harder hadronic)
-    if (mHNL + m3Pi < mTau) {
-        tripi_weight = rho_weight > 0.0 ? 0.2 : 0.3;  // redistribute a slice
-        pi_weight = std::max(0.0, pi_weight - 0.1);    // keep total ≈1
+    if (tripi_weight > 0.0) {
         pythia.readString("15:addChannel = 1 " + std::to_string(tripi_weight) + " 0 -211 -211 211 " + hnl);
         pythia.readString("-15:addChannel = 1 " + std::to_string(tripi_weight) + " 0 211 211 -211 " + hnl);
         if (verbose) std::cout << "  τ → 3π N : ENABLED" << std::endl;
     }
 
-    if (mHNL + mPi < mTau) {
+    if (pi_weight > 0.0) {
         pythia.readString("15:addChannel = 1 " + std::to_string(pi_weight) + " 0 -211 " + hnl);
         pythia.readString("-15:addChannel = 1 " + std::to_string(pi_weight) + " 0 211 " + hnl);
         if (verbose) std::cout << "  τ → π N : ENABLED" << std::endl;
     } else if (verbose) {
-        std::cout << "  τ → π N : DISABLED (kinematically forbidden)" << std::endl;
         std::cout << "  WARNING: No tau decay channels available at this mass!" << std::endl;
     }
 

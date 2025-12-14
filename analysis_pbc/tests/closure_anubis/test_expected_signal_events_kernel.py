@@ -3,7 +3,7 @@ Algorithmic closure tests for limits.expected_signal_events.
 
 These tests do NOT use the real HNL model or cross-sections.
 They patch HNLModel and get_parent_sigma_pb inside
-limits.u2_limit_calculator so that expected_signal_events
+limits.expected_signal so that expected_signal_events
 should reproduce a known analytic probability.
 
 Run with:
@@ -31,7 +31,7 @@ ANALYSIS_DIR = THIS_FILE.parents[2]  # .../analysis_pbc
 if str(ANALYSIS_DIR) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_DIR))
 
-from limits.u2_limit_calculator import expected_signal_events
+from limits.expected_signal import expected_signal_events
 
 
 # ----------------------------------------------------------------------
@@ -76,8 +76,8 @@ def test_single_hnl_segment() -> None:
     eps2 = 1.0                  # arbitrary (only used by the real HNLModel)
     benchmark = "010"
 
-    with patch("limits.u2_limit_calculator.HNLModel") as MockModel, \
-         patch("limits.u2_limit_calculator.get_parent_sigma_pb") as mock_sigma:
+    with patch("limits.expected_signal.HNLModel") as MockModel, \
+         patch("limits.expected_signal.get_parent_sigma_pb") as mock_sigma:
 
         # Configure the fake HNL model
         mock_instance = MockModel.return_value
@@ -145,8 +145,8 @@ def test_two_hnls_weighted_average() -> None:
     eps2 = 1.0
     benchmark = "010"
 
-    with patch("limits.u2_limit_calculator.HNLModel") as MockModel, \
-         patch("limits.u2_limit_calculator.get_parent_sigma_pb") as mock_sigma:
+    with patch("limits.expected_signal.HNLModel") as MockModel, \
+         patch("limits.expected_signal.get_parent_sigma_pb") as mock_sigma:
 
         mock_instance = MockModel.return_value
         mock_instance.ctau0_m = ctau0_m

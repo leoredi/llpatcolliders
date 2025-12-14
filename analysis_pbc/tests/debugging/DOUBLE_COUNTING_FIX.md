@@ -76,7 +76,7 @@ cd analysis_pbc
 python limits/run_serial.py
 ```
 
-The per-parent counting in `u2_limit_calculator.py` will correctly sum:
+The per-parent counting in `limits/expected_signal.py` will correctly sum:
 ```python
 N_sig = Σ_parents [ L × σ(parent) × BR(parent→ℓN) × ε_geom(parent) ]
       = L × [σ(B) × BR(B→μN) × ε_B] + [σ(W) × BR(W→μN) × ε_W]
@@ -87,7 +87,7 @@ N_sig = Σ_parents [ L × σ(parent) × BR(parent→ℓN) × ε_geom(parent) ]
 The analysis uses **per-parent counting** (not per-event):
 
 ```python
-# From u2_limit_calculator.py:190-215
+# From limits/expected_signal.py (per-parent counting)
 for pid in unique_parents:
     BR_parent = br_per_parent.get(int(pid), 0.0)      # Different for B vs W
     sigma_parent_pb = get_parent_sigma_pb(int(pid))   # Different for B vs W
@@ -128,7 +128,7 @@ N_sig(|U|²) = N_B(|U|²) + N_W(|U|²)
 
 - Review: `PHYSICS_REVIEW.md` Section 2.2
 - Tool: `analysis_pbc/limits/combine_production_channels.py`
-- Analysis: `analysis_pbc/limits/u2_limit_calculator.py:190-215`
+- Analysis: `analysis_pbc/limits/expected_signal.py`
 
 ---
 

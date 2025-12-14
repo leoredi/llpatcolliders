@@ -24,13 +24,13 @@ money_plot/
 **Simple execution:**
 ```bash
 cd money_plot
-/opt/homebrew/Caskroom/miniconda/base/envs/llpatcolliders/bin/python plot_money_island.py
+conda run -n llpatcolliders python plot_money_island.py
 ```
 
 **Or from analysis directory:**
 ```bash
 cd analysis_pbc
-/opt/homebrew/Caskroom/miniconda/base/envs/llpatcolliders/bin/python ../money_plot/plot_money_island.py
+conda run -n llpatcolliders python ../money_plot/plot_money_island.py
 ```
 
 ## Input

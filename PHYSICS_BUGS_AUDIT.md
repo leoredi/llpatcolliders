@@ -261,7 +261,7 @@ tube_radius = PHYSICAL_RADIUS_M * SAFETY_FACTOR  # Effective: 1.54 m
 
 **Status:** DOCUMENTATION ONLY — Code correct, comment unclear
 
-**File:** `analysis_pbc/limits/u2_limit_calculator.py:215`
+**File:** `analysis_pbc/limits/expected_signal.py`
 
 **Current Code:**
 
@@ -320,7 +320,7 @@ theta = 2.0 * np.arctan(np.exp(-eta))
 
 ### VALIDATED #2: Decay Probability with Numerical Stability
 
-**File:** `analysis_pbc/limits/u2_limit_calculator.py:166-179`
+**File:** `analysis_pbc/limits/expected_signal.py`
 
 **Formula:**
 ```python
@@ -358,7 +358,7 @@ Use of `np.expm1(x) = exp(x) - 1` is **excellent practice** for small arguments,
 ###  VALIDATED #3: Per-Parent Counting Methodology
 
 **Files:**
-- `analysis_pbc/limits/u2_limit_calculator.py:80-98` (implementation)
+- `analysis_pbc/limits/expected_signal.py` (implementation)
 - `analysis_pbc/limits/MULTI_HNL_METHODOLOGY.md` (full documentation)
 
 **Implementation:**
@@ -408,10 +408,10 @@ Pythia events can have **multiple HNLs from different parents** (e.g., B0→N, B
 | 2 | Verify | `config/production_xsecs.py:71-77` | Z/Kaon cross-section values need references | OPEN | — |
 | 3 | Verify | `config/production_xsecs.py:50-60` | Charm fragmentation fractions sum to 0.99 | OPEN | — |
 | 4 | Verify | `geometry/per_parent_efficiency.py:199` | Tube radius 1.1 safety factor undocumented | OPEN | — |
-| 5 | Docs | `limits/u2_limit_calculator.py:215` | Unit conversion comment confusing | OPEN | — |
+| 5 | Docs | `limits/expected_signal.py` | Unit conversion comment confusing | OPEN | — |
 | 6 | Validated | `geometry/per_parent_efficiency.py:27` | Pseudorapidity conversion | VALIDATED | `VALIDATION.md` |
-| 7 | Validated | `limits/u2_limit_calculator.py:166-179` | Decay probability (numerical stability) | VALIDATED | `VALIDATION.md:150` |
-| 8 | Validated | `limits/u2_limit_calculator.py:80-98` | Per-parent counting methodology | VALIDATED | `MULTI_HNL_METHODOLOGY.md` |
+| 7 | Validated | `limits/expected_signal.py` | Decay probability (numerical stability) | VALIDATED | `VALIDATION.md:150` |
+| 8 | Validated | `limits/expected_signal.py` | Per-parent counting methodology | VALIDATED | `MULTI_HNL_METHODOLOGY.md` |
 | 9 | Validated | `models/hnl_model_hnlcalc.py` | HNLCalc external package usage | VALIDATED | See VALIDATED #4 below |
 
 ---
@@ -425,7 +425,7 @@ Pythia events can have **multiple HNLs from different parents** (e.g., B0→N, B
    - Verify Z cross-section definition (inclusive vs leptonic)
    - Document kaon cross-section uncertainty
 
-2. **Clarify unit conversion comment** in `u2_limit_calculator.py:215`
+2. **Clarify unit conversion comment** in `expected_signal.py`
    - Replace confusing comment with clear explanation
    - Emphasize pb → fb conversion
 

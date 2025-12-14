@@ -10,7 +10,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if [ -n "$CONDA_DEFAULT_ENV" ] && [ "$CONDA_DEFAULT_ENV" = "llpatcolliders" ]; then
     PYTHON="python"
 else
-    PYTHON="/opt/homebrew/Caskroom/miniconda/base/envs/llpatcolliders/bin/python"
+    if command -v conda >/dev/null 2>&1; then
+        PYTHON="conda run -n llpatcolliders python"
+    else
+        PYTHON="python3"
+    fi
 fi
 
 # Helper function to load mass grid from Python config

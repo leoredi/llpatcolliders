@@ -10,7 +10,7 @@
 
 Pythia events can contain **multiple HNLs** from different parent mesons in a single pp collision.
 
-**Example**: Event #44 from `HNL_mass_1.0_electron_Meson.csv`:
+**Example**: Event #44 from `HNL_1p00GeV_electron_charm.csv`:
 ```csv
 event,parent_id,...
 44,511,...       # B0 → ℓ N
@@ -111,7 +111,7 @@ This is exactly what we implement.
 
 ## Implementation in Our Code
 
-### 1. Simulation (`production/main_hnl_single.cc`)
+### 1. Simulation (`production/pythia_production/main_hnl_production.cc`)
 ```cpp
 // Pythia produces pp → many mesons
 // Each meson forced to decay: M → ℓ N (BR=1.0)
@@ -124,7 +124,7 @@ This is exactly what we implement.
 # Output: beta_gamma, hits_tube, entry_distance, path_length (one row per HNL)
 ```
 
-### 3. Analysis (`limits/u2_limit_calculator.py`)
+### 3. Analysis (`limits/expected_signal.py`)
 ```python
 # Group HNLs by parent species
 for pid in unique_parents:
@@ -180,11 +180,11 @@ To verify per-parent counting is implemented correctly:
 
 ```python
 # Check that multiple HNLs per event are counted separately
-df = pd.read_csv("HNL_mass_1.0_electron_Meson.csv")
+df = pd.read_csv("output/csv/simulation/HNL_1p00GeV_electron_charm.csv")
 
 # Event 44 should contribute to 4 different parent bins
 event_44 = df[df["event"] == 44]
-print(event_44["parent_id"].values)
+print(event_44["parent_pdg"].values)
 # Output: [511, -531, 411, -431]
 
 # In analysis, each of these increments its own N_sig contribution
@@ -205,7 +205,7 @@ You can verify this by checking that `len(geom_df)` equals the total number of H
 
 ## Documentation Added
 
-1. **`u2_limit_calculator.py`** (lines 77-118): Enhanced docstring explaining multi-HNL handling
+1. **`expected_signal.py`**: Per-parent counting + decay probability kernel
 2. **`per_parent_efficiency.py`** (lines 247-250): Note about per-HNL geometry computation
 3. **`production_xsecs.py`** (lines 17-28): Explanation of per-parent counting methodology
 4. **`ROBUSTNESS_FIXES.md`** (Section 7): Full discussion with examples

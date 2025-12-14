@@ -14,12 +14,10 @@ simple interface:
     brs_dict  = model.production_brs() # {parent_pdg: BR(parent -> N + X)}
 
 The *implementation details* (exact HNLCalc constructor, attribute names,
-and methods) must be filled in by looking at your local:
+and methods) are implemented against the local HNLCalc API. For reference see:
 
     analysis_pbc/HNLCalc/HNLCalc.py
     analysis_pbc/HNLCalc/Example.ipynb
-
-I leave clear TODO / FIXME markers where you need to plug in the real API.
 """
 
 from __future__ import annotations
@@ -83,7 +81,7 @@ class HNLModel:
     mass_GeV, Ue2, Umu2, Utau2
         Stored input values.
     _hnlcalc
-        The underlying HNLCalc object (once _build_hnlcalc() is wired up).
+        The underlying HNLCalc object.
     """
 
     def __init__(
@@ -100,7 +98,7 @@ class HNLModel:
         self.Utau2 = float(Utau2)
         self.extra_args = extra_args
 
-        # Underlying HNLCalc object (to be constructed in _build_hnlcalc)
+        # Underlying HNLCalc object
         self._hnlcalc = self._build_hnlcalc()
 
     # ------------------------------------------------------------------
@@ -251,8 +249,8 @@ class HNLModel:
                 )
 
                 # Accumulate for this parent
-            parent_abs = abs(pid0)
-            br_per_parent[parent_abs] = br_per_parent.get(parent_abs, 0.0) + br_value
+                parent_abs = abs(pid0)
+                br_per_parent[parent_abs] = br_per_parent.get(parent_abs, 0.0) + br_value
 
         # ----------------------------------------------------------------
         # ADD TAU → π N PRODUCTION BR (for "fromTau" samples)

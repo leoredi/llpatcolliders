@@ -12,6 +12,7 @@ main*Dct.cc
 # Auto-generated PYTHIA config files and cache
 __pycache__/
 production/madgraph/work/
+/py.py
 
 # CSV files (too large for git)
 *.csv
