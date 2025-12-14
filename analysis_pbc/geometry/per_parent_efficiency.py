@@ -34,6 +34,31 @@ def eta_phi_to_direction(eta: float, phi: float) -> np.ndarray:
     return np.array([dx, dy, dz], dtype=float)
 
 
+def eta_phi_to_directions(eta: np.ndarray, phi: np.ndarray) -> np.ndarray:
+    """
+    Vectorized version of eta_phi_to_direction.
+
+    Args:
+        eta: array of pseudorapidity values
+        phi: array of azimuthal angles (radians)
+
+    Returns:
+        Array of shape (N, 3) with unit direction vectors.
+    """
+    eta = np.asarray(eta, dtype=float)
+    phi = np.asarray(phi, dtype=float)
+
+    theta = 2.0 * np.arctan(np.exp(-eta))
+    dx = np.sin(theta) * np.cos(phi)
+    dy = np.sin(theta) * np.sin(phi)
+    dz = np.cos(theta)
+
+    directions = np.stack([dx, dy, dz], axis=1)
+    norms = np.linalg.norm(directions, axis=1)
+    norms = np.where(norms > 0.0, norms, np.nan)
+    return directions / norms[:, None]
+
+
 def create_tube_mesh(path_points: np.ndarray,
                      radius: float = 1.0,
                      n_segments: int = 16) -> tuple[np.ndarray, np.ndarray]:
@@ -196,7 +221,12 @@ def build_drainage_gallery_mesh() -> trimesh.Trimesh:
         dtype=float,
     )
 
-    tube_radius = 1.4 * 1.1
+    # Physical tube radius is ~1.4 m. Use a small envelope margin to avoid
+    # edge-effects from polygonization / discretization in this fast-acceptance
+    # model and to be robust against small geometry/alignment uncertainties.
+    tube_radius_m = 1.4
+    tube_envelope_margin = 1.1
+    tube_radius = tube_radius_m * tube_envelope_margin
     vertices, faces = create_tube_mesh(
         path_3d, radius=tube_radius, n_segments=32
     )
@@ -317,64 +347,110 @@ def preprocess_hnl_csv(
 
     print(f"Precomputing geometry for {len(df)} HNLs from {csv_file} ...")
 
-    rtree_errors = 0
-    bad_dir_count = 0
+    hits_tube = np.zeros(len(df), dtype=bool)
+    entry_distance = np.full(len(df), np.nan, dtype=float)
+    path_length = np.full(len(df), np.nan, dtype=float)
 
-    for idx, row in tqdm(
-        df.iterrows(),
-        total=len(df),
-        desc="Geometry rays",
-        unit="HNL",
-    ):
-        eta = row["eta"]
-        phi = row["phi"]
+    eta = df["eta"].to_numpy(dtype=float)
+    phi = df["phi"].to_numpy(dtype=float)
 
-        # Skip non-finite kinematics
-        if not np.isfinite(eta) or not np.isfinite(phi):
-            bad_dir_count += 1
-            continue
+    valid_mask = np.isfinite(eta) & np.isfinite(phi)
+    directions = eta_phi_to_directions(eta[valid_mask], phi[valid_mask])
+    valid_dir_mask = np.all(np.isfinite(directions), axis=1)
 
-        direction = eta_phi_to_direction(eta, phi)
+    valid_indices = np.flatnonzero(valid_mask)[valid_dir_mask]
+    directions = directions[valid_dir_mask]
 
-        # Guard against non-finite / zero-length direction vectors
-        if (not np.all(np.isfinite(direction))) or np.linalg.norm(direction) == 0.0:
-            bad_dir_count += 1
-            continue
+    bad_dir_count = int(len(df) - len(valid_indices))
 
+    def _intersects_location_safe(
+        ray_origins: np.ndarray,
+        ray_directions: np.ndarray,
+        offset: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray, int]:
         try:
-            locations, _, _ = mesh.ray.intersects_location(
-                ray_origins=[origin_arr],
-                ray_directions=[direction],
+            locations, index_ray, _ = mesh.ray.intersects_location(
+                ray_origins=ray_origins,
+                ray_directions=ray_directions,
             )
+            return locations, index_ray + offset, 0
         except RTreeError:
-            # This is the error we saw: "Coordinates must not have minimums more than maximums"
-            # Treat this ray as invalid and move on.
-            rtree_errors += 1
+            n = len(ray_directions)
+            if n <= 1:
+                return np.empty((0, 3), dtype=float), np.empty((0,), dtype=int), 1
+            mid = n // 2
+            loc_a, idx_a, err_a = _intersects_location_safe(ray_origins[:mid], ray_directions[:mid], offset=offset)
+            loc_b, idx_b, err_b = _intersects_location_safe(
+                ray_origins[mid:], ray_directions[mid:], offset=offset + mid
+            )
+            if len(loc_a) == 0:
+                loc = loc_b
+            elif len(loc_b) == 0:
+                loc = loc_a
+            else:
+                loc = np.concatenate([loc_a, loc_b], axis=0)
+            if len(idx_a) == 0:
+                idx = idx_b
+            elif len(idx_b) == 0:
+                idx = idx_a
+            else:
+                idx = np.concatenate([idx_a, idx_b], axis=0)
+            return loc, idx, err_a + err_b
+
+    rtree_errors = 0
+    batch_size = 10_000
+    for start in tqdm(
+        range(0, len(valid_indices), batch_size),
+        total=(len(valid_indices) + batch_size - 1) // batch_size,
+        desc="Geometry rays",
+        unit="batch",
+    ):
+        end = min(start + batch_size, len(valid_indices))
+        idx_chunk = valid_indices[start:end]
+        dir_chunk = directions[start:end]
+        origin_chunk = np.repeat(origin_arr[None, :], len(dir_chunk), axis=0)
+
+        locations, index_ray, n_err = _intersects_location_safe(origin_chunk, dir_chunk, offset=0)
+        rtree_errors += n_err
+
+        if len(locations) == 0:
             continue
 
-        if len(locations) >= 2:
-            df.at[idx, "hits_tube"] = True
+        deltas = locations - origin_arr[None, :]
+        t = np.einsum("ij,ij->i", deltas, dir_chunk[index_ray])
+        mask_t = np.isfinite(t) & (t > 0.0)
+        if not np.any(mask_t):
+            continue
 
-            distances = [
-                np.linalg.norm(loc - origin_arr) for loc in locations
-            ]
-            distances.sort()
-            entry = distances[0]
-            exit_ = distances[1]
-            path_len = exit_ - entry
+        t = t[mask_t]
+        index_ray = index_ray[mask_t]
 
-            df.at[idx, "entry_distance"] = entry
-            df.at[idx, "path_length"] = path_len
-        else:
-            # No valid intersection => leave defaults (False / NaN)
-            df.at[idx, "hits_tube"] = False
-            df.at[idx, "entry_distance"] = np.nan
-            df.at[idx, "path_length"] = np.nan
+        order = np.lexsort((t, index_ray))
+        t = t[order]
+        index_ray = index_ray[order]
+
+        rays, counts = np.unique(index_ray, return_counts=True)
+        pos = 0
+        for ray, count in zip(rays, counts):
+            ts = t[pos : pos + count]
+            pos += count
+            if len(ts) < 2:
+                continue
+            n_pairs = len(ts) // 2
+            entry_val = float(ts[0])
+            path_val = float(np.sum(ts[1 : 2 * n_pairs : 2] - ts[0 : 2 * n_pairs : 2]))
+            df_idx = int(idx_chunk[int(ray)])
+            hits_tube[df_idx] = True
+            entry_distance[df_idx] = entry_val
+            path_length[df_idx] = path_val
 
     if bad_dir_count > 0:
         print(f"[WARN] Skipped {bad_dir_count} HNL(s) with non-finite or degenerate directions.")
 
     if rtree_errors > 0:
-        print(f"[WARN] Skipped {rtree_errors} HNL(s) due to RTreeError in ray-mesh intersection.")
+        print(f"[WARN] Skipped {rtree_errors} ray batch(es)/ray(s) due to RTreeError in ray-mesh intersection.")
 
+    df["hits_tube"] = hits_tube
+    df["entry_distance"] = entry_distance
+    df["path_length"] = path_length
     return df

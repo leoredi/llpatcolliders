@@ -3,7 +3,19 @@ config/production_xsecs.py
 
 Standard LHC Production Cross-Sections for Physics Beyond Colliders (PBC) Analysis.
 
-Reference: CERN-PBC-REPORT-2018-007 / MATHUSLA Physics Case
+Primary references (baseline values / methodology):
+- CERN-PBC-REPORT-2018-007 (Physics Beyond Colliders LLP sensitivity inputs)
+- MATHUSLA physics case: arXiv:1811.00927 (uses the same per-parent counting structure)
+
+Notes:
+- These are **inclusive, order-of-magnitude** cross-sections suitable for fast
+  sensitivity projections. They are not a replacement for a full experimental
+  systematics model.
+- `SIGMA_W_PB`/`SIGMA_Z_PB` are **inclusive boson production** cross-sections at
+  14 TeV (i.e. not multiplied by SM leptonic BRs). Leptonic+HNL branching is
+  applied later via `HNLModel.production_brs()`.
+- `SIGMA_KAON_PB` is especially uncertain (soft QCD dominated) and is the main
+  normalization systematic for the kaon regime.
 Energy: 14 TeV (HL-LHC)
 
 These cross-sections represent the TOTAL production of parent mesons at the LHC,
@@ -34,10 +46,12 @@ This matches MATHUSLA/ANUBIS/CODEX-b/AL3X methodology.
 
 # Sigma(pp -> ccbar) ~ 24 mb at 14 TeV
 # This is the QCD production of charm quark pairs
+# Reference: CERN-PBC-REPORT-2018-007 (14 TeV baseline inputs for sensitivity projections)
 SIGMA_CCBAR_PB = 24.0 * 1e9  # 24 mb = 2.4 × 10^10 pb
 
 # Sigma(pp -> bbbar) ~ 500 μb at 14 TeV
 # This is the QCD production of beauty quark pairs
+# Reference: CERN-PBC-REPORT-2018-007 (14 TeV baseline inputs for sensitivity projections)
 SIGMA_BBBAR_PB = 500.0 * 1e6  # 500 μb = 5.0 × 10^8 pb
 
 # ==========================================
@@ -47,6 +61,8 @@ SIGMA_BBBAR_PB = 500.0 * 1e6  # 500 μb = 5.0 × 10^8 pb
 
 # Charm Fragmentation (f_c)
 # Probability that a c-quark hadronizes into each meson species
+# These are approximate ground-state fractions; the remaining O(1%) goes to other
+# charm hadrons / excited states and is neglected at this projection level.
 FRAG_C_D0     = 0.59  # D0 / D0bar
 FRAG_C_DPLUS  = 0.24  # D+ / D-
 FRAG_C_DS     = 0.10  # Ds+ / Ds-
@@ -70,7 +86,9 @@ SIGMA_KAON_PB = 5.0 * 1e10  # ~50 mb (very approximate, soft QCD)
 # ELECTROWEAK PRODUCTION (W/Z BOSONS)
 # ==========================================
 # W and Z boson production at 14 TeV LHC
-# Reference: ATLAS/CMS measurements + NLO calculations
+# Reference: standard inclusive 14 TeV projections used in PBC-style studies
+# (e.g. CERN-PBC-REPORT-2018-007; LHC SM cross-section summaries / HXSWG-style inputs).
+# These are inclusive production cross-sections (not multiplied by leptonic BRs).
 SIGMA_W_PB = 2.0 * 1e8  # σ(pp→W) ~ 200 nb (W+ + W- combined)
 SIGMA_Z_PB = 6.0 * 1e7  # σ(pp→Z) ~ 60 nb
 

@@ -22,9 +22,112 @@ and methods) are implemented against the local HNLCalc API. For reference see:
 
 from __future__ import annotations
 
+import ast
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Any
+
+
+# ----------------------------------------------------------------------
+# Safe expression evaluation helpers (avoid eval())
+# ----------------------------------------------------------------------
+
+_ALLOWED_HNLCALC_EXPR_CALLS = {
+    "get_2body_br",
+    "get_2body_br_tau",
+    "get_3body_dbr_pseudoscalar",
+    "get_3body_dbr_vector",
+    "get_3body_dbr_baryon",
+    "get_3body_dbr_tau",
+}
+
+_ALLOWED_NUMPY_ATTRS = {
+    "sqrt",
+    "pi",
+}
+
+
+@lru_cache(maxsize=4096)
+def _parse_safe_expr(expr: str) -> ast.AST:
+    return ast.parse(expr, mode="eval").body
+
+
+class _SafeExprEvaluator:
+    def __init__(self, *, hnl: Any, mass: float, coupling: float, np_module: Any) -> None:
+        self._hnl = hnl
+        self._mass = float(mass)
+        self._coupling = float(coupling)
+        self._np = np_module
+
+    def eval(self, expr: str):
+        return self._eval_node(_parse_safe_expr(expr))
+
+    def _eval_node(self, node: ast.AST):
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float, str)):
+                return node.value
+            raise ValueError(f"Unsupported constant type: {type(node.value).__name__}")
+
+        if isinstance(node, ast.Name):
+            if node.id == "hnl":
+                return self._hnl
+            if node.id == "mass":
+                return self._mass
+            if node.id == "coupling":
+                return self._coupling
+            if node.id == "np":
+                return self._np
+            raise ValueError(f"Name not allowed in expression: {node.id}")
+
+        if isinstance(node, ast.UnaryOp):
+            operand = self._eval_node(node.operand)
+            if isinstance(node.op, ast.UAdd):
+                return +operand
+            if isinstance(node.op, ast.USub):
+                return -operand
+            raise ValueError(f"Unary operator not allowed: {type(node.op).__name__}")
+
+        if isinstance(node, ast.BinOp):
+            left = self._eval_node(node.left)
+            right = self._eval_node(node.right)
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.Div):
+                return left / right
+            if isinstance(node.op, ast.Pow):
+                return left**right
+            raise ValueError(f"Binary operator not allowed: {type(node.op).__name__}")
+
+        if isinstance(node, ast.Attribute):
+            if not isinstance(node.value, ast.Name):
+                raise ValueError("Only simple attribute access is allowed (e.g. hnl.foo, np.sqrt)")
+            base = node.value.id
+            attr = node.attr
+            if attr.startswith("_"):
+                raise ValueError("Access to private/dunder attributes is not allowed")
+            if base == "hnl":
+                if attr not in _ALLOWED_HNLCALC_EXPR_CALLS:
+                    raise ValueError(f"hnl.{attr} is not allowed in expressions")
+                return getattr(self._hnl, attr)
+            if base == "np":
+                if attr not in _ALLOWED_NUMPY_ATTRS:
+                    raise ValueError(f"np.{attr} is not allowed in expressions")
+                return getattr(self._np, attr)
+            raise ValueError(f"Attribute access not allowed on base: {base}")
+
+        if isinstance(node, ast.Call):
+            if node.keywords:
+                raise ValueError("Keyword arguments are not allowed in expressions")
+            func = self._eval_node(node.func)
+            args = [self._eval_node(a) for a in node.args]
+            return func(*args)
+
+        raise ValueError(f"Expression node not allowed: {type(node).__name__}")
 
 
 # ----------------------------------------------------------------------
@@ -189,16 +292,10 @@ class HNLModel:
         coupling = np.sqrt(self.Ue2 + self.Umu2 + self.Utau2)
         hnl = self._hnlcalc  # BR strings reference "hnl" object
 
-        def _safe_eval(expr):
-            """
-            Evaluate a BR expression with a tightly scoped context.
-            Allows access only to hnl, mass, and coupling; no builtins.
-            """
-            return eval(
-                expr,
-                {"__builtins__": {}},
-                {"hnl": hnl, "mass": mass, "coupling": coupling, "np": np},
-            )
+        evaluator = _SafeExprEvaluator(hnl=hnl, mass=mass, coupling=coupling, np_module=np)
+
+        def _safe_eval(expr: str):
+            return evaluator.eval(expr)
 
         # Dictionary to accumulate BRs per parent
         br_per_parent = {}

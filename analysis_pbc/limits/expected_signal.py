@@ -144,7 +144,7 @@ def expected_signal_events(
             continue
 
         eff_parent = np.sum(w * P) / w_sum
-        # N = L * sigma * BR * eff (1 pb = 1000 fb)
+        # N = L(fb^-1) × σ(pb) × (1e3 fb/pb) × BR × ε
         total_expected += lumi_fb * (sigma_parent_pb * 1e3) * BR_parent * eff_parent
 
     # Diagnostics: log once per mass point (at first scan point)
@@ -197,4 +197,3 @@ def scan_eps2_for_mass(
     eps2_min = float(eps2_grid[idx_above[0]])
     eps2_max = float(eps2_grid[idx_above[-1]])
     return eps2_grid, Nsig, eps2_min, eps2_max
-

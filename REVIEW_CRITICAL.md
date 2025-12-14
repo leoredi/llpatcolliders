@@ -10,7 +10,7 @@
 
 |                          | **A. Production (Pythia + MadGraph)**                              | **B. Analysis (geometry / limits / plots)**                         |
 |--------------------------|---------------------------------------------------------------------|----------------------------------------------------------------------|
-| **1. Code / SW Engineering** | parent_pdg=0 data loss (logged); race condition in geometry cache; fragile regex for xsec extraction → [§1A](#1a-code--production) | Slow row-by-row iteration in geometry; eval() security pattern in HNLCalc wrapper; eps2 grid resolution → [§1B](#1b-code--analysis) |
+| **1. Code / SW Engineering** | parent_pdg=0 data loss (logged); race condition in geometry cache; fragile regex for xsec extraction → [§1A](#1a-code--production) | eps2 grid resolution → [§1B](#1b-code--analysis) |
 | **2. Physics / Phenomenology** | τ→πN only approximation; fromTau BR=0 (missing tau in production_brs); Λc channels not configured; phase-space 3-body kinematics → [§2A](#2a-physics--production) | Majorana factor=2 never applied; no detector/reco efficiency or backgrounds; W/Z BR approximations → [§2B](#2b-physics--analysis) |
 
 ---
@@ -21,6 +21,8 @@
 - Fixed off-shell W/Z losses: `production/madgraph_production/scripts/lhe_to_csv.py` defaults missing parent_pdg to 24 and logs inferred parents to prevent BR=0 drops.
 - Added Λc semileptonic production: `production/pythia_production/main_hnl_production.cc` now forces Λc→ΛℓN when kinematically allowed.
 - Improved tau fromTau kinematics: added τ→ρN and τ→3πN representative modes (weights split) in `production/pythia_production/main_hnl_production.cc`.
+- Fixed geometry performance: `analysis_pbc/geometry/per_parent_efficiency.py` now batches ray intersection calls and handles multi-intersection rays.
+- Removed `eval()` from HNLCalc wrapper: `analysis_pbc/models/hnl_model_hnlcalc.py` uses a safe AST evaluator.
 - Enabled form-factor semileptonic ingestion: combine/analysis accept and prefer `*_ff` CSVs; documented the optional third production step in `production/madgraph_production/FORMFACTOR_SEMILEPTONIC.md` and noted it in `run_hnl_scan.py` docstring. No MG generator/cards provided yet—user must supply MG FF samples.
 
 ## Updates (2025-12-11, session with Claude Opus 4.5)
@@ -109,6 +111,8 @@ with tempfile.NamedTemporaryFile(delete=False, dir=geom_csv.parent) as tmp:
 
 **File:** `analysis_pbc/geometry/per_parent_efficiency.py:323-378`
 
+**Status:** RESOLVED (batched ray intersection)
+
 **Issue:** Using `for idx, row in df.iterrows()` is O(N) with DataFrame overhead per row. For 100k+ HNLs, this is very slow.
 
 **Impact:** Geometry preprocessing becomes the bottleneck; users wait hours unnecessarily.
@@ -124,6 +128,8 @@ locations, _, _ = mesh.ray.intersects_location(ray_origins=origins, ray_directio
 ### 1B.2 — eval() usage in HNLCalc wrapper
 
 **File:** `analysis_pbc/models/hnl_model_hnlcalc.py:194-203`
+
+**Status:** RESOLVED (AST whitelist evaluator)
 
 **Issue:** Uses Python `eval()` on strings from HNLCalc. While restricted namespace is used, this is a security anti-pattern. If HNLCalc were compromised (e.g., malicious update), arbitrary code execution is possible.
 
