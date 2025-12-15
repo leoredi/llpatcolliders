@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """
-U² limit calculator driver (serial / multiprocessing).
+U² limit calculator driver.
 
 Usage:
-    python run_serial.py              # Serial processing (Majorana, default)
-    python run_serial.py --parallel   # Parallel processing (uses all cores)
-    python run_serial.py --parallel --workers 8  # Use 8 cores
-    python run_serial.py --dirac      # Dirac HNL interpretation (×2 yield)
+    python run.py                       # Single-threaded (Majorana, default)
+    python run.py --parallel            # Parallel processing (uses all cores)
+    python run.py --parallel --workers 8  # Use 8 cores
+    python run.py --dirac               # Dirac HNL interpretation (×2 yield)
 """
 
 import sys
@@ -146,13 +146,14 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None,
     )
 
     files = []
+    empty_files = []  # Track empty files, report only if they would be used
     for f in SIM_DIR.glob(f"*{flavour}*.csv"):
-        if f.stat().st_size < 1000:  # Skip empty files
-            print(f"[SKIP] Empty file: {f.name}")
-            continue
-
         match = pattern.search(f.name)
         if not match:
+            continue
+
+        if f.stat().st_size < 1000:  # Track empty files for later reporting
+            empty_files.append(f)
             continue
 
         mass_str = match.group(1)
@@ -268,6 +269,18 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None,
 
     files_by_mass = selected_by_mass
 
+    # Report empty files only if no valid file exists for that mass at all
+    # (i.e., the mass would be completely missing from analysis)
+    masses_with_valid_files = {key[0] for key in files_by_mass.keys()}
+
+    for f in empty_files:
+        m = pattern.search(f.name)
+        if m:
+            mass_val = float(m.group(1).replace("p", "."))
+            # Only warn if NO valid file exists for this mass
+            if mass_val not in masses_with_valid_files:
+                print(f"[SKIP] Empty file (no valid alternative): {f.name}")
+
     mass_points = sorted(files_by_mass.keys(), key=lambda x: x[0])
     print(f"Found {len(mass_points)} mass points")
 
@@ -310,7 +323,8 @@ if __name__ == "__main__":
     parser.add_argument("--dirac", action="store_true", help="Dirac HNL interpretation (×2 yield vs Majorana)")
     args = parser.parse_args()
 
-    mode_str = f"PARALLEL ({args.workers if args.workers else multiprocessing.cpu_count()} workers)" if args.parallel else "SERIAL"
+    n_workers = args.workers if args.workers else multiprocessing.cpu_count()
+    mode_str = f"PARALLEL, {n_workers} workers" if args.parallel else "SINGLE-THREADED"
     hnl_type = "DIRAC" if args.dirac else "MAJORANA"
     print("="*60)
     print(f"U² LIMIT CALCULATOR ({mode_str}, {hnl_type})")

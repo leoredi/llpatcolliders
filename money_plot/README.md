@@ -236,7 +236,7 @@ Complete pipeline:
    └→ output/csv/geometry/HNL_*_geom.csv
 
 4. Limits Calculation
-   └→ python analysis_pbc/limits/run_serial.py --parallel
+   └→ python analysis_pbc/limits/run.py --parallel
    └→ output/csv/analysis/HNL_U2_limits_summary.csv
 
 5. Moneyplot Generation ← THIS SCRIPT
@@ -269,7 +269,7 @@ cd analysis_pbc
 conda run -n llpatcolliders python limits/combine_production_channels.py
 
 # 2. Run analysis
-conda run -n llpatcolliders python limits/run_serial.py --parallel
+conda run -n llpatcolliders python limits/run.py --parallel
 ```
 
 **Problem:** Empty or incomplete plot
@@ -297,7 +297,7 @@ Expected features of a correct moneyplot:
 ## References
 
 - **Detector geometry:** `analysis_pbc/geometry/per_parent_efficiency.py`
-- **Limits calculation:** `analysis_pbc/limits/run_serial.py`
+- **Limits calculation:** `analysis_pbc/limits/run.py`
 - **HNL physics:** `analysis_pbc/models/hnl_model_hnlcalc.py`
 
 ## Example Output

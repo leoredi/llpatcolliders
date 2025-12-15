@@ -55,10 +55,10 @@ conda run -n llpatcolliders python limits/combine_production_channels.py
 
 ```bash
 # For all mass points, all flavors (parallel processing)
-conda run -n llpatcolliders python limits/run_serial.py --parallel
+conda run -n llpatcolliders python limits/run.py --parallel
 
-# Or serial processing (slower)
-conda run -n llpatcolliders python limits/run_serial.py
+# Or single-threaded (slower)
+conda run -n llpatcolliders python limits/run.py
 
 # Or run benchmark test (2.6 GeV muon)
 conda run -n llpatcolliders python tests/test_26gev_muon.py
@@ -93,7 +93,7 @@ The analysis follows a **three-stage** workflow matching PBC methodology (MATHUS
 **Key:** Each HNL processed individually (per-parent counting).
 
 ### Stage 3: Limits (Python + HNLCalc)
-**Location:** `limits/run_serial.py`, `limits/expected_signal.py`, `models/hnl_model_hnlcalc.py`
+**Location:** `limits/run.py`, `limits/expected_signal.py`, `models/hnl_model_hnlcalc.py`
 
 - HNLCalc provides BR(parent→ℓN, |U|²) and cτ₀(mass, |U|²)
 - Per-parent counting: `N_sig = Σ_parents [L × σ_parent × BR × ε_geom]`
@@ -134,7 +134,7 @@ analysis_pbc/
 │   └── per_parent_efficiency.py    # Ray-tracing and boost calculations
 ├── limits/
 │   ├── combine_production_channels.py  # Combine MadGraph + Pythia (run FIRST!)
-│   ├── run_serial.py                   # Main analysis driver (parallel/serial)
+│   ├── run.py                           # Main analysis driver
 │   ├── expected_signal.py              # Signal-yield kernel (expected_signal_events)
 │   ├── MULTI_HNL_METHODOLOGY.md        # Per-parent counting explanation
 │   └── ROBUSTNESS_FIXES.md             # Defensive programming guide

@@ -8,7 +8,7 @@ Reusable physics kernel for the HNL limit pipeline:
   - scan_eps2_for_mass(): scan eps² grid and find exclusion interval
 
 This module intentionally contains NO file-discovery, caching, or multiprocessing
-logic. Drivers like `limits/run_serial.py` handle I/O and orchestration.
+logic. Drivers like `limits/run.py` handle I/O and orchestration.
 """
 
 from __future__ import annotations

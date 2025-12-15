@@ -38,7 +38,7 @@ Typical workflow:
     1. Run Pythia production (kaon/charm/beauty regimes)
     2. Run MadGraph production (EW regime)
     3. **Run this script** ← YOU ARE HERE
-    4. Run analysis: python limits/run_serial.py --parallel
+    4. Run analysis: python limits/run.py --parallel
     5. Generate plots: python ../money_plot/plot_money_island.py
 """
 
@@ -277,7 +277,7 @@ def main():
         print(f"✓ Created {total_combined} combined files")
         print(f"✓ Moved to {sim_dir}")
         print(f"✓ Deleted {len(set(files_to_backup))} original files (data preserved in combined files)")
-        print(f"\n✅ Ready to run analysis: python limits/run_serial.py")
+        print(f"\n✅ Ready to run analysis: python limits/run.py")
     print("=" * 70)
 
 

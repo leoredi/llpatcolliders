@@ -264,7 +264,7 @@ N_sig = L × σ_parent × BR × ε_parent
 **Analysis (Python):**
 4. `geometry/per_parent_efficiency.py:247-276` - Weight semantics docstring
 5. `limits/expected_signal.py` - Per-parent counting + decay probability kernel
-6. `limits/run_serial.py` - Production-file selection + geometry caching driver
+6. `limits/run.py` - Production-file selection + geometry caching driver
 7. `models/hnl_model_hnlcalc.py:113-144` - HNLCalc wrapper
 8. `config/production_xsecs.py:74-145` - Cross-section lookup
 
@@ -304,7 +304,7 @@ N_sig = L × σ_parent × BR × ε_parent
 1. **Run full mass scan:**
    ```bash
    cd analysis_pbc
-   conda run -n llpatcolliders python limits/run_serial.py --parallel
+   conda run -n llpatcolliders python limits/run.py --parallel
    ```
 
 2. **Monitor logs for warnings:**

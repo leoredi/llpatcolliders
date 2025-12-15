@@ -27,11 +27,11 @@ Use 2-decimal mass strings (e.g., `2p60`), same columns as Pythia/MG EW (`event,
    ```
    cd analysis_pbc
    conda run -n llpatcolliders python limits/combine_production_channels.py
-   conda run -n llpatcolliders python limits/run_serial.py --parallel
+   conda run -n llpatcolliders python limits/run.py --parallel
    ```
 
 ### Why this works
-- `combine_production_channels.py` and `run_serial.py` now match `_ff` regimes and automatically pick them over the phase-space versions, so no double counting.
+- `combine_production_channels.py` and `run.py` now match `_ff` regimes and automatically pick them over the phase-space versions, so no double counting.
 - Per-parent normalization still uses `production_xsecs.get_parent_sigma_pb` and `production_brs()`, keeping physics consistent.
 
 ### TODO (not automated)

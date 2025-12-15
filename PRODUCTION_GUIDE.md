@@ -183,7 +183,7 @@ cd analysis_pbc
 ```
 
 ```bash
-python limits/run_serial.py
+python limits/run.py
 ```
 
 ### Generate Plots
@@ -205,7 +205,7 @@ python plot_money_island.py
 | Pythia | `production/pythia_production` | `./run_parallel_production.sh all` |
 | MadGraph | `production/madgraph_production` (Docker) | `python3 scripts/run_hnl_scan.py` |
 | Combine | `analysis_pbc` | `python limits/combine_production_channels.py` |
-| Analysis | `analysis_pbc` | `python limits/run_serial.py` |
+| Analysis | `analysis_pbc` | `python limits/run.py` |
 | Plots | `money_plot` | `python plot_money_island.py` |
 
 ---

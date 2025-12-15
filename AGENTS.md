@@ -17,7 +17,7 @@ cd production/madgraph_production && python3 scripts/run_hnl_scan.py # uses MG5/
 cd analysis_pbc && conda run -n llpatcolliders python limits/combine_production_channels.py
 
 # 3. Calculate limits
-cd analysis_pbc && conda run -n llpatcolliders python limits/run_serial.py --parallel
+cd analysis_pbc && conda run -n llpatcolliders python limits/run.py --parallel
 
 # 4. Generate plot
 cd money_plot && conda run -n llpatcolliders python plot_money_island.py
@@ -56,7 +56,7 @@ cd money_plot && conda run -n llpatcolliders python plot_money_island.py
 │   ├── models/                   # HNLCalc wrapper
 │   └── limits/
 │       ├── combine_production_channels.py  # Combine meson + EW (RUN FIRST!)
-│       └── run_serial.py                   # Main analysis driver
+│       └── run.py                           # Main analysis driver
 └── money_plot/                   # Exclusion plots
 ```
 
@@ -177,7 +177,7 @@ for each HNL:
 ### Stage 2: Limit Calculation
 
 ```python
-# analysis_pbc/limits/run_serial.py --parallel
+# analysis_pbc/limits/run.py --parallel
 for mass, flavour, |U|² in scan:
     N_sig = Σ_parents [σ × BR(|U|²) × ε_geom]
     if N_sig ≥ 3: excluded
@@ -284,7 +284,7 @@ rm output/csv/geometry/HNL_*_geom.csv  # Force recompute
 ```
 
 ### 5. Wrong Parent PDGs
-- Run `limits/run_serial.py` and watch for `[WARN] ... have no HNLCalc BR` / `no cross-section` messages from `limits/expected_signal.py`
+- Run `limits/run.py` and watch for `[WARN] ... have no HNLCalc BR` / `no cross-section` messages from `limits/expected_signal.py`
 - PDG 310 (K_S⁰) not in HNLCalc → <0.1% loss (events dropped)
 
 ---
@@ -348,7 +348,7 @@ awk -F',' 'NR>1 {print $4}' output/csv/simulation/HNL_2p60GeV_muon_combined.csv 
 - `production/pythia_production/main_hnl_production.cc` - Pythia simulation
 - `production/madgraph_production/scripts/run_hnl_scan.py` - MadGraph driver
 - `analysis_pbc/limits/combine_production_channels.py` - Combine meson + EW (REQUIRED!)
-- `analysis_pbc/limits/run_serial.py` - Main analysis driver
+- `analysis_pbc/limits/run.py` - Main analysis driver
 - `analysis_pbc/limits/expected_signal.py` - Signal-yield kernel (expected_signal_events)
 - `config_mass_grid.py` - Mass grid definitions
 
