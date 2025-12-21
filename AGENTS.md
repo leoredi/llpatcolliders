@@ -29,6 +29,41 @@ cd money_plot && conda run -n llpatcolliders python plot_money_island.py
 
 ---
 
+## ALP Mode (Status + How To Run)
+
+ALP limit support is implemented in the analysis/plotting layer, and a **Pythia-based kinematics generator** is provided for transverse-detector style projections.
+
+Production (quick transverse-style suite):
+
+```bash
+cd production/pythia_production
+./run_alp_transverse_quick.sh
+```
+
+This generates ALP CSVs in `output/csv/simulation/` for:
+- `BC10`: `B_to_Ka` (heavy flavour, low mass)
+- `BC10`: `h_to_aa` (Higgs production; exotic decay applied as an isotropic 2-body decay in the parent rest frame)
+- `BC9`: `Z_to_gamma_a` (Z production; exotic decay applied as an isotropic 2-body decay in the parent rest frame)
+
+Once you have ALP simulation CSVs in `output/csv/simulation/` (see naming convention below), run:
+
+```bash
+cd analysis_pbc && conda run -n llpatcolliders python limits/run.py --particle alp --alp-benchmark all --parallel --br-h-aa 0.1
+cd money_plot && conda run -n llpatcolliders python plot_money_island.py --particle alp
+```
+
+**Outputs:**
+- Limits CSV: `output/csv/analysis/ALP_fa_limits_summary.csv`
+- Plot: `output/images/ALP_moneyplot_island.png`
+
+**ALP simulation CSV naming (expected):**
+`ALP_{mass}GeV_{benchmark}_{channel}.csv`, where:
+- `{mass}` uses `p` as decimal separator (e.g. `3p00`)
+- `{benchmark}` is `BC9`, `BC10`, or `BC11`
+- `{channel}` name contains one of: `h_to_aa`, `h_to_Za`, `Z_to_gamma_a`, `B_to_Ka`
+
+---
+
 ## Environment (Important)
 
 - **Default:** All analysis/plotting scripts **must** run inside the `llpatcolliders` conda env.

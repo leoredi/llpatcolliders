@@ -1,0 +1,38 @@
+! ==========================================================================
+! ALP production from inclusive Z production with forced decay:
+!   Z -> gamma a
+!
+! Kinematics-only generation (BR=1.0 forced in C++).
+! ==========================================================================
+
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 14000.
+
+Tune:pp = 14
+Tune:ee = 7
+
+SoftQCD:all = off
+HardQCD:all = off
+WeakSingleBoson:all = off
+
+! Inclusive Z/gamma* production
+WeakSingleBoson:ffbar2gmZ = on
+
+! Focus around the Z pole to reduce gamma* contributions
+PhaseSpace:mHatMin = 50.0
+
+Init:showChangedSettings = on
+Init:showChangedParticleData = on
+Init:showAllSettings = off
+Init:showAllParticleData = off
+
+Next:numberCount = 10000
+Next:numberShowInfo = 1
+Next:numberShowProcess = 1
+Next:numberShowEvent = 1
+
+Stat:showPartonLevel = off
+
+Main:numberOfEvents = 100000
+

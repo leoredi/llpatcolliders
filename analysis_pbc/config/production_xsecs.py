@@ -93,11 +93,28 @@ SIGMA_W_PB = 2.0 * 1e8  # σ(pp→W) ~ 200 nb (W+ + W- combined)
 SIGMA_Z_PB = 6.0 * 1e7  # σ(pp→Z) ~ 60 nb
 
 # ==========================================
+# HIGGS PRODUCTION (HL-LHC, 14 TeV)
+# ==========================================
+# NNLO+NNLL values used in many HL-LHC projections (Higgs WG YR4-style inputs).
+# Keep these separate from the HNL W/Z constants above to avoid retuning the
+# existing validated HNL pipeline.
+SIGMA_H_GGF_PB = 54.67
+SIGMA_H_VBF_PB = 4.278
+SIGMA_H_WH_PB = 1.373
+SIGMA_H_ZH_PB = 0.8839
+SIGMA_H_TTH_PB = 0.6113
+SIGMA_H_TOTAL_PB = 61.8
+
+# Z inclusive production at 14 TeV (pb) for ALP-style projections
+# (used when particle="alp" in get_parent_sigma_pb)
+SIGMA_Z_TOTAL_PB = 60.5e3  # 60.5 nb
+
+# ==========================================
 # PARENT PRODUCTION LOOKUP
 # Returns: Production Cross Section in pb
 # ==========================================
 
-def get_parent_sigma_pb(parent_pdg: int) -> float:
+def get_parent_sigma_pb(parent_pdg: int, *, particle: str = "hnl") -> float:
     """
     Returns the total production cross-section for a specific parent meson species.
 
@@ -123,6 +140,10 @@ def get_parent_sigma_pb(parent_pdg: int) -> float:
     - These are approximate values; real analysis should use NLO QCD calculations
     """
     pid = abs(int(parent_pdg))
+
+    # --- HIGGS ---
+    if pid == 25:
+        return SIGMA_H_TOTAL_PB
 
     # --- KAON SECTOR (Light QCD) ---
     # NOTE: Only K± (321) is configured in Pythia for HNL production.
@@ -170,6 +191,8 @@ def get_parent_sigma_pb(parent_pdg: int) -> float:
     if pid == 24:  # W± bosons
         return SIGMA_W_PB
     if pid == 23:  # Z boson
+        if particle == "alp":
+            return SIGMA_Z_TOTAL_PB
         return SIGMA_Z_PB
 
     # Default fallback (shouldn't happen if inputs are clean)
@@ -183,6 +206,7 @@ def get_sigma_summary():
     Useful for debugging and verification.
     """
     common_parents = [
+        (25, "h"),
         (321, "K+"),
         (421, "D0"),
         (411, "D+"),

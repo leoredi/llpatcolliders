@@ -1,0 +1,44 @@
+! ==========================================================================
+! ALP Production from B-meson decays (forced decays for kinematics)
+!
+! Physics target: transverse LLP detector at HL-LHC (14 TeV).
+! We generate hard bb̄ production and force selected B hadrons to decay:
+!   B -> K a
+!
+! IMPORTANT: This card (and the C++ forcing) defines kinematics only.
+! Physical production BRs are applied later in analysis_pbc.
+! ==========================================================================
+
+! Beams
+Beams:idA = 2212
+Beams:idB = 2212
+Beams:eCM = 14000.
+
+! Tune
+Tune:pp = 14
+Tune:ee = 7
+
+! Hard bb̄
+SoftQCD:all = off
+HardQCD:all = off
+HardQCD:hardbbbar = on
+HardQCD:hardccbar = off
+WeakSingleBoson:all = off
+PhaseSpace:pTHatMin = 0.0
+
+! Output control
+Init:showChangedSettings = on
+Init:showChangedParticleData = on
+Init:showAllSettings = off
+Init:showAllParticleData = off
+
+Next:numberCount = 10000
+Next:numberShowInfo = 1
+Next:numberShowProcess = 1
+Next:numberShowEvent = 1
+
+Stat:showPartonLevel = off
+
+! Overridden in C++
+Main:numberOfEvents = 100000
+
