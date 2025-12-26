@@ -24,6 +24,7 @@ from ..core import (
     kallen
 )
 from ..decays import HNL_CHANNELS, DecayChannel
+from ..decays.three_body import sample_three_body_decay, hnl_three_body_leptonic_me
 
 
 class HNL(LLPModel):
@@ -462,11 +463,24 @@ class HNL(LLPModel):
                 all_daughters.append(daughters_lab)
 
             elif ch.n_body == 3:
-                # TODO: Implement 3-body phase space sampling (Phase 2)
-                raise NotImplementedError(
-                    f"3-body decay {ch.name} not yet implemented. "
-                    "This is planned for Phase 2."
-                )
+                # Three-body decay with matrix element
+                m1, m2, m3 = ch.daughter_masses()
+
+                # Create matrix element function for this decay
+                def me_wrapper(s12, s13, s23, M, _m1, _m2, _m3):
+                    return hnl_three_body_leptonic_me(s12, s13, s23, M, _m1, _m2, _m3)
+
+                # Sample in rest frame
+                daughters_rest = sample_three_body_decay(
+                    self.mass, m1, m2, m3,
+                    n_events=1,
+                    matrix_element=me_wrapper,
+                    rng=self._rng
+                )[0]  # Shape: (3, 4)
+
+                # Boost to lab frame
+                daughters_lab = boost_to_lab(daughters_rest, parent_4vec[i])
+                all_daughters.append(daughters_lab)
 
         result = np.array(all_daughters)  # Shape: (n_events, n_daughters, 4)
 

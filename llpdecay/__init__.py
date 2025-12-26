@@ -90,6 +90,14 @@ from .decays import (
 from .models import (
     LLPModel,
     HNL,
+    ALP,
+)
+
+# Three-body decays (Phase 2)
+from .decays import (
+    ThreeBodyPhaseSpace,
+    sample_three_body_decay,
+    hnl_three_body_leptonic_me,
 )
 
 __all__ = [
@@ -128,7 +136,13 @@ __all__ = [
     'list_channels',
     'group_by_flavor',
 
+    # Three-body decays
+    'ThreeBodyPhaseSpace',
+    'sample_three_body_decay',
+    'hnl_three_body_leptonic_me',
+
     # Models
     'LLPModel',
     'HNL',
+    'ALP',
 ]

@@ -57,11 +57,16 @@ print(f"Decay length: {hnl.ctau():.3e} m")
 - ✅ Majorana vs Dirac modes
 - ✅ Lifetime and decay probability calculations
 
-### Planned (Phase 2)
-- ⏳ Three-body decay channels (ν ℓ ℓ)
-- ⏳ Integration with HNLCalc for BR validation
-- ⏳ ALP model implementation
-- ⏳ Radiative corrections
+### Implemented (Phase 2) ✨
+- ✅ Three-body decay phase space with Dalitz plot sampling
+- ✅ Matrix elements for N → ν ℓ⁺ ℓ⁻ decays
+- ✅ ALP (Axion-Like Particle) model (photophilic & leptophilic)
+- ✅ Hadronic form factors (π, K transitions)
+- ✅ QED radiative corrections
+- ✅ Electroweak higher-order effects
+- ✅ HNLCalc integration for BR validation
+- ✅ Running electromagnetic coupling
+- ✅ Comprehensive test suites
 
 ## Physics References
 
@@ -158,9 +163,82 @@ Supported HNL decay modes:
 **Two-body neutral current:**
 - `nu_e_pi0`, `nu_mu_pi0`, `nu_tau_pi0`: N → ν π⁰ (invisible)
 
-**Three-body (Phase 2):**
+**Three-body:**
 - `nu_e_e`, `nu_mu_mu`, `nu_tau_tau`: N → ν ℓ⁺ ℓ⁻
 - `nu_e_mu`, `nu_mu_e`: N → ν ℓ₁⁺ ℓ₂⁻
+
+### ALP Model
+
+```python
+from llpdecay import ALP
+
+# Photophilic ALP (couples to photons)
+alp_photon = ALP(mass=0.5, g_agg=1e-4)  # g_aγγ coupling
+brs = alp_photon.branching_ratios()
+print(f"BR(a → γγ) = {brs.get('gamma_gamma', 0):.3f}")
+
+# Leptophilic ALP (couples to leptons)
+alp_lepton = ALP(mass=1.0, f_a=1e8, c_e=1.0, c_mu=1.0)
+daughters = alp_lepton.sample_decay(parent_4vec)
+```
+
+### Three-Body Decays
+
+```python
+from llpdecay import HNL
+
+# HNL with 3-body leptonic decays
+hnl = HNL(mass=2.0, Umu=1e-6)
+
+# Automatically handles both 2-body and 3-body
+daughters, channel = hnl.sample_decay(
+    parent_4vec,
+    return_channel=True
+)
+
+# Channel could be 'mu_pi' (2-body) or 'nu_mu_mu' (3-body)
+print(f"Decayed via: {channel}")
+print(f"Number of daughters: {daughters.shape[1]}")
+```
+
+### Advanced Features
+
+```python
+from llpdecay.advanced import (
+    form_factor_pion,
+    qed_correction_lepton_pair,
+    running_alpha_em
+)
+
+# Pion form factor
+q2 = 1.0  # GeV²
+ff = form_factor_pion(q2)
+print(f"f₊(q²={q2}) = {ff:.3f}")
+
+# QED correction for e⁺e⁻
+s = 10.0  # GeV²
+corr = qed_correction_lepton_pair(s, m_electron)
+print(f"QED correction: {corr:.4f}")
+
+# Running coupling
+alpha_mZ = running_alpha_em(91.2**2)
+print(f"α(m_Z) = {alpha_mZ:.5f}")
+```
+
+### HNLCalc Validation
+
+```python
+from llpdecay.validation import print_comparison_table
+
+# Compare with HNLCalc (if installed)
+print_comparison_table(mass=2.0, Umu=1e-6)
+
+# Output:
+# Channel         llpdecay     HNLCalc      Diff       Status
+# --------------------------------------------------------------
+# mu_pi           45.2%        45.1%        0.2%       ✓
+# ...
+```
 
 ## Contributing
 
