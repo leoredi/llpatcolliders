@@ -19,6 +19,8 @@ analysis_pbc/model/
 
 # CSV files (too large for git)
 *.csv
+# Exception: HNLCalc data file (required)
+!analysis_pbc/HNLCalc/alph_str.csv
 
 # Run outputs (logs, CSVs, intermediates)
 output/
@@ -42,3 +44,12 @@ pythia/**/config.log
 pythia/**/config.status
 pythia/**/Makefile.inc
 pythia/**/Makefile.local
+
+# pythia8315 build artifacts (in production folder)
+production/pythia_production/pythia8315/Makefile.inc
+production/pythia_production/pythia8315/bin/
+production/pythia_production/pythia8315/lib/
+production/pythia_production/pythia8315/examples/Makefile.inc
+production/pythia_production/pythia8315/examples/*.dat
+production/pythia_production/pythia8315/examples/main*
+production/pythia_production/pythia8315/examples/plot*.py

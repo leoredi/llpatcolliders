@@ -20,7 +20,7 @@ cd analysis_pbc && conda run -n llpatcolliders python limits/combine_production_
 cd analysis_pbc && conda run -n llpatcolliders python limits/run.py --parallel
 
 # 4. Generate plot
-cd money_plot && conda run -n llpatcolliders python plot_money_island.py
+mkdir -p output/images && cd money_plot && conda run -n llpatcolliders python plot_money_island.py
 ```
 
 **Output:** `output/images/HNL_moneyplot_island.png`
@@ -271,6 +271,7 @@ ls output/csv/simulation/*_combined.csv | wc -l  # Should be ~122
 ```bash
 cd analysis_pbc
 git clone https://github.com/laroccod/HNLCalc.git
+touch HNLCalc/__init__.py  # Make it a Python package
 pip install sympy mpmath particle numba 'scikit-hep==0.4.0'
 ```
 

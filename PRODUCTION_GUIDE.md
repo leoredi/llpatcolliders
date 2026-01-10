@@ -30,6 +30,9 @@ ls -lh main_hnl_production
 ```bash
 # Run full production (all flavours: electron, muon, tau)
 ./run_parallel_production.sh all
+
+# For non-interactive/scripted runs (auto-accept prompt):
+echo "y" | ./run_parallel_production.sh all
 ```
 
 Or run individual flavours:
@@ -190,6 +193,7 @@ python limits/run.py
 
 ```bash
 cd money_plot
+mkdir -p ../output/images  # Create output directory if needed
 ```
 
 ```bash

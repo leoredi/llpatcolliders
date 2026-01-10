@@ -18,10 +18,6 @@ from matplotlib import gridspec
 from numba import jit
 from particle import Particle
 from cycler import cycler
-from pathlib import Path
-
-
-MODEL_DIR = Path(__file__).resolve().parents[1] / "model"
 
 
 
@@ -1162,14 +1158,18 @@ class HNLCalc(Utility):
         for channel in self.modes_active.keys():
             if channel not in ['nuqq','lud','nuhad','lhad']:
                 for mode in self.modes_active[channel]: 
-
+                    
                     modes.append(mode)
 
-                    br_dir = MODEL_DIR / "br"
-                    file_name = "-".join(str(p) for p in mode) + ".csv"
+                    csv_path = f"model/br/"
 
-                    filenames.append(str(br_dir / file_name))
-
+                    for p in mode: csv_path += f"{p}-"
+                    
+                
+                
+                    
+                    filenames.append(csv_path[:-1]+".csv")
+        
         finalstates  = []
         
         for mode in modes: 
@@ -2014,7 +2014,7 @@ class HNLCalc(Utility):
     
         if save_ctau: 
 
-            path = MODEL_DIR / "ctau"
+            path = "model/ctau"
             os.makedirs(path,exist_ok = True)
             
             #save ctau 
@@ -2025,7 +2025,7 @@ class HNLCalc(Utility):
 
             df=pd.DataFrame(df_data)
 
-            save_path = path / "ctau.txt"
+            save_path = f"{path}/ctau.txt"
 
             df.to_csv(save_path,sep=' ',header=False,index=False)
 
@@ -2036,14 +2036,14 @@ class HNLCalc(Utility):
             for channel in self.modes_active.keys():
 
                 
+                
 
-
-                channel_path_br = MODEL_DIR / "br"
+                channel_path_br = f"model/br/"
 
                 os.makedirs(channel_path_br,exist_ok = True)
                 try:
                     for f in os.listdir(channel_path_br):
-                        os.remove(channel_path_br / f)
+                        os.remove(f"{channel_path_br}/{f}")
 
 
                 except:
@@ -2062,11 +2062,14 @@ class HNLCalc(Utility):
                 df=pd.DataFrame(df_data)
                 
                
-                br_dir = MODEL_DIR / "br"
-                file_name = "-".join(str(p) for p in mode) + ".csv"
-                save_path = br_dir / file_name
+                save_path = f"model/br/"
 
-                df.to_csv(save_path,sep=' ',header=False,index=False)
+                for p in mode: save_path += f"{p}-"
+                    
+                
+                
+
+                df.to_csv(save_path[:-1]+".csv",sep=' ',header=False,index=False)
 
   
 
