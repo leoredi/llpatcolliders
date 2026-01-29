@@ -183,12 +183,7 @@ echo "  Single core: ~$single_core_hours hours" | tee -a "$LOGFILE"
 echo "  $MAX_PARALLEL cores: ~$parallel_hours hours" | tee -a "$LOGFILE"
 echo "" | tee -a "$LOGFILE"
 
-read -p "Continue with parallel production? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Production cancelled." | tee -a "$LOGFILE"
-    exit 0
-fi
+echo "Starting production..." | tee -a "$LOGFILE"
 echo "" | tee -a "$LOGFILE"
 
 start_time=$(date +%s)

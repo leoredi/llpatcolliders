@@ -1,4 +1,0 @@
-      PMASS(1)=ABS(MDL_MN1)
-      PMASS(2)=ABS(MDL_ME)
-      PMASS(3)=ABS(MDL_MU)
-      PMASS(4)=ABS(MDL_MD)

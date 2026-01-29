@@ -1,1 +1,0 @@
-DIRNAME=P6_n1_mumtapvmx

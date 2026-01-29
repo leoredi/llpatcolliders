@@ -1,9 +1,0 @@
-launch /work/analysis_pbc/decay/work/mg5_hnl_decay_5p00
-set nevents 100
-set iseed 12345
-set lpp1 0
-set lpp2 0
-set ebeam1 0
-set ebeam2 0
-set pdlabel none
-set lhaid 0

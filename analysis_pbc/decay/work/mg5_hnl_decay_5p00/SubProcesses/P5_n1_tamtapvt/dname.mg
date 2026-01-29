@@ -1,1 +1,0 @@
-DIRNAME=P5_n1_tamtapvt

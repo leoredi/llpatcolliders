@@ -1,1 +1,0 @@
-../SubProcesses/P6_n1_tammupvtx/nexternal.inc

@@ -24,4 +24,4 @@ if [ ${#MASS_GRID[@]} -eq 0 ]; then
     exit 1
 fi
 
-[ "${VERBOSE_MASS_GRID:-0}" -eq 1 ] && echo "MASS_GRID: ${#MASS_GRID[@]} points"
+[ "${VERBOSE_MASS_GRID:-0}" -eq 1 ] && echo "MASS_GRID: ${#MASS_GRID[@]} points" || true
