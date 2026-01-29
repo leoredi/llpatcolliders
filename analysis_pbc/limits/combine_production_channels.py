@@ -34,6 +34,9 @@ Usage:
     # Create combined files but don't delete originals
     python combine_production_channels.py --no-cleanup
 
+    # Delete originals after combining (opt-in)
+    python combine_production_channels.py --delete-originals
+
 Typical workflow:
     1. Run Pythia production (kaon/charm/beauty regimes)
     2. Run MadGraph production (EW regime)
@@ -100,29 +103,6 @@ def prefer_ff(regime_files):
     return list(chosen.values())
 
 
-def normalize_boost_column(df):
-    """
-    Normalize boost factor column naming for backward compatibility.
-
-    Production CSVs generated before Dec 2025 used 'boost_gamma'.
-    Current production uses 'beta_gamma' (physically correct: βγ = p/m, not γ = E/m).
-    This function ensures both formats are accepted.
-
-    Args:
-        df: DataFrame loaded from production CSV
-
-    Returns:
-        DataFrame with 'beta_gamma' column (renames 'boost_gamma' if present)
-    """
-    if 'boost_gamma' in df.columns and 'beta_gamma' not in df.columns:
-        df = df.rename(columns={'boost_gamma': 'beta_gamma'})
-    elif 'boost_gamma' in df.columns and 'beta_gamma' in df.columns:
-        # Both present - drop the legacy column
-        df = df.drop(columns=['boost_gamma'])
-    # If only beta_gamma present, no action needed
-    return df
-
-
 def _format_source_label(base_regime: str, mode: str | None, is_ff: bool) -> str:
     label = base_regime
     if is_ff:
@@ -138,18 +118,14 @@ def combine_csvs(csv_paths, output_path):
 
     All files should have the same column structure (Pythia/MadGraph format):
     event, weight, hnl_id, parent_pdg, pt, eta, phi, p, E, mass, prod_x_mm, prod_y_mm, prod_z_mm, beta_gamma
-
-    Note: Legacy files using 'boost_gamma' column name are automatically converted to 'beta_gamma'.
     """
     dfs = []
 
     for base_regime, mode, is_ff, path in csv_paths:
         df = pd.read_csv(path)
-        # Normalize column naming for backward compatibility
-        df = normalize_boost_column(df)
         # Add provenance columns for tracking
         df["source_regime"] = base_regime
-        df["source_mode"] = mode if mode is not None else ""
+        df["source_mode"] = mode if mode is not None else "direct"
         df["source_is_ff"] = bool(is_ff)
         dfs.append(df)
         print(f"    {_format_source_label(base_regime, mode, is_ff):16s}: {len(df):6d} HNLs")
@@ -169,7 +145,8 @@ def main():
     parser = argparse.ArgumentParser(description="Combine production channels at overlapping masses")
     parser.add_argument("--flavour", choices=["electron", "muon", "tau"], help="Process specific flavour only")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without writing files")
-    parser.add_argument("--no-cleanup", action="store_true", help="Don't move/backup files, just create combined versions")
+    parser.add_argument("--no-cleanup", action="store_true", help="Don't move combined files, just create them in a temporary folder")
+    parser.add_argument("--delete-originals", action="store_true", help="Delete original files after combining (opt-in)")
     args = parser.parse_args()
 
     # Paths
@@ -240,10 +217,10 @@ def main():
 
         print()
 
-    # Cleanup: move combined files and delete originals
+    # Cleanup: move combined files (optionally delete originals)
     if not args.dry_run and not args.no_cleanup:
         print(f"\n{'-' * 70}")
-        print("CLEANUP: Moving files and removing duplicates")
+        print("CLEANUP: Moving combined files")
         print(f"{'-' * 70}\n")
 
         # Move combined files to main directory
@@ -253,12 +230,13 @@ def main():
             f.rename(dest)
             print(f"  ✓ {f.name} → {sim_dir.name}/")
 
-        # Delete original overlapping files (they're now combined)
-        print()
-        for f in files_to_backup:
-            if f.exists():  # Check still exists (not already moved)
-                f.unlink()
-                print(f"  ✓ Deleted: {f.name}")
+        if args.delete_originals:
+            # Delete original overlapping files (they're now combined)
+            print()
+            for f in files_to_backup:
+                if f.exists():  # Check still exists (not already moved)
+                    f.unlink()
+                    print(f"  ✓ Deleted: {f.name}")
 
         # Remove empty combined directory
         if combined_dir.exists() and not any(combined_dir.iterdir()):
@@ -267,17 +245,21 @@ def main():
     print("\n" + "=" * 70)
     if args.dry_run:
         print(f"DRY RUN: Would create {len(multi_channel_masses)} combined files")
-        print(f"         Would delete {len(set(files_to_backup))} original files")
+        if args.delete_originals:
+            print(f"         Would delete {len(set(files_to_backup))} original files")
     elif args.no_cleanup:
         print(f"✓ Created {total_combined} combined files in: {combined_dir}")
         print(f"\nManual steps needed:")
         print(f"1. Move combined files to {sim_dir}")
-        print(f"2. Delete original files to avoid double-counting")
+        print(f"2. (Optional) Delete original files to save space")
     else:
         print(f"✓ Created {total_combined} combined files")
         print(f"✓ Moved to {sim_dir}")
-        print(f"✓ Deleted {len(set(files_to_backup))} original files (data preserved in combined files)")
-        print(f"\n✅ Ready to run analysis: python limits/run.py")
+        if args.delete_originals:
+            print(f"✓ Deleted {len(set(files_to_backup))} original files (data preserved in combined files)")
+        else:
+            print(f"• Kept {len(set(files_to_backup))} original files")
+        print(f"\n Ready to run analysis: python limits/run.py")
     print("=" * 70)
 
 

@@ -15,7 +15,6 @@ This script:
 2. Writes run_card.dat and param_card.dat into each process Cards/ directory
 3. Runs MadGraph's generate_events to produce LHE files
 4. Converts LHE → CSV using lhe_to_csv.LHEParser
-5. Extracts cross-sections and appends a summary CSV
 
 Usage (inside Docker container, with repo mounted at /work):
 
@@ -48,13 +47,9 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent  # production/madgraph_production
 sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
-    from config_mass_grid import (
-        ELECTRON_MASSES_EW,
-        MUON_MASSES_EW,
-        TAU_MASSES_EW,
-    )
+    from config_mass_grid import MASS_GRID
 except ImportError as e:
-    print(f"ERROR: Could not import mass grid from config_mass_grid.py")
+    print(f"ERROR: Could not import MASS_GRID from config_mass_grid.py")
     print(f"  Project root: {PROJECT_ROOT}")
     print(f"  Error: {e}")
     sys.exit(1)
@@ -67,18 +62,13 @@ except ImportError as e:
 # Default MG5 path – matches your Dockerfile setup
 DEFAULT_MG5_EXE = os.environ.get("MG5_PATH", "/opt/MG5_aMC_v3_6_6/bin/mg5_aMC")
 
-# Mass grid for EW regime (5-80 GeV) - loaded from config_mass_grid.py
-# Combine all flavours for backward compatibility (when --masses not specified)
-MASS_GRID_FULL = sorted(set(ELECTRON_MASSES_EW + MUON_MASSES_EW + TAU_MASSES_EW))
-
 # Flavours
 FLAVOURS = ['electron', 'muon', 'tau']
 
 # Number of events per mass point (default run)
 N_EVENTS_DEFAULT = 100000
 
-# K_FACTOR = 1.3 is recorded in summary CSV for reference only.
-# The summary CSV stores LO cross-sections; K-factor is NOT pre-applied.
+# K-factor for NLO correction (not applied here; used in analysis)
 # Actual NLO cross-sections used in analysis are defined in:
 #   analysis_pbc/config/production_xsecs.py
 K_FACTOR = 1.3
@@ -148,10 +138,6 @@ class ProjectPaths:
         # Use 2 decimal places to match Pythia convention: 15.0 → 15p00 (not 15p0)
         mass_str = self.mass_label(mass)  # e.g., 15.0 → 15p00, 5.2 → 5p20
         return self.csv_dir / f"HNL_{mass_str}GeV_{flavour}_ew.csv"
-
-    def summary_csv_path(self):
-        """Get summary CSV path"""
-        return self.csv_dir / "summary_HNL_ew_production.csv"
 
     def work_subdir(self, flavour, mass):
         """Get working directory for this run"""
@@ -491,77 +477,6 @@ def convert_lhe_to_csv(paths, flavour, mass, lhe_file):
         return None
 
 
-# ============================================================================
-# SUMMARY CSV
-# ============================================================================
-
-def initialize_summary_csv(paths):
-    """Create summary CSV with header if it doesn't exist"""
-    summary_path = paths.summary_csv_path()
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if not summary_path.exists():
-        header = "mass_hnl_GeV,flavour,xsec_pb,xsec_error_pb,k_factor,n_events_generated,csv_path,timestamp,status"
-        with open(summary_path, 'w') as f:
-            f.write(header + '\n')
-
-
-def append_to_summary(paths, flavour, mass, xsec_data, n_events_csv):
-    """Append successful result to summary CSV"""
-    summary_path = paths.summary_csv_path()
-    # Use just filename since all CSVs are in same directory
-    csv_rel_path = paths.csv_path(flavour, mass).name
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    row = (
-        f"{mass:.1f},"
-        f"{flavour},"
-        f"{xsec_data['xsec_pb']:.6e},"
-        f"{xsec_data['xsec_error_pb']:.6e},"
-        f"{K_FACTOR:.2f},"
-        f"{n_events_csv},"
-        f"{csv_rel_path},"
-        f"{timestamp},"
-        f"SUCCESS"
-    )
-
-    with open(summary_path, 'a') as f:
-        f.write(row + '\n')
-
-
-def append_failure_to_summary(paths, flavour, mass, error_message):
-    """
-    Log failed mass point to summary CSV.
-
-    Args:
-        paths: ProjectPaths object
-        flavour: Lepton flavour
-        mass: HNL mass in GeV
-        error_message: Description of failure
-    """
-    summary_path = paths.summary_csv_path()
-    csv_rel_path = paths.csv_path(flavour, mass).name
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    # Escape any commas in error message
-    safe_error = error_message.replace('"', "'").replace(',', ';')
-
-    row = (
-        f"{mass:.1f},"
-        f"{flavour},"
-        f"NaN,"
-        f"NaN,"
-        f"{K_FACTOR:.2f},"
-        f"0,"
-        f"{csv_rel_path},"
-        f"{timestamp},"
-        f"FAILED: {safe_error}"
-    )
-
-    with open(summary_path, 'a') as f:
-        f.write(row + '\n')
-
-
 def cleanup_workdir(work_dir):
     """Remove the MadGraph working directory to save space after success."""
     if work_dir and work_dir.exists():
@@ -580,13 +495,13 @@ def run_single_point(paths, flavour, mass, n_events):
     """
     Run pipeline for single (flavour, mass) point
 
-    Three-step workflow:
+    Workflow:
     1. Generate MadGraph process directory
     2. Write run_card and param_card into Cards/
     3. Run generate_events to produce LHE
     4. Extract cross-section
     5. Convert LHE → CSV
-    6. Append summary row
+    6. Cleanup work directory
 
     Args:
         paths: ProjectPaths object
@@ -605,26 +520,22 @@ def run_single_point(paths, flavour, mass, n_events):
         # Step 1: Generate process directory
         work_dir = generate_process(paths, flavour, mass)
         if work_dir is None:
-            append_failure_to_summary(paths, flavour, mass, "Failed to generate MadGraph process directory")
             return False
 
         # Step 2: Write cards into Cards/ directory
         success = write_cards_to_process(paths, work_dir, flavour, mass, n_events)
         if not success:
-            append_failure_to_summary(paths, flavour, mass, "Failed to write run_card/param_card to process")
             return False
 
         # Step 3: Run event generation
         lhe_file = generate_events(paths, work_dir)
         if lhe_file is None:
-            append_failure_to_summary(paths, flavour, mass, "Failed to generate LHE events (MadGraph error)")
             return False
 
         # Step 4: Extract cross-section
         xsec_data = extract_cross_section(work_dir)
         if xsec_data is None:
             print("  ✗ Failed to extract cross-section")
-            append_failure_to_summary(paths, flavour, mass, "Failed to extract cross-section from MadGraph output")
             return False
 
         print(f"  Cross-section: {xsec_data['xsec_pb']:.3e} ± {xsec_data['xsec_error_pb']:.3e} pb")
@@ -632,14 +543,9 @@ def run_single_point(paths, flavour, mass, n_events):
         # Step 5: Convert LHE → CSV
         n_events_csv = convert_lhe_to_csv(paths, flavour, mass, lhe_file)
         if n_events_csv is None:
-            append_failure_to_summary(paths, flavour, mass, "Failed to convert LHE to CSV")
             return False
 
-        # Step 6: Update summary
-        append_to_summary(paths, flavour, mass, xsec_data, n_events_csv)
-        print(f"  ✓ Added to summary CSV")
-
-        # Step 7: Cleanup work directory
+        # Step 6: Cleanup work directory
         cleanup_workdir(work_dir)
 
         return True
@@ -648,7 +554,6 @@ def run_single_point(paths, flavour, mass, n_events):
         print(f"  ✗ Failed: {e}")
         import traceback
         traceback.print_exc()
-        append_failure_to_summary(paths, flavour, mass, f"Unhandled exception: {str(e)}")
         return False
 
 
@@ -705,7 +610,7 @@ def main():
         n_events = 1000
         print("TEST MODE: Single point (15 GeV muon, 1000 events)")
     else:
-        masses = args.masses if args.masses else MASS_GRID_FULL
+        masses = args.masses if args.masses else MASS_GRID
         flavours = [args.flavour] if args.flavour else FLAVOURS
         n_events = args.nevents
 
@@ -713,9 +618,6 @@ def main():
     print(f"Flavours:        {flavours}")
     print(f"Events per point:{n_events}")
     print()
-
-    # Initialize summary CSV
-    initialize_summary_csv(paths)
 
     # Run pipeline
     n_total = len(masses) * len(flavours)
@@ -737,8 +639,7 @@ def main():
     print(f"Total points: {n_total}")
     print(f"Successful:   {n_success}")
     print(f"Failed:       {n_failed}")
-    print(f"\nSummary CSV: {paths.summary_csv_path()}")
-    print(f"Event CSVs:   {paths.csv_dir}/")
+    print(f"\nEvent CSVs:   {paths.csv_dir}/")
     print("="*70)
 
     return 0 if n_failed == 0 else 1

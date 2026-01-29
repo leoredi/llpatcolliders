@@ -78,9 +78,14 @@ FRAG_B_LAMBDA = 0.10  # Λb0 / Λb0bar
 # ==========================================
 # KAON PRODUCTION (Light QCD)
 # ==========================================
-# Kaon production is dominated by soft QCD processes
-# Approximate cross-section for K+/K- production
-SIGMA_KAON_PB = 5.0 * 1e10  # ~50 mb (very approximate, soft QCD)
+# Kaon production is dominated by soft QCD processes.
+# K± cross-section (very approximate, soft QCD dominated):
+SIGMA_KAON_PB = 5.0 * 1e10  # ~50 mb for K+ + K-
+
+# K_L cross-section: approximate as ~½ of K± (isospin symmetry).
+# This is a stopgap; for precision, measure N(K_L)/N(K±) ratio from Pythia minbias.
+# Note: K_S is not included — its contribution is suppressed by τ_S/τ_L ≈ 1/570.
+SIGMA_KL_PB = SIGMA_KAON_PB * 0.5  # ~25 mb
 
 # ==========================================
 # ELECTROWEAK PRODUCTION (W/Z BOSONS)
@@ -125,11 +130,11 @@ def get_parent_sigma_pb(parent_pdg: int) -> float:
     pid = abs(int(parent_pdg))
 
     # --- KAON SECTOR (Light QCD) ---
-    # NOTE: Only K± (321) is configured in Pythia for HNL production.
-    # K_S (310) and K_L (130) are NOT configured, so we don't include them here
-    # to avoid inconsistency (having xsec but no events).
     if pid == 321:  # K+ / K-
         return SIGMA_KAON_PB
+    if pid == 130:  # K_L (long-lived neutral kaon)
+        return SIGMA_KL_PB
+    # Note: K_S (310) is not included — suppressed by τ_S/τ_L ≈ 1/570
 
     # --- CHARM SECTOR ---
     if pid == 421:  # D0 / D0bar
@@ -183,7 +188,8 @@ def get_sigma_summary():
     Useful for debugging and verification.
     """
     common_parents = [
-        (321, "K+"),
+        (321, "K±"),
+        (130, "K_L"),
         (421, "D0"),
         (411, "D+"),
         (431, "Ds+"),

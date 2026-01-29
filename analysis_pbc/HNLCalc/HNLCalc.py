@@ -79,7 +79,7 @@ class Utility():
                 array.append(words)
         return np.array(array)
 
-    def integrate_3body_br(self, br, mass, m0, m1, m2, coupling=1, nsample=100, integration="dq2dE"):
+    def integrate_3body_br(self, br, mass, m0, m1, m2, coupling=1, nsample=1000, integration="dq2dE"):
 
         if m0<m1+m2+mass: return 0 
         if integration == "dq2dE":

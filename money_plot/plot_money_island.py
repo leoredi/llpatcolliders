@@ -3,6 +3,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+from datetime import datetime
 from pathlib import Path
 
 def append_tip_point_if_needed(df_all_sorted, df_dedup_valid):
@@ -110,10 +111,14 @@ def main():
             ax.set_xlabel(r"$m_N$ [GeV]", fontsize=14)
             ax.set_ylabel(r"$|U_{\ell}|^2$", fontsize=14)
 
-    out = repo_root / "output/images/HNL_moneyplot_island.png"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = repo_root / f"output/images/{timestamp}_HNL_moneyplot_island.png"
+    out_fixed = repo_root / "output/images/HNL_moneyplot_island.png"
     fig.tight_layout()
     fig.savefig(out, dpi=150, bbox_inches='tight')
+    fig.savefig(out_fixed, dpi=150, bbox_inches='tight')
     print(f"Saved: {out}")
+    print(f"Saved: {out_fixed}")
 
 
 if __name__ == "__main__":

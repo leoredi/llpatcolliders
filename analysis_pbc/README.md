@@ -15,6 +15,12 @@ cd analysis_pbc
 git clone https://github.com/laroccod/HNLCalc.git
 conda run -n llpatcolliders pip install sympy mpmath particle numba
 conda run -n llpatcolliders pip install 'scikit-hep==0.4.0'
+
+# Fetch RHN decay files (required for decay+detector step)
+mkdir -p decay/external
+git clone https://github.com/davidrcurtin/MATHUSLA_LLPfiles_RHN_Ue decay/external/MATHUSLA_LLPfiles_RHN_Ue
+git clone https://github.com/davidrcurtin/MATHUSLA_LLPfiles_RHN_Umu decay/external/MATHUSLA_LLPfiles_RHN_Umu
+git clone https://github.com/davidrcurtin/MATHUSLA_LLPfiles_RHN_Utau decay/external/MATHUSLA_LLPfiles_RHN_Utau
 ```
 
 ### 2. Run Pipeline Tests
@@ -81,16 +87,17 @@ The analysis follows a **three-stage** workflow matching PBC methodology (MATHUS
 
 **Key:** Real BRs come from HNLCalc in Stage 3, not Pythia.
 
-### Stage 2: Geometry (Python)
-**Location:** `geometry/per_parent_efficiency.py`
+### Stage 2: Decay + Detector (Python, REQUIRED)
+**Location:** `decay/decay_detector.py` + `geometry/per_parent_efficiency.py`
 
-- Ray-traces each HNL trajectory from IP (0,0,0) through detector mesh
-- Detector: Tube at z = 22m above CMS (drainage gallery)
-- Computes: entry distance, path length, hits detector (boolean)
-- Calculates boost factor: β γ = p/m for proper lifetime
-- Output: Preprocessed CSV with geometry columns (cached)
-
-**Key:** Each HNL processed individually (per-parent counting).
+- Geometry still provides entry distance and path length through the tube.
+- **Decay is now explicit and mandatory**: HNLs decay inside the detector volume.
+- Charged decay products are propagated to the detector surface, and a
+  **minimum track separation** is enforced (default: 1 mm, configurable).
+- This replaces the old "geometry-only acceptance" logic.
+- For the MG5+Pythia decay generator, Pythia runs in **hadron-level-only**
+  mode using the LHE "no-beams" extension (beam IDs/energies set to 0,0).
+  This avoids beam-remnant handling for decay-only events.
 
 ### Stage 3: Limits (Python + HNLCalc)
 **Location:** `limits/run.py`, `limits/expected_signal.py`, `models/hnl_model_hnlcalc.py`
@@ -101,6 +108,20 @@ The analysis follows a **three-stage** workflow matching PBC methodology (MATHUS
 - Output: Exclusion range [|U|²_min, |U|²_max] at 95% CL
 
 **Key:** Cross-sections from `config/production_xsecs.py` (PBC standard).
+
+### Decay Channel Inputs (External)
+
+Decay kinematics and channel mixtures are loaded from the MATHUSLA RHN files:
+
+- `analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Ue`
+- `analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Umu`
+- `analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Utau`
+
+These files include 2- and 3-body decays and hadronic modes across masses.
+
+Decay file selection is flavour-aware in `decay/rhn_decay_library.py`:
+- **Electron/muon:** prefer `inclDs`, `inclDD`, `inclD`, `nocharm`, `nocharmnoss`, `lightfonly`; use analytical 2/3-body files below the low-mass threshold.
+- **Tau:** use analytical 2/3-body files below 0.42 GeV; above that, select the nearest `lightfonly` / `lightfstau` / `lightfstauK` file.
 
 ---
 
@@ -232,6 +253,28 @@ Geometry will be recomputed on next run.
 ```
 
 This is expected (KS0 not modeled in HNLCalc). These events are dropped; impact is typically negligible.
+
+### Tau exclusion curve jaggedness
+
+**Symptom:** The tau-coupled HNL exclusion curve shows jaggedness in the 0.3-1.5 GeV region.
+
+**Root cause:** Very few tau events pass the full selection chain:
+- `fromTau` mode (τ→πN cascade) has only ~0.4% HNL yield
+- Even with 1M events: ~4,100 HNLs → ~80 hit detector → **~1-2 have ≥2 charged tracks**
+- Statistical fluctuations (0 vs 1 vs 2 events passing) cause large sensitivity swings
+Additional small wiggles can come from discrete decay-file mass points and the 100-step |U|² scan grid.
+
+**Mitigations applied:**
+1. Finer tau mass grid (0.03-0.05 GeV steps in 0.2-1.6 GeV region)
+2. 10x more events for `fromTau` mode (`NEVENTS_FROMTAU=1000000`)
+3. EW production at all finer grid masses (unified EW grid for all flavours)
+4. Unified low-mass grid for e/μ (matches tau fineness at low mass)
+5. Flavour-aware decay file selection (tau uses `lightfonly` / `lightfstau` / `lightfstauK` above 0.42 GeV)
+
+**Further smoothing options:**
+- Apply Savitzky-Golay or spline smoothing to the plot
+- Use envelope fitting instead of point-by-point limits
+- Generate even more `fromTau` events (10M+, requires ~30+ hours)
 
 ---
 

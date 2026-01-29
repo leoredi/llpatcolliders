@@ -330,18 +330,11 @@ def preprocess_hnl_csv(
     df["path_length"] = np.nan
 
     # beta * gamma = p / m (in natural units)
-    # Handle both legacy 'boost_gamma' and current 'beta_gamma' column names
-    if "beta_gamma" in df.columns:
-        # Current format - use as-is
-        pass
-    elif "boost_gamma" in df.columns:
-        # Legacy format - rename for consistency
-        df["beta_gamma"] = df["boost_gamma"]
-    elif "momentum" in df.columns and "mass" in df.columns:
-        # Neither column present - compute from momentum and mass
-        df["beta_gamma"] = df["momentum"] / df["mass"]
-    else:
-        raise ValueError("Cannot compute beta_gamma: missing required columns (beta_gamma, boost_gamma, or momentum+mass)")
+    if "beta_gamma" not in df.columns:
+        if "momentum" in df.columns and "mass" in df.columns:
+            df["beta_gamma"] = df["momentum"] / df["mass"]
+        else:
+            raise ValueError("Cannot compute beta_gamma: missing 'beta_gamma' column or 'momentum'+'mass' columns")
 
     origin_arr = np.array(origin, dtype=float)
 

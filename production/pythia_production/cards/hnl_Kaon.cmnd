@@ -2,11 +2,13 @@
 ! HNL Production from Kaon decays
 ! For HNL masses: m_N < 0.5 GeV (kinematic limit ~0.39 GeV for muon)
 !
-! Physics: pp -> K X (soft QCD), K⁺ -> ℓ⁺ N
+! Physics: pp -> K X (soft QCD)
+!   - K± -> ℓ N (2-body leptonic)
+!   - K_L -> π ℓ N (3-body semileptonic)
 !
 ! Note: Kaon production is dominated by soft QCD. The minimum bias
-! sample produces abundant kaons. For fixed-target experiments,
-! dedicated kaon decay-in-flight simulations are more appropriate.
+! sample produces abundant kaons. K_S is omitted (suppressed by
+! τ_S/τ_L ≈ 1/570 relative to K_L).
 !
 ! Reference: arXiv:1805.08567, arXiv:2004.07974
 ! ==========================================================================
@@ -39,14 +41,21 @@ HardQCD:all = off
 WeakSingleBoson:all = off
 
 ! -------------------------------------------------------------------------
-! 4) HNL Definition
+! 4) Particle Decays
+! -------------------------------------------------------------------------
+! K_L has cτ ≈ 15 m — ensure no tau0 limit prevents its decay.
+! Default is limitTau0 = off, but we set explicitly for safety.
+ParticleDecays:limitTau0 = off
+
+! -------------------------------------------------------------------------
+! 5) HNL Definition
 ! -------------------------------------------------------------------------
 ! NOTE: HNL particle (PDG ID 9900012) is defined in C++ code, not here.
 ! This keeps mass/lifetime as single source of truth.
 ! PDG 9900012 matches MadGraph convention for consistency across production modes.
 
 ! -------------------------------------------------------------------------
-! 5) Output Control
+! 6) Output Control
 ! -------------------------------------------------------------------------
 Init:showChangedSettings = on
 Init:showChangedParticleData = on
@@ -56,7 +65,7 @@ Next:numberShowProcess = 1
 Next:numberShowEvent = 1
 
 ! -------------------------------------------------------------------------
-! 6) Run Configuration
+! 7) Run Configuration
 ! -------------------------------------------------------------------------
 ! Need many events since kaon production is soft/diffuse
 Main:numberOfEvents = 500000

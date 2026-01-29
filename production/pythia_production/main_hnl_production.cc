@@ -114,6 +114,7 @@ const double M_TAU = 1.777;
 
 // Meson masses (GeV) - for kinematic checks
 const std::map<int, double> MESON_MASSES = {
+    {130, 0.498},   // K_L (neutral kaon, long-lived)
     {321, 0.494},   // K+
     {411, 1.870},   // D+
     {421, 1.865},   // D0
@@ -298,7 +299,25 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     // Note: Using meMode=0 (phase space) for simplicity
     //       For proper matrix elements, use external decay tools
     // -----------------------------------------------------------------------
-    
+
+    // K_L -> π± ℓ∓ N (semileptonic, 3-body)
+    // K_L is self-conjugate: both π⁺ℓ⁻ and π⁻ℓ⁺ are allowed with equal weight.
+    // Note: K_S is omitted — its contribution is suppressed by τ_S/τ_L ≈ 1/570
+    // relative to K_L (HNLCalc handles this via lifetime in BR calculation).
+    double mKL = MESON_MASSES.at(130);
+    double mPiCharged = 0.140;  // π± mass
+    if (mHNL + mLepton + mPiCharged < mKL) {
+        pythia.readString("130:onMode = off");
+        // K_L → π⁻ ℓ⁺ N
+        pythia.readString("130:addChannel = 1 0.5 0 -211 " + lepBar + " " + hnl);
+        // K_L → π⁺ ℓ⁻ N
+        pythia.readString("130:addChannel = 1 0.5 0 211 " + lep + " " + hnl);
+        if (verbose) std::cout << "  K_L -> π ℓ N : ENABLED (3-body)" << std::endl;
+        nChannelsConfigured++;
+    } else if (verbose) {
+        std::cout << "  K_L -> π ℓ N : DISABLED (kinematically forbidden)" << std::endl;
+    }
+
     // D0 -> K- ℓ+ N (semileptonic)
     double mD0 = MESON_MASSES.at(421);
     double mK = MESON_MASSES.at(321);

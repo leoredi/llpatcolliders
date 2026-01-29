@@ -7,18 +7,22 @@ Usage:
     python run.py --parallel            # Parallel processing (uses all cores)
     python run.py --parallel --workers 8  # Use 8 cores
     python run.py --dirac               # Dirac HNL interpretation (×2 yield)
+    python run.py --separation-mm 1.0   # Minimum charged-track separation (mm)
 """
 
 import sys
 import re
 import os
+import io
 import tempfile
+import contextlib
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import argparse
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
+from tqdm import tqdm
 
 # Setup paths
 THIS_FILE = Path(__file__).resolve()
@@ -38,13 +42,49 @@ if str(ANALYSIS_ROOT) not in sys.path:
 from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
 from limits.expected_signal import expected_signal_events
 
-def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files, dirac=False):
+def scan_single_mass(
+    mass_val,
+    mass_str,
+    flavour,
+    benchmark,
+    lumi_fb,
+    sim_files,
+    dirac=False,
+    separation_m=0.001,
+    decay_seed=12345,
+    quiet=False,
+):
     """
     Process one mass point, combining all available production regimes (kaon/charm/beauty/ew).
     sim_files: list of tuples (sim_csv_path, regime)
     dirac: if True, multiply yield by 2 for Dirac HNL interpretation
+    quiet: if True, suppress verbose output (for parallel mode)
     """
-    print(f"\n[{flavour} {mass_val} GeV] Processing ({len(sim_files)} production file(s))...")
+    # In quiet mode, redirect stdout to suppress all output from this worker
+    stdout_ctx = contextlib.redirect_stdout(io.StringIO()) if quiet else contextlib.nullcontext()
+
+    with stdout_ctx:
+        return _scan_single_mass_impl(
+            mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
+            dirac, separation_m, decay_seed, quiet
+        )
+
+
+def _scan_single_mass_impl(
+    mass_val,
+    mass_str,
+    flavour,
+    benchmark,
+    lumi_fb,
+    sim_files,
+    dirac,
+    separation_m,
+    decay_seed,
+    quiet,
+):
+    """Internal implementation of scan_single_mass."""
+    if not quiet:
+        print(f"\n[{flavour} {mass_val} GeV] Processing ({len(sim_files)} production file(s))...")
 
     # 1. Load/compute geometry for each production file, then concatenate
     geom_dfs = []
@@ -60,12 +100,19 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
         if not geom_csv.exists() and legacy_geom_csv.exists():
             geom_csv = legacy_geom_csv
 
+        # Delete stale geometry cache (source file was updated)
+        if geom_csv.exists() and sim_csv.stat().st_mtime > geom_csv.stat().st_mtime:
+            if not quiet:
+                print(f"  Stale cache detected, regenerating: {geom_csv.name}")
+            geom_csv.unlink()
+
         if geom_csv.exists():
             geom_df = pd.read_csv(geom_csv)
         else:
             if mesh is None:
                 mesh = build_drainage_gallery_mesh()
-            print(f"  Computing geometry for {sim_csv.name} (caching to {geom_csv.name})...")
+            if not quiet:
+                print(f"  Computing geometry for {sim_csv.name} (caching to {geom_csv.name})...")
             geom_df = preprocess_hnl_csv(sim_csv, mesh)
 
             # Atomic write to prevent race condition in parallel execution
@@ -75,27 +122,53 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
             os.replace(tmp.name, geom_csv)
 
         n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
-        print(f"  Loaded {len(geom_df)} HNLs from {regime}, {n_hits} hit detector")
+        if not quiet:
+            print(f"  Loaded {len(geom_df)} HNLs from {regime}, {n_hits} hit detector")
         geom_dfs.append(geom_df)
 
     if len(geom_dfs) == 0:
-        print(f"  WARNING: No geometry loaded, skipping")
+        if not quiet:
+            print(f"  WARNING: No geometry loaded, skipping")
         return None
 
     geom_df = pd.concat(geom_dfs, ignore_index=True)
     n_hits_total = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
-    print(f"  Total combined: {len(geom_df)} HNLs, {n_hits_total} hit detector")
+    if not quiet:
+        print(f"  Total combined: {len(geom_df)} HNLs, {n_hits_total} hit detector")
 
     if len(geom_df) == 0 or n_hits_total == 0:
-        print(f"  WARNING: No hits, skipping")
+        if not quiet:
+            print(f"  WARNING: No hits, skipping")
         return None
 
     # 2. Scan |U|²
     eps2_scan = np.logspace(-12, -2, 100)
     N_scan = []
 
+    from decay.decay_detector import DecaySelection, build_decay_cache
+
+    decay_cache = build_decay_cache(
+        geom_df,
+        mass_val,
+        flavour,
+        DecaySelection(separation_m=separation_m, seed=decay_seed),
+        verbose=not quiet,
+    )
+
+    if not quiet:
+        print("  Precomputing decay cache for separation scan...")
     for eps2 in eps2_scan:
-        N = expected_signal_events(geom_df, mass_val, eps2, benchmark, lumi_fb, dirac=dirac)
+        N = expected_signal_events(
+            geom_df,
+            mass_val,
+            eps2,
+            benchmark,
+            lumi_fb,
+            dirac=dirac,
+            separation_m=separation_m,
+            decay_seed=decay_seed,
+            decay_cache=decay_cache,
+        )
         N_scan.append(N)
 
     N_scan = np.array(N_scan)
@@ -104,7 +177,8 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
     mask_excluded = (N_scan >= 2.996)
 
     if not mask_excluded.any():
-        print(f"  No sensitivity (peak = {N_scan.max():.1f})")
+        if not quiet:
+            print(f"  No sensitivity (peak = {N_scan.max():.1f})")
         return {
             "mass_GeV": mass_val,
             "flavour": flavour,
@@ -119,7 +193,8 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
     eps2_max = eps2_scan[indices_excl[-1]]
     peak_events = N_scan.max()
 
-    print(f"  ✓ Excluded: |U|² ∈ [{eps2_min:.2e}, {eps2_max:.2e}], peak = {peak_events:.0f}")
+    if not quiet:
+        print(f"  ✓ Excluded: |U|² ∈ [{eps2_min:.2e}, {eps2_max:.2e}], peak = {peak_events:.0f}")
 
     return {
         "mass_GeV": mass_val,
@@ -130,7 +205,16 @@ def scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
         "peak_events": peak_events
     }
 
-def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None, dirac=False):
+def run_flavour(
+    flavour,
+    benchmark,
+    lumi_fb,
+    use_parallel=False,
+    n_workers=None,
+    dirac=False,
+    separation_m=0.001,
+    decay_seed=12345,
+):
     """Run scan for one flavour"""
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
@@ -198,61 +282,13 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None,
 
             selected = [(chosen[3], _label(chosen[0], chosen[1], chosen[2]))]
 
-            # Transitional support for legacy combined files:
-            # If tau fromTau files exist alongside a combined file, include them only
-            # if the combined file does NOT already contain tau-parent (PDG 15) rows.
-            # This prevents silently dropping τ→NX samples while still avoiding
-            # double counting when users run combine with --no-cleanup.
-            if flavour == "tau":
-                fromtau_candidates = [it for it in items if it[1] == "fromTau" and it[0] != "combined"]
-                if fromtau_candidates:
-                    import csv
-
-                    def _combined_has_tau_parent(csv_path: Path) -> bool:
-                        try:
-                            with csv_path.open(newline="") as f:
-                                reader = csv.DictReader(f)
-                                for row in reader:
-                                    try:
-                                        pid = int(row["parent_pdg"])
-                                    except Exception:
-                                        continue
-                                    if abs(pid) == 15:
-                                        return True
-                        except Exception:
-                            # If we can't inspect it reliably, be conservative and assume it has tau.
-                            return True
-                        return False
-
-                    has_tau = _combined_has_tau_parent(chosen[3])
-                    if not has_tau:
-                        extra = {}
-                        for base_regime, mode, is_ff, path in fromtau_candidates:
-                            k2 = (base_regime, mode)
-                            if k2 not in extra or is_ff:
-                                extra[k2] = (base_regime, mode, is_ff, path)
-                        extras_sorted = [v for _, v in sorted(extra.items(), key=lambda kv: _sort_key(kv[1]))]
-                        selected.extend(
-                            [(path, _label(base_regime, mode, is_ff)) for base_regime, mode, is_ff, path in extras_sorted]
-                        )
-                        extra_names = ", ".join(_label(r, m, ff) for r, m, ff, _ in extras_sorted)
-                        print(
-                            f"[INFO] m={key[0]:.2f} tau: combined file has no PDG 15 rows; "
-                            f"including additional fromTau file(s): {extra_names}"
-                        )
-                    else:
-                        print(
-                            f"[WARN] m={key[0]:.2f} tau: found fromTau file(s) but combined already contains PDG 15 rows; "
-                            "skipping extra fromTau files to avoid double counting."
-                        )
-
             if len(items) > 1:
                 other_names = ", ".join(
                     _label(r, m, ff) for r, m, ff, _ in sorted(items, key=_sort_key) if r != "combined"
                 )
                 print(
                     f"[WARN] m={key[0]:.2f} {flavour}: found combined + other files ({other_names}); "
-                    "using combined (and any needed fromTau) to avoid double counting."
+                    "using combined only."
                 )
 
             selected_by_mass[key] = selected
@@ -294,34 +330,76 @@ def run_flavour(flavour, benchmark, lumi_fb, use_parallel=False, n_workers=None,
         args_list = []
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
-            args_list.append((mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac))
+            args_list.append(
+                (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed)
+            )
 
-        # Process in parallel
+        # Process in parallel with tqdm progress bar
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            results = list(executor.map(scan_single_mass_wrapper, args_list))
+            results = list(tqdm(
+                executor.map(scan_single_mass_wrapper, args_list),
+                total=len(args_list),
+                desc=f"  {flavour}",
+                unit="mass",
+                ncols=80,
+            ))
+
+        # Print summary of results
+        valid_results = [r for r in results if r is not None]
+        excluded = sum(1 for r in valid_results if not np.isnan(r.get("eps2_min", np.nan)))
+        print(f"  Completed: {excluded}/{len(valid_results)} mass points have sensitivity")
 
         # Filter out None results
-        results = [r for r in results if r is not None]
+        results = valid_results
     else:
         results = []
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
-            res = scan_single_mass(mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac=dirac)
+            res = scan_single_mass(
+                mass_val,
+                mass_str,
+                flavour,
+                benchmark,
+                lumi_fb,
+                sim_list,
+                dirac=dirac,
+                separation_m=separation_m,
+                decay_seed=decay_seed,
+            )
             if res:
                 results.append(res)
 
     return pd.DataFrame(results)
 
 def scan_single_mass_wrapper(args):
-    """Wrapper for parallel processing"""
-    return scan_single_mass(*args)
+    """Wrapper for parallel processing - runs in quiet mode"""
+    # Unpack args and add quiet=True for parallel execution
+    (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed) = args
+    return scan_single_mass(
+        mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list,
+        dirac=dirac, separation_m=separation_m, decay_seed=decay_seed, quiet=True
+    )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate U² limits for HNL search")
     parser.add_argument("--parallel", action="store_true", help="Use parallel processing")
     parser.add_argument("--workers", type=int, default=None, help="Number of workers (default: all CPU cores)")
     parser.add_argument("--dirac", action="store_true", help="Dirac HNL interpretation (×2 yield vs Majorana)")
+    parser.add_argument(
+        "--separation-mm",
+        type=float,
+        default=1.0,
+        help="Minimum charged-track separation at detector surface in mm (default: 1.0)",
+    )
+    parser.add_argument(
+        "--decay-seed",
+        type=int,
+        default=12345,
+        help="Random seed for decay sampling (default: 12345)",
+    )
     args = parser.parse_args()
+    if args.separation_mm <= 0:
+        raise ValueError("--separation-mm must be positive.")
 
     n_workers = args.workers if args.workers else multiprocessing.cpu_count()
     mode_str = f"PARALLEL, {n_workers} workers" if args.parallel else "SINGLE-THREADED"
@@ -335,12 +413,24 @@ if __name__ == "__main__":
 
     L_HL_LHC_FB = 3000.0
     results_out = ANALYSIS_OUT_DIR / "HNL_U2_limits_summary.csv"
+    separation_m = args.separation_mm * 1e-3
+    print(f"Decay separation: {args.separation_mm:.3f} mm (seed={args.decay_seed})")
 
     all_results = []
 
     # Process each flavour
     for flavour, benchmark in [("electron", "100"), ("muon", "010"), ("tau", "001")]:
-        df = run_flavour(flavour, benchmark, L_HL_LHC_FB, use_parallel=args.parallel, n_workers=args.workers, dirac=args.dirac)
+        df = run_flavour(
+            flavour,
+            benchmark,
+            L_HL_LHC_FB,
+            use_parallel=args.parallel,
+            n_workers=args.workers,
+            dirac=args.dirac,
+            separation_m=separation_m,
+            decay_seed=args.decay_seed,
+        )
+        df["separation_mm"] = args.separation_mm
         all_results.append(df)
 
     # Combine and save

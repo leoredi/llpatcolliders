@@ -1,0 +1,1 @@
+../SubProcesses/P6_n1_tammupvtx/maxamps.inc

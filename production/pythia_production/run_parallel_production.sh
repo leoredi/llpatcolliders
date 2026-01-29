@@ -25,6 +25,7 @@ echo ""
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NEVENTS=100000
+NEVENTS_FROMTAU=10000000  # 100x more for fromTau mode (low HNL yield ~0.4%)
 MAX_PARALLEL=8  # Adjust based on your CPU cores (leave 1-2 for system)
 
 # Kinematic threshold for tau → π N cascade production
@@ -47,8 +48,15 @@ mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOGFILE="${LOG_DIR}/production_run_${TIMESTAMP}.log"
 
-echo "Configuration:" | tee "$LOGFILE"
+echo "Configuration for muons or electrons:" | tee "$LOGFILE"
 echo "  Events per mass: $NEVENTS" | tee -a "$LOGFILE"
+echo "  Parallel jobs: $MAX_PARALLEL" | tee -a "$LOGFILE"
+echo "  Output directory: $OUTPUT_DIR" | tee -a "$LOGFILE"
+echo "  Log file: $LOGFILE" | tee -a "$LOGFILE"
+echo ""
+
+echo "Configuration for taus:" | tee "$LOGFILE"
+echo "  Events per mass: $NEVENTS_FROMTAU" | tee -a "$LOGFILE"
 echo "  Parallel jobs: $MAX_PARALLEL" | tee -a "$LOGFILE"
 echo "  Output directory: $OUTPUT_DIR" | tee -a "$LOGFILE"
 echo "  Log file: $LOGFILE" | tee -a "$LOGFILE"
@@ -59,10 +67,10 @@ echo ""
 # ===========================================================================
 source ./load_mass_grid.sh
 
-# Use meson (Pythia) mass arrays
-ELECTRON_MASSES=("${ELECTRON_MASSES_MESON[@]}")
-MUON_MASSES=("${MUON_MASSES_MESON[@]}")
-TAU_MASSES=("${TAU_MASSES_MESON[@]}")
+# All flavours use same MASS_GRID (Pythia handles kinematic filtering)
+ELECTRON_MASSES=("${MASS_GRID[@]}")
+MUON_MASSES=("${MASS_GRID[@]}")
+TAU_MASSES=("${MASS_GRID[@]}")
 
 # Filter arrays when running a single flavour so job counts/logs reflect reality
 if [[ "$FLAVOUR" != "all" ]]; then
@@ -100,8 +108,9 @@ run_production_job() {
         echo "[$(date +%H:%M:%S)] Starting: $mass GeV $flavour ($mode)"
 
         # Run from current directory
+        # Use more events for fromTau mode (low HNL yield requires higher statistics)
         if [ "$mode" = "fromTau" ]; then
-            ./main_hnl_production ${mass} ${flavour} $NEVENTS fromTau 2>&1
+            ./main_hnl_production ${mass} ${flavour} $NEVENTS_FROMTAU fromTau 2>&1
         else
             ./main_hnl_production ${mass} ${flavour} $NEVENTS 2>&1
         fi
@@ -155,8 +164,18 @@ echo "  Tau: $total_tau runs (including dual-mode)" | tee -a "$LOGFILE"
 echo "  TOTAL: $total_jobs simulation runs" | tee -a "$LOGFILE"
 echo "" | tee -a "$LOGFILE"
 
-# Estimate time
-single_core_hours=$((total_jobs / 6))  # ~6 jobs per hour on average
+# Estimate time (fromTau jobs take ~10x longer due to higher event count)
+# Count fromTau jobs
+n_fromtau_jobs=0
+for mass in "${TAU_MASSES[@]}"; do
+    if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
+        n_fromtau_jobs=$((n_fromtau_jobs + 1))
+    fi
+done
+n_regular_jobs=$((total_jobs - n_fromtau_jobs))
+# fromTau jobs are ~10x longer, so weight them accordingly
+effective_jobs=$((n_regular_jobs + n_fromtau_jobs * 10))
+single_core_hours=$((effective_jobs / 6))  # ~6 regular jobs per hour
 parallel_hours=$((single_core_hours / MAX_PARALLEL + 1))
 
 echo "Estimated time:" | tee -a "$LOGFILE"

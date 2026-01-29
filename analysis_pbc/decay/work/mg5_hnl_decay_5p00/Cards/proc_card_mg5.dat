@@ -1,0 +1,57 @@
+#************************************************************
+#*                     MadGraph5_aMC@NLO                    *
+#*                                                          *
+#*                *                       *                 *
+#*                  *        * *        *                   *
+#*                    * * * * 5 * * * *                     *
+#*                  *        * *        *                   *
+#*                *                       *                 *
+#*                                                          *
+#*                                                          *
+#*         VERSION 3.6.6                 2025-10-30         *
+#*                                                          *
+#*    The MadGraph5_aMC@NLO Development Team - Find us at   *
+#*    https://server06.fynu.ucl.ac.be/projects/madgraph     *
+#*                                                          *
+#************************************************************
+#*                                                          *
+#*               Command File for MadGraph5_aMC@NLO         *
+#*                                                          *
+#*     run as ./bin/mg5_aMC  filename                       *
+#*                                                          *
+#************************************************************
+set group_subprocesses Auto
+set ignore_six_quark_processes False
+set low_mem_multicore_nlo_generation False
+set complex_mass_scheme False
+set include_lepton_initiated_processes False
+set gauge unitary
+set loop_optimized_output True
+set loop_color_flows False
+set max_npoint_for_channel 0
+set default_unset_couplings 99
+set max_t_for_channel 99
+set zerowidth_tchannel True
+set nlo_mixed_expansion True
+import model SM_HeavyN_CKM_AllMasses_LO
+define p = g u c d s u~ c~ d~ s~
+define j = g u c d s u~ c~ d~ s~
+define l+ = e+ mu+
+define l- = e- mu-
+define l- = e- mu- ta-
+define l+ = e+ mu+ ta+
+define vl = ve vm vt
+define vl~ = ve~ vm~ vt~
+define utype = u c
+define dtype = d s b
+define utype~ = u~ c~
+define dtype~ = d~ s~ b~
+define q = u c d s b
+define q~ = u~ c~ d~ s~ b~
+generate n1 > l- utype dtype~
+add process n1 > l+ utype~ dtype
+add process n1 > vl q q~
+add process n1 > vl~ q q~
+add process n1 > l- l+ vl
+add process n1 > l- l+ vl~
+output /work/analysis_pbc/decay/work/mg5_hnl_decay_5p00 -nojpeg

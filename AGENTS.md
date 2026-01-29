@@ -4,6 +4,8 @@
 **Physics:** Sterile neutrino displaced decays at LHC (√s = 14 TeV)
 **Mass Range:** 0.2 - 80 GeV | **Luminosity:** 3000 fb⁻¹ (HL-LHC)
 
+Policy: From tag hnl-pre-decay-final onward, all HNL analyses require explicit decay simulation; geometry-only acceptance is deprecated and removed.
+
 ---
 
 ## Quick Start (4 Commands)
@@ -52,11 +54,17 @@ mkdir -p output/images && cd money_plot && conda run -n llpatcolliders python pl
 │       └── scripts/run_hnl_scan.py
 ├── analysis_pbc/                 # Limit calculation pipeline
 │   ├── config/                   # Cross-sections (σ_K, σ_D, σ_B, σ_W, σ_Z)
+│   ├── decay/                    # HNL decay simulation (REQUIRED)
+│   │   ├── decay_detector.py     # Decay sampling + track separation
+│   │   ├── rhn_decay_library.py  # MATHUSLA decay file loader
+│   │   └── external/             # MATHUSLA_LLPfiles_RHN_U{e,mu,tau}
 │   ├── geometry/                 # Ray-tracing detector mesh
 │   ├── models/                   # HNLCalc wrapper
+│   ├── cache/                    # Geometry + decay cache files
 │   └── limits/
 │       ├── combine_production_channels.py  # Combine meson + EW (RUN FIRST!)
-│       └── run.py                           # Main analysis driver
+│       ├── run.py                           # Main analysis driver
+│       └── expected_signal.py               # Signal yield kernel
 └── money_plot/                   # Exclusion plots
 ```
 
@@ -82,14 +90,15 @@ mkdir -p output/images && cd money_plot && conda run -n llpatcolliders python pl
 ### Signal Formula
 
 ```
-N_sig = L × Σ_parents [σ_parent × BR(parent→ℓN) × ε_geom(parent)]
+N_sig = L × Σ_parents [σ_parent × BR(parent→ℓN) × P_decay × ε_sep]
 ```
 
 Where:
 - **L** = 3000 fb⁻¹ (HL-LHC)
 - **σ_parent** = Production cross-section (from `config/production_xsecs.py`)
 - **BR(parent→ℓN)** = Branching ratio from HNLCalc (∝ |U_ℓ|²)
-- **ε_geom** = Geometric acceptance (ray-tracing + decay probability)
+- **P_decay** = Probability to decay inside detector volume (depends on cτ ∝ 1/|U|²)
+- **ε_sep** = Track separation efficiency (charged decay products ≥ 1mm apart)
 
 **Exclusion threshold:** N_sig ≥ 3 (95% CL)
 
@@ -104,14 +113,16 @@ python config_mass_grid.py  # View all grids
 ```
 
 **Production grids (base + closure):**
-- Electron: 75 points (0.2-17 GeV common grid)
-- Muon: 75 points (0.2-17 GeV common grid)
-- Tau: 31 points (m < 3.5 GeV, tau kinematic cap)
+- Electron: 93 points (0.2-17 GeV common grid + tau fine low-mass points)
+- Muon: 93 points (0.2-17 GeV common grid + tau fine low-mass points)
+- Tau: 44 points with **finer grid** (0.03-0.05 GeV steps in 0.2-1.6 GeV region)
+  - Finer spacing reduces jaggedness in exclusion curve
+  - fromTau mode uses 1M events (10x more than direct) for better statistics
 
 **EW grids (MadGraph):**
-- Electron: 75 points (common grid, currently up to 17 GeV)
-- Muon: 75 points (common grid, currently up to 17 GeV)
-- Tau: 75 points (common grid, currently up to 17 GeV)
+- Electron: 93 points (unified grid, currently up to 17 GeV)
+- Muon: 93 points (unified grid, currently up to 17 GeV)
+- Tau: 93 points (unified grid, currently up to 17 GeV)
 
 ---
 
@@ -172,14 +183,34 @@ for each HNL:
     - Calculate β γ = p/m
 ```
 
-**Cache:** `output/csv/geometry/` (30x speedup on subsequent runs)
+**Cache:** `analysis_pbc/cache/geom_{flavour}_{mass}.csv` (fast reload on subsequent runs)
 
-### Stage 2: Limit Calculation
+### Stage 2: Decay + Track Separation (REQUIRED)
 
 ```python
-# analysis_pbc/limits/run.py --parallel
+# analysis_pbc/decay/decay_detector.py
+for each HNL hitting detector:
+    - Sample decay event from MATHUSLA RHN files
+    - Boost charged daughters to lab frame
+    - Ray-trace to detector surface
+    - Check minimum track separation (default: 1mm)
+```
+
+**Cache:** `analysis_pbc/cache/decaycache_{flavour}_m{mass}_sep{sep}mm_seed{seed}.pkl`
+
+**Key insight:** Separation cut is precomputed once (at path midpoint) and reused across all |U|² values.
+This approximation is valid because track separation depends mainly on decay angles, not exact position.
+
+**Decay file selection (flavour-aware):**
+- Electron/muon: prioritize `inclDs`, `inclDD`, `inclD`, `nocharm`, `nocharmnoss`, `lightfonly`; use analytical 2/3-body files below the low-mass threshold.
+- Tau: use analytical 2/3-body files below 0.42 GeV; above that, select the nearest `lightfonly` / `lightfstau` / `lightfstauK` file.
+
+### Stage 3: Limit Calculation
+
+```python
+# analysis_pbc/limits/run.py --parallel --separation-mm 1.0
 for mass, flavour, |U|² in scan:
-    N_sig = Σ_parents [σ × BR(|U|²) × ε_geom]
+    N_sig = Σ_parents [σ × BR(|U|²) × P_decay × ε_sep]
     if N_sig ≥ 3: excluded
 ```
 
@@ -241,13 +272,23 @@ cd analysis_pbc
 # Level 0: Math kernel (~1 sec)
 python tests/closure_anubis/test_expected_signal_events_kernel.py
 
-# Level 1: Physics benchmark (~3 min)
+# Level 1: Fast single mass point (~4 min with caching)
+PYTHONUNBUFFERED=1 python test_fast_muon_1gev.py
+
+# Level 2: Physics benchmark (~5 min)
 python tests/test_26gev_muon.py
 ```
 
-**Validation:** 2.6 GeV muon benchmark
-- **Expected (repo sample):** |Uμ|² ∈ [5.5×10⁻⁹, 9.5×10⁻⁵]
-- **Peak signal (repo sample):** ~2.8×10⁵ events (EW+meson combined)
+**Validated benchmarks:**
+
+| Mass | Flavour | Peak N_sig | Exclusion |U|² | Width |
+|------|---------|------------|-----------|-------|
+| 1.0 GeV | muon | 3.2×10⁸ | [4.3×10⁻⁹, 1×10⁻²] | 6.4 dec |
+| 2.6 GeV | muon | 2.3×10⁵ | [7.5×10⁻⁹, 9.1×10⁻⁵] | 4.1 dec |
+
+**Physics notes:**
+- 1.0 GeV dominated by D mesons (σ_charm >> σ_bottom), longer cτ → wider island
+- 2.6 GeV dominated by B mesons, shorter cτ → narrower island
 
 ---
 
@@ -286,7 +327,7 @@ rm output/csv/geometry/HNL_*_geom.csv  # Force recompute
 
 ### 5. Wrong Parent PDGs
 - Run `limits/run.py` and watch for `[WARN] ... have no HNLCalc BR` / `no cross-section` messages from `limits/expected_signal.py`
-- PDG 310 (K_S⁰) not in HNLCalc → <0.1% loss (events dropped)
+- K_L (130) now supported; K_S (310) omitted (τ_S/τ_L ≈ 1/570 suppression)
 
 ---
 
@@ -312,6 +353,12 @@ Examples (post-combine):
 **Tau modes:**
 - `direct`: B/D/W → τN (all masses)
 - `fromTau`: τ → πN cascade (m < 1.64 GeV only)
+
+**⚠️ Tau statistics note:** The fromTau mode produces very few HNLs (~0.4% efficiency).
+To get adequate statistics, `run_parallel_production.sh` uses `NEVENTS_FROMTAU=1000000` (10x more events).
+Even with 1M events, only ~1-2 fromTau HNLs pass the full selection chain (geometry + decay with ≥2 charged tracks),
+causing some residual jaggedness in the tau exclusion curve below 1.6 GeV.
+Additional small wiggles can come from discrete decay-file mass points and the 100-step |U|² scan grid.
 
 **Note:** After running `combine_production_channels.py`, overlapping masses will have `*_combined.csv` files instead of separate regime files.
 
@@ -365,5 +412,5 @@ awk -F',' 'NR>1 {print $4}' output/csv/simulation/HNL_2p60GeV_muon_combined.csv 
 
 ---
 
-**Last Updated:** December 8, 2024
-**Status:** ✅ Production-ready (meson + EW regimes with channel combining)
+**Last Updated:** January 2025 (tau finer grid + fromTau 1M events)
+**Status:** ✅ Production-ready (decay simulation + track separation cuts)

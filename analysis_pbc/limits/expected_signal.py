@@ -4,7 +4,7 @@ limits/expected_signal.py
 Reusable physics kernel for the HNL limit pipeline:
 
   - couplings_from_eps2(): map PBC benchmark -> (Ue², Umu², Utau²)
-  - expected_signal_events(): compute N_sig for a geometry dataframe
+  - expected_signal_events(): compute N_sig using decay+detector selection
   - scan_eps2_for_mass(): scan eps² grid and find exclusion interval
 
 This module intentionally contains NO file-discovery, caching, or multiprocessing
@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from config.production_xsecs import get_parent_sigma_pb
+from decay.decay_detector import DecayCache, DecaySelection, compute_decay_acceptance, compute_separation_pass_static
 from models.hnl_model_hnlcalc import HNLModel
 
 
@@ -42,9 +43,14 @@ def expected_signal_events(
     benchmark: str,
     lumi_fb: float,
     dirac: bool = False,
+    separation_m: float | None = None,
+    decay_seed: int = 12345,
+    decay_cache: DecayCache | None = None,
+    separation_pass: np.ndarray | None = None,
 ) -> float:
     """
-    Compute expected signal events N_sig using per-parent counting.
+    Compute expected signal events N_sig using per-parent counting and
+    explicit decay + detector selection.
 
         N_sig = Σ_parents [ L × σ_parent × BR(parent→ℓN) × ε_geom(parent) ]
 
@@ -64,6 +70,15 @@ def expected_signal_events(
     dirac : bool
         If True, multiply yield by 2 for Dirac HNL interpretation (N ≠ N̄).
         Default False assumes Majorana HNL.
+    separation_m : float
+        Minimum charged-track separation at detector surface (metres).
+    decay_seed : int
+        RNG seed for decay sampling (for reproducibility).
+    decay_cache : DecayCache, optional
+        Precomputed decay sampling cache to reuse across eps² points.
+    separation_pass : np.ndarray, optional
+        Precomputed boolean array of which HNLs pass separation cut.
+        If provided, skips expensive per-eps2 recomputation.
     """
     # 1) Couplings and HNL model
     Ue2, Umu2, Utau2 = couplings_from_eps2(eps2, benchmark)
@@ -75,8 +90,20 @@ def expected_signal_events(
     # Production BRs per parent
     br_per_parent: Dict[int, float] = model.production_brs()
 
+    if separation_m is None:
+        raise ValueError("Decay-based efficiency is mandatory: provide separation_m.")
+
     # 2) Extract geometry arrays
-    required_cols = ["parent_id", "weight", "beta_gamma", "hits_tube", "entry_distance", "path_length"]
+    required_cols = [
+        "parent_id",
+        "weight",
+        "beta_gamma",
+        "hits_tube",
+        "entry_distance",
+        "path_length",
+        "eta",
+        "phi",
+    ]
     missing_cols = [c for c in required_cols if c not in geom_df.columns]
     if missing_cols:
         print(f"[WARN] geom_df missing columns {missing_cols}. Returning N_sig=0.")
@@ -107,7 +134,10 @@ def expected_signal_events(
 
     # 3) Compute P_decay_i for all HNLs
     lam = beta_gamma * ctau0_m
-    lam = np.where(lam <= 1e-9, 1e-9, lam)  # Prevent divide by zero
+    n_clamped = np.sum(lam <= 1e-9)
+    if n_clamped > 0:
+        print(f"[WARN] {n_clamped}/{len(lam)} HNLs have λ=βγ·cτ₀ ≤ 1e-9 (clamped); check beta_gamma/ctau0 inputs")
+    lam = np.where(lam <= 1e-9, 1e-9, lam)
 
     P_decay = np.zeros_like(lam, dtype=float)
     mask_hits = hits_tube & (length > 0)
@@ -118,7 +148,22 @@ def expected_signal_events(
         # Numerically stable: exp(A) * (1 - exp(B)) = exp(A) * (-expm1(B))
         P_decay[mask_hits] = np.exp(arg_entry) * (-np.expm1(arg_path))
 
-    # 4) Group by parent species (per-parent counting)
+    # 4) Apply decay + detector selection (track separation)
+    if separation_pass is None:
+        # Fallback: compute per eps2 point (slow, for backwards compatibility)
+        selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed)
+        separation_pass = compute_decay_acceptance(
+            geom_df=geom_df,
+            mass_GeV=mass_GeV,
+            flavour=benchmark_to_flavour(benchmark),
+            ctau0_m=ctau0_m,
+            mesh=build_mesh_once(),
+            selection=selection,
+            decay_cache=decay_cache,
+        )
+    P_decay = P_decay * separation_pass.astype(float)
+
+    # 5) Group by parent species (per-parent counting)
     unique_parents = np.unique(np.abs(parent_id.astype(int)))
     total_expected = 0.0
 
@@ -168,6 +213,28 @@ def expected_signal_events(
     return float(total_expected)
 
 
+_MESH_CACHE = None
+
+
+def build_mesh_once():
+    global _MESH_CACHE
+    if _MESH_CACHE is None:
+        from geometry.per_parent_efficiency import build_drainage_gallery_mesh
+
+        _MESH_CACHE = build_drainage_gallery_mesh()
+    return _MESH_CACHE
+
+
+def benchmark_to_flavour(benchmark: str) -> str:
+    if benchmark == "100":
+        return "electron"
+    if benchmark == "010":
+        return "muon"
+    if benchmark == "001":
+        return "tau"
+    raise ValueError(f"Unsupported benchmark: {benchmark} (use '100','010','001').")
+
+
 def scan_eps2_for_mass(
     geom_df: pd.DataFrame,
     mass_GeV: float,
@@ -175,9 +242,24 @@ def scan_eps2_for_mass(
     lumi_fb: float,
     N_limit: float = 2.996,
     dirac: bool = False,
+    separation_m: float | None = None,
+    decay_seed: int = 12345,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
     eps2_grid = np.logspace(-12, -2, 100)
     Nsig = np.zeros_like(eps2_grid, dtype=float)
+
+    # Build decay cache and separation_pass ONCE and reuse across all eps2 points
+    decay_cache = None
+    separation_pass = None
+    if separation_m is not None:
+        from decay.decay_detector import DecaySelection, build_decay_cache
+        flavour = benchmark_to_flavour(benchmark)
+        selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed)
+        decay_cache = build_decay_cache(geom_df, mass_GeV, flavour, selection)
+        # Precompute separation using static method (ctau-independent approximation)
+        separation_pass = compute_separation_pass_static(
+            geom_df, decay_cache, build_mesh_once(), float(separation_m)
+        )
 
     for i, eps2 in enumerate(eps2_grid):
         Nsig[i] = expected_signal_events(
@@ -187,6 +269,10 @@ def scan_eps2_for_mass(
             benchmark=benchmark,
             lumi_fb=lumi_fb,
             dirac=dirac,
+            separation_m=separation_m,
+            decay_seed=decay_seed,
+            decay_cache=decay_cache,
+            separation_pass=separation_pass,
         )
 
     mask = Nsig >= N_limit
