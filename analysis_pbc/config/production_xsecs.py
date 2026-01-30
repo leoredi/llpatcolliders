@@ -182,6 +182,22 @@ def get_parent_sigma_pb(parent_pdg: int) -> float:
     return 0.0
 
 
+def get_parent_tau_br(parent_pdg: int) -> float:
+    """
+    Return SM BR(parent -> tau + nu) for use in fromTau weighting.
+
+    Note: This is intentionally minimal and only includes the dominant Ds -> tau nu
+    channel used by the current fromTau samples. Unknown parents return 0.0.
+    """
+    pid = abs(int(parent_pdg))
+
+    # Ds+ -> tau+ nu_tau (dominant tau source in charm samples)
+    if pid == 431:
+        return 0.055
+
+    return 0.0
+
+
 def get_sigma_summary():
     """
     Print a summary of production cross-sections for common parents.

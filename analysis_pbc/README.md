@@ -66,9 +66,14 @@ conda run -n llpatcolliders python limits/run.py --parallel
 # Or single-threaded (slower)
 conda run -n llpatcolliders python limits/run.py
 
+# Disable progress bars (for batch jobs / non-interactive environments)
+conda run -n llpatcolliders python limits/run.py --parallel --no-progress
+
 # Or run benchmark test (2.6 GeV muon)
 conda run -n llpatcolliders python tests/test_26gev_muon.py
 ```
+
+**Note:** Progress bars are auto-disabled when stderr is not a TTY. Use `--no-progress` to explicitly disable them.
 
 ---
 

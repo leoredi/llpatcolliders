@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pandas as pd
 import trimesh
@@ -251,6 +253,7 @@ def preprocess_hnl_csv(
     csv_file: str,
     mesh: trimesh.Trimesh,
     origin: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    show_progress: bool | None = None,
 ) -> pd.DataFrame:
     """
     Read a Pythia HNL CSV and precompute geometry quantities
@@ -303,7 +306,14 @@ def preprocess_hnl_csv(
     Invalid weight values:
         - pythia.info.sigmaGen() (absolute cross-section in pb)
         - Any value >> 1000 (likely an absolute cross-section mistake)
+
+    Args:
+        show_progress: If None (default), auto-detect based on whether stderr
+            is a TTY. Set False to disable progress bars (batch/parallel mode).
     """
+    if show_progress is None:
+        show_progress = sys.stderr.isatty()
+
     df = pd.read_csv(csv_file)
 
     # Handle both old and new CSV formats
@@ -392,12 +402,12 @@ def preprocess_hnl_csv(
 
     rtree_errors = 0
     batch_size = 10_000
-    for start in tqdm(
-        range(0, len(valid_indices), batch_size),
-        total=(len(valid_indices) + batch_size - 1) // batch_size,
-        desc="Geometry rays",
-        unit="batch",
-    ):
+    n_batches = (len(valid_indices) + batch_size - 1) // batch_size
+    iterator = range(0, len(valid_indices), batch_size)
+    if show_progress:
+        iterator = tqdm(iterator, total=n_batches, desc="Geometry rays", unit="batch")
+
+    for start in iterator:
         end = min(start + batch_size, len(valid_indices))
         idx_chunk = valid_indices[start:end]
         dir_chunk = directions[start:end]

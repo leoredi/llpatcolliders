@@ -26,7 +26,7 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NEVENTS=100000
 NEVENTS_FROMTAU=10000000  # 100x more for fromTau mode (low HNL yield ~0.4%)
-MAX_PARALLEL=8  # Adjust based on your CPU cores (leave 1-2 for system)
+MAX_PARALLEL=12  # Using all available cores
 
 # Kinematic threshold for tau → π N cascade production
 # m_N < m_τ - m_π = 1.777 - 0.140 = 1.637 GeV

@@ -178,19 +178,19 @@ std::string massToLabel(double mass) {
 }
 
 // Find physical parent (skip copies, find original decaying particle)
-int findPhysicalParent(const Event& event, int iHNL) {
-    if (iHNL < 0 || iHNL >= event.size()) return 0;
+int findPhysicalParent(const Event& event, int iParticle, int forbiddenId = 0) {
+    if (iParticle < 0 || iParticle >= event.size()) return 0;
     
     // Get the top copy of the HNL (earliest in decay chain)
-    int iTop = event[iHNL].iTopCopy();
-    if (iTop < 0 || iTop >= event.size()) iTop = iHNL;
+    int iTop = event[iParticle].iTopCopy();
+    if (iTop < 0 || iTop >= event.size()) iTop = iParticle;
     
     // Get mother of the top copy
     int iMother = event[iTop].mother1();
     if (iMother <= 0 || iMother >= event.size()) return 0;
     
-    // If mother is also HNL, something went wrong
-    if (std::abs(event[iMother].id()) == HNL_ID) {
+    // Optionally guard against pathological self-parenting (HNL -> HNL)
+    if (forbiddenId != 0 && std::abs(event[iMother].id()) == std::abs(forbiddenId)) {
         return 0;
     }
     
@@ -708,7 +708,7 @@ int main(int argc, char* argv[]) {
     }
     
     // CSV header
-    outFile << "event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,"
+    outFile << "event,weight,hnl_id,parent_pdg,tau_parent_id,pt,eta,phi,p,E,mass,"
             << "prod_x_mm,prod_y_mm,prod_z_mm,beta_gamma" << std::endl;
     
     // -----------------------------------------------------------------------
@@ -731,7 +731,19 @@ int main(int argc, char* argv[]) {
             if (std::abs(p.id()) != HNL_ID) continue;
             
             // Find parent
-            int parentPdg = findPhysicalParent(pythia.event, i);
+            int parentPdg = findPhysicalParent(pythia.event, i, HNL_ID);
+            int tauParentId = 0;
+            if (std::abs(parentPdg) == 15) {
+                int iTop = pythia.event[i].iTopCopy();
+                if (iTop < 0 || iTop >= pythia.event.size()) iTop = i;
+                int iTau = pythia.event[iTop].mother1();
+                if (iTau > 0 && iTau < pythia.event.size()) {
+                    int tauParentPdg = findPhysicalParent(pythia.event, iTau, 0);
+                    if (tauParentPdg != 0) {
+                        tauParentId = std::abs(tauParentPdg);
+                    }
+                }
+            }
             
             // Get production vertex (in mm)
             double prodX = p.xProd();
@@ -760,6 +772,7 @@ int main(int argc, char* argv[]) {
                     << weight << ","
                     << p.id() << ","
                     << parentPdg << ","
+                    << tauParentId << ","
                     << p.pT() << ","
                     << p.eta() << ","
                     << p.phi() << ","

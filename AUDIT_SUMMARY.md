@@ -14,6 +14,11 @@ This document consolidates the findings from multiple independent audits of the 
 - 19 fully confirmed by all reviewers
 - 1 partially confirmed (B4: float precision - lower practical risk than initially stated)
 
+**Resolution Progress (as of 2026-01-29):**
+- 8 issues resolved (B1, B3, B6, B7, B8, C7, C9 + B1 was N/A)
+- 2 marked low priority (B4, B10)
+- Remaining: documentation/validation tasks and minor maintainability items
+
 ---
 
 ## Physics Biases (10 Issues)
@@ -40,13 +45,13 @@ This document consolidates the findings from multiple independent audits of the 
 | B1 | Race condition in summary CSV writes | None | **Resolved** | Removed unused MadGraph summary CSV code |
 | B2 | Unsafe eval() in HNLCalc | Minor | Verified | Low risk - expressions are internal |
 | B3 | Division-by-zero clamping (λ→1e-9) | Minor | **Resolved** | Now warns when clamping triggers |
-| B4 | Float precision in mass filenames | Minor | Partially | Lower practical risk; 2-decimal format mitigates |
+| B4 | Float precision in mass filenames | Minor | **Low priority** | Lower practical risk; 2-decimal format mitigates |
 | B5 | Hardcoded magic numbers in geometry | Minor | Verified | Maintainability concern; coordinates undocumented |
-| B6 | LHE parser defaults missing parent to W+ | Moderate | Verified | Can misattribute off-shell Z events |
+| B6 | LHE parser defaults missing parent to W+ | Moderate | **Resolved** | Now uses process ID from LHE header to determine W/Z |
 | B7 | Inconsistent column naming (boost_gamma/beta_gamma) | Minor | **Resolved** | Migrated fully to `beta_gamma`; legacy handling removed |
-| B8 | tqdm in library code | Minor | Verified | Noisy in batch/parallel environments |
+| B8 | tqdm in library code | Minor | **Resolved** | Auto-disables in non-TTY; `--no-progress` flag added |
 | B9 | Global mutable mesh cache | Minor | Verified | Not thread-safe; single-geometry limitation |
-| B10 | Broad exception catch in charge lookup | Minor | Verified | May hide particle library issues |
+| B10 | Broad exception catch in charge lookup | Minor | **Low priority** | Fails safe to neutral; fallback list covers common cases |
 
 ---
 
@@ -61,7 +66,9 @@ Analysis of 279 MadGraph EW output files (27.9M events):
 | Z (23) | 7,514,141 | 26.93% |
 | Unknown/0 | 0 | 0.00% |
 
-**Conclusion:** No parent_pdg=0 entries observed in existing outputs. The W+ fallback is likely rarely triggered in practice.
+**Conclusion:** No parent_pdg=0 entries observed in existing outputs. The W+ fallback was rarely triggered in practice.
+
+**Resolution (2026-01-29):** `lhe_to_csv.py` now parses the LHE header (`<MGProcCard>` and `<init>` blocks) to build a process ID → parent PDG mapping. When the parent boson is absent from the particle list (off-shell), the correct W+/W-/Z is inferred from the event's `idprup` field. No more blind defaulting to W+.
 
 ---
 
@@ -88,13 +95,6 @@ Analysis of 279 MadGraph EW output files (27.9M events):
 11. **Refactor HNLCalc** - Replace string-based eval() with symbolic math
 
 ---
-
-## Actionable TODOs
-
-### B8: tqdm in Library Code
-- **Owner:** Analysis/geometry
-- **Action:** Add `--no-progress` flag; auto-disable when stdout is not TTY
-- **Test:** Assert no tqdm control characters in non-interactive output
 
 ---
 

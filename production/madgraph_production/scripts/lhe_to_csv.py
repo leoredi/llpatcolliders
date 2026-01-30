@@ -47,12 +47,114 @@ class LHEParser:
         if not self.lhe_path.exists():
             raise FileNotFoundError(f"LHE file not found: {lhe_path}")
 
+        # Parse header to build process ID → parent PDG mapping
+        self.proc_id_to_parent, self.default_parent = self._parse_header()
+
     def _open_lhe(self):
         """Open LHE file (handles both .lhe and .lhe.gz)"""
         if self.lhe_path.suffix == '.gz':
             return gzip.open(self.lhe_path, 'rt', encoding='utf-8')
         else:
             return open(self.lhe_path, 'r', encoding='utf-8')
+
+    def _parse_header(self):
+        """
+        Parse LHE header to build process ID (idprup) → parent PDG mapping.
+
+        Reads:
+        - <MGProcCard> or <MG5ProcCard>: Contains 'generate' and 'add process' lines
+        - <init> block: Contains LPRUP (process IDs) that match event IDPRUP
+
+        Returns:
+            tuple: (proc_id_to_parent dict, default_parent int or None)
+                - proc_id_to_parent: {idprup: parent_pdg} mapping
+                - default_parent: PDG to use if only one boson type in file
+        """
+        proc_id_to_parent = {}
+        bosons_found = set()  # Track all W+/W-/Z mentioned in process card
+        process_bosons = []   # Ordered list of bosons from generate/add process
+        init_ids = []         # LPRUP values from <init> block
+
+        in_proccard = False
+        in_init = False
+        init_first_line = True
+
+        with self._open_lhe() as f:
+            for line in f:
+                line_stripped = line.strip()
+
+                # Track MG5ProcCard / MGProcCard block
+                if '<MG5ProcCard>' in line or '<MGProcCard>' in line:
+                    in_proccard = True
+                    continue
+                if '</MG5ProcCard>' in line or '</MGProcCard>' in line:
+                    in_proccard = False
+                    continue
+
+                # Parse process card for generate/add process lines
+                if in_proccard:
+                    line_lower = line_stripped.lower()
+                    if 'generate' in line_lower or 'add process' in line_lower:
+                        # Determine W+/W-/Z from the process definition
+                        # Match patterns like "w+", "w-", "z" (case insensitive)
+                        if re.search(r'\bw\+\b', line_lower) or re.search(r'\bw\s*\+', line_lower):
+                            process_bosons.append(self.PDG_WPLUS)
+                            bosons_found.add(self.PDG_WPLUS)
+                        elif re.search(r'\bw-\b', line_lower) or re.search(r'\bw\s*-', line_lower):
+                            process_bosons.append(self.PDG_WMINUS)
+                            bosons_found.add(self.PDG_WMINUS)
+                        elif re.search(r'\bz\b', line_lower):
+                            process_bosons.append(self.PDG_Z)
+                            bosons_found.add(self.PDG_Z)
+
+                # Track <init> block
+                if '<init>' in line:
+                    in_init = True
+                    init_first_line = True
+                    continue
+                if '</init>' in line:
+                    in_init = False
+                    continue
+
+                # Parse <init> block for LPRUP values
+                # Format: first line is beam info, subsequent lines end with LPRUP
+                if in_init and line_stripped:
+                    parts = line_stripped.split()
+                    if init_first_line:
+                        # First line: IDBMUP(1) IDBMUP(2) EBMUP(1) EBMUP(2) ... NPRUP
+                        init_first_line = False
+                        continue
+                    # Subprocess lines: XSECUP XERRUP XMAXUP LPRUP
+                    if len(parts) >= 4:
+                        try:
+                            lprup = int(parts[-1])
+                            init_ids.append(lprup)
+                        except ValueError:
+                            pass
+
+                # Stop at first event (header parsing complete)
+                if '<event>' in line:
+                    break
+
+        # Build mapping: match init_ids to process_bosons in order
+        for i, lprup in enumerate(init_ids):
+            if i < len(process_bosons):
+                proc_id_to_parent[lprup] = process_bosons[i]
+
+        # Determine default parent if only one boson type in entire file
+        default_parent = None
+        if len(bosons_found) == 1:
+            default_parent = bosons_found.pop()
+        elif len(bosons_found) == 2 and self.PDG_WPLUS in bosons_found and self.PDG_WMINUS in bosons_found:
+            # W+ and W- both present but no Z - default to W+ (sign doesn't matter for xsec)
+            default_parent = self.PDG_WPLUS
+
+        if proc_id_to_parent:
+            print(f"  Process ID mapping: {proc_id_to_parent}")
+        if default_parent:
+            print(f"  Default parent (single boson type): {default_parent}")
+
+        return proc_id_to_parent, default_parent
 
     def parse_events(self):
         """
@@ -73,6 +175,7 @@ class LHEParser:
         event_id = 0
         in_event = False
         event_weight = 1.0
+        event_idprup = 0
         particles = []
         header_parsed = False
 
@@ -85,6 +188,7 @@ class LHEParser:
                     in_event = True
                     particles = []
                     event_weight = 1.0
+                    event_idprup = 0
                     header_parsed = False
                     continue
 
@@ -95,7 +199,7 @@ class LHEParser:
 
                     # Extract HNL 4-vector (MATHUSLA approach)
                     event_data = self._extract_hnl(
-                        particles, event_id, event_weight
+                        particles, event_id, event_weight, event_idprup
                     )
 
                     if event_data is not None:
@@ -114,6 +218,7 @@ class LHEParser:
                         # Event header format: nup idprup xwgtup scalup aqedup aqcdup
                         parts = line.split()
                         if len(parts) >= 3:
+                            event_idprup = int(parts[1])  # idprup (process ID)
                             event_weight = float(parts[2])  # xwgtup
                         header_parsed = True
                         continue
@@ -164,13 +269,13 @@ class LHEParser:
 
         return 0  # Parent boson not found in chain
 
-    def _extract_hnl(self, particles, event_id, weight):
+    def _extract_hnl(self, particles, event_id, weight, idprup):
         """
         Extract HNL 4-vector and parent info from particle list
 
         Attempts to extract parent W/Z if present in LHE. If not found
-        (can happen for off-shell bosons), we fall back to W (24) to
-        avoid dropping the event downstream.
+        (can happen for off-shell bosons), uses the process ID mapping
+        from the LHE header to determine the correct parent boson.
 
         Output format matches Pythia CSV for analysis pipeline compatibility.
 
@@ -178,6 +283,7 @@ class LHEParser:
             particles: List of particle dicts
             event_id: Event number
             weight: Event weight
+            idprup: Process ID from event header (maps to parent boson)
 
         Returns:
             dict with event data, or None if no HNL found
@@ -208,10 +314,17 @@ class LHEParser:
         if parent_pdg == 0:
             parent_pdg = self._find_parent_boson(particles, hnl)
 
-        # If still unknown (off-shell boson removed from record), default to W
-        if parent_pdg == 0:
-            parent_pdg = self.PDG_WPLUS  # use +24 as neutral sign choice
+        # If still unknown, use process ID mapping from LHE header
+        if parent_pdg == 0 and idprup in self.proc_id_to_parent:
+            parent_pdg = self.proc_id_to_parent[idprup]
             parent_inferred = True
+
+        # Last resort: use default parent if only one boson type in file
+        if parent_pdg == 0 and self.default_parent is not None:
+            parent_pdg = self.default_parent
+            parent_inferred = True
+
+        # If all else fails, keep parent_pdg=0 (will be flagged in output)
 
         # Extract 4-momentum
         px = hnl['px']
@@ -321,10 +434,10 @@ class LHEParser:
 
         print(f"Wrote {n_events} HNL events to {output_path}")
         if n_no_parent > 0:
-            print(f"  Warning: {n_no_parent}/{n_events} events had parent_pdg=0 (W/Z not in LHE)")
-            print(f"           This is expected for off-shell bosons (controlled by bw_cut)")
+            print(f"  WARNING: {n_no_parent}/{n_events} events have parent_pdg=0 (could not determine W/Z)")
+            print(f"           Check that LHE contains valid <MGProcCard> and <init> blocks")
         if n_parent_inferred > 0:
-            print(f"  Note: {n_parent_inferred}/{n_events} events inferred parent_pdg=24 (off-shell W/Z not explicit in LHE)")
+            print(f"  Note: {n_parent_inferred}/{n_events} events inferred parent from process ID (off-shell boson not in particle list)")
 
         return n_events
 

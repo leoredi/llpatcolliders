@@ -18,7 +18,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from config.production_xsecs import get_parent_sigma_pb
+from config.production_xsecs import get_parent_sigma_pb, get_parent_tau_br
 from decay.decay_detector import DecayCache, DecaySelection, compute_decay_acceptance, compute_separation_pass_static
 from models.hnl_model_hnlcalc import HNLModel
 
@@ -164,11 +164,23 @@ def expected_signal_events(
     P_decay = P_decay * separation_pass.astype(float)
 
     # 5) Group by parent species (per-parent counting)
-    unique_parents = np.unique(np.abs(parent_id.astype(int)))
+    parent_abs = np.abs(parent_id.astype(int))
+    tau_parent_id = None
+    if "tau_parent_id" in geom_df.columns:
+        tau_parent_id = geom_df["tau_parent_id"].to_numpy(dtype=float)
+        tau_parent_id = np.where(np.isfinite(tau_parent_id), np.abs(tau_parent_id).astype(int), 0)
+
+    if tau_parent_id is None:
+        mask_from_tau = np.zeros(len(parent_abs), dtype=bool)
+    else:
+        mask_from_tau = (parent_abs == 15) & (tau_parent_id > 0)
+
+    unique_parents = np.unique(parent_abs[~mask_from_tau])
     total_expected = 0.0
 
     missing_br_pdgs = []
     missing_xsec_pdgs = []
+    missing_tau_br_pdgs = []
 
     for pid in unique_parents:
         BR_parent = br_per_parent.get(int(pid), 0.0)
@@ -192,6 +204,34 @@ def expected_signal_events(
         # N = L(fb^-1) × σ(pb) × (1e3 fb/pb) × BR × ε
         total_expected += lumi_fb * (sigma_parent_pb * 1e3) * BR_parent * eff_parent
 
+    # 5b) Tau-decay production: parent -> tau nu, tau -> N X
+    if np.any(mask_from_tau):
+        br_tau_to_N = br_per_parent.get(15, 0.0)
+        if br_tau_to_N <= 0.0:
+            missing_br_pdgs.append(15)
+        else:
+            tau_parents = np.unique(tau_parent_id[mask_from_tau])
+            for pid in tau_parents:
+                br_parent_to_tau = get_parent_tau_br(int(pid))
+                if br_parent_to_tau <= 0.0:
+                    missing_tau_br_pdgs.append(int(pid))
+                    continue
+
+                sigma_parent_pb = get_parent_sigma_pb(int(pid))
+                if sigma_parent_pb <= 0.0:
+                    missing_xsec_pdgs.append(int(pid))
+                    continue
+
+                mask_parent = mask_from_tau & (tau_parent_id == pid)
+                w = weights[mask_parent]
+                P = P_decay[mask_parent]
+                w_sum = np.sum(w)
+                if w_sum <= 0.0:
+                    continue
+
+                eff_parent = np.sum(w * P) / w_sum
+                total_expected += lumi_fb * (sigma_parent_pb * 1e3) * br_parent_to_tau * br_tau_to_N * eff_parent
+
     # Diagnostics: log once per mass point (at first scan point)
     if missing_br_pdgs and eps2 == 1e-12:
         n_lost = int(np.sum(np.isin(parent_id, missing_br_pdgs)))
@@ -200,8 +240,17 @@ def expected_signal_events(
         )
         print(f"       → Discarding {n_lost} events (silent data loss)")
 
+    if missing_tau_br_pdgs and eps2 == 1e-12:
+        n_lost = int(np.sum(np.isin(tau_parent_id, missing_tau_br_pdgs))) if tau_parent_id is not None else 0
+        print(
+            f"[WARN] Mass {mass_GeV:.2f} GeV: {len(missing_tau_br_pdgs)} tau-parent PDG(s) have no SM τ BR: {missing_tau_br_pdgs}"
+        )
+        print(f"       → Discarding {n_lost} events (silent data loss)")
+
     if missing_xsec_pdgs and eps2 == 1e-12:
         n_lost = int(np.sum(np.isin(parent_id, missing_xsec_pdgs)))
+        if tau_parent_id is not None:
+            n_lost += int(np.sum(np.isin(tau_parent_id, missing_xsec_pdgs)))
         print(
             f"[WARN] Mass {mass_GeV:.2f} GeV: {len(missing_xsec_pdgs)} parent PDG(s) have no cross-section: {missing_xsec_pdgs}"
         )

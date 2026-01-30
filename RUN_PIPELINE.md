@@ -92,6 +92,11 @@ Or tau only (preserves existing e/mu results):
 python run_tau_only.py --parallel
 ```
 
+For batch jobs (disable progress bars):
+```fish
+python limits/run.py --parallel --no-progress
+```
+
 ---
 
 ## 5. Money Plot
@@ -112,6 +117,7 @@ open ../output/images/HNL_moneyplot_island.png
 | MadGraph | `production/madgraph_production` (Docker) | `python3 scripts/run_hnl_scan.py` |
 | Combine | `analysis_pbc` | `python limits/combine_production_channels.py` |
 | Analysis | `analysis_pbc` | `python limits/run.py --parallel` |
+| Analysis (batch) | `analysis_pbc` | `python limits/run.py --parallel --no-progress` |
 | Plot | `money_plot` | `python plot_money_island.py` |
 
 ---

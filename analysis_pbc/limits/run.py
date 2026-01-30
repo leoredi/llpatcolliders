@@ -53,6 +53,7 @@ def scan_single_mass(
     separation_m=0.001,
     decay_seed=12345,
     quiet=False,
+    show_progress=None,
 ):
     """
     Process one mass point, combining all available production regimes (kaon/charm/beauty/ew).
@@ -66,7 +67,7 @@ def scan_single_mass(
     with stdout_ctx:
         return _scan_single_mass_impl(
             mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
-            dirac, separation_m, decay_seed, quiet
+            dirac, separation_m, decay_seed, quiet, show_progress
         )
 
 
@@ -81,6 +82,7 @@ def _scan_single_mass_impl(
     separation_m,
     decay_seed,
     quiet,
+    show_progress,
 ):
     """Internal implementation of scan_single_mass."""
     if not quiet:
@@ -113,7 +115,7 @@ def _scan_single_mass_impl(
                 mesh = build_drainage_gallery_mesh()
             if not quiet:
                 print(f"  Computing geometry for {sim_csv.name} (caching to {geom_csv.name})...")
-            geom_df = preprocess_hnl_csv(sim_csv, mesh)
+            geom_df = preprocess_hnl_csv(sim_csv, mesh, show_progress=show_progress)
 
             # Atomic write to prevent race condition in parallel execution
             with tempfile.NamedTemporaryFile(mode='w', dir=geom_csv.parent,
@@ -214,6 +216,7 @@ def run_flavour(
     dirac=False,
     separation_m=0.001,
     decay_seed=12345,
+    show_progress=None,
 ):
     """Run scan for one flavour"""
     print(f"\n{'='*60}")
@@ -331,18 +334,21 @@ def run_flavour(
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
             args_list.append(
-                (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed)
+                (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress)
             )
 
-        # Process in parallel with tqdm progress bar
+        # Process in parallel (with optional progress bar)
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            results = list(tqdm(
-                executor.map(scan_single_mass_wrapper, args_list),
-                total=len(args_list),
-                desc=f"  {flavour}",
-                unit="mass",
-                ncols=80,
-            ))
+            iterator = executor.map(scan_single_mass_wrapper, args_list)
+            if show_progress is None or show_progress:
+                iterator = tqdm(
+                    iterator,
+                    total=len(args_list),
+                    desc=f"  {flavour}",
+                    unit="mass",
+                    ncols=80,
+                )
+            results = list(iterator)
 
         # Print summary of results
         valid_results = [r for r in results if r is not None]
@@ -365,6 +371,7 @@ def run_flavour(
                 dirac=dirac,
                 separation_m=separation_m,
                 decay_seed=decay_seed,
+                show_progress=show_progress,
             )
             if res:
                 results.append(res)
@@ -374,10 +381,11 @@ def run_flavour(
 def scan_single_mass_wrapper(args):
     """Wrapper for parallel processing - runs in quiet mode"""
     # Unpack args and add quiet=True for parallel execution
-    (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed) = args
+    (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress) = args
     return scan_single_mass(
         mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list,
-        dirac=dirac, separation_m=separation_m, decay_seed=decay_seed, quiet=True
+        dirac=dirac, separation_m=separation_m, decay_seed=decay_seed, quiet=True,
+        show_progress=show_progress,
     )
 
 if __name__ == "__main__":
@@ -396,6 +404,11 @@ if __name__ == "__main__":
         type=int,
         default=12345,
         help="Random seed for decay sampling (default: 12345)",
+    )
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable tqdm progress bars (auto-disabled in non-TTY environments)",
     )
     args = parser.parse_args()
     if args.separation_mm <= 0:
@@ -418,6 +431,9 @@ if __name__ == "__main__":
 
     all_results = []
 
+    # Determine progress bar visibility: explicit --no-progress overrides auto-detect
+    show_progress = None if not args.no_progress else False
+
     # Process each flavour
     for flavour, benchmark in [("electron", "100"), ("muon", "010"), ("tau", "001")]:
         df = run_flavour(
@@ -429,6 +445,7 @@ if __name__ == "__main__":
             dirac=args.dirac,
             separation_m=separation_m,
             decay_seed=args.decay_seed,
+            show_progress=show_progress,
         )
         df["separation_mm"] = args.separation_mm
         all_results.append(df)
