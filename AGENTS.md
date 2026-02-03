@@ -117,7 +117,8 @@ python config_mass_grid.py  # View all grids
 - Muon: 93 points (0.2-17 GeV common grid + tau fine low-mass points)
 - Tau: 44 points with **finer grid** (0.03-0.05 GeV steps in 0.2-1.6 GeV region)
   - Finer spacing reduces jaggedness in exclusion curve
-  - fromTau mode uses 1M events (10x more than direct) for better statistics
+  - fromTau mode uses the same event count as direct by default (see `production/pythia_production/run_parallel_production.sh`)
+    Increase `NEVENTS_FROMTAU` if you need smoother low-mass tau curves.
 
 **EW grids (MadGraph):**
 - Electron: 93 points (unified grid, currently up to 17 GeV)
@@ -340,24 +341,23 @@ HNL_{mass}GeV_{flavour}_{regime}[_mode].csv
 Examples (post-combine):
   HNL_2p60GeV_muon_combined.csv    ← beauty + ew merged
   HNL_10p0GeV_electron_ew.csv      ← EW only (no overlap)
-  HNL_0p50GeV_tau_combined.csv     ← kaon + charm + ew merged
+  HNL_0p50GeV_tau_combined.csv     ← charm + ew merged (tau never uses kaon)
 ```
 
 **Regimes:**
-- `kaon` (m < 0.5 GeV)
-- `charm` (0.5-2 GeV)
-- `beauty` (2-5 GeV)
-- `ew` (≥ 5 GeV)
+- `kaon` (m < 0.5 GeV) — electron/muon only
+- `charm` (0.5-2 GeV) — all flavours; tau uses charm even at m < 0.5 GeV
+- `beauty` (2-5 GeV) — all flavours
+- `ew` (≥ 5 GeV) — all flavours
 - `combined` (multiple regimes merged)
 
 **Tau modes:**
-- `direct`: B/D/W → τN (all masses)
-- `fromTau`: τ → πN cascade (m < 1.64 GeV only)
+- `direct`: B/Ds → τN (all masses)
+- `fromTau`: B/Ds → τν, τ → NX cascade (m < 1.77 GeV; channels: ρ, 3π, π, μν, eν)
 
-**⚠️ Tau statistics note:** The fromTau mode produces very few HNLs (~0.4% efficiency).
-To get adequate statistics, `run_parallel_production.sh` uses `NEVENTS_FROMTAU=1000000` (10x more events).
-Even with 1M events, only ~1-2 fromTau HNLs pass the full selection chain (geometry + decay with ≥2 charged tracks),
-causing some residual jaggedness in the tau exclusion curve below 1.6 GeV.
+**⚠️ Tau statistics note:** The fromTau mode has low efficiency and can be noisy at low mass.
+By default `run_parallel_production.sh` sets `NEVENTS_FROMTAU=$NEVENTS`.
+Increase `NEVENTS_FROMTAU` if you need smoother curves; expect longer runtime.
 Additional small wiggles can come from discrete decay-file mass points and the 100-step |U|² scan grid.
 
 **Note:** After running `combine_production_channels.py`, overlapping masses will have `*_combined.csv` files instead of separate regime files.
@@ -412,5 +412,5 @@ awk -F',' 'NR>1 {print $4}' output/csv/simulation/HNL_2p60GeV_muon_combined.csv 
 
 ---
 
-**Last Updated:** January 2025 (tau finer grid + fromTau 1M events)
+**Last Updated:** February 2026 (tau finer grid + fromTau documentation refresh)
 **Status:** ✅ Production-ready (decay simulation + track separation cuts)

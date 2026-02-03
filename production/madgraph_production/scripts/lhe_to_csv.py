@@ -366,6 +366,7 @@ class LHEParser:
             'weight': weight,
             'hnl_id': self.PDG_HNL_N1,
             'parent_pdg': parent_pdg,
+            'tau_parent_id': 0,  # EW production has no tau decay chain
             'parent_inferred': parent_inferred,
             'pt': pt,
             'eta': eta,
@@ -396,7 +397,7 @@ class LHEParser:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # CSV header (EXACT Pythia format for analysis pipeline compatibility)
-        header = "event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,beta_gamma"
+        header = "event,weight,hnl_id,parent_pdg,tau_parent_id,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm,beta_gamma"
 
         n_events = 0
         n_no_parent = 0  # Count events where parent W/Z not found
@@ -418,6 +419,7 @@ class LHEParser:
                     f"{event['weight']},"
                     f"{event['hnl_id']},"
                     f"{event['parent_pdg']},"
+                    f"{event['tau_parent_id']},"
                     f"{event['pt']:.6g},"
                     f"{event['eta']:.6g},"
                     f"{event['phi']:.6g},"

@@ -29,6 +29,33 @@ For single flavour:
 ./run_parallel_production.sh tau
 ```
 
+You can also specify a **tau mode** explicitly:
+```fish
+./run_parallel_production.sh tau direct
+./run_parallel_production.sh tau fromTau
+./run_parallel_production.sh tau both
+```
+Note: `./run_parallel_production.sh tau` defaults to `both`.
+
+### Tau Production Modes
+
+For tau coupling (BC8), there are **two independent O(U_τ²) production mechanisms**:
+
+| Mode | Physics | Mass Range |
+|------|---------|------------|
+| `direct` | B/Ds → τ N (mixing at meson vertex) | All masses |
+| `fromTau` | B/Ds → τ ν, τ → N X (mixing at tau decay) | m_N < 1.77 GeV |
+
+τ → N X channels by mass:
+- m_N < 1.0 GeV: ρ, 3π, π, μν, eν
+- m_N < 1.64 GeV: π, μν, eν (hadronic closing)
+- m_N < 1.67 GeV: μν, eν (leptonic only)
+- m_N < 1.77 GeV: eν only
+
+The script automatically runs both modes for tau, combining them later in analysis.
+
+**CPU Optimization**: The `fromTau` mode forces meson decays to τν (instead of relying on ~2-5% SM branching ratios), giving **~20-50x speedup** while physical BRs are applied via HNLCalc in analysis.
+
 Monitor progress (separate terminal):
 ```fish
 watch -n 10 'ls ../../output/csv/simulation/HNL_*.csv | wc -l'
@@ -38,7 +65,17 @@ watch -n 10 'ls ../../output/csv/simulation/HNL_*.csv | wc -l'
 
 ## 2. MadGraph Production (Electroweak)
 
-Start Docker:
+Recommended: run all three flavours in parallel (host shell, single terminal):
+```fish
+cd production/madgraph_production
+for f in electron muon tau
+    docker run --rm --name mg5-$f -v (pwd)/../..:/work mg5-hnl:latest \
+      bash -lc "cd /work/production/madgraph_production && python3 scripts/run_hnl_scan.py --flavour $f --min-mass 3" &
+end
+wait
+```
+
+Optional: single container, sequential (interactive):
 ```fish
 cd production/madgraph_production
 docker run -it --rm -v (pwd)/../..:/work mg5-hnl:latest bash
@@ -52,9 +89,9 @@ cd /work/production/madgraph_production
 python3 scripts/run_hnl_scan.py
 
 # Or single flavour
-python3 scripts/run_hnl_scan.py --flavour electron
-python3 scripts/run_hnl_scan.py --flavour muon
-python3 scripts/run_hnl_scan.py --flavour tau
+python3 scripts/run_hnl_scan.py --flavour electron --min-mass 3
+python3 scripts/run_hnl_scan.py --flavour muon --min-mass 3
+python3 scripts/run_hnl_scan.py --flavour tau --min-mass 3
 
 exit
 ```

@@ -23,6 +23,7 @@ Usage (inside Docker container, with repo mounted at /work):
     python3 scripts/run_hnl_scan.py --test        # quick test (muon, 15 GeV)
     python3 scripts/run_hnl_scan.py --flavour muon
     python3 scripts/run_hnl_scan.py --masses 10 15 20 --flavour electron
+    python3 scripts/run_hnl_scan.py --flavour electron --min-mass 3
     python3 scripts/run_hnl_scan.py --nevents 10000
 
 Environment:
@@ -584,6 +585,12 @@ def main():
         default=N_EVENTS_DEFAULT,
         help=f'Number of events per point (default: {N_EVENTS_DEFAULT})'
     )
+    parser.add_argument(
+        '--min-mass',
+        type=float,
+        default=None,
+        help='Minimum mass to include from the grid (GeV).'
+    )
 
     args = parser.parse_args()
 
@@ -613,6 +620,12 @@ def main():
         masses = args.masses if args.masses else MASS_GRID
         flavours = [args.flavour] if args.flavour else FLAVOURS
         n_events = args.nevents
+
+    if args.min_mass is not None:
+        masses = [m for m in masses if m >= args.min_mass]
+        if not masses:
+            print(f"ERROR: No masses left after applying --min-mass {args.min_mass}")
+            return 1
 
     print(f"Masses:          {masses}")
     print(f"Flavours:        {flavours}")

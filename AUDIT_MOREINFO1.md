@@ -781,7 +781,7 @@ except Exception:
 
 1. **W/Z Production BR (C1)**: The code at line 418-419 stores W BR under `br_per_parent[24]`. This is the correct approach for inclusive W → ℓN production summed over all lepton flavors.
 
-2. **Tau Production (lines 352-387)**: The τ → π N BR calculation uses a proper analytic formula from Atre et al. (arXiv:0901.3589), not HNLCalc. This is correctly implemented.
+2. **Tau Production (lines 352-387)**: ~~The τ → π N BR calculation uses a proper analytic formula from Atre et al. (arXiv:0901.3589), not HNLCalc.~~ **UPDATE (2026-02-03):** Now uses HNLCalc's τ→NX BR which includes all channels (π, ρ, 3π, μν, eν), not just τ→πN.
 
 3. **Safe Evaluator Coverage**: The `_SafeExprEvaluator` in `hnl_model_hnlcalc.py` is well-designed but only covers the BR string evaluation at the wrapper level. The underlying HNLCalc integration still uses raw `eval()`.
 
@@ -790,6 +790,13 @@ except Exception:
 ### Conclusion
 
 The original audit is thorough and accurate. **19 of 20 issues are fully confirmed**, with B4 (float precision) being lower risk than stated but still technically valid. The severity assessments are appropriate. The recommendations in Part 3 of the original audit are well-prioritized.
+
+**UPDATE (2026-02-03):** Three additional critical issues were discovered during investigation of fromTau production samples:
+- **C11 (CRITICAL):** Kaons had `mayDecay=off` by default in Pythia — electron/muon kaon samples contained zero kaons!
+- **C12 (MODERATE):** Tau samples at m_N < 0.5 GeV used kaon card, but kaons cannot produce taus (m_K < m_τ)
+- **C13 (MINOR):** Manual τ→πN BR replaced with HNLCalc's complete τ→NX BR
+
+All three issues have been resolved in `main_hnl_production.cc` and `hnl_model_hnlcalc.py`. CSV samples need regeneration.
 
 ---
 

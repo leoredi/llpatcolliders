@@ -168,12 +168,27 @@ def expected_signal_events(
     tau_parent_id = None
     if "tau_parent_id" in geom_df.columns:
         tau_parent_id = geom_df["tau_parent_id"].to_numpy(dtype=float)
-        tau_parent_id = np.where(np.isfinite(tau_parent_id), np.abs(tau_parent_id).astype(int), 0)
+        # Replace NaN/inf with 0 before cast to avoid RuntimeWarning (EW files lack this column)
+        tau_parent_id = np.abs(np.nan_to_num(tau_parent_id, nan=0.0, posinf=0.0, neginf=0.0)).astype(int)
 
     if tau_parent_id is None:
         mask_from_tau = np.zeros(len(parent_abs), dtype=bool)
     else:
         mask_from_tau = (parent_abs == 15) & (tau_parent_id > 0)
+
+    # Check for malformed data: parent_id == 15 (tau) but tau_parent_id == 0
+    # This would use the legacy σ(τ) approximation which ignores B→τ contribution
+    mask_tau_parent = (parent_abs == 15)
+    if tau_parent_id is None:
+        n_bad = int(np.sum(mask_tau_parent))
+    else:
+        n_bad = int(np.sum(mask_tau_parent & (tau_parent_id == 0)))
+    if n_bad > 0:
+        raise ValueError(
+            f"Found {n_bad} HNLs with parent_id=15 (tau) but tau_parent_id=0 or missing. "
+            f"This indicates malformed fromTau data — tau_parent_id must specify the grandfather meson (Ds/B). "
+            f"Check production code or regenerate data."
+        )
 
     unique_parents = np.unique(parent_abs[~mask_from_tau])
     total_expected = 0.0
@@ -206,6 +221,7 @@ def expected_signal_events(
 
     # 5b) Tau-decay production: parent -> tau nu, tau -> N X
     if np.any(mask_from_tau):
+        assert tau_parent_id is not None  # Guaranteed by mask_from_tau logic above
         br_tau_to_N = br_per_parent.get(15, 0.0)
         if br_tau_to_N <= 0.0:
             missing_br_pdgs.append(15)

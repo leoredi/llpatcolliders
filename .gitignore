@@ -16,6 +16,7 @@ production/madgraph/work/
 
 # HNLCalc cache (generated at runtime)
 analysis_pbc/model/
+model/ctau/ctau.txt
 
 # CSV files (too large for git)
 *.csv

@@ -1,36 +1,57 @@
 #!/bin/bash
 # Parallel HNL Production Run
 # Generates meson (Pythia) mass points using parallel job execution
-# Usage: ./run_parallel_production.sh [flavour]
+# Usage: ./run_parallel_production.sh [flavour] [mode]
 #   flavour: electron, muon, tau, or all (default: all)
+#   mode: direct, fromTau, or both (default: both)
+#         - direct: meson → ℓ N (all flavours)
+#         - fromTau: meson → τ ν, τ → N X (tau only, m_N < 1.77 GeV)
+#         - both: run both modes for tau (default)
 
 set -e  # Exit on error
 
 # Parse command line arguments
 FLAVOUR="${1:-all}"
 FLAVOUR=$(echo "$FLAVOUR" | tr '[:upper:]' '[:lower:]')
+MODE="${2:-both}"
+MODE=$(echo "$MODE" | tr '[:upper:]' '[:lower:]')
 
 if [[ ! "$FLAVOUR" =~ ^(electron|muon|tau|all)$ ]]; then
     echo "Error: Invalid flavour '$FLAVOUR'"
-    echo "Usage: $0 [electron|muon|tau|all]"
+    echo "Usage: $0 [electron|muon|tau|all] [direct|fromTau|both]"
+    exit 1
+fi
+
+if [[ ! "$MODE" =~ ^(direct|fromtau|both)$ ]]; then
+    echo "Error: Invalid mode '$MODE'"
+    echo "Usage: $0 [electron|muon|tau|all] [direct|fromTau|both]"
+    exit 1
+fi
+
+# fromTau mode only valid for tau coupling
+if [[ "$MODE" == "fromtau" && "$FLAVOUR" != "tau" && "$FLAVOUR" != "all" ]]; then
+    echo "Error: 'fromTau' mode only valid for tau flavour"
+    echo "  fromTau uses τ → N X decay chain, which requires tau coupling"
     exit 1
 fi
 
 echo "============================================"
 echo "HNL Production - Parallel Execution"
 echo "Flavour: $FLAVOUR"
+echo "Mode: $MODE"
 echo "============================================"
 echo ""
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NEVENTS=100000
-NEVENTS_FROMTAU=10000000  # 100x more for fromTau mode (low HNL yield ~0.4%)
+NEVENTS_FROMTAU=$NEVENTS  # Same as direct (analysis weights by actual BRs)
 MAX_PARALLEL=12  # Using all available cores
 
-# Kinematic threshold for tau → π N cascade production
-# m_N < m_τ - m_π = 1.777 - 0.140 = 1.637 GeV
-FROMTAU_MASS_THRESHOLD=1.64  # Conservative rounding of 1.637 GeV
+# Kinematic threshold for tau → N X cascade production
+# Hadronic channels close at m_τ - m_π ≈ 1.64 GeV
+# Leptonic channels extend to m_τ - m_e ≈ 1.78 GeV
+FROMTAU_MASS_THRESHOLD=1.77  # Practical limit (leptonic channels)
 
 # Pythia library path (pythia sits inside production/pythia_production/)
 PYTHIA_ROOT="$SCRIPT_DIR/pythia8315"
@@ -48,15 +69,8 @@ mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOGFILE="${LOG_DIR}/production_run_${TIMESTAMP}.log"
 
-echo "Configuration for muons or electrons:" | tee "$LOGFILE"
+echo "Configuration:" | tee "$LOGFILE"
 echo "  Events per mass: $NEVENTS" | tee -a "$LOGFILE"
-echo "  Parallel jobs: $MAX_PARALLEL" | tee -a "$LOGFILE"
-echo "  Output directory: $OUTPUT_DIR" | tee -a "$LOGFILE"
-echo "  Log file: $LOGFILE" | tee -a "$LOGFILE"
-echo ""
-
-echo "Configuration for taus:" | tee "$LOGFILE"
-echo "  Events per mass: $NEVENTS_FROMTAU" | tee -a "$LOGFILE"
 echo "  Parallel jobs: $MAX_PARALLEL" | tee -a "$LOGFILE"
 echo "  Output directory: $OUTPUT_DIR" | tee -a "$LOGFILE"
 echo "  Log file: $LOGFILE" | tee -a "$LOGFILE"
@@ -142,11 +156,15 @@ run_production_job() {
 count_tau_runs() {
     local count=0
     for mass in "${TAU_MASSES[@]}"; do
-        count=$((count + 1))
-        # fromTau mode: τ → π N cascade production
-        # Kinematic limit: m_N < m_τ - m_π ≈ 1.637 GeV
-        if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
+        # Count direct mode runs
+        if [[ "$MODE" == "direct" || "$MODE" == "both" ]]; then
             count=$((count + 1))
+        fi
+        # Count fromTau mode runs (kinematic limit: m_N < m_τ - m_π ≈ 1.637 GeV)
+        if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
+            if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
+                count=$((count + 1))
+            fi
         fi
     done
     echo $count
@@ -164,18 +182,8 @@ echo "  Tau: $total_tau runs (including dual-mode)" | tee -a "$LOGFILE"
 echo "  TOTAL: $total_jobs simulation runs" | tee -a "$LOGFILE"
 echo "" | tee -a "$LOGFILE"
 
-# Estimate time (fromTau jobs take ~10x longer due to higher event count)
-# Count fromTau jobs
-n_fromtau_jobs=0
-for mass in "${TAU_MASSES[@]}"; do
-    if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
-        n_fromtau_jobs=$((n_fromtau_jobs + 1))
-    fi
-done
-n_regular_jobs=$((total_jobs - n_fromtau_jobs))
-# fromTau jobs are ~10x longer, so weight them accordingly
-effective_jobs=$((n_regular_jobs + n_fromtau_jobs * 10))
-single_core_hours=$((effective_jobs / 6))  # ~6 regular jobs per hour
+# Estimate time (all jobs similar duration now)
+single_core_hours=$((total_jobs / 6))  # ~6 jobs per hour
 parallel_hours=$((single_core_hours / MAX_PARALLEL + 1))
 
 echo "Estimated time:" | tee -a "$LOGFILE"
@@ -231,22 +239,26 @@ fi
 if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
     echo "" | tee -a "$LOGFILE"
     echo "============================================" | tee -a "$LOGFILE"
-    echo "TAU COUPLING (BC8) - DUAL MODE" | tee -a "$LOGFILE"
+    echo "TAU COUPLING (BC8) - MODE: $MODE" | tee -a "$LOGFILE"
     echo "============================================" | tee -a "$LOGFILE"
 
     for mass in "${TAU_MASSES[@]}"; do
         # MODE A: Direct production (all masses)
-        wait_for_slot
-        run_production_job "$mass" "tau" "direct" &
-        completed_jobs=$((completed_jobs + 1))
-        echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (direct)" | tee -a "$LOGFILE"
+        if [[ "$MODE" == "direct" || "$MODE" == "both" ]]; then
+            wait_for_slot
+            run_production_job "$mass" "tau" "direct" &
+            completed_jobs=$((completed_jobs + 1))
+            echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (direct)" | tee -a "$LOGFILE"
+        fi
 
         # MODE B: fromTau cascade (τ → π N, only kinematically allowed for m_N < m_τ - m_π)
-        if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
-            wait_for_slot
-            run_production_job "$mass" "tau" "fromTau" &
-            completed_jobs=$((completed_jobs + 1))
-            echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
+        if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
+            if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
+                wait_for_slot
+                run_production_job "$mass" "tau" "fromTau" &
+                completed_jobs=$((completed_jobs + 1))
+                echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
+            fi
         fi
     done
 fi

@@ -186,14 +186,36 @@ def get_parent_tau_br(parent_pdg: int) -> float:
     """
     Return SM BR(parent -> tau + nu) for use in fromTau weighting.
 
-    Note: This is intentionally minimal and only includes the dominant Ds -> tau nu
-    channel used by the current fromTau samples. Unknown parents return 0.0.
+    These are the SM branching ratios for meson → τν decays, used to weight
+    the tau-decay production chain: parent → τν, τ → N X.
+
+    References:
+        - PDG 2024 for Ds → τν
+        - World average / R(D*) measurements for B semitauonic
     """
     pid = abs(int(parent_pdg))
 
-    # Ds+ -> tau+ nu_tau (dominant tau source in charm samples)
+    # Ds+ -> tau+ nu_tau (dominant tau source in charm regime)
+    # PDG 2024: (5.32 ± 0.11)%
     if pid == 431:
-        return 0.055
+        return 0.053
+
+    # B0 -> D(*) tau nu (semitauonic, combined D + D*)
+    # BR(B0 → D− τ+ ντ) ≈ 0.86% (older B-factory)
+    # BR(B0 → D*− τ+ ντ) ≈ 1.40% (world average from R(D*))
+    # Combined: ~2.3%
+    if pid == 511:
+        return 0.023
+
+    # B+ -> D(*) tau nu (semitauonic, combined D0 + D*0)
+    # Similar to B0 by isospin
+    if pid == 521:
+        return 0.023
+
+    # Bs -> Ds(*) tau nu (semitauonic)
+    # Less precisely measured, assume similar to B0/B+
+    if pid == 531:
+        return 0.023
 
     return 0.0
 

@@ -46,11 +46,13 @@ conda run -n llpatcolliders python limits/combine_production_channels.py
 ```
 
 **What this does:**
-- At overlapping masses (e.g., 2-6 GeV), HNLs are produced from BOTH:
+- At overlapping masses, HNLs are produced from multiple mechanisms:
   - Meson decays (B/D/K → ℓN) via Pythia
   - EW decays (W/Z → ℓN) via MadGraph
+  - For tau: both `direct` (meson→τN) and `fromTau` (meson→τν, τ→NX) modes
 - These are different production mechanisms that must be ADDED (not double-counted)
 - The script combines CSV files at each mass into a single unified file
+- Tracks provenance via `source_regime` and `source_mode` columns
 
 **Why this is critical:**
 - Without combining: Analysis would only use one production channel per mass
@@ -88,7 +90,20 @@ The analysis follows a **three-stage** workflow matching PBC methodology (MATHUS
 - Two regimes: Mesons (K/D/B, m < 5 GeV) and EW (W/Z, m ≥ 5 GeV)
 - Forced decays: BR(M→ℓN) = 1.0 for efficient sampling
 - HNL is **stable** in Pythia (`mayDecay = off`)
-- Output: CSV with kinematics and `parent_id` (PDG code)
+- Output: CSV with kinematics, `parent_id`, and `tau_parent_id` (for tau-decay chains)
+
+**Tau Coupling (BC8) - Dual Production Modes:**
+
+For tau-coupled HNLs, there are two independent O(U_τ²) mechanisms:
+
+| Mode | Decay Chain | Mass Range | Output Column |
+|------|-------------|------------|---------------|
+| `direct` | B/Ds → τ N | All masses | `parent_id` = Ds/B (e.g. 431/511/521/531) |
+| `fromTau` | B/Ds → τ ν, τ → N X | m_N < 1.77 GeV | `parent_id` = 15, `tau_parent_id` = Ds/B (e.g. 431/511/521/531) |
+
+τ → N X channels: hadronic (π, ρ, 3π) up to ~1.64 GeV, leptonic (μν, eν) up to ~1.77 GeV.
+
+Both modes are generated separately and combined at analysis time. The `fromTau` mode forces meson→τν decays for **~20-50x CPU speedup** (physical BRs applied via HNLCalc).
 
 **Key:** Real BRs come from HNLCalc in Stage 3, not Pythia.
 
@@ -264,14 +279,13 @@ This is expected (KS0 not modeled in HNLCalc). These events are dropped; impact 
 **Symptom:** The tau-coupled HNL exclusion curve shows jaggedness in the 0.3-1.5 GeV region.
 
 **Root cause:** Very few tau events pass the full selection chain:
-- `fromTau` mode (τ→πN cascade) has only ~0.4% HNL yield
-- Even with 1M events: ~4,100 HNLs → ~80 hit detector → **~1-2 have ≥2 charged tracks**
-- Statistical fluctuations (0 vs 1 vs 2 events passing) cause large sensitivity swings
+- `fromTau` mode (τ→N X cascade) is limited by heavy-meson production and low geometric/decay acceptance
+- Statistical fluctuations can still cause sensitivity swings at extreme couplings
 Additional small wiggles can come from discrete decay-file mass points and the 100-step |U|² scan grid.
 
 **Mitigations applied:**
 1. Finer tau mass grid (0.03-0.05 GeV steps in 0.2-1.6 GeV region)
-2. 10x more events for `fromTau` mode (`NEVENTS_FROMTAU=1000000`)
+2. **CPU optimization**: Forced meson→τν decays give ~20-50x speedup (physical BRs applied in analysis)
 3. EW production at all finer grid masses (unified EW grid for all flavours)
 4. Unified low-mass grid for e/μ (matches tau fineness at low mass)
 5. Flavour-aware decay file selection (tau uses `lightfonly` / `lightfstau` / `lightfstauK` above 0.42 GeV)
@@ -279,7 +293,7 @@ Additional small wiggles can come from discrete decay-file mass points and the 1
 **Further smoothing options:**
 - Apply Savitzky-Golay or spline smoothing to the plot
 - Use envelope fitting instead of point-by-point limits
-- Generate even more `fromTau` events (10M+, requires ~30+ hours)
+- Increase `NEVENTS_FROMTAU` in `production/pythia_production/run_parallel_production.sh` (requires proportionally more time)
 
 ---
 

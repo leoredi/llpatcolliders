@@ -7,21 +7,27 @@
 
 ## Overview
 
-This document consolidates the findings from multiple independent audits of the HNL sensitivity analysis pipeline. All 20 identified issues were verified by at least two reviewers.
+This document consolidates the findings from multiple independent audits of the HNL sensitivity analysis pipeline. All 20 original issues were verified by at least two reviewers. Three additional critical issues (C11-C13) were discovered on 2026-02-03.
 
 **Verification Summary:**
-- 20 issues identified
-- 19 fully confirmed by all reviewers
+- 23 issues identified (20 original + 3 new)
+- 19 of original 20 fully confirmed by all reviewers
 - 1 partially confirmed (B4: float precision - lower practical risk than initially stated)
+- 3 new issues found during fromTau investigation (C11-C13)
 
-**Resolution Progress (as of 2026-01-29):**
-- 8 issues resolved (B1, B3, B6, B7, B8, C7, C9 + B1 was N/A)
+**Resolution Progress (as of 2026-02-03):**
+- 11 issues resolved (B1, B3, B6, B7, B8, C7, C9, C11, C12, C13 + B1 was N/A)
 - 2 marked low priority (B4, B10)
 - Remaining: documentation/validation tasks and minor maintainability items
 
+**New Issues Found (2026-02-03):**
+- C11: Kaon mayDecay=off bug (CRITICAL) — **Resolved**
+- C12: Tau regime selection bug (MODERATE) — **Resolved**
+- C13: Manual τ→πN BR vs HNLCalc (MINOR) — **Resolved**
+
 ---
 
-## Physics Biases (10 Issues)
+## Physics Biases (13 Issues)
 
 | ID | Issue | Severity | Status | Notes |
 |----|-------|----------|--------|-------|
@@ -35,6 +41,9 @@ This document consolidates the findings from multiple independent audits of the 
 | C8 | Majorana vs Dirac factor of 2 | None | Verified | Correctly implemented via `--dirac` flag |
 | C9 | HNLCalc MC integration uses nsample=100 | Minor | **Resolved** | Increased to nsample=1000 (~3% noise) |
 | C10 | Form factors use single-pole dominance | Minor | Verified | Standard approach; O(10-20%) systematic |
+| C11 | Kaon mayDecay=off in Pythia | **Critical** | **Resolved** | K±, K_L had mayDecay=off by default; e/μ kaon samples had zero kaons! |
+| C12 | Tau regime uses kaon card at low mass | Moderate | **Resolved** | Tau cannot come from kaons (m_K < m_τ); now uses charm card |
+| C13 | Manual τ→πN BR calculation | Minor | **Resolved** | Replaced with HNLCalc τ→NX BR (includes all channels) |
 
 ---
 

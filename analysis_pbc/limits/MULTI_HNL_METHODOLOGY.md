@@ -132,9 +132,16 @@ for pid in unique_parents:
     ε_parent = weighted_average(P_decay[mask])  # Average over HNLs from this parent
 
     N_sig += L × σ_parent × BR(parent→ℓN) × ε_parent
+
+# For tau-decay chains (fromTau mode): parent_id=15 (τ), tau_parent_id=Ds/B (e.g. 431/511/521/531)
+for pid in unique_tau_parents:
+    mask = (parent_id == 15) & (tau_parent_id == pid)
+    ε_parent = weighted_average(P_decay[mask])
+
+    N_sig += L × σ_parent × BR(parent→τν) × BR(τ→NX) × ε_parent
 ```
 
-**Key**: Each HNL contributes to its parent's cross-section bin, regardless of which pp event it came from.
+**Key**: Each HNL contributes to its parent's cross-section bin, regardless of which pp event it came from. For tau-decay chains, the `tau_parent_id` identifies the original meson for proper BR weighting.
 
 ---
 
@@ -200,6 +207,40 @@ You can verify this by checking that `len(geom_df)` equals the total number of H
 |--------|------------------------|-------------------|---------------------|
 | Per-Event | 1 event × P_event | σ_??? (undefined) | ❌ No |
 | Per-Parent | 4 parents × P_i each | σ_B0, σ_Bs, σ_D+, σ_Ds | ✅ Yes |
+
+---
+
+---
+
+## Tau-Decay Chain Production (fromTau Mode)
+
+For tau-coupled HNLs (BC8), there are **two independent O(U_τ²) mechanisms**:
+
+### Direct Mode
+```
+Ds/B → τ N     (mixing at meson vertex)
+```
+- `parent_id` = Ds/B (e.g. 431/511/521/531)
+- `tau_parent_id` = 0
+- Signal: N_sig = L × σ(parent) × BR(parent→τN) × ε
+
+### fromTau Mode
+```
+Ds/B → τ ν,  τ → N X    (mixing at tau decay)
+```
+- `parent_id` = 15 (τ)
+- `tau_parent_id` = Ds/B (e.g. 431/511/521/531)
+- Signal: N_sig = L × σ(parent) × BR(parent→τν) × BR(τ→N X) × ε
+
+Both modes are O(U_τ²) and must be **added** (not double-counted). The `tau_parent_id` column identifies the "grandfather" meson for correct BR weighting.
+
+### SM Branching Ratios for fromTau Weighting
+| Parent | BR(parent→τν) | Source |
+|--------|---------------|--------|
+| Ds | 5.3% | PDG 2024 |
+| B → D(*) | 2.3% | World average (R(D*) measurements) |
+
+These are applied in `config/production_xsecs.py:get_parent_tau_br()`.
 
 ---
 

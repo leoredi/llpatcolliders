@@ -159,11 +159,18 @@ bool isKinematicallyAllowed2Body(double mParent, double mLepton, double mHNL) {
     return (mHNL < mParent - mLepton);
 }
 
-// Determine production regime based on HNL mass
-std::string getProductionRegime(double mHNL) {
-    if (mHNL < 0.5) return "kaon";       // Kaon-dominated regime
-    if (mHNL < 2.0) return "charm";      // Charm-dominated regime
-    return "beauty";                      // Beauty regime (2.0-10.0 GeV)
+// Determine production regime based on HNL mass and flavor
+// For tau coupling: kaons cannot produce taus (m_K < m_tau), so use charm/beauty
+std::string getProductionRegime(double mHNL, const std::string& flavor = "") {
+    // Tau coupling requires heavy meson parents (Ds, B) - kaons cannot produce taus
+    if (flavor == "tau") {
+        if (mHNL < 2.0) return "charm";   // Ds-dominated for tau
+        return "beauty";                   // B-dominated for tau
+    }
+    // Electron/muon coupling: standard mass-based regime
+    if (mHNL < 0.5) return "kaon";        // Kaon-dominated regime
+    if (mHNL < 2.0) return "charm";       // Charm-dominated regime
+    return "beauty";                       // Beauty regime (2.0-10.0 GeV)
 }
 
 // Convert mass to filename-safe label
@@ -235,12 +242,16 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     // -----------------------------------------------------------------------
     
     // K+ -> ℓ+ N (and K- -> ℓ- Nbar)
+    // NOTE: Kaons have mayDecay=off by default in Pythia (long-lived for detector sim).
+    // We must explicitly enable decays for HNL production.
     if (isKinematicallyAllowed2Body(MESON_MASSES.at(321), mLepton, mHNL)) {
+        pythia.readString("321:mayDecay = on");
+        pythia.readString("-321:mayDecay = on");
         pythia.readString("321:onMode = off");
         pythia.readString("321:addChannel = 1 1.0 0 " + lepBar + " " + hnl);
         pythia.readString("-321:onMode = off");
         pythia.readString("-321:addChannel = 1 1.0 0 " + lep + " " + hnl);
-        if (verbose) std::cout << "  K± -> ℓ N : ENABLED" << std::endl;
+        if (verbose) std::cout << "  K± -> ℓ N : ENABLED (mayDecay forced on)" << std::endl;
         nChannelsConfigured++;
     } else if (verbose) {
         std::cout << "  K± -> ℓ N : DISABLED (kinematically forbidden)" << std::endl;
@@ -304,15 +315,17 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     // K_L is self-conjugate: both π⁺ℓ⁻ and π⁻ℓ⁺ are allowed with equal weight.
     // Note: K_S is omitted — its contribution is suppressed by τ_S/τ_L ≈ 1/570
     // relative to K_L (HNLCalc handles this via lifetime in BR calculation).
+    // NOTE: K_L has mayDecay=off by default in Pythia (long-lived for detector sim).
     double mKL = MESON_MASSES.at(130);
     double mPiCharged = 0.140;  // π± mass
     if (mHNL + mLepton + mPiCharged < mKL) {
+        pythia.readString("130:mayDecay = on");
         pythia.readString("130:onMode = off");
         // K_L → π⁻ ℓ⁺ N
         pythia.readString("130:addChannel = 1 0.5 0 -211 " + lepBar + " " + hnl);
         // K_L → π⁺ ℓ⁻ N
         pythia.readString("130:addChannel = 1 0.5 0 211 " + lep + " " + hnl);
-        if (verbose) std::cout << "  K_L -> π ℓ N : ENABLED (3-body)" << std::endl;
+        if (verbose) std::cout << "  K_L -> π ℓ N : ENABLED (3-body, mayDecay forced on)" << std::endl;
         nChannelsConfigured++;
     } else if (verbose) {
         std::cout << "  K_L -> π ℓ N : DISABLED (kinematically forbidden)" << std::endl;
@@ -422,6 +435,144 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
 }
 
 // ==========================================================================
+// Configure meson decays to τν for "fromTau" production mode
+// ==========================================================================
+//
+// Forces parent mesons to decay to τν, ensuring every event produces a tau.
+// This avoids wasting CPU on events where mesons decay to other channels.
+//
+// SM branching fractions (for reference - NOT used here, applied via HNLCalc):
+//   Ds → τν:       ~5.3%
+//   B → D τν:      ~0.9%   (world average)
+//   B → D* τν:     ~1.4%   (world average from R(D*) measurements)
+//
+// By forcing 100% here, we get ~20-50x speedup. Physical BRs are applied
+// externally in the analysis pipeline (consistent with direct mode methodology).
+//
+// The tau_parent_id column in output identifies the grandfather meson for
+// correct BR weighting in HNLCalc.
+// ==========================================================================
+
+void configureMesonDecaysToTauNu(Pythia& pythia, double mHNL, bool verbose = true) {
+
+    if (verbose) {
+        std::cout << "\n=== Configuring meson → τν decays (for fromTau mode) ===" << std::endl;
+        std::cout << "HNL mass: " << mHNL << " GeV" << std::endl;
+    }
+
+    int nChannelsConfigured = 0;
+
+    // -----------------------------------------------------------------------
+    // Ds± → τ± ντ (dominant tau source in charm regime)
+    // SM BR ~ 5.3%
+    // -----------------------------------------------------------------------
+    double mDs = MESON_MASSES.at(431);
+    if (M_TAU < mDs) {
+        pythia.readString("431:onMode = off");
+        pythia.readString("431:addChannel = 1 1.0 0 -15 16");   // Ds+ → τ+ ντ
+        pythia.readString("-431:onMode = off");
+        pythia.readString("-431:addChannel = 1 1.0 0 15 -16");  // Ds- → τ- ν̄τ
+        if (verbose) std::cout << "  Ds± → τ ν : ENABLED" << std::endl;
+        nChannelsConfigured++;
+    }
+
+    // -----------------------------------------------------------------------
+    // B+ → D̄0 τ+ ντ and B+ → D̄*0 τ+ ντ (semileptonic)
+    // SM BR(B→Dτν) ~ 0.9%, BR(B→D*τν) ~ 1.4%
+    // Weight ratio ~0.4:0.6 to approximate relative BRs
+    // -----------------------------------------------------------------------
+    double mBplus = MESON_MASSES.at(521);
+    double mD0 = MESON_MASSES.at(421);
+    double mDstar0 = 2.007;  // D*0 mass
+
+    pythia.readString("521:onMode = off");
+    pythia.readString("-521:onMode = off");
+
+    bool bplus_d_ok = (M_TAU + mD0 < mBplus);
+    bool bplus_dstar_ok = (M_TAU + mDstar0 < mBplus);
+
+    if (bplus_d_ok && bplus_dstar_ok) {
+        // Both channels open - weight by approximate BR ratio
+        pythia.readString("521:addChannel = 1 0.4 0 -421 -15 16");   // B+ → D̄0 τ+ ντ
+        pythia.readString("521:addChannel = 1 0.6 0 -423 -15 16");   // B+ → D̄*0 τ+ ντ
+        pythia.readString("-521:addChannel = 1 0.4 0 421 15 -16");
+        pythia.readString("-521:addChannel = 1 0.6 0 423 15 -16");
+        if (verbose) std::cout << "  B± → D(*)0 τ ν : ENABLED (D:D* = 0.4:0.6)" << std::endl;
+        nChannelsConfigured++;
+    } else if (bplus_d_ok) {
+        pythia.readString("521:addChannel = 1 1.0 0 -421 -15 16");
+        pythia.readString("-521:addChannel = 1 1.0 0 421 15 -16");
+        if (verbose) std::cout << "  B± → D0 τ ν : ENABLED (D* closed)" << std::endl;
+        nChannelsConfigured++;
+    } else if (verbose) {
+        std::cout << "  B± → D(*)0 τ ν : DISABLED (kinematically forbidden)" << std::endl;
+    }
+
+    // -----------------------------------------------------------------------
+    // B0 → D− τ+ ντ and B0 → D*− τ+ ντ (semileptonic)
+    // -----------------------------------------------------------------------
+    double mB0 = MESON_MASSES.at(511);
+    double mDminus = MESON_MASSES.at(411);
+    double mDstarMinus = 2.010;  // D*- mass
+
+    pythia.readString("511:onMode = off");
+    pythia.readString("-511:onMode = off");
+
+    bool b0_d_ok = (M_TAU + mDminus < mB0);
+    bool b0_dstar_ok = (M_TAU + mDstarMinus < mB0);
+
+    if (b0_d_ok && b0_dstar_ok) {
+        pythia.readString("511:addChannel = 1 0.4 0 -411 -15 16");   // B0 → D− τ+ ντ
+        pythia.readString("511:addChannel = 1 0.6 0 -413 -15 16");   // B0 → D*− τ+ ντ
+        pythia.readString("-511:addChannel = 1 0.4 0 411 15 -16");
+        pythia.readString("-511:addChannel = 1 0.6 0 413 15 -16");
+        if (verbose) std::cout << "  B0 → D(*)± τ ν : ENABLED (D:D* = 0.4:0.6)" << std::endl;
+        nChannelsConfigured++;
+    } else if (b0_d_ok) {
+        pythia.readString("511:addChannel = 1 1.0 0 -411 -15 16");
+        pythia.readString("-511:addChannel = 1 1.0 0 411 15 -16");
+        if (verbose) std::cout << "  B0 → D± τ ν : ENABLED (D* closed)" << std::endl;
+        nChannelsConfigured++;
+    } else if (verbose) {
+        std::cout << "  B0 → D(*)± τ ν : DISABLED (kinematically forbidden)" << std::endl;
+    }
+
+    // -----------------------------------------------------------------------
+    // Bs → Ds− τ+ ντ and Bs → Ds*− τ+ ντ (semileptonic)
+    // -----------------------------------------------------------------------
+    double mBs = MESON_MASSES.at(531);
+    double mDsPlus = MESON_MASSES.at(431);
+    double mDsstar = 2.112;  // Ds*- mass
+
+    pythia.readString("531:onMode = off");
+    pythia.readString("-531:onMode = off");
+
+    bool bs_ds_ok = (M_TAU + mDsPlus < mBs);
+    bool bs_dsstar_ok = (M_TAU + mDsstar < mBs);
+
+    if (bs_ds_ok && bs_dsstar_ok) {
+        pythia.readString("531:addChannel = 1 0.4 0 -431 -15 16");   // Bs → Ds− τ+ ντ
+        pythia.readString("531:addChannel = 1 0.6 0 -433 -15 16");   // Bs → Ds*− τ+ ντ
+        pythia.readString("-531:addChannel = 1 0.4 0 431 15 -16");
+        pythia.readString("-531:addChannel = 1 0.6 0 433 15 -16");
+        if (verbose) std::cout << "  Bs → Ds(*) τ ν : ENABLED (Ds:Ds* = 0.4:0.6)" << std::endl;
+        nChannelsConfigured++;
+    } else if (bs_ds_ok) {
+        pythia.readString("531:addChannel = 1 1.0 0 -431 -15 16");
+        pythia.readString("-531:addChannel = 1 1.0 0 431 15 -16");
+        if (verbose) std::cout << "  Bs → Ds τ ν : ENABLED (Ds* closed)" << std::endl;
+        nChannelsConfigured++;
+    } else if (verbose) {
+        std::cout << "  Bs → Ds(*) τ ν : DISABLED (kinematically forbidden)" << std::endl;
+    }
+
+    if (verbose) {
+        std::cout << "Total τν channels configured: " << nChannelsConfigured << std::endl;
+        std::cout << "==========================================\n" << std::endl;
+    }
+}
+
+// ==========================================================================
 // Configure tau decays for "fromTau" production mode
 // ==========================================================================
 //
@@ -432,11 +583,11 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
 //
 // To avoid O(U⁴) contamination, we generate these as SEPARATE samples:
 //   - "direct" mode: Mesons/W forced to τN, taus decay SM
-//   - "fromTau" mode: Mesons/W decay SM to τν, taus forced to NX
+//   - "fromTau" mode: Mesons forced to τν, taus forced to NX
 //
 // The two samples are combined in the analysis pipeline.
 //
-// This function configures MODE B (tau-decay production).
+// This function configures the tau → NX part of MODE B.
 // ==========================================================================
 
 void configureTauDecays(Pythia& pythia, double mHNL, bool verbose = true) {
@@ -452,62 +603,114 @@ void configureTauDecays(Pythia& pythia, double mHNL, bool verbose = true) {
     pythia.readString("15:onMode = off");
     pythia.readString("-15:onMode = off");
 
-    // τ- → π- N (2-body, representative mode for acceptance)
-    double mPi = 0.140;  // charged pion
-    double mRho = 0.775; // rho mass for harder spectrum representative
+    // Kinematic thresholds for each channel
+    double mPi = 0.140;   // charged pion
+    double mRho = 0.775;  // rho mass
     double m3Pi = 3 * mPi;
+    double mMu = M_MUON;  // 0.106 GeV
+    double mE = M_ELECTRON;  // 0.0005 GeV
 
-    const bool allow_pi = (mHNL + mPi < mTau);
-    const bool allow_rho = (mHNL + mRho < mTau);
-    const bool allow_tripi = (mHNL + m3Pi < mTau);
+    // 2-body hadronic channels
+    const bool allow_pi = (mHNL + mPi < mTau);      // < 1.637 GeV
+    const bool allow_rho = (mHNL + mRho < mTau);    // < 1.002 GeV
+    const bool allow_tripi = (mHNL + m3Pi < mTau);  // < 1.357 GeV
+
+    // 3-body leptonic channels: τ → ℓ ν N (effective limit is m_N < m_τ - m_ℓ)
+    const bool allow_mu = (mHNL + mMu < mTau);      // < 1.671 GeV
+    const bool allow_e = (mHNL + mE < mTau);        // < 1.777 GeV
 
     // Representative kinematics mixture weights (NOT physical BRs).
     // Physical τ→NX branching is applied later by HNLCalc in the analysis.
+    // Weights prioritize: hadronic when available, leptonic near endpoint.
     double pi_weight = 0.0;
     double rho_weight = 0.0;
     double tripi_weight = 0.0;
+    double mu_weight = 0.0;
+    double e_weight = 0.0;
 
     if (allow_pi) {
+        // Hadronic channels available - use them primarily
         if (allow_rho && allow_tripi) {
-            rho_weight = 0.50;
-            tripi_weight = 0.30;
+            rho_weight = 0.45;
+            tripi_weight = 0.25;
             pi_weight = 0.20;
+            mu_weight = 0.05;
+            e_weight = 0.05;
         } else if (allow_rho && !allow_tripi) {
-            rho_weight = 0.60;
-            pi_weight = 0.40;
+            rho_weight = 0.50;
+            pi_weight = 0.35;
+            mu_weight = 0.08;
+            e_weight = 0.07;
         } else if (!allow_rho && allow_tripi) {
-            tripi_weight = 0.30;
-            pi_weight = 0.70;
+            tripi_weight = 0.25;
+            pi_weight = 0.55;
+            mu_weight = 0.10;
+            e_weight = 0.10;
         } else {
-            pi_weight = 1.00;
+            // Only π and leptonic
+            pi_weight = 0.70;
+            mu_weight = 0.15;
+            e_weight = 0.15;
         }
+    } else if (allow_mu) {
+        // Hadronic closed, but μ channel still open (1.637 < m_N < 1.671 GeV)
+        mu_weight = 0.50;
+        e_weight = 0.50;
+    } else if (allow_e) {
+        // Only e channel open (1.671 < m_N < 1.777 GeV)
+        e_weight = 1.00;
     }
 
     if (verbose) {
-        std::cout << "  τ→NX representative channels (weights sum to 1): "
+        std::cout << "  τ→NX channels: "
                   << "π=" << pi_weight
                   << ", ρ=" << rho_weight
                   << ", 3π=" << tripi_weight
+                  << ", μν=" << mu_weight
+                  << ", eν=" << e_weight
                   << std::endl;
     }
+
+    int nChannels = 0;
 
     if (rho_weight > 0.0) {
         pythia.readString("15:addChannel = 1 " + std::to_string(rho_weight) + " 0 -213 " + hnl);
         pythia.readString("-15:addChannel = 1 " + std::to_string(rho_weight) + " 0 213 " + hnl);
         if (verbose) std::cout << "  τ → ρ N : ENABLED" << std::endl;
+        nChannels++;
     }
 
     if (tripi_weight > 0.0) {
         pythia.readString("15:addChannel = 1 " + std::to_string(tripi_weight) + " 0 -211 -211 211 " + hnl);
         pythia.readString("-15:addChannel = 1 " + std::to_string(tripi_weight) + " 0 211 211 -211 " + hnl);
         if (verbose) std::cout << "  τ → 3π N : ENABLED" << std::endl;
+        nChannels++;
     }
 
     if (pi_weight > 0.0) {
         pythia.readString("15:addChannel = 1 " + std::to_string(pi_weight) + " 0 -211 " + hnl);
         pythia.readString("-15:addChannel = 1 " + std::to_string(pi_weight) + " 0 211 " + hnl);
         if (verbose) std::cout << "  τ → π N : ENABLED" << std::endl;
-    } else if (verbose) {
+        nChannels++;
+    }
+
+    // Leptonic channels: τ- → ℓ- ν̄_ℓ N (3-body, use phase space meMode=0)
+    // PDG codes: e=11, νe=12, μ=13, νμ=14
+    if (mu_weight > 0.0) {
+        pythia.readString("15:addChannel = 1 " + std::to_string(mu_weight) + " 0 13 -14 " + hnl);
+        pythia.readString("-15:addChannel = 1 " + std::to_string(mu_weight) + " 0 -13 14 " + hnl);
+        if (verbose) std::cout << "  τ → μ ν̄ N : ENABLED" << std::endl;
+        nChannels++;
+    }
+
+    if (e_weight > 0.0) {
+        pythia.readString("15:addChannel = 1 " + std::to_string(e_weight) + " 0 11 -12 " + hnl);
+        pythia.readString("-15:addChannel = 1 " + std::to_string(e_weight) + " 0 -11 12 " + hnl);
+        if (verbose) std::cout << "  τ → e ν̄ N : ENABLED" << std::endl;
+        nChannels++;
+    }
+
+    if (nChannels == 0 && verbose) {
         std::cout << "  WARNING: No tau decay channels available at this mass!" << std::endl;
     }
 
@@ -567,13 +770,29 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Check kinematic limit for fromTau mode: τ → N X requires mN < mτ
+    // Channels close at different thresholds:
+    //   τ → ρ N:  m_N < 1.00 GeV
+    //   τ → 3π N: m_N < 1.36 GeV
+    //   τ → π N:  m_N < 1.64 GeV
+    //   τ → μ ν N: m_N < 1.67 GeV
+    //   τ → e ν N: m_N < 1.78 GeV (practical limit)
+    double mTauMinusE = M_TAU - M_ELECTRON;  // ~1.777 GeV
+    if (productionMode == "fromTau" && mHNL > mTauMinusE) {
+        std::cerr << "Error: 'fromTau' mode kinematically forbidden for mHNL = "
+                  << mHNL << " GeV" << std::endl;
+        std::cerr << "τ → N X requires mHNL < mτ ≈ " << mTauMinusE << " GeV" << std::endl;
+        std::cerr << "Use 'direct' mode instead for this mass range." << std::endl;
+        return 1;
+    }
+
     int leptonID, neutrinoID;
     double mLepton;
     std::string flavorLabel;
     getLeptonInfo(flavor, leptonID, neutrinoID, mLepton, flavorLabel);
 
-    // Determine production regime
-    std::string regime = getProductionRegime(mHNL);
+    // Determine production regime (tau uses charm/beauty, not kaon)
+    std::string regime = getProductionRegime(mHNL, flavorLabel);
 
     std::cout << "============================================" << std::endl;
     std::cout << "HNL Production Simulation" << std::endl;
@@ -657,9 +876,10 @@ int main(int argc, char* argv[]) {
 
     if (flavorLabel == "tau" && productionMode == "fromTau") {
         // MODE B: Tau-decay production (tau coupling only)
-        // Parents (B/Ds/W) decay SM to τν, then τ → N X
-        // → Keep meson/W decays at SM defaults
+        // Parents (B/Ds) forced to τν, then τ → N X
+        // → Force meson decays to τν (avoids ~95-98% CPU waste)
         // → Force tau decay to N X
+        configureMesonDecaysToTauNu(pythia, mHNL);
         configureTauDecays(pythia, mHNL);
 
     } else {
