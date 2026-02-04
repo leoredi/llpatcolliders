@@ -8,6 +8,8 @@ Usage:
     python run.py --parallel --workers 8  # Use 8 cores
     python run.py --dirac               # Dirac HNL interpretation (×2 yield)
     python run.py --separation-mm 1.0   # Minimum charged-track separation (mm)
+    python run.py --flavour muon --mass 2.6  # Single mass point
+    python run.py --hnlcalc-per-eps2    # Legacy: recompute HNLCalc per eps2 (slow)
 """
 
 import sys
@@ -39,8 +41,18 @@ ANALYSIS_ROOT = ANALYSIS_DIR.parent
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
 
+MASS_FILTER_TOL = 5e-4  # GeV tolerance for --mass filtering
+
 from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
-from limits.expected_signal import expected_signal_events
+from limits.expected_signal import expected_signal_events, couplings_from_eps2
+from limits.timing_utils import _time_block
+
+
+def _count(timing: dict | None, key: str, delta: int = 1) -> None:
+    if timing is None:
+        return
+    timing[key] = timing.get(key, 0) + delta
+
 
 def scan_single_mass(
     mass_val,
@@ -54,6 +66,8 @@ def scan_single_mass(
     decay_seed=12345,
     quiet=False,
     show_progress=None,
+    timing_enabled=False,
+    hnlcalc_per_eps2=False,
 ):
     """
     Process one mass point, combining all available production regimes (kaon/charm/beauty/ew).
@@ -67,7 +81,8 @@ def scan_single_mass(
     with stdout_ctx:
         return _scan_single_mass_impl(
             mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
-            dirac, separation_m, decay_seed, quiet, show_progress
+            dirac, separation_m, decay_seed, quiet, show_progress, timing_enabled,
+            hnlcalc_per_eps2
         )
 
 
@@ -83,8 +98,14 @@ def _scan_single_mass_impl(
     decay_seed,
     quiet,
     show_progress,
+    timing_enabled,
+    hnlcalc_per_eps2,
 ):
     """Internal implementation of scan_single_mass."""
+    timing = {} if timing_enabled else None
+    if timing is not None:
+        timing["count_geom_files"] = len(sim_files)
+
     if not quiet:
         print(f"\n[{flavour} {mass_val} GeV] Processing ({len(sim_files)} production file(s))...")
 
@@ -109,19 +130,25 @@ def _scan_single_mass_impl(
             geom_csv.unlink()
 
         if geom_csv.exists():
-            geom_df = pd.read_csv(geom_csv)
+            _count(timing, "count_geom_cache_hits")
+            with _time_block(timing, "time_geom_load_s"):
+                geom_df = pd.read_csv(geom_csv)
         else:
+            _count(timing, "count_geom_cache_misses")
             if mesh is None:
-                mesh = build_drainage_gallery_mesh()
+                with _time_block(timing, "time_mesh_build_s"):
+                    mesh = build_drainage_gallery_mesh()
             if not quiet:
                 print(f"  Computing geometry for {sim_csv.name} (caching to {geom_csv.name})...")
-            geom_df = preprocess_hnl_csv(sim_csv, mesh, show_progress=show_progress)
+            with _time_block(timing, "time_geom_compute_s"):
+                geom_df = preprocess_hnl_csv(sim_csv, mesh, show_progress=show_progress)
 
             # Atomic write to prevent race condition in parallel execution
-            with tempfile.NamedTemporaryFile(mode='w', dir=geom_csv.parent,
-                                              suffix='.tmp', delete=False) as tmp:
-                geom_df.to_csv(tmp.name, index=False)
-            os.replace(tmp.name, geom_csv)
+            with _time_block(timing, "time_geom_write_s"):
+                with tempfile.NamedTemporaryFile(mode='w', dir=geom_csv.parent,
+                                                  suffix='.tmp', delete=False) as tmp:
+                    geom_df.to_csv(tmp.name, index=False)
+                os.replace(tmp.name, geom_csv)
 
         n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
         if not quiet:
@@ -133,8 +160,12 @@ def _scan_single_mass_impl(
             print(f"  WARNING: No geometry loaded, skipping")
         return None
 
-    geom_df = pd.concat(geom_dfs, ignore_index=True)
+    with _time_block(timing, "time_geom_concat_s"):
+        geom_df = pd.concat(geom_dfs, ignore_index=True)
     n_hits_total = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
+    if timing is not None:
+        timing["n_geom_rows"] = int(len(geom_df))
+        timing["n_hits_total"] = int(n_hits_total)
     if not quiet:
         print(f"  Total combined: {len(geom_df)} HNLs, {n_hits_total} hit detector")
 
@@ -145,33 +176,70 @@ def _scan_single_mass_impl(
 
     # 2. Scan |U|²
     eps2_scan = np.logspace(-12, -2, 100)
+    if timing is not None:
+        timing["n_eps2_points"] = int(len(eps2_scan))
     N_scan = []
 
     from decay.decay_detector import DecaySelection, build_decay_cache
 
-    decay_cache = build_decay_cache(
-        geom_df,
-        mass_val,
-        flavour,
-        DecaySelection(separation_m=separation_m, seed=decay_seed),
-        verbose=not quiet,
-    )
+    eps2_ref = 1e-6
+    ctau0_ref = None
+    br_ref = None
+    if not hnlcalc_per_eps2:
+        from models.hnl_model_hnlcalc import HNLModel
+        with _time_block(timing, "time_hnlcalc_ref_s"):
+            Ue2, Umu2, Utau2 = couplings_from_eps2(eps2_ref, benchmark)
+            model = HNLModel(mass_GeV=mass_val, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
+            ctau0_ref = model.ctau0_m
+            br_ref = model.production_brs()
+        if timing is not None:
+            timing["n_hnlcalc_eps2_ref"] = float(eps2_ref)
+
+    with _time_block(timing, "time_decay_cache_s"):
+        decay_cache = build_decay_cache(
+            geom_df,
+            mass_val,
+            flavour,
+            DecaySelection(separation_m=separation_m, seed=decay_seed),
+            verbose=not quiet,
+        )
 
     if not quiet:
         print("  Precomputing decay cache for separation scan...")
-    for eps2 in eps2_scan:
-        N = expected_signal_events(
-            geom_df,
-            mass_val,
-            eps2,
-            benchmark,
-            lumi_fb,
-            dirac=dirac,
-            separation_m=separation_m,
-            decay_seed=decay_seed,
-            decay_cache=decay_cache,
-        )
-        N_scan.append(N)
+    with _time_block(timing, "time_eps2_scan_s"):
+        for eps2 in eps2_scan:
+            if hnlcalc_per_eps2:
+                N = expected_signal_events(
+                    geom_df,
+                    mass_val,
+                    eps2,
+                    benchmark,
+                    lumi_fb,
+                    dirac=dirac,
+                    separation_m=separation_m,
+                    decay_seed=decay_seed,
+                    decay_cache=decay_cache,
+                    timing=timing,
+                )
+            else:
+                ctau0_m = ctau0_ref * (eps2_ref / eps2)
+                br_scale = eps2 / eps2_ref
+                N = expected_signal_events(
+                    geom_df,
+                    mass_val,
+                    eps2,
+                    benchmark,
+                    lumi_fb,
+                    dirac=dirac,
+                    separation_m=separation_m,
+                    decay_seed=decay_seed,
+                    decay_cache=decay_cache,
+                    ctau0_m=ctau0_m,
+                    br_per_parent=br_ref,
+                    br_scale=br_scale,
+                    timing=timing,
+                )
+            N_scan.append(N)
 
     N_scan = np.array(N_scan)
 
@@ -181,7 +249,7 @@ def _scan_single_mass_impl(
     if not mask_excluded.any():
         if not quiet:
             print(f"  No sensitivity (peak = {N_scan.max():.1f})")
-        return {
+        result = {
             "mass_GeV": mass_val,
             "flavour": flavour,
             "benchmark": benchmark,
@@ -189,6 +257,9 @@ def _scan_single_mass_impl(
             "eps2_max": np.nan,
             "peak_events": N_scan.max()
         }
+        if timing is not None:
+            result.update(timing)
+        return result
 
     indices_excl = np.where(mask_excluded)[0]
     eps2_min = eps2_scan[indices_excl[0]]
@@ -198,7 +269,7 @@ def _scan_single_mass_impl(
     if not quiet:
         print(f"  ✓ Excluded: |U|² ∈ [{eps2_min:.2e}, {eps2_max:.2e}], peak = {peak_events:.0f}")
 
-    return {
+    result = {
         "mass_GeV": mass_val,
         "flavour": flavour,
         "benchmark": benchmark,
@@ -206,6 +277,9 @@ def _scan_single_mass_impl(
         "eps2_max": eps2_max,
         "peak_events": peak_events
     }
+    if timing is not None:
+        result.update(timing)
+    return result
 
 def run_flavour(
     flavour,
@@ -217,6 +291,9 @@ def run_flavour(
     separation_m=0.001,
     decay_seed=12345,
     show_progress=None,
+    mass_filter=None,
+    timing_enabled=False,
+    hnlcalc_per_eps2=False,
 ):
     """Run scan for one flavour"""
     print(f"\n{'='*60}")
@@ -278,6 +355,9 @@ def run_flavour(
 
     selected_by_mass = {}
     for key, items in files_by_mass.items():
+        warn_for_key = True
+        if mass_filter is not None:
+            warn_for_key = abs(key[0] - mass_filter) <= MASS_FILTER_TOL
         combined = [it for it in items if it[0] == "combined"]
         if combined:
             # Prefer combined_ff if it ever exists, otherwise take first.
@@ -285,7 +365,7 @@ def run_flavour(
 
             selected = [(chosen[3], _label(chosen[0], chosen[1], chosen[2]))]
 
-            if len(items) > 1:
+            if warn_for_key and len(items) > 1:
                 other_names = ", ".join(
                     _label(r, m, ff) for r, m, ff, _ in sorted(items, key=_sort_key) if r != "combined"
                 )
@@ -321,6 +401,14 @@ def run_flavour(
                 print(f"[SKIP] Empty file (no valid alternative): {f.name}")
 
     mass_points = sorted(files_by_mass.keys(), key=lambda x: x[0])
+    if mass_filter is not None:
+        mass_points = [mp for mp in mass_points if abs(mp[0] - mass_filter) <= MASS_FILTER_TOL]
+        if not mass_points:
+            all_masses = sorted({m for m, _ in files_by_mass.keys()})
+            preview = ", ".join(f"{m:.2f}" for m in all_masses[:10])
+            more = "..." if len(all_masses) > 10 else ""
+            print(f"[WARN] No mass points found for {flavour} at m={mass_filter:.4f} GeV.")
+            print(f"       Available masses (first 10): {preview}{more}")
     print(f"Found {len(mass_points)} mass points")
 
     # Process each file
@@ -334,7 +422,7 @@ def run_flavour(
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
             args_list.append(
-                (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress)
+                (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress, timing_enabled, hnlcalc_per_eps2)
             )
 
         # Process in parallel (with optional progress bar)
@@ -372,6 +460,8 @@ def run_flavour(
                 separation_m=separation_m,
                 decay_seed=decay_seed,
                 show_progress=show_progress,
+                timing_enabled=timing_enabled,
+                hnlcalc_per_eps2=hnlcalc_per_eps2,
             )
             if res:
                 results.append(res)
@@ -381,11 +471,12 @@ def run_flavour(
 def scan_single_mass_wrapper(args):
     """Wrapper for parallel processing - runs in quiet mode"""
     # Unpack args and add quiet=True for parallel execution
-    (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress) = args
+    (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress, timing_enabled, hnlcalc_per_eps2) = args
     return scan_single_mass(
         mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list,
         dirac=dirac, separation_m=separation_m, decay_seed=decay_seed, quiet=True,
-        show_progress=show_progress,
+        show_progress=show_progress, timing_enabled=timing_enabled,
+        hnlcalc_per_eps2=hnlcalc_per_eps2,
     )
 
 if __name__ == "__main__":
@@ -410,6 +501,35 @@ if __name__ == "__main__":
         action="store_true",
         help="Disable tqdm progress bars (auto-disabled in non-TTY environments)",
     )
+    parser.add_argument(
+        "--mass",
+        type=float,
+        default=None,
+        help="Only process a single mass point in GeV (e.g., 2.6).",
+    )
+    parser.add_argument(
+        "--flavour",
+        type=str,
+        choices=["electron", "muon", "tau"],
+        default=None,
+        help="Only process one flavour: electron, muon, or tau.",
+    )
+    parser.add_argument(
+        "--timing",
+        action="store_true",
+        help="Record per-mass timing breakdown (adds time_* columns).",
+    )
+    parser.add_argument(
+        "--timing-out",
+        type=str,
+        default=None,
+        help="Optional path for timing CSV (default: output/csv/analysis/HNL_U2_timing.csv).",
+    )
+    parser.add_argument(
+        "--hnlcalc-per-eps2",
+        action="store_true",
+        help="Recompute HNLCalc for every eps2 point (slow, legacy behavior).",
+    )
     args = parser.parse_args()
     if args.separation_mm <= 0:
         raise ValueError("--separation-mm must be positive.")
@@ -433,9 +553,13 @@ if __name__ == "__main__":
 
     # Determine progress bar visibility: explicit --no-progress overrides auto-detect
     show_progress = None if not args.no_progress else False
+    timing_enabled = args.timing
 
     # Process each flavour
-    for flavour, benchmark in [("electron", "100"), ("muon", "010"), ("tau", "001")]:
+    flavour_list = [("electron", "100"), ("muon", "010"), ("tau", "001")]
+    if args.flavour:
+        flavour_list = [fb for fb in flavour_list if fb[0] == args.flavour]
+    for flavour, benchmark in flavour_list:
         df = run_flavour(
             flavour,
             benchmark,
@@ -446,6 +570,9 @@ if __name__ == "__main__":
             separation_m=separation_m,
             decay_seed=args.decay_seed,
             show_progress=show_progress,
+            mass_filter=args.mass,
+            timing_enabled=timing_enabled,
+            hnlcalc_per_eps2=args.hnlcalc_per_eps2,
         )
         df["separation_mm"] = args.separation_mm
         all_results.append(df)
@@ -454,8 +581,17 @@ if __name__ == "__main__":
     final_df = pd.concat(all_results, ignore_index=True)
     final_df.to_csv(results_out, index=False)
 
+    if timing_enabled:
+        timing_out = Path(args.timing_out) if args.timing_out else (ANALYSIS_OUT_DIR / "HNL_U2_timing.csv")
+        timing_cols = [c for c in final_df.columns if c.startswith("time_") or c.startswith("count_") or c.startswith("n_")]
+        timing_df = final_df[["mass_GeV", "flavour", "benchmark"] + timing_cols]
+        timing_df.to_csv(timing_out, index=False)
+
     print(f"\n{'='*60}")
     print(f"COMPLETE!")
     print(f"Saved {len(final_df)} mass points to:")
     print(f"  {results_out}")
+    if timing_enabled:
+        print(f"Timing breakdown saved to:")
+        print(f"  {timing_out}")
     print(f"{'='*60}")
