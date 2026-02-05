@@ -372,6 +372,35 @@ def scan_eps2_for_mass(
         return eps2_grid, Nsig, None, None
 
     idx_above = np.where(mask)[0]
-    eps2_min = float(eps2_grid[idx_above[0]])
-    eps2_max = float(eps2_grid[idx_above[-1]])
+    i_lo = idx_above[0]
+    i_hi = idx_above[-1]
+
+    # Log-linear interpolation at the lower crossing (eps2_min)
+    if i_lo > 0:
+        N_below, N_above = Nsig[i_lo - 1], Nsig[i_lo]
+        dN = N_above - N_below
+        if dN > 0:
+            frac = np.clip((N_limit - N_below) / dN, 0.0, 1.0)
+            log_lo = np.log10(eps2_grid[i_lo - 1])
+            log_hi = np.log10(eps2_grid[i_lo])
+            eps2_min = float(10.0 ** (log_lo + frac * (log_hi - log_lo)))
+        else:
+            eps2_min = float(eps2_grid[i_lo])
+    else:
+        eps2_min = float(eps2_grid[i_lo])
+
+    # Log-linear interpolation at the upper crossing (eps2_max)
+    if i_hi < len(eps2_grid) - 1:
+        N_above, N_below = Nsig[i_hi], Nsig[i_hi + 1]
+        dN = N_above - N_below
+        if dN > 0:
+            frac = np.clip((N_above - N_limit) / dN, 0.0, 1.0)
+            log_lo = np.log10(eps2_grid[i_hi])
+            log_hi = np.log10(eps2_grid[i_hi + 1])
+            eps2_max = float(10.0 ** (log_lo + frac * (log_hi - log_lo)))
+        else:
+            eps2_max = float(eps2_grid[i_hi])
+    else:
+        eps2_max = float(eps2_grid[i_hi])
+
     return eps2_grid, Nsig, eps2_min, eps2_max

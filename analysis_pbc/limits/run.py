@@ -262,8 +262,38 @@ def _scan_single_mass_impl(
         return result
 
     indices_excl = np.where(mask_excluded)[0]
-    eps2_min = eps2_scan[indices_excl[0]]
-    eps2_max = eps2_scan[indices_excl[-1]]
+    i_lo = indices_excl[0]   # first index above threshold
+    i_hi = indices_excl[-1]  # last index above threshold
+    N_limit = 2.996
+
+    # Log-linear interpolation at the lower crossing (eps2_min / red curve)
+    if i_lo > 0:
+        N_below, N_above = N_scan[i_lo - 1], N_scan[i_lo]
+        dN = N_above - N_below
+        if dN > 0:
+            frac = np.clip((N_limit - N_below) / dN, 0.0, 1.0)
+            log_lo = np.log10(eps2_scan[i_lo - 1])
+            log_hi = np.log10(eps2_scan[i_lo])
+            eps2_min = 10.0 ** (log_lo + frac * (log_hi - log_lo))
+        else:
+            eps2_min = eps2_scan[i_lo]
+    else:
+        eps2_min = eps2_scan[i_lo]
+
+    # Log-linear interpolation at the upper crossing (eps2_max / blue curve)
+    if i_hi < len(eps2_scan) - 1:
+        N_above, N_below = N_scan[i_hi], N_scan[i_hi + 1]
+        dN = N_above - N_below
+        if dN > 0:
+            frac = np.clip((N_above - N_limit) / dN, 0.0, 1.0)
+            log_lo = np.log10(eps2_scan[i_hi])
+            log_hi = np.log10(eps2_scan[i_hi + 1])
+            eps2_max = 10.0 ** (log_lo + frac * (log_hi - log_lo))
+        else:
+            eps2_max = eps2_scan[i_hi]
+    else:
+        eps2_max = eps2_scan[i_hi]
+
     peak_events = N_scan.max()
 
     if not quiet:
