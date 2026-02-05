@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -67,6 +68,8 @@ DECAY_CATEGORY_ORDER = (
     "analytical2and3bodydecays",
 )
 
+MAX_DECAY_FILE_DELTA_GEV = 0.5
+
 
 @dataclass(frozen=True)
 class DecayFileEntry:
@@ -123,37 +126,47 @@ def _nearest_entry(entries: Iterable[DecayFileEntry], mass_GeV: float) -> DecayF
     return min(entries, key=lambda e: abs(e.mass_GeV - mass_GeV))
 
 
+def _warn_if_large_mismatch(chosen: DecayFileEntry, mass_GeV: float, max_delta: float) -> None:
+    delta = abs(chosen.mass_GeV - mass_GeV)
+    if delta > max_delta:
+        warnings.warn(
+            f"Large decay-file mass mismatch for {mass_GeV:.3f} GeV: "
+            f"selected {chosen.mass_GeV:.3f} GeV (Δ={delta:.3f} GeV) "
+            f"category={chosen.category} file={chosen.path.name}",
+            UserWarning,
+        )
+
+
 def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
     entries = list_decay_files(flavour)
     low_mass_threshold = FLAVOUR_CONFIG[flavour]["low_mass_threshold"]
     priorities = DECAY_PRIORITIES.get(flavour)
     if not priorities:
-        return _nearest_entry(entries, mass_GeV)
+        chosen = _nearest_entry(entries, mass_GeV)
+        if chosen is None:
+            raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
+        _warn_if_large_mismatch(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
+        return chosen
 
     if mass_GeV <= low_mass_threshold:
         analytical = [e for e in entries if e.category == "analytical2and3bodydecays"]
         chosen = _nearest_entry(analytical, mass_GeV)
-        if chosen:
-            return chosen
+        if chosen is None:
+            chosen = _nearest_entry(entries, mass_GeV)
+        if chosen is None:
+            raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
+        _warn_if_large_mismatch(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
+        return chosen
 
-    if flavour == "tau":
-        allowed = [
-            e for e in entries
-            if e.category in priorities and e.category != "analytical2and3bodydecays"
-        ]
-        chosen = _nearest_entry(allowed, mass_GeV)
-        if chosen:
-            return chosen
-        return _nearest_entry(entries, mass_GeV)
-
-    for category in priorities:
-        category_entries = [e for e in entries if e.category == category]
-        chosen = _nearest_entry(category_entries, mass_GeV)
-        if chosen:
-            return chosen
-
-    # Fallback to nearest available file of any type.
-    return _nearest_entry(entries, mass_GeV)
+    # Above threshold: choose nearest file among allowed physics categories
+    allowed = [e for e in entries if e.category in priorities and e.category != "analytical2and3bodydecays"]
+    chosen = _nearest_entry(allowed, mass_GeV)
+    if chosen is None:
+        chosen = _nearest_entry(entries, mass_GeV)
+    if chosen is None:
+        raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
+    _warn_if_large_mismatch(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
+    return chosen
 
 
 def _parse_decay_event_block(lines: List[str]) -> List[Tuple[float, float, float, float, float, int]]:
