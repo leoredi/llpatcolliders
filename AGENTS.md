@@ -38,7 +38,8 @@ config_mass_grid.py
 Pythia (main_hnl_production.cc)    MadGraph (run_hnl_scan.py)
        │                                    │
        ▼                                    ▼
-output/csv/simulation/HNL_*GeV_*_{kaon,charm,beauty}.csv
+output/csv/simulation/HNL_*GeV_{electron,muon}_{kaon,charm,beauty}.csv
+output/csv/simulation/HNL_*GeV_tau_{charm,beauty}_{direct,fromTau}.csv
 output/csv/simulation/HNL_*GeV_*_ew.csv
        │
        ▼
@@ -113,7 +114,7 @@ python scripts/check_hnlcalc_scaling.py
 ## Common pitfalls
 
 1. Geometry cache staleness: if you change the detector geometry or CSV format, delete `output/csv/geometry/` to force recomputation.
-2. The `parent_pdg` column uses absolute PDG IDs for production BRs (e.g. 521 for B±).
+2. The `parent_pdg` values can be signed in production CSVs; analysis uses `abs(parent_pdg)` for BR and cross-section lookups.
 3. Tau production has two modes: "direct" (meson/W → τ N, mixing at the production vertex) and "fromTau" (meson/W → τ ν, then τ → N X; only for m_HNL < 1.77 GeV).
 4. MadGraph EW production runs in Docker, not natively.
 5. The `weight` column in production CSVs is the Pythia event weight (usually 1.0) or MadGraph cross-section weight.

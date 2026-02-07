@@ -28,6 +28,7 @@ HNLs below ~5 GeV are dominantly produced from meson and baryon decays at the LH
 
 **Beauty regime (m_N > 2.0 GeV):**
 - B± → ℓ N (2-body)
+- B_c± → ℓ N (2-body)
 - B⁰ → D ℓ N, B_s → D_s ℓ N (3-body)
 - Λ_b → Λ_c ℓ N (3-body, baryonic)
 - Uses card file `hnl_Bmeson.cmnd`
@@ -59,6 +60,8 @@ For m_N above a few GeV, electroweak production pp → W/Z → ℓ N becomes rel
 - pp → Z → ν N (subdominant)
 
 Generated with MadGraph5 using the `SM_HeavyN_CKM_AllMasses_LO` model at √s = 14 TeV. Events are generated with |U|² = 1 and rescaled analytically. Note: an NLO K-factor of 1.3 is defined in `run_hnl_scan.py` but is not currently applied in the analysis pipeline.
+
+In the limit calculation, EW normalization uses fixed σ(W) and σ(Z) values from `production_xsecs.py`; MadGraph event weights are used for kinematic averaging (efficiency), not as the absolute cross-section normalisation.
 
 The LHE output is converted to CSV with the same column format as Pythia production for pipeline compatibility.
 
@@ -128,7 +131,7 @@ The key scaling laws that enable fast parameter scans:
 - **Lifetime:** cτ₀(|U|²) = cτ₀_ref × (|U|²_ref / |U|²)
 - **Production BR:** BR(|U|²) = BR_ref × (|U|² / |U|²_ref)
 
-Both follow from the fact that all production and decay amplitudes are proportional to |U|². This is validated to < 0.05% relative error by `check_hnlcalc_scaling.py`.
+Both follow from the fact that all production and decay amplitudes are proportional to |U|². The scaling check script enforces a default relative-error tolerance of 5×10⁻⁴ (0.05%) in `check_hnlcalc_scaling.py`.
 
 ## 4. Detector geometry
 
@@ -184,7 +187,7 @@ The exclusion limit is set at N_sig = 2.996 events, corresponding to the 95% CL 
 
 ### 5.2 eps2 scan
 
-For each mass point, |U|² is scanned over [10⁻¹², 10⁻²] on a log-uniform grid of 100 points. The signal count N_sig(|U|²) is computed at each point. The lower and upper crossings of N_sig = 2.996 define eps2_min and eps2_max — the boundaries of the exclusion island.
+For each mass point, |U|² is scanned over [10⁻¹², 10⁻²] on a log-uniform grid of 100 points. By default (`limits/run.py`), HNLCalc is evaluated once at a reference eps2 and then scaled analytically across the scan; `--hnlcalc-per-eps2` disables this and recomputes HNLCalc at every point. The lower and upper crossings of N_sig = 2.996 define eps2_min and eps2_max — the boundaries of the exclusion island.
 
 Linear interpolation in log-space refines the crossing points to sub-grid precision.
 
@@ -194,7 +197,7 @@ The decay acceptance calculation in `decay_detector.py` determines whether an HN
 
 ### 6.1 Decay product kinematics
 
-Pre-computed HNL decay events (from MATHUSLA RHN files or MadGraph+Pythia generation) are loaded and boosted from the HNL rest frame to the lab frame using the HNL's βγ and direction.
+Pre-computed HNL decay events from the MATHUSLA RHN libraries are loaded and boosted from the HNL rest frame to the lab frame using the HNL's βγ and direction. (A separate script can generate custom decay samples with MadGraph+Pythia, but this is not the default runtime path.)
 
 ### 6.2 Track separation cut
 
@@ -202,10 +205,10 @@ A minimum separation of 1 mm between charged decay products at the detector surf
 
 ### 6.3 Decay file selection
 
-The MATHUSLA RHN decay libraries provide pre-computed decay events at discrete mass points. File selection uses a priority system:
-- High mass (> threshold): prefer inclusive charm/beauty categories (inclDs > inclDD > inclD)
-- Low mass (< threshold): prefer analytical 2/3-body calculations
-- Nearest-mass matching with warning if |Δm| > 0.5 GeV
+The MATHUSLA RHN decay libraries provide pre-computed decay events at discrete mass points. File selection is flavour-dependent:
+- Below the low-mass threshold (0.42 GeV for e/τ, 0.53 GeV for μ): prefer analytical files, with nearest-file fallback
+- Above threshold: filter to the flavour's allowed category set, then choose the nearest mass within that filtered set
+- Warn if |Δm| > 0.5 GeV
 
 ## 7. Output and plots
 
@@ -213,5 +216,8 @@ The final output is `output/csv/analysis/HNL_U2_limits_summary.csv` with columns
 - mass_GeV, flavour, benchmark
 - eps2_min, eps2_max (boundaries of the exclusion island, NaN if no sensitivity)
 - peak_events (maximum N_sig over the scan)
+- separation_mm (track-separation cut used for that run)
+
+If `--timing` is enabled, additional timing/count columns are also written.
 
 The money plot (`plot_money_island.py`) shows the exclusion island in the (m_N, |U_ℓ|²) plane for each flavour. The shaded region is excluded. The lower boundary ("too long-lived") is eps2_min. The upper boundary ("too prompt") is eps2_max. A tip-point interpolation closes the island at the high-mass sensitivity edge.

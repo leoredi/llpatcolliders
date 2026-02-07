@@ -19,6 +19,7 @@ Sensitivity projections for Heavy Neutral Leptons (HNLs) at a proposed drainage-
 │   │   └── pythia8315/                  # Vendored Pythia (do not edit)
 │   │
 │   └── madgraph_production/             # EW production W/Z → ℓN (MadGraph5)
+│       ├── MG5_aMC_v3.6.6.tar.gz        # Vendored MG5 source used by Docker build (keeps MG offline)
 │       ├── scripts/
 │       │   ├── run_hnl_scan.py          # MadGraph driver (Docker)
 │       │   ├── lhe_to_csv.py            # LHE → CSV converter
@@ -74,12 +75,21 @@ Pythia 8.315 is vendored. Build the C++ generator:
 cd production/pythia_production
 PYTHIA8=$(pwd)/pythia8315 make
 ```
+MadGraph5 is also vendored (tarball + `madgraph_production/mg5/`) and electroweak production must run inside the Docker image in `production/madgraph_production`. Build the image if you don't already have it locally (internet needed once for Pythia/LHAPDF downloads; MG5 itself comes from the tarball):
 
-MadGraph runs inside Docker (see `production/madgraph_production/scripts/run_hnl_scan.py`).
+```bash
+cd production/madgraph_production
+docker build -t hnl-madgraph .
+# Launch container with repo mounted at /work
+docker run --rm -it -v "$(pwd)/../..:/work" hnl-madgraph bash
+# Inside the container, switch to the repo
+cd /work
+```
+If the `hnl-madgraph` image is already on your machine, skip the build and just `docker run` it.
 
 ## Run pipeline
 
-The full pipeline has four stages. Each stage must complete before the next.
+The pipeline has four stages. Stage 2 (EW) is optional; Stage 3 is recommended when multiple production channels exist at the same mass/flavour. Stage 4 needs whatever production CSVs you produced in Stage 1/2.
 
 ### Stage 1 — Meson/baryon production (Pythia)
 
@@ -102,19 +112,20 @@ Output: `output/csv/simulation/HNL_<mass>GeV_<flavour>_<regime>[_fromTau].csv`
 
 ### Stage 2 — Electroweak production (MadGraph, optional)
 
-Generates W/Z → ℓN events for high-mass HNLs. Requires Docker with MadGraph5.
+Generates W/Z → ℓN events for high-mass HNLs. **Run this stage from inside the Docker container launched above** (MadGraph + LHAPDF live in `/opt` inside the image; running on the host will fail).
 
 ```bash
-cd production/madgraph_production
+# Inside container, working directory /work/production/madgraph_production
+cd /work/production/madgraph_production
 python3 scripts/run_hnl_scan.py --flavour muon --min-mass 3
 python3 scripts/run_hnl_scan.py --test    # quick smoke test
 ```
 
 Output: `output/csv/simulation/HNL_<mass>GeV_<flavour>_ew.csv`
 
-### Stage 3 — Combine production channels
+### Stage 3 — Combine production channels (optional but recommended with multiple sources)
 
-Merges kaon/charm/beauty/ew CSVs at each mass point. Prefers form-factor (`_ff`) files when available.
+Merges kaon/charm/beauty/ew CSVs at each mass point into a single `..._combined.csv`. Prefers form-factor (`_ff`) files when available. `analysis_pbc/limits/run.py` can also read separate files directly, but combining keeps geometry caching and bookkeeping simpler.
 
 ```bash
 cd analysis_pbc
