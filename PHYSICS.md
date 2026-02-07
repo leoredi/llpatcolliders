@@ -36,7 +36,7 @@ Each decay channel is configured with 100% branching ratio in Pythia (exclusive 
 
 ### 2.2 Tau chain production (fromTau mode)
 
-For tau-coupled HNLs with m_N < m_τ ≈ 1.77 GeV, a second production path exists:
+For tau-coupled HNLs with m_N < 1.77 GeV (the threshold used in the production script, slightly below m_τ = 1.777 GeV), a second production path exists:
 
 ```
 parent meson → τ ν_τ    (SM decay)
@@ -49,7 +49,7 @@ This "fromTau" mode is implemented as a separate Pythia run. The tau decay chann
 - τ → π N
 - τ → μ ν N, τ → e ν N (leptonic)
 
-The parent mesons that produce taus are primarily D_s± → τ ν and B → D(*) τ ν.
+The parent mesons that produce taus are D_s± → τ ν (BR = 5.3%) and B mesons → τ ν X (BR ≈ 2.3% each for B⁰, B⁺, B_s⁰). These BR values are hardcoded in `get_parent_tau_br()` in `production_xsecs.py`.
 
 ### 2.3 Electroweak production (MadGraph, high mass)
 
@@ -58,7 +58,7 @@ For m_N above a few GeV, electroweak production pp → W/Z → ℓ N becomes rel
 - pp → W± → ℓ± N (dominant)
 - pp → Z → ν N (subdominant)
 
-Generated with MadGraph5 using the `SM_HeavyN_CKM_AllMasses_LO` model at √s = 14 TeV. Events are generated with |U|² = 1 and rescaled analytically. NLO K-factor: 1.3.
+Generated with MadGraph5 using the `SM_HeavyN_CKM_AllMasses_LO` model at √s = 14 TeV. Events are generated with |U|² = 1 and rescaled analytically. Note: an NLO K-factor of 1.3 is defined in `run_hnl_scan.py` but is not currently applied in the analysis pipeline.
 
 The LHE output is converted to CSV with the same column format as Pythia production for pipeline compatibility.
 
@@ -78,6 +78,8 @@ The analysis weights each event by the physical production rate. Key cross-secti
 Charm fragmentation fractions: D⁰ 59%, D⁺ 24%, D_s⁺ 10%, Λ_c⁺ 6%.
 
 Beauty fragmentation fractions: B⁰ 40%, B⁺ 40%, B_s⁰ 10%, Λ_b⁰ 10%.
+
+Additional rare b-hadrons: B_c⁺ (0.1%), Ξ_b (3%), Ω_b (1%) — these are included in the code as small fractions of σ(bb̄).
 
 These are defined in `analysis_pbc/config/production_xsecs.py`.
 
@@ -131,7 +133,7 @@ Both follow from the fact that all production and decay amplitudes are proportio
 ## 4. Detector geometry
 
 The detector is a drainage gallery near CMS, modelled as a tube with:
-- 46 path vertices defining the centreline in the x-z plane at y = 22 m
+- 47 path vertices defining the centreline in the x-y plane at z = 22 m
 - Tube radius: 1.4 m × 1.1 safety margin = 1.54 m effective radius
 - Distance from IP: O(100 m) along most of the path
 
@@ -164,7 +166,15 @@ and:
 - P_decay_i = exp(-d_entry / λ) × [1 - exp(-d_path / λ)] with λ = βγ × cτ₀
 - P_sep_i = 1 if ≥ 2 charged decay products separated by ≥ 1 mm at the detector, else 0
 
-For tau-chain production, the signal includes an additional factor of BR(parent → τν) × BR(τ → HNL X).
+For tau-chain production, the "parent" in the sum is the grandfather meson (D_s, B, etc.), and the signal formula becomes:
+
+```
+N_sig_tau = Σ_grandparents  L × σ_grandparent × BR(grandparent → τν) × BR(τ → N X) × ε
+```
+
+where σ_grandparent is the production cross-section of the meson that decays to τ (not the tau itself), BR(grandparent → τν) is the SM branching ratio from `get_parent_tau_br()`, and BR(τ → N X) comes from HNLCalc (keyed as parent PDG 15).
+
+**W/Z production BRs:** The W and Z branching ratios to HNL are computed in `hnl_model_hnlcalc.py` using the **total** mixing (|U_e|² + |U_μ|² + |U_τ|²), not a flavour-specific coupling. For pure-coupling benchmarks (e.g., 100, 010, 001) this is equivalent, but for mixed-coupling scenarios the distinction matters.
 
 Dirac HNLs get a factor of 2 compared to Majorana (both N and N̄ contribute).
 
