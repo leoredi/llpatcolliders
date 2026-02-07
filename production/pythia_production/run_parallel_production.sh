@@ -1,16 +1,7 @@
 #!/bin/bash
-# Parallel HNL Production Run
-# Generates meson (Pythia) mass points using parallel job execution
-# Usage: ./run_parallel_production.sh [flavour] [mode]
-#   flavour: electron, muon, tau, or all (default: all)
-#   mode: direct, fromTau, or both (default: both)
-#         - direct: meson → ℓ N (all flavours)
-#         - fromTau: meson → τ ν, τ → N X (tau only, m_N < 1.77 GeV)
-#         - both: run both modes for tau (default)
 
-set -e  # Exit on error
+set -e
 
-# Parse command line arguments
 FLAVOUR="${1:-all}"
 FLAVOUR=$(echo "$FLAVOUR" | tr '[:upper:]' '[:lower:]')
 MODE="${2:-both}"
@@ -28,7 +19,6 @@ if [[ ! "$MODE" =~ ^(direct|fromtau|both)$ ]]; then
     exit 1
 fi
 
-# fromTau mode only valid for tau coupling
 if [[ "$MODE" == "fromtau" && "$FLAVOUR" != "tau" && "$FLAVOUR" != "all" ]]; then
     echo "Error: 'fromTau' mode only valid for tau flavour"
     echo "  fromTau uses τ → N X decay chain, which requires tau coupling"
@@ -42,18 +32,13 @@ echo "Mode: $MODE"
 echo "============================================"
 echo ""
 
-# Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NEVENTS=100000
-NEVENTS_FROMTAU=$NEVENTS  # Same as direct (analysis weights by actual BRs)
-MAX_PARALLEL=12  # Using all available cores
+NEVENTS_FROMTAU=$NEVENTS
+MAX_PARALLEL=12
 
-# Kinematic threshold for tau → N X cascade production
-# Hadronic channels close at m_τ - m_π ≈ 1.64 GeV
-# Leptonic channels extend to m_τ - m_e ≈ 1.78 GeV
-FROMTAU_MASS_THRESHOLD=1.77  # Practical limit (leptonic channels)
+FROMTAU_MASS_THRESHOLD=1.77
 
-# Pythia library path (pythia sits inside production/pythia_production/)
 PYTHIA_ROOT="$SCRIPT_DIR/pythia8315"
 export DYLD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${DYLD_LIBRARY_PATH:-}"
 export LD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${LD_LIBRARY_PATH:-}"
@@ -61,11 +46,9 @@ export PYTHIA8DATA="$PYTHIA_ROOT/share/Pythia8/xmldoc"
 OUTPUT_DIR="$SCRIPT_DIR/../../output/csv/simulation"
 LOG_DIR="$SCRIPT_DIR/../../output/logs/simulation"
 
-# Create directories
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$LOG_DIR"
 
-# Timestamp for this run
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOGFILE="${LOG_DIR}/production_run_${TIMESTAMP}.log"
 
@@ -76,44 +59,33 @@ echo "  Output directory: $OUTPUT_DIR" | tee -a "$LOGFILE"
 echo "  Log file: $LOGFILE" | tee -a "$LOGFILE"
 echo ""
 
-# ===========================================================================
-# Load Mass Grids from Central Configuration
-# ===========================================================================
 source ./load_mass_grid.sh
 
-# All flavours use same MASS_GRID (Pythia handles kinematic filtering)
 ELECTRON_MASSES=("${MASS_GRID[@]}")
 MUON_MASSES=("${MASS_GRID[@]}")
 TAU_MASSES=("${MASS_GRID[@]}")
 
-# Filter arrays when running a single flavour so job counts/logs reflect reality
 if [[ "$FLAVOUR" != "all" ]]; then
     [[ "$FLAVOUR" != "electron" ]] && ELECTRON_MASSES=()
     [[ "$FLAVOUR" != "muon" ]] && MUON_MASSES=()
     [[ "$FLAVOUR" != "tau" ]] && TAU_MASSES=()
 fi
 
-# ===========================================================================
-# Job Control Functions
-# ===========================================================================
 
-# Count running background jobs
 count_jobs() {
     jobs -r | wc -l | tr -d ' '
 }
 
-# Wait for a job slot to become available
 wait_for_slot() {
     while [ $(count_jobs) -ge $MAX_PARALLEL ]; do
         sleep 1
     done
 }
 
-# Run a single production job in background
 run_production_job() {
     local mass=$1
     local flavour=$2
-    local mode=${3:-direct}  # direct or fromTau
+    local mode=${3:-direct}
 
     local log_file="${LOG_DIR}/HNL_${mass}GeV_${flavour}_${mode}_${TIMESTAMP}.log"
     local script_dir=$(pwd)
@@ -121,8 +93,6 @@ run_production_job() {
     {
         echo "[$(date +%H:%M:%S)] Starting: $mass GeV $flavour ($mode)"
 
-        # Run from current directory
-        # Use more events for fromTau mode (low HNL yield requires higher statistics)
         if [ "$mode" = "fromTau" ]; then
             ./main_hnl_production ${mass} ${flavour} $NEVENTS_FROMTAU fromTau 2>&1
         else
@@ -133,7 +103,6 @@ run_production_job() {
 
         if [ $exit_code -eq 0 ]; then
             sleep 0.5
-            # Match the C++ massToLabel formatting: two decimals with '.' → 'p'
             local mass_label=$(printf "%.2f" "$mass" | tr '.' 'p')
             local csv_file=$(ls HNL_${mass_label}GeV_${flavour}_*.csv 2>/dev/null | head -1)
 
@@ -149,18 +118,13 @@ run_production_job() {
     } > "$log_file" 2>&1
 }
 
-# ===========================================================================
-# Calculate Total Jobs
-# ===========================================================================
 
 count_tau_runs() {
     local count=0
     for mass in "${TAU_MASSES[@]}"; do
-        # Count direct mode runs
         if [[ "$MODE" == "direct" || "$MODE" == "both" ]]; then
             count=$((count + 1))
         fi
-        # Count fromTau mode runs (kinematic limit: m_N < m_τ - m_π ≈ 1.637 GeV)
         if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
             if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
                 count=$((count + 1))
@@ -182,8 +146,7 @@ echo "  Tau: $total_tau runs (including dual-mode)" | tee -a "$LOGFILE"
 echo "  TOTAL: $total_jobs simulation runs" | tee -a "$LOGFILE"
 echo "" | tee -a "$LOGFILE"
 
-# Estimate time (all jobs similar duration now)
-single_core_hours=$((total_jobs / 6))  # ~6 jobs per hour
+single_core_hours=$((total_jobs / 6))
 parallel_hours=$((single_core_hours / MAX_PARALLEL + 1))
 
 echo "Estimated time:" | tee -a "$LOGFILE"
@@ -197,9 +160,6 @@ echo "" | tee -a "$LOGFILE"
 start_time=$(date +%s)
 completed_jobs=0
 
-# ===========================================================================
-# Electron Production
-# ===========================================================================
 
 if [[ "$FLAVOUR" == "electron" || "$FLAVOUR" == "all" ]]; then
     echo "============================================" | tee -a "$LOGFILE"
@@ -214,9 +174,6 @@ if [[ "$FLAVOUR" == "electron" || "$FLAVOUR" == "all" ]]; then
     done
 fi
 
-# ===========================================================================
-# Muon Production
-# ===========================================================================
 
 if [[ "$FLAVOUR" == "muon" || "$FLAVOUR" == "all" ]]; then
     echo "" | tee -a "$LOGFILE"
@@ -232,9 +189,6 @@ if [[ "$FLAVOUR" == "muon" || "$FLAVOUR" == "all" ]]; then
     done
 fi
 
-# ===========================================================================
-# Tau Production (DUAL MODE)
-# ===========================================================================
 
 if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
     echo "" | tee -a "$LOGFILE"
@@ -243,7 +197,6 @@ if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
     echo "============================================" | tee -a "$LOGFILE"
 
     for mass in "${TAU_MASSES[@]}"; do
-        # MODE A: Direct production (all masses)
         if [[ "$MODE" == "direct" || "$MODE" == "both" ]]; then
             wait_for_slot
             run_production_job "$mass" "tau" "direct" &
@@ -251,7 +204,6 @@ if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
             echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (direct)" | tee -a "$LOGFILE"
         fi
 
-        # MODE B: fromTau cascade (τ → π N, only kinematically allowed for m_N < m_τ - m_π)
         if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
             if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
                 wait_for_slot
@@ -263,9 +215,6 @@ if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
     done
 fi
 
-# ===========================================================================
-# Wait for All Jobs to Complete
-# ===========================================================================
 
 echo "" | tee -a "$LOGFILE"
 echo "============================================" | tee -a "$LOGFILE"
@@ -286,9 +235,6 @@ echo "============================================" | tee -a "$LOGFILE"
 echo "Total time: ${elapsed_hours}h ${elapsed_mins}m" | tee -a "$LOGFILE"
 echo "" | tee -a "$LOGFILE"
 
-# ===========================================================================
-# Summary Statistics
-# ===========================================================================
 
 total_csv=$(find "$OUTPUT_DIR" -name "HNL_*.csv" -type f | wc -l | tr -d ' ')
 total_size=$(du -sh "$OUTPUT_DIR" | cut -f1)
@@ -299,7 +245,6 @@ echo "  Total size: $total_size" | tee -a "$LOGFILE"
 echo "  Location: $OUTPUT_DIR" | tee -a "$LOGFILE"
 echo "" | tee -a "$LOGFILE"
 
-# Check for failures
 failed_logs=$(find "$LOG_DIR" -name "*${TIMESTAMP}*.log" -type f -exec grep -l "FAILED\|ERROR" {} \; | wc -l | tr -d ' ')
 
 if [ $failed_logs -gt 0 ]; then

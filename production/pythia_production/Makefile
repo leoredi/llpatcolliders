@@ -1,19 +1,12 @@
-# Makefile for HNL Production Simulation
-#
-# Requires PYTHIA8 to be installed. Set PYTHIA8 environment variable
-# or modify the path below.
 
-# Pythia8 location (modify if needed)
 PYTHIA8 ?= /usr/local/pythia8
 PYTHIA8_INCLUDE = $(PYTHIA8)/include
 PYTHIA8_LIB = $(PYTHIA8)/lib
 
-# Compiler settings
 CXX = g++
 CXXFLAGS = -O2 -std=c++17 -Wall -I$(PYTHIA8_INCLUDE)
 LDFLAGS = -L$(PYTHIA8_LIB) -Wl,-rpath,$(PYTHIA8_LIB) -lpythia8 -ldl
 
-# Targets
 TARGET = main_hnl_production
 SOURCES = main_hnl_production.cc
 

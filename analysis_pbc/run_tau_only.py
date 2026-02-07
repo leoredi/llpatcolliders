@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-"""Run tau analysis only and update results."""
 import sys
 import argparse
 import multiprocessing
@@ -28,7 +27,6 @@ def main():
     )
     df['separation_mm'] = 1.0
 
-    # Load existing results and update tau only
     results_file = ANALYSIS_OUT_DIR / 'HNL_U2_limits_summary.csv'
     if results_file.exists():
         existing = pd.read_csv(results_file)

@@ -13,7 +13,7 @@ from geometry.per_parent_efficiency import eta_phi_to_directions
 
 try:
     from particle import Particle
-except Exception:  # pragma: no cover
+except Exception:
     Particle = None
 
 
@@ -25,10 +25,9 @@ class DecaySelection:
 
 @dataclass
 class DecayCache:
-    """Compact decay cache storing data only for hits."""
-    charged_directions: List[List[np.ndarray]]  # len = n_hits
-    decay_u: np.ndarray  # len = n_total (need full array for indexing)
-    hit_indices: np.ndarray  # indices into geom_df where hits_tube=True
+    charged_directions: List[List[np.ndarray]]
+    decay_u: np.ndarray
+    hit_indices: np.ndarray
 
 
 def _unit_vector(vec: np.ndarray) -> np.ndarray:
@@ -91,7 +90,6 @@ def _is_charged(pid: int) -> bool:
     charge = _charge_from_pdg(pid)
     if charge != 0.0:
         return True
-    # Minimal fallback for common charged particles.
     return abs(pid) in {11, 13, 15, 211, 321, 2212, 24}
 
 
@@ -121,17 +119,14 @@ def _first_intersection_point(
 def _batch_first_intersections(
     mesh: trimesh.Trimesh, origins: np.ndarray, directions: np.ndarray
 ) -> List[np.ndarray | None]:
-    """Batch ray intersection for multiple rays from same origin."""
     n = len(directions)
     if n == 0:
         return []
 
-    # Normalize directions
     norms = np.linalg.norm(directions, axis=1, keepdims=True)
     norms = np.where(norms > 0, norms, 1.0)
     directions = directions / norms
 
-    # All rays from same origin
     ray_origins = np.tile(origins.reshape(1, 3), (n, 1))
 
     try:
@@ -145,7 +140,6 @@ def _batch_first_intersections(
     if len(locations) == 0:
         return [None] * n
 
-    # Group by ray index and find closest hit per ray
     results: List[np.ndarray | None] = [None] * n
     for ray_idx in range(n):
         mask = index_ray == ray_idx
@@ -171,7 +165,6 @@ def build_decay_cache(
     selection: DecaySelection,
     verbose: bool = True,
 ) -> DecayCache:
-    """Build decay cache for HNLs that hit detector (compact, hits-only)."""
     rng = np.random.default_rng(selection.seed)
     decay_file = select_decay_file(flavour, mass_GeV)
     decay_events = load_decay_events(decay_file.path)
@@ -189,7 +182,6 @@ def build_decay_cache(
     phi = geom_df["phi"].to_numpy(dtype=float)
     directions = eta_phi_to_directions(eta, phi)
 
-    # Pick decay events only for hits
     selected_events = pick_decay_events(rng, decay_events, n_hits)
     decay_u = rng.uniform(0.0, 1.0, size=n_total)
 
@@ -232,7 +224,6 @@ def build_decay_cache(
 
 
 def save_decay_cache(cache: DecayCache, path: Path) -> None:
-    """Save decay cache to disk."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "wb") as f:
         pickle.dump({
@@ -243,7 +234,6 @@ def save_decay_cache(cache: DecayCache, path: Path) -> None:
 
 
 def load_decay_cache(path: Path) -> DecayCache:
-    """Load decay cache from disk."""
     with open(path, "rb") as f:
         data = pickle.load(f)
     return DecayCache(
@@ -263,7 +253,6 @@ def compute_decay_acceptance(
     decay_cache: DecayCache | None = None,
     verbose: bool = False,
 ) -> np.ndarray:
-    """Compute which HNLs pass the track separation cut."""
     n_total = len(geom_df)
     separation_pass = np.zeros(n_total, dtype=bool)
 
@@ -312,7 +301,6 @@ def compute_decay_acceptance(
         if len(dirs) < 2:
             continue
 
-        # Batch ray intersection for all charged tracks
         dirs_arr = np.array(dirs)
         hits = _batch_first_intersections(mesh, decay_pos, dirs_arr)
         charged_hits = [h for h in hits if h is not None]
@@ -337,13 +325,6 @@ def compute_separation_pass_static(
     mesh: trimesh.Trimesh,
     separation_m: float,
 ) -> np.ndarray:
-    """
-    Precompute separation_pass using midpoint decay position (ctau-independent).
-
-    This is an approximation: the exact separation depends on decay position,
-    but for our geometry the dependence is weak. Using midpoint gives a good
-    estimate that can be reused across all eps2 points.
-    """
     n_total = len(geom_df)
     separation_pass = np.zeros(n_total, dtype=bool)
 
@@ -366,7 +347,6 @@ def compute_separation_pass_static(
         if not np.all(np.isfinite(direction)):
             continue
 
-        # Use midpoint of path as reference decay position
         decay_distance = entry[idx] + 0.5 * path_length[idx]
         decay_pos = decay_distance * direction
 

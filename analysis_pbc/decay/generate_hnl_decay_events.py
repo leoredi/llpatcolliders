@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""
-Generate HNL decay events (5-20 GeV) with MadGraph5 + Pythia8 hadronization.
-
-Outputs stable final-state particles in the HNL rest frame for displaced-vertex
-studies in transverse detectors.
-"""
 
 from __future__ import annotations
 
@@ -29,7 +23,7 @@ if str(ANALYSIS_ROOT) not in sys.path:
 
 from models.hnl_model_hnlcalc import HNLModel
 
-HBARC_GEV_M = 1.973269804e-16  # GeV * m
+HBARC_GEV_M = 1.973269804e-16
 
 
 @dataclass
@@ -46,9 +40,6 @@ class RunConfig:
 
 
 def hnl_ctau_and_width(mass_GeV: float, Ue2: float, Umu2: float, Utau2: float) -> tuple[float, float]:
-    """
-    Return (ctau0_m, gamma_tot_GeV) using HNLCalc (per UCI-TR-2024-01 formulas).
-    """
     model = HNLModel(mass_GeV=mass_GeV, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
     ctau0_m = float(model.ctau0_m)
     if ctau0_m <= 0.0:
@@ -146,7 +137,7 @@ def load_pythia() -> "pythia8.Pythia":
 
 def _ensure_pythia8_pythonpath() -> None:
     try:
-        import pythia8  # noqa: F401
+        import pythia8
         return
     except ImportError:
         pass
@@ -230,22 +221,17 @@ def hadronize_lhe(
 
 
 def build_stable_pid_list() -> List[int]:
-    # Charged tracks + photons for DV response.
     return [
-        11, -11,  # e
-        13, -13,  # mu
-        211, -211,  # pi+/-
-        321, -321,  # K+/-
-        2212, -2212,  # p
-        22,  # gamma
+        11, -11,
+        13, -13,
+        211, -211,
+        321, -321,
+        2212, -2212,
+        22,
     ]
 
 
 def sanitize_lhe_beams(lhe_path: Path, work_dir: Path) -> Path:
-    """
-    Ensure the <init> beam IDs/energies are valid for Pythia.
-    MG5 decay LHE files often set beam2 id=0, which Pythia rejects.
-    """
     text = lhe_path.read_text()
     lines = text.splitlines()
     init_idx = None
@@ -267,7 +253,6 @@ def sanitize_lhe_beams(lhe_path: Path, work_dir: Path) -> Path:
 
     allowed_beams = {"11", "-11", "13", "-13", "22", "2212", "-2212", "2112", "-2112"}
     if id_a not in allowed_beams or id_b not in allowed_beams:
-        # Use "no-beams" LHEF extension for hadron-level standalone.
         fields[0] = "0"
         fields[1] = "0"
         fields[2] = "0.000000e+00"
@@ -290,7 +275,6 @@ def generate_for_mass(config: RunConfig, mass_GeV: float) -> None:
     proc_text = build_mg5_process_command(proc_dir)
     run_madgraph(config.mg5_path, proc_text, config.work_dir)
 
-    # Write param_card with mixings and mass into Cards/ before launch
     template = (Path(__file__).resolve().parents[2]
                 / "production" / "madgraph_production" / "cards" / "param_card_template.dat")
     param_card = proc_dir / "Cards" / "param_card.dat"

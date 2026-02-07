@@ -1,16 +1,4 @@
 #!/usr/bin/env python
-"""
-U² limit calculator driver.
-
-Usage:
-    python run.py                       # Single-threaded (Majorana, default)
-    python run.py --parallel            # Parallel processing (uses all cores)
-    python run.py --parallel --workers 8  # Use 8 cores
-    python run.py --dirac               # Dirac HNL interpretation (×2 yield)
-    python run.py --separation-mm 1.0   # Minimum charged-track separation (mm)
-    python run.py --flavour muon --mass 2.6  # Single mass point
-    python run.py --hnlcalc-per-eps2    # Legacy: recompute HNLCalc per eps2 (slow)
-"""
 
 import sys
 import re
@@ -26,13 +14,11 @@ from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 from tqdm import tqdm
 
-# Setup paths
 THIS_FILE = Path(__file__).resolve()
 ANALYSIS_DIR = THIS_FILE.parent
 REPO_ROOT = ANALYSIS_DIR.parents[1]
 OUTPUT_DIR = REPO_ROOT / "output" / "csv"
 
-# Current simulation output directory (Pythia + MadGraph)
 SIM_DIR = OUTPUT_DIR / "simulation"
 GEOM_CACHE_DIR = OUTPUT_DIR / "geometry"
 ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
@@ -41,7 +27,7 @@ ANALYSIS_ROOT = ANALYSIS_DIR.parent
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
 
-MASS_FILTER_TOL = 5e-4  # GeV tolerance for --mass filtering
+MASS_FILTER_TOL = 5e-4
 
 from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
 from limits.expected_signal import expected_signal_events, couplings_from_eps2
@@ -69,13 +55,6 @@ def scan_single_mass(
     timing_enabled=False,
     hnlcalc_per_eps2=False,
 ):
-    """
-    Process one mass point, combining all available production regimes (kaon/charm/beauty/ew).
-    sim_files: list of tuples (sim_csv_path, regime)
-    dirac: if True, multiply yield by 2 for Dirac HNL interpretation
-    quiet: if True, suppress verbose output (for parallel mode)
-    """
-    # In quiet mode, redirect stdout to suppress all output from this worker
     stdout_ctx = contextlib.redirect_stdout(io.StringIO()) if quiet else contextlib.nullcontext()
 
     with stdout_ctx:
@@ -101,7 +80,6 @@ def _scan_single_mass_impl(
     timing_enabled,
     hnlcalc_per_eps2,
 ):
-    """Internal implementation of scan_single_mass."""
     timing = {} if timing_enabled else None
     if timing is not None:
         timing["count_geom_files"] = len(sim_files)
@@ -109,21 +87,17 @@ def _scan_single_mass_impl(
     if not quiet:
         print(f"\n[{flavour} {mass_val} GeV] Processing ({len(sim_files)} production file(s))...")
 
-    # 1. Load/compute geometry for each production file, then concatenate
     geom_dfs = []
-    mesh = None  # Build only if needed
+    mesh = None
 
     for sim_csv, regime in sim_files:
-        # Regime-specific geometry cache to avoid collisions
         geom_cache_name = f"{sim_csv.stem}_geom.csv"
         geom_csv = GEOM_CACHE_DIR / geom_cache_name
 
-        # Backward compatibility: fall back to old cache naming if present
         legacy_geom_csv = GEOM_CACHE_DIR / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
         if not geom_csv.exists() and legacy_geom_csv.exists():
             geom_csv = legacy_geom_csv
 
-        # Delete stale geometry cache (source file was updated)
         if geom_csv.exists() and sim_csv.stat().st_mtime > geom_csv.stat().st_mtime:
             if not quiet:
                 print(f"  Stale cache detected, regenerating: {geom_csv.name}")
@@ -143,7 +117,6 @@ def _scan_single_mass_impl(
             with _time_block(timing, "time_geom_compute_s"):
                 geom_df = preprocess_hnl_csv(sim_csv, mesh, show_progress=show_progress)
 
-            # Atomic write to prevent race condition in parallel execution
             with _time_block(timing, "time_geom_write_s"):
                 with tempfile.NamedTemporaryFile(mode='w', dir=geom_csv.parent,
                                                   suffix='.tmp', delete=False) as tmp:
@@ -174,7 +147,6 @@ def _scan_single_mass_impl(
             print(f"  WARNING: No hits, skipping")
         return None
 
-    # 2. Scan |U|²
     eps2_scan = np.logspace(-12, -2, 100)
     if timing is not None:
         timing["n_eps2_points"] = int(len(eps2_scan))
@@ -243,7 +215,6 @@ def _scan_single_mass_impl(
 
     N_scan = np.array(N_scan)
 
-    # 3. Find exclusion range (N >= 2.996)
     mask_excluded = (N_scan >= 2.996)
 
     if not mask_excluded.any():
@@ -262,11 +233,10 @@ def _scan_single_mass_impl(
         return result
 
     indices_excl = np.where(mask_excluded)[0]
-    i_lo = indices_excl[0]   # first index above threshold
-    i_hi = indices_excl[-1]  # last index above threshold
+    i_lo = indices_excl[0]
+    i_hi = indices_excl[-1]
     N_limit = 2.996
 
-    # Log-linear interpolation at the lower crossing (eps2_min / red curve)
     if i_lo > 0:
         N_below, N_above = N_scan[i_lo - 1], N_scan[i_lo]
         dN = N_above - N_below
@@ -280,7 +250,6 @@ def _scan_single_mass_impl(
     else:
         eps2_min = eps2_scan[i_lo]
 
-    # Log-linear interpolation at the upper crossing (eps2_max / blue curve)
     if i_hi < len(eps2_scan) - 1:
         N_above, N_below = N_scan[i_hi], N_scan[i_hi + 1]
         dN = N_above - N_below
@@ -325,13 +294,10 @@ def run_flavour(
     timing_enabled=False,
     hnlcalc_per_eps2=False,
 ):
-    """Run scan for one flavour"""
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
     print(f"{'='*60}")
 
-    # Find simulation files
-    # Accept both 1 and 2 decimal formats: 5p0 or 5p00 (transitioning to 2-decimal standard)
     pattern = re.compile(
         rf"^HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_"
         r"((?:kaon|charm|beauty|ew|combined)(?:_ff)?)"
@@ -340,30 +306,26 @@ def run_flavour(
     )
 
     files = []
-    empty_files = []  # Track empty files, report only if they would be used
+    empty_files = []
     for f in SIM_DIR.glob(f"*{flavour}*.csv"):
         match = pattern.search(f.name)
         if not match:
             continue
 
-        if f.stat().st_size < 1000:  # Track empty files for later reporting
+        if f.stat().st_size < 1000:
             empty_files.append(f)
             continue
 
         mass_str = match.group(1)
         mass_val = float(mass_str.replace("p", "."))
-        regime_token = match.group(2)          # e.g. charm, charm_ff, combined
-        mode = match.group(3)                 # direct/fromTau (tau only) or None
+        regime_token = match.group(2)
+        mode = match.group(3)
 
         is_ff = regime_token.endswith("_ff")
         base_regime = regime_token.replace("_ff", "")
 
         files.append((mass_val, mass_str, base_regime, mode, is_ff, f))
 
-    # Group by mass and select files to avoid double counting:
-    # - If *_combined.csv exists for a mass, use ONLY that file.
-    # - Otherwise, include all regimes; for tau, include both direct and fromTau modes.
-    # - Prefer *_ff files over base files for the same (regime, mode).
     files_by_mass = {}
     for mass_val, mass_str, base_regime, mode, is_ff, path in files:
         key = (mass_val, mass_str)
@@ -390,7 +352,6 @@ def run_flavour(
             warn_for_key = abs(key[0] - mass_filter) <= MASS_FILTER_TOL
         combined = [it for it in items if it[0] == "combined"]
         if combined:
-            # Prefer combined_ff if it ever exists, otherwise take first.
             chosen = next((it for it in combined if it[2]), combined[0])
 
             selected = [(chosen[3], _label(chosen[0], chosen[1], chosen[2]))]
@@ -418,15 +379,12 @@ def run_flavour(
 
     files_by_mass = selected_by_mass
 
-    # Report empty files only if no valid file exists for that mass at all
-    # (i.e., the mass would be completely missing from analysis)
     masses_with_valid_files = {key[0] for key in files_by_mass.keys()}
 
     for f in empty_files:
         m = pattern.search(f.name)
         if m:
             mass_val = float(m.group(1).replace("p", "."))
-            # Only warn if NO valid file exists for this mass
             if mass_val not in masses_with_valid_files:
                 print(f"[SKIP] Empty file (no valid alternative): {f.name}")
 
@@ -441,13 +399,11 @@ def run_flavour(
             print(f"       Available masses (first 10): {preview}{more}")
     print(f"Found {len(mass_points)} mass points")
 
-    # Process each file
     if use_parallel:
         if n_workers is None:
             n_workers = multiprocessing.cpu_count()
         print(f"Using {n_workers} parallel workers")
 
-        # Prepare arguments for parallel processing
         args_list = []
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
@@ -455,7 +411,6 @@ def run_flavour(
                 (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress, timing_enabled, hnlcalc_per_eps2)
             )
 
-        # Process in parallel (with optional progress bar)
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
             iterator = executor.map(scan_single_mass_wrapper, args_list)
             if show_progress is None or show_progress:
@@ -468,12 +423,10 @@ def run_flavour(
                 )
             results = list(iterator)
 
-        # Print summary of results
         valid_results = [r for r in results if r is not None]
         excluded = sum(1 for r in valid_results if not np.isnan(r.get("eps2_min", np.nan)))
         print(f"  Completed: {excluded}/{len(valid_results)} mass points have sensitivity")
 
-        # Filter out None results
         results = valid_results
     else:
         results = []
@@ -499,8 +452,6 @@ def run_flavour(
     return pd.DataFrame(results)
 
 def scan_single_mass_wrapper(args):
-    """Wrapper for parallel processing - runs in quiet mode"""
-    # Unpack args and add quiet=True for parallel execution
     (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress, timing_enabled, hnlcalc_per_eps2) = args
     return scan_single_mass(
         mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list,
@@ -581,11 +532,9 @@ if __name__ == "__main__":
 
     all_results = []
 
-    # Determine progress bar visibility: explicit --no-progress overrides auto-detect
     show_progress = None if not args.no_progress else False
     timing_enabled = args.timing
 
-    # Process each flavour
     flavour_list = [("electron", "100"), ("muon", "010"), ("tau", "001")]
     if args.flavour:
         flavour_list = [fb for fb in flavour_list if fb[0] == args.flavour]
@@ -607,7 +556,6 @@ if __name__ == "__main__":
         df["separation_mm"] = args.separation_mm
         all_results.append(df)
 
-    # Combine and save
     final_df = pd.concat(all_results, ignore_index=True)
     final_df.to_csv(results_out, index=False)
 

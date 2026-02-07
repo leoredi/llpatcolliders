@@ -1,5 +1,4 @@
 #!/bin/bash
-# Load MASS_GRID from config_mass_grid.py
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"

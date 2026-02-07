@@ -66,10 +66,8 @@ def main():
         sel = (df["flavour"] == flavour)
         df_sel = df[sel].sort_values("mass_GeV")
 
-        # Remove NaN values (use eps2_min/eps2_max from PBC analysis)
         df_valid = df_sel[df_sel["eps2_min"].notna() & df_sel["eps2_max"].notna()]
 
-        # Deduplicate per-mass entries and enforce sensible ordering/positivity before plotting
         df_dedup = df_valid.groupby("mass_GeV", as_index=False).agg({
             "eps2_min": "min",
             "eps2_max": "max",

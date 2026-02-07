@@ -1,49 +1,4 @@
 #!/usr/bin/env python3
-"""
-Combine Pythia (meson) and MadGraph (EW) production channels at overlapping masses.
-
-**IMPORTANT: Run this BEFORE analysis to avoid undercounting signal!**
-
-At masses like 4-8 GeV, HNLs can be produced from BOTH:
-1. B/D-meson decays (Pythia) → parent_pdg = 511, 521, 421, 431, etc.
-2. W/Z-boson decays (MadGraph) → parent_pdg = 23, 24
-
-These are DIFFERENT production mechanisms that should be ADDED, not double-counted.
-
-This script:
-- Identifies masses with multiple production files (e.g., beauty + ew)
-- Combines CSV files at each mass into a single unified file
-- Preserves all parent PDG codes for proper per-parent counting
-- DELETES original separate files (data preserved in combined files)
-- Saves ~2 GB of disk space by removing duplicates
-
-Why this is critical:
-- WITHOUT combining: Analysis uses only one production channel → undercounts signal
-- WITH combining: Analysis includes all production mechanisms → correct sensitivity
-
-Usage:
-    # Combine all flavors (recommended)
-    python combine_production_channels.py
-
-    # Single flavor only
-    python combine_production_channels.py --flavour electron
-
-    # Preview changes without writing files
-    python combine_production_channels.py --dry-run
-
-    # Create combined files but don't delete originals
-    python combine_production_channels.py --no-cleanup
-
-    # Delete originals after combining (opt-in)
-    python combine_production_channels.py --delete-originals
-
-Typical workflow:
-    1. Run Pythia production (kaon/charm/beauty regimes)
-    2. Run MadGraph production (EW regime)
-    3. **Run this script** ← YOU ARE HERE
-    4. Run analysis: python limits/run.py --parallel
-    5. Generate plots: python ../money_plot/plot_money_island.py
-"""
 
 import pandas as pd
 import re
@@ -53,13 +8,6 @@ from collections import defaultdict
 
 
 def find_production_files(sim_dir, flavour=None):
-    """
-    Find all production CSV files and group by mass.
-
-    Returns:
-        dict: {(mass_val, flavour): [(base_regime, mode, is_ff, filepath), ...]}
-    """
-    # Accept both 1 and 2 decimal formats during transition: 5p0 or 5p00
     pattern = re.compile(
         r"HNL_([0-9]+p[0-9]{1,2})GeV_([a-z]+)_((?:kaon|charm|beauty|ew)(?:_ff)?)(?:_(direct|fromTau))?\.csv"
     )
@@ -67,15 +15,15 @@ def find_production_files(sim_dir, flavour=None):
     files_by_mass = defaultdict(list)
 
     for f in sim_dir.glob("HNL_*.csv"):
-        if f.stat().st_size < 1000:  # Skip empty
+        if f.stat().st_size < 1000:
             continue
 
         match = pattern.search(f.name)
         if match:
             mass_str = match.group(1)
             file_flavour = match.group(2)
-            regime = match.group(3)  # e.g., beauty or beauty_ff
-            mode = match.group(4)    # direct/fromTau (tau only) or None
+            regime = match.group(3)
+            mode = match.group(4)
 
             if flavour and file_flavour != flavour:
                 continue
@@ -89,11 +37,6 @@ def find_production_files(sim_dir, flavour=None):
 
 
 def prefer_ff(regime_files):
-    """
-    If both base and *_ff versions exist for the same regime, keep only the *_ff version.
-    regime_files: list of (base_regime, mode, is_ff, path)
-    Returns filtered list.
-    """
     chosen = {}
     for base_regime, mode, is_ff, path in regime_files:
         key = (base_regime, mode)
@@ -113,17 +56,10 @@ def _format_source_label(base_regime: str, mode: str | None, is_ff: bool) -> str
 
 
 def combine_csvs(csv_paths, output_path):
-    """
-    Combine multiple CSV files into one, preserving all columns.
-
-    All files should have the same column structure (Pythia/MadGraph format):
-    event, weight, hnl_id, parent_pdg, pt, eta, phi, p, E, mass, prod_x_mm, prod_y_mm, prod_z_mm, beta_gamma
-    """
     dfs = []
 
     for base_regime, mode, is_ff, path in csv_paths:
         df = pd.read_csv(path)
-        # Add provenance columns for tracking
         df["source_regime"] = base_regime
         df["source_mode"] = mode if mode is not None else "direct"
         df["source_is_ff"] = bool(is_ff)
@@ -132,7 +68,6 @@ def combine_csvs(csv_paths, output_path):
 
     combined = pd.concat(dfs, ignore_index=True)
 
-    # Renumber events to avoid conflicts
     combined['event'] = range(len(combined))
 
     combined.to_csv(output_path, index=False)
@@ -149,9 +84,7 @@ def main():
     parser.add_argument("--delete-originals", action="store_true", help="Delete original files after combining (opt-in)")
     args = parser.parse_args()
 
-    # Paths
     repo_root = Path(__file__).parent.parent.parent
-    # Current simulation output directory (Pythia + MadGraph)
     sim_dir = repo_root / "output" / "csv" / "simulation"
     combined_dir = sim_dir / "combined"
 
@@ -168,14 +101,11 @@ def main():
         print("DRY RUN MODE - no files will be written")
     print()
 
-    # Find all files grouped by mass
     files_by_mass = find_production_files(sim_dir, args.flavour)
-    # Prefer *_ff replacements over base regimes to avoid double counting
     files_by_mass = {
         key: prefer_ff(regimes) for key, regimes in files_by_mass.items()
     }
 
-    # Find masses with multiple production channels
     multi_channel_masses = {k: v for k, v in files_by_mass.items() if len(v) > 1}
 
     if not multi_channel_masses:
@@ -191,12 +121,10 @@ def main():
 
     print(f"\n{'-' * 70}\n")
 
-    # Combine files
     total_combined = 0
     files_to_backup = []
 
     for (mass_val, flavour), csv_list in sorted(multi_channel_masses.items()):
-        # Use 2 decimal places for consistency (5.0 → 5p00, not 5p0)
         mass_str = f"{mass_val:.2f}".replace('.', 'p')
         output_path = combined_dir / f"HNL_{mass_str}GeV_{flavour}_combined.csv"
 
@@ -211,19 +139,16 @@ def main():
         n_total = combine_csvs(csv_list, output_path)
         total_combined += 1
 
-        # Track original files for deletion
         for _, _, _, fpath in csv_list:
             files_to_backup.append(fpath)
 
         print()
 
-    # Cleanup: move combined files (optionally delete originals)
     if not args.dry_run and not args.no_cleanup:
         print(f"\n{'-' * 70}")
         print("CLEANUP: Moving combined files")
         print(f"{'-' * 70}\n")
 
-        # Move combined files to main directory
         combined_files = list(combined_dir.glob("*.csv"))
         for f in combined_files:
             dest = sim_dir / f.name
@@ -231,14 +156,12 @@ def main():
             print(f"  ✓ {f.name} → {sim_dir.name}/")
 
         if args.delete_originals:
-            # Delete original overlapping files (they're now combined)
             print()
             for f in files_to_backup:
-                if f.exists():  # Check still exists (not already moved)
+                if f.exists():
                     f.unlink()
                     print(f"  ✓ Deleted: {f.name}")
 
-        # Remove empty combined directory
         if combined_dir.exists() and not any(combined_dir.iterdir()):
             combined_dir.rmdir()
 

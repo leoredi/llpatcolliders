@@ -158,7 +158,6 @@ def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
         _warn_if_large_mismatch(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
         return chosen
 
-    # Above threshold: choose nearest file among allowed physics categories
     allowed = [e for e in entries if e.category in priorities and e.category != "analytical2and3bodydecays"]
     chosen = _nearest_entry(allowed, mass_GeV)
     if chosen is None:
@@ -173,7 +172,6 @@ def _parse_decay_event_block(lines: List[str]) -> List[Tuple[float, float, float
     daughters: List[Tuple[float, float, float, float, float, int]] = []
     if not lines:
         return daughters
-    # First line is LLP 4-vector, ignore.
     for line in lines[1:]:
         parts = [p.strip() for p in line.split(",") if p.strip()]
         if len(parts) < 6:

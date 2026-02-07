@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
-"""
-HNL Mass Grid Configuration - Single grid for all flavours/modes.
-Production code handles kinematic filtering (zero events for forbidden masses).
-"""
 
 MASS_GRID = sorted([
-    # K-regime (0.2-0.5 GeV): 0.015 GeV steps
     0.200, 0.215, 0.230, 0.245, 0.260, 0.275, 0.290, 0.305,
     0.320, 0.335, 0.350, 0.365, 0.380, 0.395, 0.410, 0.425,
     0.440, 0.455, 0.470, 0.485, 0.500,
-    # D-regime (0.5-2.0 GeV): 0.025 GeV steps
     0.525, 0.550, 0.575, 0.600, 0.625, 0.650, 0.675, 0.700,
     0.725, 0.750, 0.775, 0.800, 0.825, 0.850, 0.875, 0.900,
     0.925, 0.950, 0.975, 1.000, 1.025, 1.050, 1.075, 1.100,
@@ -18,10 +12,8 @@ MASS_GRID = sorted([
     1.525, 1.550, 1.575, 1.600, 1.625, 1.650, 1.675, 1.700,
     1.725, 1.750, 1.775, 1.800, 1.825, 1.850, 1.875, 1.900,
     1.925, 1.950, 1.975, 2.000,
-    # B-regime (2.0-5.0 GeV): 0.2 GeV steps
     2.20, 2.40, 2.60, 2.80, 3.00, 3.20, 3.40, 3.60, 3.80, 4.00,
     4.20, 4.40, 4.60, 4.80, 5.00,
-    # EW regime (5.0-17 GeV): 0.2-0.5 GeV steps
     5.20, 5.40, 5.50, 5.60, 5.80, 6.00,
     6.20, 6.40, 6.60, 6.80, 7.00,
     7.20, 7.40, 7.60, 7.80, 8.00,
@@ -33,7 +25,6 @@ MASS_GRID = sorted([
 
 
 def format_mass_for_filename(mass):
-    """Convert mass to filename format: 2.6 -> '2p60'"""
     return f"{mass:.2f}".replace('.', 'p')
 
 

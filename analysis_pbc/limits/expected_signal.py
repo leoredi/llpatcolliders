@@ -1,15 +1,3 @@
-"""
-limits/expected_signal.py
-
-Reusable physics kernel for the HNL limit pipeline:
-
-  - couplings_from_eps2(): map PBC benchmark -> (Ue², Umu², Utau²)
-  - expected_signal_events(): compute N_sig using decay+detector selection
-  - scan_eps2_for_mass(): scan eps² grid and find exclusion interval
-
-This module intentionally contains NO file-discovery, caching, or multiprocessing
-logic. Drivers like `limits/run.py` handle I/O and orchestration.
-"""
 
 from __future__ import annotations
 
@@ -25,9 +13,6 @@ from limits.timing_utils import _time_block
 
 
 def couplings_from_eps2(eps2: float, benchmark: str) -> Tuple[float, float, float]:
-    """
-    Map PBC benchmark (string) to (Ue², Umu², Utau²).
-    """
     if benchmark == "100":
         return eps2, 0.0, 0.0
     if benchmark == "010":
@@ -53,57 +38,14 @@ def expected_signal_events(
     br_scale: float | None = None,
     timing: dict | None = None,
 ) -> float:
-    """
-    Compute expected signal events N_sig using per-parent counting and
-    explicit decay + detector selection.
-
-        N_sig = Σ_parents [ L × σ_parent × BR(parent→ℓN) × ε_geom(parent) ]
-
-    Parameters
-    ----------
-    geom_df : pd.DataFrame
-        Geometry dataframe with columns: parent_id, weight, beta_gamma,
-        hits_tube, entry_distance, path_length (one row per HNL)
-    mass_GeV : float
-        HNL mass in GeV
-    eps2 : float
-        Total coupling squared |U|²
-    benchmark : str
-        Coupling pattern: "100" (electron), "010" (muon), "001" (tau)
-    lumi_fb : float
-        Integrated luminosity in fb⁻¹
-    dirac : bool
-        If True, multiply yield by 2 for Dirac HNL interpretation (N ≠ N̄).
-        Default False assumes Majorana HNL.
-    separation_m : float
-        Minimum charged-track separation at detector surface (metres).
-    decay_seed : int
-        RNG seed for decay sampling (for reproducibility).
-    decay_cache : DecayCache, optional
-        Precomputed decay sampling cache to reuse across eps² points.
-    separation_pass : np.ndarray, optional
-        Precomputed boolean array of which HNLs pass separation cut.
-        If provided, skips expensive per-eps2 recomputation.
-    ctau0_m : float, optional
-        Precomputed proper decay length in metres. If provided, skips HNLCalc.
-    br_per_parent : dict, optional
-        Precomputed {parent_pdg: BR(parent→ℓN)} at some reference eps2.
-    br_scale : float, optional
-        Scale factor applied to br_per_parent (e.g., eps2/eps2_ref).
-    timing : dict, optional
-        If provided, accumulates timing breakdowns (time_* keys) and counters.
-    """
     if timing is not None:
         timing["count_eps2_calls"] = timing.get("count_eps2_calls", 0) + 1
-    # 1) HNL model (unless precomputed values are provided)
     if ctau0_m is None or br_per_parent is None:
         Ue2, Umu2, Utau2 = couplings_from_eps2(eps2, benchmark)
         with _time_block(timing, "time_model_s"):
             model = HNLModel(mass_GeV=mass_GeV, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
         with _time_block(timing, "time_ctau_br_s"):
-            # Proper decay length in metres
             ctau0_m = model.ctau0_m
-            # Production BRs per parent
             br_per_parent = model.production_brs()
 
     if ctau0_m is None or br_per_parent is None:
@@ -112,7 +54,6 @@ def expected_signal_events(
     if separation_m is None:
         raise ValueError("Decay-based efficiency is mandatory: provide separation_m.")
 
-    # 2) Extract geometry arrays
     required_cols = [
         "parent_id",
         "weight",
@@ -138,7 +79,6 @@ def expected_signal_events(
     entry = geom_df["entry_distance"].to_numpy(dtype=float)
     length = geom_df["path_length"].to_numpy(dtype=float)
 
-    # --- SAFETY CHECK: DROP BAD PARENT IDs ---
     mask_valid = np.isfinite(parent_id)
     if not np.all(mask_valid):
         parent_id = parent_id[mask_valid]
@@ -151,7 +91,6 @@ def expected_signal_events(
     if len(parent_id) == 0:
         return 0.0
 
-    # 3) Compute P_decay_i for all HNLs
     with _time_block(timing, "time_pdecay_s"):
         lam = beta_gamma * ctau0_m
         n_clamped = np.sum(lam <= 1e-9)
@@ -165,12 +104,9 @@ def expected_signal_events(
         if np.any(mask_hits):
             arg_entry = -entry[mask_hits] / lam[mask_hits]
             arg_path = -length[mask_hits] / lam[mask_hits]
-            # Numerically stable: exp(A) * (1 - exp(B)) = exp(A) * (-expm1(B))
             P_decay[mask_hits] = np.exp(arg_entry) * (-np.expm1(arg_path))
 
-    # 4) Apply decay + detector selection (track separation)
     if separation_pass is None:
-        # Fallback: compute per eps2 point (slow, for backwards compatibility)
         with _time_block(timing, "time_separation_s"):
             selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed)
             separation_pass = compute_decay_acceptance(
@@ -184,12 +120,10 @@ def expected_signal_events(
             )
     P_decay = P_decay * separation_pass.astype(float)
 
-    # 5) Group by parent species (per-parent counting)
     parent_abs = np.abs(parent_id.astype(int))
     tau_parent_id = None
     if "tau_parent_id" in geom_df.columns:
         tau_parent_id = geom_df["tau_parent_id"].to_numpy(dtype=float)
-        # Replace NaN/inf with 0 before cast to avoid RuntimeWarning (EW files lack this column)
         tau_parent_id = np.abs(np.nan_to_num(tau_parent_id, nan=0.0, posinf=0.0, neginf=0.0)).astype(int)
 
     if tau_parent_id is None:
@@ -197,8 +131,6 @@ def expected_signal_events(
     else:
         mask_from_tau = (parent_abs == 15) & (tau_parent_id > 0)
 
-    # Check for malformed data: parent_id == 15 (tau) but tau_parent_id == 0
-    # This would use the legacy σ(τ) approximation which ignores B→τ contribution
     mask_tau_parent = (parent_abs == 15)
     if tau_parent_id is None:
         n_bad = int(np.sum(mask_tau_parent))
@@ -240,13 +172,11 @@ def expected_signal_events(
                 continue
 
             eff_parent = np.sum(w * P) / w_sum
-            # N = L(fb^-1) × σ(pb) × (1e3 fb/pb) × BR × ε
             total_expected += lumi_fb * (sigma_parent_pb * 1e3) * BR_parent * eff_parent
 
-    # 5b) Tau-decay production: parent -> tau nu, tau -> N X
     if np.any(mask_from_tau):
         with _time_block(timing, "time_tau_parent_sum_s"):
-            assert tau_parent_id is not None  # Guaranteed by mask_from_tau logic above
+            assert tau_parent_id is not None
             br_tau_to_N = br_per_parent.get(15, 0.0)
             if br_scale is not None:
                 br_tau_to_N *= br_scale
@@ -275,7 +205,6 @@ def expected_signal_events(
                     eff_parent = np.sum(w * P) / w_sum
                     total_expected += lumi_fb * (sigma_parent_pb * 1e3) * br_parent_to_tau * br_tau_to_N * eff_parent
 
-    # Diagnostics: log once per mass point (at first scan point)
     if missing_br_pdgs and eps2 == 1e-12:
         n_lost = int(np.sum(np.isin(parent_id, missing_br_pdgs)))
         print(
@@ -340,7 +269,6 @@ def scan_eps2_for_mass(
     eps2_grid = np.logspace(-12, -2, 100)
     Nsig = np.zeros_like(eps2_grid, dtype=float)
 
-    # Build decay cache and separation_pass ONCE and reuse across all eps2 points
     decay_cache = None
     separation_pass = None
     if separation_m is not None:
@@ -348,7 +276,6 @@ def scan_eps2_for_mass(
         flavour = benchmark_to_flavour(benchmark)
         selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed)
         decay_cache = build_decay_cache(geom_df, mass_GeV, flavour, selection)
-        # Precompute separation using static method (ctau-independent approximation)
         separation_pass = compute_separation_pass_static(
             geom_df, decay_cache, build_mesh_once(), float(separation_m)
         )
@@ -375,7 +302,6 @@ def scan_eps2_for_mass(
     i_lo = idx_above[0]
     i_hi = idx_above[-1]
 
-    # Log-linear interpolation at the lower crossing (eps2_min)
     if i_lo > 0:
         N_below, N_above = Nsig[i_lo - 1], Nsig[i_lo]
         dN = N_above - N_below
@@ -389,7 +315,6 @@ def scan_eps2_for_mass(
     else:
         eps2_min = float(eps2_grid[i_lo])
 
-    # Log-linear interpolation at the upper crossing (eps2_max)
     if i_hi < len(eps2_grid) - 1:
         N_above, N_below = Nsig[i_hi], Nsig[i_hi + 1]
         dN = N_above - N_below

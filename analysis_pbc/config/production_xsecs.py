@@ -1,219 +1,85 @@
-"""
-config/production_xsecs.py
 
-Standard LHC Production Cross-Sections for Physics Beyond Colliders (PBC) Analysis.
 
-Primary references (baseline values / methodology):
-- CERN-PBC-REPORT-2018-007 (Physics Beyond Colliders LLP sensitivity inputs)
-- MATHUSLA physics case: arXiv:1811.00927 (uses the same per-parent counting structure)
+SIGMA_CCBAR_PB = 24.0 * 1e9
 
-Notes:
-- These are **inclusive, order-of-magnitude** cross-sections suitable for fast
-  sensitivity projections. They are not a replacement for a full experimental
-  systematics model.
-- `SIGMA_W_PB`/`SIGMA_Z_PB` are **inclusive boson production** cross-sections at
-  14 TeV (i.e. not multiplied by SM leptonic BRs). Leptonic+HNL branching is
-  applied later via `HNLModel.production_brs()`.
-- `SIGMA_KAON_PB` is especially uncertain (soft QCD dominated) and is the main
-  normalization systematic for the kaon regime.
-Energy: 14 TeV (HL-LHC)
+SIGMA_BBBAR_PB = 500.0 * 1e6
 
-These cross-sections represent the TOTAL production of parent mesons at the LHC,
-accounting for both the quark-pair production cross-section (ccbar, bbbar) and
-the fragmentation fractions (probability that a c/b quark hadronizes into a
-specific meson species).
 
-Units: All cross-sections in picobarns (pb)
-Conversion: 1 mb = 10^9 pb, 1 μb = 10^6 pb
+FRAG_C_D0     = 0.59
+FRAG_C_DPLUS  = 0.24
+FRAG_C_DS     = 0.10
+FRAG_C_LAMBDA = 0.06
 
-Per-Parent Counting Methodology
----------------------------------
-These cross-sections are used for PER-PARENT counting, not per-event:
+FRAG_B_B0     = 0.40
+FRAG_B_BPLUS  = 0.40
+FRAG_B_BS     = 0.10
+FRAG_B_LAMBDA = 0.10
 
-    N_sig = Σ_parents [ L × σ_parent × BR(parent→ℓN) × ε_geom(parent) ]
+SIGMA_KAON_PB = 5.0 * 1e10
 
-Each parent meson (D, B, K, etc.) represents an independent production channel.
-A single pp collision can produce multiple parent mesons → multiple HNLs.
-We count each parent's contribution separately because they have different
-cross-sections and kinematics.
+SIGMA_KL_PB = SIGMA_KAON_PB * 0.5
 
-This matches MATHUSLA/ANUBIS/CODEX-b/AL3X methodology.
-"""
+SIGMA_W_PB = 2.0 * 1e8
+SIGMA_Z_PB = 6.0 * 1e7
 
-# ==========================================
-# BASE CROSS-SECTIONS (in picobarns - pb)
-# ==========================================
-
-# Sigma(pp -> ccbar) ~ 24 mb at 14 TeV
-# This is the QCD production of charm quark pairs
-# Reference: CERN-PBC-REPORT-2018-007 (14 TeV baseline inputs for sensitivity projections)
-SIGMA_CCBAR_PB = 24.0 * 1e9  # 24 mb = 2.4 × 10^10 pb
-
-# Sigma(pp -> bbbar) ~ 500 μb at 14 TeV
-# This is the QCD production of beauty quark pairs
-# Reference: CERN-PBC-REPORT-2018-007 (14 TeV baseline inputs for sensitivity projections)
-SIGMA_BBBAR_PB = 500.0 * 1e6  # 500 μb = 5.0 × 10^8 pb
-
-# ==========================================
-# FRAGMENTATION FRACTIONS
-# (Approximate probability quark -> specific meson)
-# ==========================================
-
-# Charm Fragmentation (f_c)
-# Probability that a c-quark hadronizes into each meson species
-# These are approximate ground-state fractions; the remaining O(1%) goes to other
-# charm hadrons / excited states and is neglected at this projection level.
-FRAG_C_D0     = 0.59  # D0 / D0bar
-FRAG_C_DPLUS  = 0.24  # D+ / D-
-FRAG_C_DS     = 0.10  # Ds+ / Ds-
-FRAG_C_LAMBDA = 0.06  # Λc+ / Λc-
-
-# Beauty Fragmentation (f_b)
-# Probability that a b-quark hadronizes into each meson species
-FRAG_B_B0     = 0.40  # B0 / B0bar
-FRAG_B_BPLUS  = 0.40  # B+ / B-
-FRAG_B_BS     = 0.10  # Bs0 / Bs0bar
-FRAG_B_LAMBDA = 0.10  # Λb0 / Λb0bar
-
-# ==========================================
-# KAON PRODUCTION (Light QCD)
-# ==========================================
-# Kaon production is dominated by soft QCD processes.
-# K± cross-section (very approximate, soft QCD dominated):
-SIGMA_KAON_PB = 5.0 * 1e10  # ~50 mb for K+ + K-
-
-# K_L cross-section: approximate as ~½ of K± (isospin symmetry).
-# This is a stopgap; for precision, measure N(K_L)/N(K±) ratio from Pythia minbias.
-# Note: K_S is not included — its contribution is suppressed by τ_S/τ_L ≈ 1/570.
-SIGMA_KL_PB = SIGMA_KAON_PB * 0.5  # ~25 mb
-
-# ==========================================
-# ELECTROWEAK PRODUCTION (W/Z BOSONS)
-# ==========================================
-# W and Z boson production at 14 TeV LHC
-# Reference: standard inclusive 14 TeV projections used in PBC-style studies
-# (e.g. CERN-PBC-REPORT-2018-007; LHC SM cross-section summaries / HXSWG-style inputs).
-# These are inclusive production cross-sections (not multiplied by leptonic BRs).
-SIGMA_W_PB = 2.0 * 1e8  # σ(pp→W) ~ 200 nb (W+ + W- combined)
-SIGMA_Z_PB = 6.0 * 1e7  # σ(pp→Z) ~ 60 nb
-
-# ==========================================
-# PARENT PRODUCTION LOOKUP
-# Returns: Production Cross Section in pb
-# ==========================================
 
 def get_parent_sigma_pb(parent_pdg: int) -> float:
-    """
-    Returns the total production cross-section for a specific parent meson species.
-
-    This is used to normalize the event yield:
-        N_parent = L × σ_parent
-
-    where L is the integrated luminosity in fb^-1.
-
-    Parameters:
-    -----------
-    parent_pdg : int
-        PDG ID of the parent meson (sign doesn't matter - we use abs())
-
-    Returns:
-    --------
-    float
-        Production cross-section in picobarns (pb)
-
-    Notes:
-    ------
-    - The factor of 2 accounts for particle + antiparticle production
-    - Fragmentation fractions are normalized such that Σ_i f_i ≈ 1
-    - These are approximate values; real analysis should use NLO QCD calculations
-    """
     pid = abs(int(parent_pdg))
 
-    # --- KAON SECTOR (Light QCD) ---
-    if pid == 321:  # K+ / K-
+    if pid == 321:
         return SIGMA_KAON_PB
-    if pid == 130:  # K_L (long-lived neutral kaon)
+    if pid == 130:
         return SIGMA_KL_PB
-    # Note: K_S (310) is not included — suppressed by τ_S/τ_L ≈ 1/570
 
-    # --- CHARM SECTOR ---
-    if pid == 421:  # D0 / D0bar
-        return SIGMA_CCBAR_PB * FRAG_C_D0 * 2  # *2 for particle+antiparticle
-    if pid == 411:  # D+ / D-
+    if pid == 421:
+        return SIGMA_CCBAR_PB * FRAG_C_D0 * 2
+    if pid == 411:
         return SIGMA_CCBAR_PB * FRAG_C_DPLUS * 2
-    if pid == 431:  # Ds+ / Ds-
+    if pid == 431:
         return SIGMA_CCBAR_PB * FRAG_C_DS * 2
-    if pid == 4122:  # Λc+ / Λc-
+    if pid == 4122:
         return SIGMA_CCBAR_PB * FRAG_C_LAMBDA * 2
 
-    # --- BEAUTY SECTOR ---
-    if pid == 511:  # B0 / B0bar
+    if pid == 511:
         return SIGMA_BBBAR_PB * FRAG_B_B0 * 2
-    if pid == 521:  # B+ / B-
+    if pid == 521:
         return SIGMA_BBBAR_PB * FRAG_B_BPLUS * 2
-    if pid == 531:  # Bs0 / Bs0bar
+    if pid == 531:
         return SIGMA_BBBAR_PB * FRAG_B_BS * 2
-    if pid == 541:  # Bc+ / Bc- (very rare)
-        return SIGMA_BBBAR_PB * 0.001 * 2  # ~0.1% fragmentation
-    if pid == 5122:  # Λb0 / Λb0bar
+    if pid == 541:
+        return SIGMA_BBBAR_PB * 0.001 * 2
+    if pid == 5122:
         return SIGMA_BBBAR_PB * FRAG_B_LAMBDA * 2
 
-    # Other beauty baryons (very rough estimates)
-    if pid == 5232:  # Σb
+    if pid == 5232:
         return SIGMA_BBBAR_PB * 0.03 * 2
-    if pid == 5332:  # Ωb
+    if pid == 5332:
         return SIGMA_BBBAR_PB * 0.01 * 2
 
-    # --- TAU (Approximation) ---
-    # If Taus are primary parents in your list, they likely come from Ds
-    # We approximate σ_tau ~ σ_Ds × BR(Ds→τν)
-    # BR(Ds → τ ν) ~ 5.5%
     if pid == 15:
         return (SIGMA_CCBAR_PB * FRAG_C_DS * 2) * 0.055
 
-    # --- ELECTROWEAK BOSONS ---
-    if pid == 24:  # W± bosons
+    if pid == 24:
         return SIGMA_W_PB
-    if pid == 23:  # Z boson
+    if pid == 23:
         return SIGMA_Z_PB
 
-    # Default fallback (shouldn't happen if inputs are clean)
     print(f"[WARNING] Unknown parent PDG {pid} in cross-section lookup. Returning 0.")
     return 0.0
 
 
 def get_parent_tau_br(parent_pdg: int) -> float:
-    """
-    Return SM BR(parent -> tau + nu) for use in fromTau weighting.
-
-    These are the SM branching ratios for meson → τν decays, used to weight
-    the tau-decay production chain: parent → τν, τ → N X.
-
-    References:
-        - PDG 2024 for Ds → τν
-        - World average / R(D*) measurements for B semitauonic
-    """
     pid = abs(int(parent_pdg))
 
-    # Ds+ -> tau+ nu_tau (dominant tau source in charm regime)
-    # PDG 2024: (5.32 ± 0.11)%
     if pid == 431:
         return 0.053
 
-    # B0 -> D(*) tau nu (semitauonic, combined D + D*)
-    # BR(B0 → D− τ+ ντ) ≈ 0.86% (older B-factory)
-    # BR(B0 → D*− τ+ ντ) ≈ 1.40% (world average from R(D*))
-    # Combined: ~2.3%
     if pid == 511:
         return 0.023
 
-    # B+ -> D(*) tau nu (semitauonic, combined D0 + D*0)
-    # Similar to B0 by isospin
     if pid == 521:
         return 0.023
 
-    # Bs -> Ds(*) tau nu (semitauonic)
-    # Less precisely measured, assume similar to B0/B+
     if pid == 531:
         return 0.023
 
@@ -221,10 +87,6 @@ def get_parent_tau_br(parent_pdg: int) -> float:
 
 
 def get_sigma_summary():
-    """
-    Print a summary of production cross-sections for common parents.
-    Useful for debugging and verification.
-    """
     common_parents = [
         (321, "K±"),
         (130, "K_L"),
@@ -262,5 +124,4 @@ def get_sigma_summary():
 
 
 if __name__ == "__main__":
-    # Print summary when run as script
     get_sigma_summary()

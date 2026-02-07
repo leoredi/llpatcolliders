@@ -5,30 +5,16 @@ import pandas as pd
 import trimesh
 from tqdm import tqdm
 
-# Try to import the specific RTreeError used by trimesh's ray code.
-# If it's not available for some reason, fall back to a generic Exception subclass.
 try:
     from rtree.exceptions import RTreeError
-except Exception:  # pragma: no cover
+except Exception:
     class RTreeError(Exception):
         pass
 
 
 def eta_phi_to_direction(eta: float, phi: float) -> np.ndarray:
-    """
-    Convert pseudorapidity (eta) and azimuthal angle (phi) to a 3D unit direction vector.
-
-    Args:
-        eta: Pseudorapidity
-        phi: Azimuthal angle in radians
-
-    Returns:
-        Normalized 3D direction vector [dx, dy, dz]
-    """
-    # Convert eta to polar angle theta
     theta = 2.0 * np.arctan(np.exp(-eta))
 
-    # Convert to Cartesian direction
     dx = np.sin(theta) * np.cos(phi)
     dy = np.sin(theta) * np.sin(phi)
     dz = np.cos(theta)
@@ -37,16 +23,6 @@ def eta_phi_to_direction(eta: float, phi: float) -> np.ndarray:
 
 
 def eta_phi_to_directions(eta: np.ndarray, phi: np.ndarray) -> np.ndarray:
-    """
-    Vectorized version of eta_phi_to_direction.
-
-    Args:
-        eta: array of pseudorapidity values
-        phi: array of azimuthal angles (radians)
-
-    Returns:
-        Array of shape (N, 3) with unit direction vectors.
-    """
     eta = np.asarray(eta, dtype=float)
     phi = np.asarray(phi, dtype=float)
 
@@ -64,18 +40,6 @@ def eta_phi_to_directions(eta: np.ndarray, phi: np.ndarray) -> np.ndarray:
 def create_tube_mesh(path_points: np.ndarray,
                      radius: float = 1.0,
                      n_segments: int = 16) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Create a tube mesh along a 3D polyline path with a circular cross-section.
-
-    Args:
-        path_points: array-like of shape (N, 3), the 3D path of the tube axis
-        radius: tube radius (same units as path_points)
-        n_segments: number of points around the circular cross-section
-
-    Returns:
-        vertices: (Nv, 3) array of vertex positions
-        faces:    (Nf, 3) array of triangular faces (indices into vertices)
-    """
     path_points = np.asarray(path_points, dtype=float)
     vertices: list[np.ndarray] = []
     faces: list[list[int]] = []
@@ -94,7 +58,6 @@ def create_tube_mesh(path_points: np.ndarray,
 
         tangent = tangent / np.linalg.norm(tangent)
 
-        # Choose an "up" vector not parallel to tangent
         if abs(tangent[2]) < 0.9:
             up = np.array([0.0, 0.0, 1.0])
         else:
@@ -105,14 +68,12 @@ def create_tube_mesh(path_points: np.ndarray,
         up = np.cross(right, tangent)
         up = up / np.linalg.norm(up)
 
-        # Build the ring of vertices at this path point
         for j in range(n_segments):
             angle = 2.0 * np.pi * j / n_segments
             offset = radius * (np.cos(angle) * right + np.sin(angle) * up)
             vertex = path_points[i] + offset
             vertices.append(vertex)
 
-        # Connect this ring to the previous ring
         if i > 0:
             for j in range(n_segments):
                 v1 = (i - 1) * n_segments + j
@@ -120,11 +81,9 @@ def create_tube_mesh(path_points: np.ndarray,
                 v3 = i * n_segments + (j + 1) % n_segments
                 v4 = i * n_segments + j
 
-                # Two triangles per quad
                 faces.append([v1, v4, v3])
                 faces.append([v1, v3, v2])
 
-    # Cap the ends
     center_start = len(vertices)
     vertices.append(path_points[0])
     for j in range(n_segments):
@@ -144,20 +103,6 @@ def create_tube_mesh(path_points: np.ndarray,
 
 
 def build_drainage_gallery_mesh() -> trimesh.Trimesh:
-    """
-    Build the CMS drainage-gallery tube mesh at z = 22 m.
-
-    Uses the 'correctedVert' polyline and shifts/scales exactly as in the original
-    Higgs→LLP script:
-      - subtract 11908.8279764855 in x, add 13591.106147774964 in y
-      - divide by 1000 to go from mm (?) to m
-      - set z = 22 m
-      - radius = 1.4 * 1.1
-      - n_segments = 32
-
-    Returns:
-        mesh: trimesh.Trimesh object representing the tube volume.
-    """
     correctedVert = [
         (-86.57954338701529, 0.1882163986665546),
         (-1731.590867740335, 3.764327973349282),
@@ -217,15 +162,12 @@ def build_drainage_gallery_mesh() -> trimesh.Trimesh:
             )
         )
 
-    Z_POSITION = 22.0  # m
+    Z_POSITION = 22.0
     path_3d = np.array(
         [[x, y, Z_POSITION] for x, y in correctedVertWithShift],
         dtype=float,
     )
 
-    # Physical tube radius is ~1.4 m. Use a small envelope margin to avoid
-    # edge-effects from polygonization / discretization in this fast-acceptance
-    # model and to be robust against small geometry/alignment uncertainties.
     tube_radius_m = 1.4
     tube_envelope_margin = 1.1
     tube_radius = tube_radius_m * tube_envelope_margin
@@ -235,7 +177,7 @@ def build_drainage_gallery_mesh() -> trimesh.Trimesh:
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
 
     if mesh.volume < 0:
-        mesh = mesh.copy()  # avoid modifying original in place
+        mesh = mesh.copy()
         mesh.invert()
 
     print("Tube mesh created at z=22 m")
@@ -255,72 +197,13 @@ def preprocess_hnl_csv(
     origin: tuple[float, float, float] = (0.0, 0.0, 0.0),
     show_progress: bool | None = None,
 ) -> pd.DataFrame:
-    """
-    Read a Pythia HNL CSV and precompute geometry quantities
-    (independent of lifetime and couplings).
-
-    Expected input columns (at minimum):
-        - event
-        - parent_id
-        - eta
-        - phi
-        - momentum
-        - mass
-        - weight (optional; if absent, set to 1.0)
-
-    Output DataFrame contains original columns plus:
-        - beta_gamma        : p / m (dimensionless)
-        - hits_tube         : bool
-        - entry_distance    : distance from origin to entry point [m]
-        - path_length       : path length inside tube [m]
-
-    The event-level logic (per-event decay probability, etc.) is *not*
-    handled here; this is purely per-particle geometry.
-
-    Note: Pythia events can contain multiple HNLs from different parent
-    mesons (e.g., event 44 might have D0→N, B0→N, Ds→N). We compute
-    geometry for EACH HNL individually (one row per HNL), not per event.
-    This enables per-parent counting in the analysis layer.
-
-    IMPORTANT - Weight Column Semantics
-    ------------------------------------
-    The 'weight' column is interpreted as a RELATIVE MC event weight
-    (e.g., for phase-space reweighting), NOT an absolute cross-section.
-
-    Absolute cross-sections come from production_xsecs.get_parent_sigma_pb().
-
-    The analysis computes efficiency as:
-        ε_parent = Σ(weight * P_decay) / Σ(weight)
-
-    Then multiplies by external cross-section:
-        N_sig = L × σ_parent × BR × ε_parent
-
-    If 'weight' contains absolute cross-sections (e.g., σ_gen from Pythia),
-    this will DOUBLE-COUNT the cross-section. Keep weights as relative!
-
-    Typical valid weight values:
-        - All 1.0 (unweighted MC)
-        - 0.1 - 10.0 (phase-space reweighting factors)
-        - pythia.info.weight() for weighted generation
-
-    Invalid weight values:
-        - pythia.info.sigmaGen() (absolute cross-section in pb)
-        - Any value >> 1000 (likely an absolute cross-section mistake)
-
-    Args:
-        show_progress: If None (default), auto-detect based on whether stderr
-            is a TTY. Set False to disable progress bars (batch/parallel mode).
-    """
     if show_progress is None:
         show_progress = sys.stderr.isatty()
 
     df = pd.read_csv(csv_file)
 
-    # Handle both old and new CSV formats
-    # Old format: parent_id, momentum
-    # New format: parent_pdg, p
     if "parent_pdg" in df.columns and "parent_id" not in df.columns:
-        df["parent_id"] = df["parent_pdg"].abs()  # Use absolute value
+        df["parent_id"] = df["parent_pdg"].abs()
     if "p" in df.columns and "momentum" not in df.columns:
         df["momentum"] = df["p"]
 
@@ -334,12 +217,10 @@ def preprocess_hnl_csv(
     if "weight" not in df.columns:
         df["weight"] = 1.0
 
-    # Initialize geometry columns
     df["hits_tube"] = False
     df["entry_distance"] = np.nan
     df["path_length"] = np.nan
 
-    # beta * gamma = p / m (in natural units)
     if "beta_gamma" not in df.columns:
         if "momentum" in df.columns and "mass" in df.columns:
             df["beta_gamma"] = df["momentum"] / df["mass"]

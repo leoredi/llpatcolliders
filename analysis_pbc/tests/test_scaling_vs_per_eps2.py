@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-Quick check: scaling-mode matches per-eps2 HNLCalc for a single test point.
-
-Run:
-  conda run -n llpatcolliders python -m pytest tests/test_scaling_vs_per_eps2.py
-  # or:
-  conda run -n llpatcolliders python tests/test_scaling_vs_per_eps2.py
-"""
 
 from __future__ import annotations
 
@@ -28,7 +20,6 @@ from models.hnl_model_hnlcalc import HNLModel
 
 
 def _make_geom_df() -> pd.DataFrame:
-    # Minimal, deterministic geometry sample
     return pd.DataFrame(
         {
             "parent_id": [511, 521, 511],
@@ -48,13 +39,12 @@ def test_scaling_matches_per_eps2():
     separation_pass = np.ones(len(geom_df), dtype=bool)
 
     mass = 2.6
-    benchmark = "010"  # muon
+    benchmark = "010"
     eps2 = 1e-8
     eps2_ref = 1e-6
     lumi_fb = 3000.0
     separation_m = 1e-3
 
-    # Per-eps2 (legacy) result
     random.seed(123)
     n_direct = expected_signal_events(
         geom_df=geom_df,
@@ -66,7 +56,6 @@ def test_scaling_matches_per_eps2():
         separation_pass=separation_pass,
     )
 
-    # Scaling-mode result (HNLCalc once at eps2_ref)
     random.seed(123)
     Ue2, Umu2, Utau2 = couplings_from_eps2(eps2_ref, benchmark)
     model = HNLModel(mass_GeV=mass, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
@@ -95,6 +84,5 @@ def test_scaling_matches_per_eps2():
 
 
 if __name__ == "__main__":
-    # Allow running as a standalone script without pytest.
     test_scaling_matches_per_eps2()
     print("OK: scaling matches per-eps2 for single test point.")

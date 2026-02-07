@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Check HNLCalc scaling with eps2 for fixed flavour ratios.
-
-Theory: For fixed benchmark (flavour ratios),
-  - ctau0 scales as 1/eps2
-  - production BRs scale as eps2
-
-This script evaluates those relations numerically for chosen masses,
-flavours, and eps2 points using the local HNLCalc wrapper.
-"""
 
 from __future__ import annotations
 
