@@ -53,7 +53,7 @@ mkdir -p output/images && cd money_plot && conda run -n llpatcolliders python pl
 │   └── madgraph_production/      # EW production (m ≥ 5 GeV)
 │       └── scripts/run_hnl_scan.py
 ├── analysis_pbc/                 # Limit calculation pipeline
-│   ├── config/                   # Cross-sections (σ_K, σ_D, σ_B, σ_W, σ_Z)
+│   ├── config/                   # Cross-sections (σ_K, σ_D, σ_B, σ_Bc, σ_W, σ_Z)
 │   ├── decay/                    # HNL decay simulation (REQUIRED)
 │   │   ├── decay_detector.py     # Decay sampling + track separation
 │   │   ├── rhn_decay_library.py  # MATHUSLA decay file loader
@@ -77,9 +77,12 @@ mkdir -p output/images && cd money_plot && conda run -n llpatcolliders python pl
 | Mass | Channel | Generator | Cross-section |
 |------|---------|-----------|---------------|
 | 0.2-0.5 GeV | K → ℓN | Pythia | σ(K⁺) ≈ 5×10¹⁰ pb |
-| 0.5-2 GeV | D → ℓN | Pythia | σ(D⁰) ≈ 3×10¹⁰ pb |
-| 2-5 GeV | B → ℓN | Pythia | σ(B⁰) ≈ 4×10⁸ pb |
+| 0.5-2 GeV | D → ℓN | Pythia | σ(D⁰) ≈ 2.8×10¹⁰ pb |
+| 2-5 GeV | B → ℓN | Pythia | σ(B⁰) ≈ 3.96×10⁸ pb |
+| 2-6 GeV | Bc → ℓN | Pythia (hardBc) | σ(Bc) ≈ 9×10⁵ pb |
 | 5-80 GeV | W/Z → ℓN | MadGraph | σ(W) ≈ 2×10⁸ pb |
+
+Cross-sections use FONLL NLO+NLL normalization (σ_cc=23.6 mb, σ_bb=495 μb, σ_Bc=0.9 μb).
 
 ### Detector
 
@@ -135,7 +138,7 @@ event,weight,hnl_id,parent_pdg,pt,eta,phi,p,E,mass,prod_x_mm,prod_y_mm,prod_z_mm
 ```
 
 **Key columns for analysis:**
-- `parent_pdg`: Parent particle (511=B⁰, 521=B±, 24=W±, etc.)
+- `parent_pdg`: Parent particle (511=B⁰, 521=B±, 541=Bc⁺, 24=W±, etc.)
 - `p`, `mass`: For boost factor β γ = p/m
 - `eta`, `phi`: For ray-tracing trajectory
 - `weight`: Relative MC weight (typically 1.0)
@@ -348,8 +351,15 @@ Examples (post-combine):
 - `kaon` (m < 0.5 GeV) — electron/muon only
 - `charm` (0.5-2 GeV) — all flavours; tau uses charm even at m < 0.5 GeV
 - `beauty` (2-5 GeV) — all flavours
+- `Bc` (2-6 GeV) — Bc meson production (qcdMode=hardBc)
 - `ew` (≥ 5 GeV) — all flavours
 - `combined` (multiple regimes merged)
+
+**QCD modes** (for transverse detector searches like MATHUSLA/CODEX-b):
+- `auto` — standard regime-based card selection (default)
+- `hardBc` — Bc production via gg→bb̄/qq̄→bb̄ with pTHatMin=15 GeV
+- `hardccbar` — Hard cc̄ with pTHatMin cut (default 10 GeV) for high-pT D mesons
+- `hardbbbar` — Hard bb̄ with pTHatMin cut (default 10 GeV) for high-pT B mesons
 
 **Tau modes:**
 - `direct`: B/Ds → τN (all masses)
@@ -365,6 +375,19 @@ Additional small wiggles can come from discrete decay-file mass points and the 1
 ---
 
 ## Production Tips
+
+### CLI Reference
+```bash
+./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin]
+#   mode:     direct (default), fromTau (tau only)
+#   qcdMode:  auto (default), hardBc, hardccbar, hardbbbar
+#   pTHatMin: override pTHat minimum in GeV (default: mode-dependent)
+
+# Examples:
+./main_hnl_production 4.0 muon 500000 direct hardBc       # Bc production
+./main_hnl_production 2.0 muon 100000 direct hardccbar 10  # Hard cc̄, pTHat>10
+./main_hnl_production 3.0 muon 100000 direct hardbbbar 15  # Hard bb̄, pTHat>15
+```
 
 ### Parallel Execution
 ```bash
@@ -412,5 +435,5 @@ awk -F',' 'NR>1 {print $4}' output/csv/simulation/HNL_2p60GeV_muon_combined.csv 
 
 ---
 
-**Last Updated:** February 2026 (tau finer grid + fromTau documentation refresh)
+**Last Updated:** February 2026 (SOTA physics: Bc production, hard-QCD slicing, FONLL cross-sections)
 **Status:** ✅ Production-ready (decay simulation + track separation cuts)

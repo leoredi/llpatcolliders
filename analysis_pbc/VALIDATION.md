@@ -35,7 +35,7 @@ The PBC analysis pipeline has been thoroughly validated against standard LLP det
 - **|U|² scan:** 100 log-spaced points from 10⁻¹² to 10⁻²
 - **Signal threshold:** N_sig = 3 events (95% CL)
 - **Detector:** Tube at z = 22m above IP (CMS drainage gallery)
-- **Cross-sections:** PBC standard (σ_ccbar = 24 mb, σ_bbbar = 500 μb)
+- **Cross-sections:** FONLL NLO+NLL (σ_ccbar = 23.6 mb, σ_bbbar = 495 μb, σ_Bc = 0.9 μb)
 
 ---
 
@@ -66,13 +66,13 @@ Weight statistics for the 2.6 GeV muon sample:
 
 **Parent composition at 2.6 GeV:**
 ```
-PDG 521 (B⁺):   86382 events ( 28.8%)  σ = 4.00×10⁸ pb
-PDG 511 (B⁰):   86078 events ( 28.7%)  σ = 4.00×10⁸ pb
+PDG 521 (B⁺):   86382 events ( 28.8%)  σ = 3.96×10⁸ pb  (FONLL)
+PDG 511 (B⁰):   86078 events ( 28.7%)  σ = 3.96×10⁸ pb  (FONLL)
 PDG  24 (W±):   73191 events ( 24.4%)  σ = 2.00×10⁸ pb
 PDG  23 (Z ):   26809 events (  8.9%)  σ = 6.00×10⁷ pb
-PDG 531 (Bs):   19422 events (  6.5%)  σ = 1.00×10⁸ pb
-PDG 5122 (Λb):   7933 events (  2.6%)  σ = 1.00×10⁸ pb
-PDG 541 (Bc):     205 events (  0.1%)  σ = 1.00×10⁶ pb
+PDG 531 (Bs):   19422 events (  6.5%)  σ = 9.90×10⁷ pb  (FONLL)
+PDG 5122 (Λb):   7933 events (  2.6%)  σ = 9.90×10⁷ pb  (FONLL)
+PDG 541 (Bc):     205 events (  0.1%)  σ = 9.00×10⁵ pb  (FONLL/LHCb)
 ────────────────────────────────────────────────────
 Total:         300020 events (100%)
 ```
@@ -157,17 +157,18 @@ Boosted decay length:
 
 ### 5. Cross-Section Normalization ✅
 
-**External cross-sections (PBC standard):**
+**External cross-sections (FONLL NLO+NLL — SOTA normalization):**
 ```python
-# From config/production_xsecs.py
+# From config/production_xsecs.py (FONLL/LHCb 13/14 TeV reference)
 
-σ(ccbar) = 2.4×10¹⁰ pb  (24 mb)
-σ(bbbar) = 5.0×10⁸ pb   (500 μb)
+σ(ccbar) = 2.36×10¹⁰ pb  (23.6 mb)
+σ(bbbar) = 4.95×10⁸ pb   (495 μb)
+σ(Bc)    = 9.0×10⁵ pb     (0.9 μb)   # dedicated measurement, not from bbbar × frag
 
 # Fragmentation fractions applied:
-σ(B⁰) = σ(bbbar) × f_B0 × 2 = 5×10⁸ × 0.40 × 2 = 4×10⁸ pb
-σ(B⁺) = σ(bbbar) × f_Bp × 2 = 5×10⁸ × 0.40 × 2 = 4×10⁸ pb
-σ(Bs) = σ(bbbar) × f_Bs × 2 = 5×10⁸ × 0.10 × 2 = 1×10⁸ pb
+σ(B⁰) = σ(bbbar) × f_B0 × 2 = 4.95×10⁸ × 0.40 × 2 = 3.96×10⁸ pb
+σ(B⁺) = σ(bbbar) × f_Bp × 2 = 4.95×10⁸ × 0.40 × 2 = 3.96×10⁸ pb
+σ(Bs) = σ(bbbar) × f_Bs × 2 = 4.95×10⁸ × 0.10 × 2 = 9.9×10⁷ pb
 ```
 
 **Verification:**
@@ -246,7 +247,7 @@ N_sig = L × σ_parent × BR × ε_parent
 | Decay handling | Python (geometry+lifetime) | Standard | ✅ |
 | Per-parent counting | σ_D, σ_B, σ_K independent | ANUBIS/MATHUSLA | ✅ |
 | HNL physics | HNLCalc (arXiv:2405.07330) | Theory input | ✅ |
-| Cross-sections | PBC Report 2018-007 | Literature | ✅ |
+| Cross-sections | FONLL NLO+NLL (LHCb 13/14 TeV) | Literature | ✅ |
 | Weight semantics | Relative MC weights | Standard | ✅ |
 
 **Overall:** 7/7 components match PBC methodology.
@@ -289,7 +290,7 @@ N_sig = L × σ_parent × BR × ε_parent
 
 ### 3. Systematic Uncertainties
 **Not yet included:**
-- σ_parent uncertainties (~10-20% for QCD, ~5% for EW)
+- σ_parent uncertainties (~10-20% for QCD/FONLL, ~5% for EW)
 - Fragmentation fraction uncertainties (~5-10%)
 - Detector efficiency uncertainties (future work)
 

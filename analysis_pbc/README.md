@@ -87,10 +87,14 @@ The analysis follows a **three-stage** workflow matching PBC methodology (MATHUS
 **Location:** `../production/pythia_production/main_hnl_production.cc`
 
 - Pythia 8.315 generates pp collisions at √s = 14 TeV
-- Two regimes: Mesons (K/D/B, m < 5 GeV) and EW (W/Z, m ≥ 5 GeV)
+- Standard regimes: Mesons (K/D/B, m < 5 GeV) and EW (W/Z, m ≥ 5 GeV)
+- Bc meson production: `qcdMode=hardBc` fills the 5-6.3 GeV "intermediate gap"
+- Hard-QCD slicing: `qcdMode=hardccbar/hardbbbar` with `pTHatMin` enhances high-pT statistics for transverse detectors
 - Forced decays: BR(M→ℓN) = 1.0 for efficient sampling
 - HNL is **stable** in Pythia (`mayDecay = off`)
 - Output: CSV with kinematics, `parent_id`, and `tau_parent_id` (for tau-decay chains)
+
+**Full CLI:** `./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin]`
 
 **Tau Coupling (BC8) - Dual Production Modes:**
 
@@ -127,7 +131,7 @@ Both modes are generated separately and combined at analysis time. The `fromTau`
 - Scans 100 |U|² values (10⁻¹² to 10⁻²) to find N_sig = 3 crossings
 - Output: Exclusion range [|U|²_min, |U|²_max] at 95% CL
 
-**Key:** Cross-sections from `config/production_xsecs.py` (PBC standard).
+**Key:** Cross-sections from `config/production_xsecs.py` (FONLL NLO+NLL: σ_cc=23.6 mb, σ_bb=495 μb, σ_Bc=0.9 μb).
 
 ### Decay Channel Inputs (External)
 
@@ -168,7 +172,7 @@ analysis_pbc/
 ├── HNLCalc/                         # Cloned repository (arXiv:2405.07330)
 │   └── HNLCalc.py                  # 150+ production modes, 100+ decays
 ├── config/
-│   └── production_xsecs.py         # LHC cross-sections (σ_K, σ_D, σ_B, σ_W, σ_Z)
+│   └── production_xsecs.py         # LHC cross-sections (σ_K, σ_D, σ_B, σ_Bc, σ_W, σ_Z) — FONLL
 ├── models/
 │   └── hnl_model_hnlcalc.py        # Wrapper: HNLModel(mass, Ue2, Umu2, Utau2)
 ├── geometry/
@@ -227,9 +231,10 @@ Event #44: [B0→N, Bs→N, D+→N, Ds→N]
 - **Per-event logic:** Count as 1 event with P = 1 - ∏(1-P_i) → **Loses ~50% sensitivity**
 - **Per-parent logic:** Count as 4 independent channels → **Physically correct**
 
-Each parent has different production cross-section:
+Each parent has different production cross-section (FONLL):
 - σ(pp → D⁰) ≈ 2.8 × 10¹⁰ pb
-- σ(pp → B⁰) ≈ 4.0 × 10⁸ pb
+- σ(pp → B⁰) ≈ 3.96 × 10⁸ pb
+- σ(pp → Bc) ≈ 9.0 × 10⁵ pb
 
 Cannot assign single σ to multi-parent events!
 

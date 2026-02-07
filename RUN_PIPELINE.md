@@ -56,6 +56,32 @@ The script automatically runs both modes for tau, combining them later in analys
 
 **CPU Optimization**: The `fromTau` mode forces meson decays to τν (instead of relying on ~2-5% SM branching ratios), giving **~20-50x speedup** while physical BRs are applied via HNLCalc in analysis.
 
+### SOTA QCD Modes (Transverse Detectors)
+
+For transverse detector searches (MATHUSLA, CODEX-b), the standard MinBias/low-pT generation wastes CPU on events that never reach the detector. The `qcdMode` flag enables hard-QCD slicing with `pTHatMin` cuts:
+
+```fish
+# Bc meson production (fills the "intermediate gap" between B and W)
+./main_hnl_production 4.0 muon 500000 direct hardBc
+
+# Hard cc̄ with high-pT cut for transverse D-meson reach
+./main_hnl_production 1.5 muon 100000 direct hardccbar 10
+
+# Hard bb̄ with high-pT cut for transverse B-meson reach
+./main_hnl_production 3.0 muon 100000 direct hardbbbar 15
+```
+
+| QCD Mode | Process | Default pTHatMin | Use Case |
+|----------|---------|-----------------|----------|
+| `auto` | Standard regime-based | 0 GeV | Default (full spectrum) |
+| `hardBc` | gg→bb̄, qq̄→bb̄ | 15 GeV | Bc meson production |
+| `hardccbar` | Hard cc̄ | 10 GeV | High-pT D mesons |
+| `hardbbbar` | Hard bb̄ | 10 GeV | High-pT B mesons |
+
+**Full CLI:** `./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin]`
+
+**Cross-sections:** Updated to FONLL NLO+NLL: σ_cc=23.6 mb, σ_bb=495 μb, σ_Bc=0.9 μb (see `analysis_pbc/config/production_xsecs.py`).
+
 Monitor progress (separate terminal):
 ```fish
 watch -n 10 'ls ../../output/csv/simulation/HNL_*.csv | wc -l'
