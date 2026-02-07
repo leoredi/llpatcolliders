@@ -4,15 +4,25 @@
 // Publication-quality HNL production simulation for far-detector studies.
 // Follows methodology of MATHUSLA, ANUBIS, and Physics Beyond Colliders.
 //
-// Usage: ./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode]
+// Usage: ./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin]
 //   flavor: electron, muon, tau (PBC benchmarks BC6/BC7/BC8)
 //   mode: 'direct' (default) or 'fromTau' (tau coupling only)
+//   qcdMode: 'auto' (default), 'hardBc', 'hardccbar', 'hardbbbar'
+//   pTHatMin: override pTHat minimum in GeV (default: mode-dependent)
 //
 // Production modes (for maximum tau coupling reach):
 //   MODE A ("direct"):  B/Ds/W → τ N     (mixing at meson/W vertex)
 //   MODE B ("fromTau"): B/Ds/W → τ ν, τ → N X  (mixing at tau decay)
 //   → Both modes are O(U_tau²), combine in analysis for maximum sensitivity
 //   → Electron and muon use 'direct' mode only
+//
+// SOTA QCD modes (for transverse detector searches):
+//   qcdMode = "auto":      Standard regime-based card selection (default)
+//   qcdMode = "hardBc":    Bc production via gg→bb̄/qq̄→bb̄, pTHatMin=15 GeV
+//   qcdMode = "hardccbar": Hard cc̄ with pTHatMin cut for high-pT D mesons
+//   qcdMode = "hardbbbar": Hard bb̄ with pTHatMin cut for high-pT B mesons
+//   → These modes enhance statistics in the kinematic region relevant for
+//     transverse detectors (MATHUSLA, CODEX-b)
 //
 // Output: CSV file with HNL 4-vectors and parent information
 //
@@ -734,20 +744,30 @@ int main(int argc, char* argv[]) {
     // -----------------------------------------------------------------------
 
     if (argc < 3) {
-        std::cout << "Usage: " << argv[0] << " <mass_GeV> <flavor> [nEvents] [mode]" << std::endl;
-        std::cout << "  mass_GeV: HNL mass in GeV" << std::endl;
-        std::cout << "  flavor: electron, muon, tau (PBC benchmark BC6/7/8)" << std::endl;
-        std::cout << "  nEvents: optional, default 100000" << std::endl;
-        std::cout << "  mode: optional, 'direct' (default) or 'fromTau' (tau only)" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin]" << std::endl;
+        std::cout << "  mass_GeV:  HNL mass in GeV" << std::endl;
+        std::cout << "  flavor:    electron, muon, tau (PBC benchmark BC6/7/8)" << std::endl;
+        std::cout << "  nEvents:   optional, default 100000" << std::endl;
+        std::cout << "  mode:      optional, 'direct' (default) or 'fromTau' (tau only)" << std::endl;
+        std::cout << "  qcdMode:   optional QCD production mode (default: auto)" << std::endl;
+        std::cout << "  pTHatMin:  optional pTHat minimum in GeV (default: mode-dependent)" << std::endl;
         std::cout << "\nProduction modes (tau coupling only):" << std::endl;
         std::cout << "  direct:  B/Ds/W → τ N  (mixing at meson/W vertex)" << std::endl;
         std::cout << "  fromTau: B/Ds/W → τ ν, then τ → N X  (mixing at tau decay)" << std::endl;
         std::cout << "  → Both modes are O(U_tau²), combine in analysis for maximum reach" << std::endl;
+        std::cout << "\nQCD modes (SOTA for transverse detectors):" << std::endl;
+        std::cout << "  auto:      Standard regime-based card selection (default)" << std::endl;
+        std::cout << "  hardBc:    Bc production via gg→bb̄/qq̄→bb̄, pTHatMin=15 GeV" << std::endl;
+        std::cout << "  hardccbar: Hard cc̄ with pTHatMin (default 10 GeV)" << std::endl;
+        std::cout << "  hardbbbar: Hard bb̄ with pTHatMin (default 10 GeV)" << std::endl;
         std::cout << "\nExamples:" << std::endl;
-        std::cout << "  " << argv[0] << " 0.3 muon              # 300 MeV muon-coupled" << std::endl;
-        std::cout << "  " << argv[0] << " 2.0 electron          # 2 GeV electron-coupled" << std::endl;
-        std::cout << "  " << argv[0] << " 3.0 tau 100000 direct # 3 GeV tau, direct production" << std::endl;
-        std::cout << "  " << argv[0] << " 3.0 tau 100000 fromTau # 3 GeV tau, from tau decay" << std::endl;
+        std::cout << "  " << argv[0] << " 0.3 muon                            # 300 MeV muon-coupled" << std::endl;
+        std::cout << "  " << argv[0] << " 2.0 electron                        # 2 GeV electron-coupled" << std::endl;
+        std::cout << "  " << argv[0] << " 3.0 tau 100000 direct               # 3 GeV tau, direct" << std::endl;
+        std::cout << "  " << argv[0] << " 3.0 tau 100000 fromTau              # 3 GeV tau, from tau" << std::endl;
+        std::cout << "  " << argv[0] << " 4.0 muon 500000 direct hardBc       # Bc production mode" << std::endl;
+        std::cout << "  " << argv[0] << " 2.0 muon 100000 direct hardccbar 10 # Hard cc̄, pTHat>10" << std::endl;
+        std::cout << "  " << argv[0] << " 3.0 muon 100000 direct hardbbbar 15 # Hard bb̄, pTHat>15" << std::endl;
         return 1;
     }
 
@@ -755,11 +775,21 @@ int main(int argc, char* argv[]) {
     std::string flavor = argv[2];
     int nEvents = (argc >= 4) ? std::stoi(argv[3]) : 100000;
     std::string productionMode = (argc >= 5) ? argv[4] : "direct";
+    std::string qcdMode = (argc >= 6) ? argv[5] : "auto";
+    double pTHatMinUser = (argc >= 7) ? std::stod(argv[6]) : -1.0;
 
     // Validate production mode
     if (productionMode != "direct" && productionMode != "fromTau") {
         std::cerr << "Error: Invalid production mode '" << productionMode << "'" << std::endl;
         std::cerr << "Must be 'direct' or 'fromTau'" << std::endl;
+        return 1;
+    }
+
+    // Validate QCD mode
+    if (qcdMode != "auto" && qcdMode != "hardBc" &&
+        qcdMode != "hardccbar" && qcdMode != "hardbbbar") {
+        std::cerr << "Error: Invalid QCD mode '" << qcdMode << "'" << std::endl;
+        std::cerr << "Must be 'auto', 'hardBc', 'hardccbar', or 'hardbbbar'" << std::endl;
         return 1;
     }
 
@@ -794,6 +824,23 @@ int main(int argc, char* argv[]) {
     // Determine production regime (tau uses charm/beauty, not kaon)
     std::string regime = getProductionRegime(mHNL, flavorLabel);
 
+    // Override regime for specific QCD modes
+    if (qcdMode == "hardBc") {
+        regime = "Bc";
+    } else if (qcdMode == "hardccbar") {
+        regime = "charm";
+    } else if (qcdMode == "hardbbbar") {
+        regime = "beauty";
+    }
+
+    // Determine effective pTHatMin
+    double effectivePTHatMin = 0.0;
+    if (qcdMode == "hardBc") {
+        effectivePTHatMin = (pTHatMinUser > 0.0) ? pTHatMinUser : 15.0;
+    } else if (qcdMode == "hardccbar" || qcdMode == "hardbbbar") {
+        effectivePTHatMin = (pTHatMinUser > 0.0) ? pTHatMinUser : 10.0;
+    }
+
     std::cout << "============================================" << std::endl;
     std::cout << "HNL Production Simulation" << std::endl;
     std::cout << "============================================" << std::endl;
@@ -802,6 +849,10 @@ int main(int argc, char* argv[]) {
     std::cout << "Production mode: " << regime << std::endl;
     if (flavorLabel == "tau") {
         std::cout << "Tau mode:        " << productionMode << std::endl;
+    }
+    if (qcdMode != "auto") {
+        std::cout << "QCD mode:        " << qcdMode << std::endl;
+        std::cout << "pTHatMin:        " << effectivePTHatMin << " GeV" << std::endl;
     }
     std::cout << "Events:          " << nEvents << std::endl;
     std::cout << "============================================\n" << std::endl;
@@ -814,7 +865,9 @@ int main(int argc, char* argv[]) {
 
     // Choose appropriate card based on regime
     std::string cardName;
-    if (regime == "kaon") {
+    if (regime == "Bc") {
+        cardName = "hnl_Bc.cmnd";
+    } else if (regime == "kaon") {
         cardName = "hnl_Kaon.cmnd";
     } else if (regime == "charm") {
         cardName = "hnl_Dmeson.cmnd";
@@ -844,7 +897,41 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::cout << "Using card file: " << cardFile << std::endl;
-    
+
+    // -----------------------------------------------------------------------
+    // Apply QCD mode overrides (pTHatMin for hard-QCD slicing)
+    // -----------------------------------------------------------------------
+    // For transverse detectors (MATHUSLA, CODEX-b), the relevant kinematic
+    // region is high-pT. Standard MinBias/HardQCD with pTHatMin=0 wastes
+    // CPU on low-pT events that never reach the detector. Applying a
+    // pTHatMin cut enhances statistics in the relevant phase space.
+    // -----------------------------------------------------------------------
+
+    if (qcdMode == "hardccbar") {
+        // Override: force HardQCD:hardccbar with pTHatMin cut
+        pythia.readString("SoftQCD:all = off");
+        pythia.readString("HardQCD:all = off");
+        pythia.readString("HardQCD:hardccbar = on");
+        pythia.readString("PhaseSpace:pTHatMin = " + std::to_string(effectivePTHatMin));
+        std::cout << "QCD override: HardQCD:hardccbar with pTHatMin = "
+                  << effectivePTHatMin << " GeV" << std::endl;
+    } else if (qcdMode == "hardbbbar") {
+        // Override: force HardQCD:hardbbbar with pTHatMin cut
+        pythia.readString("SoftQCD:all = off");
+        pythia.readString("HardQCD:all = off");
+        pythia.readString("HardQCD:hardbbbar = on");
+        pythia.readString("PhaseSpace:pTHatMin = " + std::to_string(effectivePTHatMin));
+        std::cout << "QCD override: HardQCD:hardbbbar with pTHatMin = "
+                  << effectivePTHatMin << " GeV" << std::endl;
+    } else if (qcdMode == "hardBc") {
+        // Bc card already sets gg2bbbar + qqbar2bbbar + pTHatMin=15
+        // Apply user override if provided
+        if (pTHatMinUser > 0.0) {
+            pythia.readString("PhaseSpace:pTHatMin = " + std::to_string(pTHatMinUser));
+            std::cout << "Bc mode: pTHatMin overridden to " << pTHatMinUser << " GeV" << std::endl;
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Define HNL particle
     // -----------------------------------------------------------------------
@@ -919,6 +1006,14 @@ int main(int argc, char* argv[]) {
         outFileName << "_" << productionMode;
     }
 
+    // For non-auto QCD modes, include mode and pTHatMin in filename
+    if (qcdMode != "auto") {
+        outFileName << "_" << qcdMode;
+        if (effectivePTHatMin > 0.0) {
+            outFileName << "_pTHat" << static_cast<int>(effectivePTHatMin);
+        }
+    }
+
     outFileName << ".csv";
     
     std::ofstream outFile(outFileName.str());
@@ -937,21 +1032,33 @@ int main(int argc, char* argv[]) {
     
     int nHNLfound = 0;
     int nEventsProcessed = 0;
-    
+    int nBcFiltered = 0;  // Count HNLs rejected by Bc parent filter
+
+    // In hardBc mode, only accept HNLs from Bc± (541) parents
+    const bool filterBcParent = (qcdMode == "hardBc");
+
     for (int iEvent = 0; iEvent < nEvents; ++iEvent) {
         if (!pythia.next()) continue;
         nEventsProcessed++;
-        
+
         double weight = pythia.info.weight();
-        
+
         // Search for HNL in the event
         for (int i = 0; i < pythia.event.size(); ++i) {
             const Particle& p = pythia.event[i];
-            
+
             if (std::abs(p.id()) != HNL_ID) continue;
-            
+
             // Find parent
             int parentPdg = findPhysicalParent(pythia.event, i, HNL_ID);
+
+            // In Bc mode, only keep HNLs from Bc± parents (PDG 541)
+            // Other B-meson parents (B+, B0, Bs) are handled by the
+            // standard beauty mode with their own normalization.
+            if (filterBcParent && std::abs(parentPdg) != 541) {
+                nBcFiltered++;
+                continue;
+            }
             int tauParentId = 0;
             if (std::abs(parentPdg) == 15) {
                 int iTop = pythia.event[i].iTopCopy();
@@ -1021,7 +1128,14 @@ int main(int argc, char* argv[]) {
     std::cout << "============================================" << std::endl;
     std::cout << "Events generated:  " << nEventsProcessed << std::endl;
     std::cout << "HNLs found:        " << nHNLfound << std::endl;
+    if (filterBcParent) {
+        std::cout << "Bc-filtered out:   " << nBcFiltered << " (non-Bc parents rejected)" << std::endl;
+    }
     std::cout << "Efficiency:        " << (100.0 * nHNLfound / nEventsProcessed) << "%" << std::endl;
+    if (qcdMode != "auto") {
+        std::cout << "QCD mode:          " << qcdMode << std::endl;
+        std::cout << "pTHatMin:          " << effectivePTHatMin << " GeV" << std::endl;
+    }
     std::cout << "Output file:       " << outFileName.str() << std::endl;
     std::cout << "============================================" << std::endl;
     

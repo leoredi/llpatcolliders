@@ -1,0 +1,79 @@
+! ==========================================================================
+! HNL Production from Bc meson decays (SOTA: "Intermediate Gap" filler)
+! For HNL masses: 2 GeV < m_N < 6.3 GeV (Bc mass ~ 6.275 GeV)
+!
+! Physics: pp -> bb̄ X (hard QCD, high-pT), b -> Bc via fragmentation
+!   - Bc± -> ℓ N (2-body leptonic)
+!
+! Strategy: Bc production in MinBias is negligible (f(b->Bc) ~ 0.1%).
+! Use HardQCD gg->bb̄ and qq̄->bb̄ with PhaseSpace:pTHatMin = 15 GeV
+! to enhance the high-pT tail relevant for transverse detectors
+! (MATHUSLA, CODEX-b). This accesses the kinematic region where
+! Bc mesons have enough boost to reach far detectors.
+!
+! Reference: arXiv:1805.08567, MATHUSLA Physics Case arXiv:1811.00927
+! ==========================================================================
+
+! -------------------------------------------------------------------------
+! 1) Beam Configuration: HL-LHC at 14 TeV
+! -------------------------------------------------------------------------
+Beams:idA = 2212                   ! proton
+Beams:idB = 2212                   ! proton
+Beams:eCM = 14000.                 ! 14 TeV center-of-mass
+
+! -------------------------------------------------------------------------
+! 2) Tune: Monash 2013 (recommended for LHC)
+! -------------------------------------------------------------------------
+Tune:pp = 14                       ! Monash 2013
+Tune:ee = 7                        ! Monash 2013
+
+! -------------------------------------------------------------------------
+! 3) Process Selection: Hard QCD bb̄ (specific subprocesses)
+! -------------------------------------------------------------------------
+! Turn off all soft QCD
+SoftQCD:all = off
+
+! Enable specific hard QCD bb̄ subprocesses
+! (equivalent to HardQCD:hardbbbar but listed explicitly for clarity)
+HardQCD:all = off
+HardQCD:gg2bbbar = on              ! gg -> bb̄
+HardQCD:qqbar2bbbar = on           ! qq̄ -> bb̄
+
+! No charm or electroweak
+HardQCD:hardccbar = off
+WeakSingleBoson:all = off
+
+! -------------------------------------------------------------------------
+! 4) Phase Space: High-pT cut for transverse detector relevance
+! -------------------------------------------------------------------------
+! pTHatMin = 15 GeV selects the high-pT tail where Bc mesons have
+! enough transverse momentum to reach detectors like MATHUSLA/CODEX-b.
+! This is the SOTA strategy for Bc production studies.
+PhaseSpace:pTHatMin = 15.0
+
+! -------------------------------------------------------------------------
+! 5) HNL Definition
+! -------------------------------------------------------------------------
+! NOTE: HNL particle (PDG ID 9900012) is defined in C++ code, not here.
+! This keeps mass/lifetime as single source of truth.
+
+! -------------------------------------------------------------------------
+! 6) Output Control
+! -------------------------------------------------------------------------
+Init:showChangedSettings = on
+Init:showChangedParticleData = on
+Init:showAllSettings = off
+Init:showAllParticleData = off
+
+Next:numberCount = 10000
+Next:numberShowInfo = 1
+Next:numberShowProcess = 1
+Next:numberShowEvent = 1
+
+Stat:showPartonLevel = off
+
+! -------------------------------------------------------------------------
+! 7) Run Configuration (overridden from C++)
+! -------------------------------------------------------------------------
+! Need high statistics due to tiny Bc fragmentation fraction (~0.1%)
+Main:numberOfEvents = 500000
