@@ -1,6 +1,6 @@
 # Agent Instructions (Claude)
 
-Start by reading `AGENTS.md` and follow it as the canonical repository policy.
+Start by reading `README.md` and `AGENTS.md` and follow them as the canonical repository policy.
 
 Then use:
 - `PHYSICS.md` for physics assumptions and formulas

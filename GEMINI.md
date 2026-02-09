@@ -1,6 +1,6 @@
 # Agent Instructions (Gemini)
 
-Start by reading `AGENTS.md` and follow it as the canonical repository policy.
+Start by reading `AGENTS.md` and `README.md` and follow them as the canonical repository policy.
 
 Then use:
 - `PHYSICS.md` for physics assumptions and formulas

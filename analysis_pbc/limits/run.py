@@ -4,6 +4,7 @@ import sys
 import re
 import os
 import io
+import json
 import tempfile
 import contextlib
 from pathlib import Path
@@ -38,6 +39,39 @@ def _count(timing: dict | None, key: str, delta: int = 1) -> None:
     if timing is None:
         return
     timing[key] = timing.get(key, 0) + delta
+
+
+def _load_sim_metadata(sim_csv: Path) -> dict:
+    meta_path = Path(f"{sim_csv}.meta.json")
+    if not meta_path.exists():
+        return {}
+    try:
+        with meta_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception as exc:
+        print(f"[WARN] Failed to read metadata sidecar {meta_path.name}: {exc}")
+    return {}
+
+
+def _attach_sim_metadata(geom_df: pd.DataFrame, sim_csv: Path) -> pd.DataFrame:
+    if all(col in geom_df.columns for col in ("qcd_mode", "sigma_gen_pb", "pthat_min_gev")):
+        return geom_df
+
+    meta = _load_sim_metadata(sim_csv)
+    if not meta:
+        return geom_df
+
+    if "qcd_mode" not in geom_df.columns:
+        geom_df["qcd_mode"] = str(meta.get("qcd_mode", "auto"))
+    if "sigma_gen_pb" not in geom_df.columns:
+        sigma_pb = pd.to_numeric(pd.Series([meta.get("sigma_gen_pb")]), errors="coerce").iloc[0]
+        geom_df["sigma_gen_pb"] = float(sigma_pb) if np.isfinite(sigma_pb) else np.nan
+    if "pthat_min_gev" not in geom_df.columns:
+        pthat = pd.to_numeric(pd.Series([meta.get("pthat_min_gev")]), errors="coerce").iloc[0]
+        geom_df["pthat_min_gev"] = float(pthat) if np.isfinite(pthat) else np.nan
+    return geom_df
 
 
 def scan_single_mass(
@@ -123,6 +157,8 @@ def _scan_single_mass_impl(
                     geom_df.to_csv(tmp.name, index=False)
                 os.replace(tmp.name, geom_csv)
 
+        geom_df = _attach_sim_metadata(geom_df, sim_csv)
+
         n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
         if not quiet:
             print(f"  Loaded {len(geom_df)} HNLs from {regime}, {n_hits} hit detector")
@@ -158,7 +194,7 @@ def _scan_single_mass_impl(
     ctau0_ref = None
     br_ref = None
     if not hnlcalc_per_eps2:
-        from models.hnl_model_hnlcalc import HNLModel
+        from hnl_models.hnl_model_hnlcalc import HNLModel
         with _time_block(timing, "time_hnlcalc_ref_s"):
             Ue2, Umu2, Utau2 = couplings_from_eps2(eps2_ref, benchmark)
             model = HNLModel(mass_GeV=mass_val, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
@@ -300,8 +336,9 @@ def run_flavour(
 
     pattern = re.compile(
         rf"^HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_"
-        r"((?:kaon|charm|beauty|ew|combined)(?:_ff)?)"
+        r"((?:kaon|charm|beauty|Bc|ew|combined)(?:_ff)?)"
         r"(?:_(direct|fromTau))?"
+        r"(?:_(hardBc|hardccbar|hardbbbar)(?:_pTHat([0-9]+(?:p[0-9]+)?))?)?"
         r"\.csv$"
     )
 
@@ -320,30 +357,64 @@ def run_flavour(
         mass_val = float(mass_str.replace("p", "."))
         regime_token = match.group(2)
         mode = match.group(3)
+        qcd_mode = match.group(4) or "auto"
+        pthat_token = match.group(5)
+        pthat_min = float(pthat_token.replace("p", ".")) if pthat_token else None
 
         is_ff = regime_token.endswith("_ff")
         base_regime = regime_token.replace("_ff", "")
 
-        files.append((mass_val, mass_str, base_regime, mode, is_ff, f))
+        files.append((mass_val, mass_str, base_regime, mode, is_ff, qcd_mode, pthat_min, f))
 
     files_by_mass = {}
-    for mass_val, mass_str, base_regime, mode, is_ff, path in files:
+    for mass_val, mass_str, base_regime, mode, is_ff, qcd_mode, pthat_min, path in files:
         key = (mass_val, mass_str)
-        files_by_mass.setdefault(key, []).append((base_regime, mode, is_ff, path))
+        files_by_mass.setdefault(key, []).append((base_regime, mode, is_ff, qcd_mode, pthat_min, path))
 
-    def _label(base_regime: str, mode: str | None, is_ff: bool) -> str:
+    def _label(
+        base_regime: str,
+        mode: str | None,
+        is_ff: bool,
+        qcd_mode: str,
+        pthat_min: float | None,
+    ) -> str:
         label = base_regime
         if is_ff:
             label += "_ff"
         if mode:
             label += f"_{mode}"
+        if qcd_mode != "auto":
+            label += f"_{qcd_mode}"
+            if pthat_min is not None:
+                pthat_text = f"{pthat_min:g}".replace(".", "p")
+                label += f"_pTHat{pthat_text}"
         return label
 
+    def _variant_priority(
+        base_regime: str,
+        is_ff: bool,
+        qcd_mode: str,
+        pthat_min: float | None,
+    ) -> tuple[int, int, float]:
+        # Prefer hard-QCD sliced samples for heavy-flavor regimes when available.
+        if base_regime == "charm" and qcd_mode == "hardccbar":
+            qcd_priority = 3
+        elif base_regime in {"beauty", "Bc"} and qcd_mode in {"hardbbbar", "hardBc"}:
+            qcd_priority = 3
+        elif qcd_mode != "auto":
+            qcd_priority = 2
+        else:
+            qcd_priority = 1
+        ff_priority = 1 if is_ff else 0
+        pthat_priority = float(pthat_min) if pthat_min is not None else -1.0
+        return (qcd_priority, ff_priority, pthat_priority)
+
     def _sort_key(item):
-        base_regime, mode, _, _ = item
-        regime_order = {"kaon": 0, "charm": 1, "beauty": 2, "ew": 3, "combined": 4}
+        base_regime, mode, is_ff, qcd_mode, pthat_min, _ = item
+        regime_order = {"kaon": 0, "charm": 1, "beauty": 2, "Bc": 3, "ew": 4, "combined": 5}
         mode_order = {None: 0, "direct": 1, "fromTau": 2}
-        return (regime_order.get(base_regime, 99), mode_order.get(mode, 99), base_regime, mode or "")
+        variant_order = _variant_priority(base_regime, is_ff, qcd_mode, pthat_min)
+        return (regime_order.get(base_regime, 99), mode_order.get(mode, 99), base_regime, mode or "", variant_order)
 
     selected_by_mass = {}
     for key, items in files_by_mass.items():
@@ -352,13 +423,18 @@ def run_flavour(
             warn_for_key = abs(key[0] - mass_filter) <= MASS_FILTER_TOL
         combined = [it for it in items if it[0] == "combined"]
         if combined:
-            chosen = next((it for it in combined if it[2]), combined[0])
+            chosen = max(
+                combined,
+                key=lambda it: _variant_priority(it[0], it[2], it[3], it[4]),
+            )
 
-            selected = [(chosen[3], _label(chosen[0], chosen[1], chosen[2]))]
+            selected = [(chosen[5], _label(chosen[0], chosen[1], chosen[2], chosen[3], chosen[4]))]
 
             if warn_for_key and len(items) > 1:
                 other_names = ", ".join(
-                    _label(r, m, ff) for r, m, ff, _ in sorted(items, key=_sort_key) if r != "combined"
+                    _label(r, m, ff, qm, pt)
+                    for r, m, ff, qm, pt, _ in sorted(items, key=_sort_key)
+                    if r != "combined"
                 )
                 print(
                     f"[WARN] m={key[0]:.2f} {flavour}: found combined + other files ({other_names}); "
@@ -369,13 +445,22 @@ def run_flavour(
             continue
 
         chosen = {}
-        for base_regime, mode, is_ff, path in items:
+        for base_regime, mode, is_ff, qcd_mode, pthat_min, path in items:
             k2 = (base_regime, mode)
-            if k2 not in chosen or is_ff:
-                chosen[k2] = (base_regime, mode, is_ff, path)
+            if k2 not in chosen:
+                chosen[k2] = (base_regime, mode, is_ff, qcd_mode, pthat_min, path)
+                continue
+            current = chosen[k2]
+            new_priority = _variant_priority(base_regime, is_ff, qcd_mode, pthat_min)
+            old_priority = _variant_priority(current[0], current[2], current[3], current[4])
+            if new_priority > old_priority:
+                chosen[k2] = (base_regime, mode, is_ff, qcd_mode, pthat_min, path)
 
         selected = [v for _, v in sorted(chosen.items(), key=lambda kv: _sort_key(kv[1]))]
-        selected_by_mass[key] = [(path, _label(base_regime, mode, is_ff)) for base_regime, mode, is_ff, path in selected]
+        selected_by_mass[key] = [
+            (path, _label(base_regime, mode, is_ff, qcd_mode, pthat_min))
+            for base_regime, mode, is_ff, qcd_mode, pthat_min, path in selected
+        ]
 
     files_by_mass = selected_by_mass
 

@@ -6,16 +6,18 @@ FLAVOUR="${1:-all}"
 FLAVOUR=$(echo "$FLAVOUR" | tr '[:upper:]' '[:lower:]')
 MODE="${2:-both}"
 MODE=$(echo "$MODE" | tr '[:upper:]' '[:lower:]')
+QCD_MODE_RAW="${3:-auto}"
+PTHAT_MIN="${4:-}"
 
 if [[ ! "$FLAVOUR" =~ ^(electron|muon|tau|all)$ ]]; then
     echo "Error: Invalid flavour '$FLAVOUR'"
-    echo "Usage: $0 [electron|muon|tau|all] [direct|fromTau|both]"
+    echo "Usage: $0 [electron|muon|tau|all] [direct|fromTau|both] [auto|hardBc|hardccbar|hardbbbar] [pTHatMin]"
     exit 1
 fi
 
 if [[ ! "$MODE" =~ ^(direct|fromtau|both)$ ]]; then
     echo "Error: Invalid mode '$MODE'"
-    echo "Usage: $0 [electron|muon|tau|all] [direct|fromTau|both]"
+    echo "Usage: $0 [electron|muon|tau|all] [direct|fromTau|both] [auto|hardBc|hardccbar|hardbbbar] [pTHatMin]"
     exit 1
 fi
 
@@ -25,10 +27,37 @@ if [[ "$MODE" == "fromtau" && "$FLAVOUR" != "tau" && "$FLAVOUR" != "all" ]]; the
     exit 1
 fi
 
+QCD_MODE_LOWER=$(echo "$QCD_MODE_RAW" | tr '[:upper:]' '[:lower:]')
+case "$QCD_MODE_LOWER" in
+    auto) QCD_MODE="auto" ;;
+    hardbc) QCD_MODE="hardBc" ;;
+    hardccbar) QCD_MODE="hardccbar" ;;
+    hardbbbar) QCD_MODE="hardbbbar" ;;
+    *)
+        echo "Error: Invalid qcd mode '$QCD_MODE_RAW'"
+        echo "Valid options: auto, hardBc, hardccbar, hardbbbar"
+        exit 1
+        ;;
+esac
+
+if [[ -n "$PTHAT_MIN" ]] && ! [[ "$PTHAT_MIN" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "Error: pTHatMin must be numeric, got '$PTHAT_MIN'"
+    exit 1
+fi
+
+if [[ "$QCD_MODE" == "auto" && -n "$PTHAT_MIN" ]]; then
+    echo "Error: pTHatMin is only valid with hard QCD modes (hardBc/hardccbar/hardbbbar)."
+    exit 1
+fi
+
 echo "============================================"
 echo "HNL Production - Parallel Execution"
 echo "Flavour: $FLAVOUR"
 echo "Mode: $MODE"
+echo "QCD mode: $QCD_MODE"
+if [[ -n "$PTHAT_MIN" ]]; then
+    echo "pTHatMin: $PTHAT_MIN GeV"
+fi
 echo "============================================"
 echo ""
 
@@ -55,6 +84,10 @@ LOGFILE="${LOG_DIR}/production_run_${TIMESTAMP}.log"
 echo "Configuration:" | tee "$LOGFILE"
 echo "  Events per mass: $NEVENTS" | tee -a "$LOGFILE"
 echo "  Parallel jobs: $MAX_PARALLEL" | tee -a "$LOGFILE"
+echo "  QCD mode: $QCD_MODE" | tee -a "$LOGFILE"
+if [[ -n "$PTHAT_MIN" ]]; then
+    echo "  pTHatMin: $PTHAT_MIN GeV" | tee -a "$LOGFILE"
+fi
 echo "  Output directory: $OUTPUT_DIR" | tee -a "$LOGFILE"
 echo "  Log file: $LOGFILE" | tee -a "$LOGFILE"
 echo ""
@@ -82,35 +115,147 @@ wait_for_slot() {
     done
 }
 
+mass_to_label() {
+    local mass="$1"
+    printf "%.2f" "$mass" | tr '.' 'p'
+}
+
+determine_regime() {
+    local mass="$1"
+    local flavour="$2"
+    local qcd_mode="$3"
+
+    if [[ "$qcd_mode" == "hardBc" ]]; then
+        echo "Bc"
+        return
+    fi
+    if [[ "$qcd_mode" == "hardccbar" ]]; then
+        echo "charm"
+        return
+    fi
+    if [[ "$qcd_mode" == "hardbbbar" ]]; then
+        echo "beauty"
+        return
+    fi
+
+    if [[ "$flavour" == "tau" ]]; then
+        if (( $(echo "$mass < 2.0" | bc -l) )); then
+            echo "charm"
+        else
+            echo "beauty"
+        fi
+        return
+    fi
+
+    if (( $(echo "$mass < 0.5" | bc -l) )); then
+        echo "kaon"
+    elif (( $(echo "$mass < 2.0" | bc -l) )); then
+        echo "charm"
+    else
+        echo "beauty"
+    fi
+}
+
+effective_pthat_min() {
+    local qcd_mode="$1"
+    local pthat_user="$2"
+
+    if [[ "$qcd_mode" == "hardBc" ]]; then
+        if [[ -n "$pthat_user" ]]; then
+            echo "$pthat_user"
+        else
+            echo "15.0"
+        fi
+        return
+    fi
+    if [[ "$qcd_mode" == "hardccbar" || "$qcd_mode" == "hardbbbar" ]]; then
+        if [[ -n "$pthat_user" ]]; then
+            echo "$pthat_user"
+        else
+            echo "10.0"
+        fi
+        return
+    fi
+}
+
+expected_output_csv() {
+    local mass="$1"
+    local flavour="$2"
+    local mode="$3"
+    local qcd_mode="$4"
+    local pthat_user="$5"
+
+    local mass_label
+    mass_label=$(mass_to_label "$mass")
+    local regime
+    regime=$(determine_regime "$mass" "$flavour" "$qcd_mode")
+
+    local name="HNL_${mass_label}GeV_${flavour}_${regime}"
+    if [[ "$flavour" == "tau" ]]; then
+        name+="_${mode}"
+    fi
+
+    if [[ "$qcd_mode" != "auto" ]]; then
+        local pthat_eff
+        pthat_eff=$(effective_pthat_min "$qcd_mode" "$pthat_user")
+        name+="_${qcd_mode}"
+        if [[ -n "$pthat_eff" ]]; then
+            local pthat_label
+            pthat_label=$(mass_to_label "$pthat_eff")
+            name+="_pTHat${pthat_label}"
+        fi
+    fi
+
+    echo "${name}.csv"
+}
+
 run_production_job() {
     local mass=$1
     local flavour=$2
     local mode=${3:-direct}
 
     local log_file="${LOG_DIR}/HNL_${mass}GeV_${flavour}_${mode}_${TIMESTAMP}.log"
-    local script_dir=$(pwd)
 
     {
         echo "[$(date +%H:%M:%S)] Starting: $mass GeV $flavour ($mode)"
 
+        local events=$NEVENTS
         if [ "$mode" = "fromTau" ]; then
-            ./main_hnl_production ${mass} ${flavour} $NEVENTS_FROMTAU fromTau 2>&1
-        else
-            ./main_hnl_production ${mass} ${flavour} $NEVENTS 2>&1
+            events=$NEVENTS_FROMTAU
         fi
+
+        local cmd=(./main_hnl_production "${mass}" "${flavour}" "${events}" "${mode}")
+        if [[ "$QCD_MODE" != "auto" || -n "$PTHAT_MIN" ]]; then
+            cmd+=("$QCD_MODE")
+            if [[ -n "$PTHAT_MIN" ]]; then
+                cmd+=("$PTHAT_MIN")
+            fi
+        fi
+        "${cmd[@]}" 2>&1
 
         local exit_code=$?
 
         if [ $exit_code -eq 0 ]; then
             sleep 0.5
-            local mass_label=$(printf "%.2f" "$mass" | tr '.' 'p')
-            local csv_file=$(ls HNL_${mass_label}GeV_${flavour}_*.csv 2>/dev/null | head -1)
+            local csv_file
+            csv_file=$(expected_output_csv "$mass" "$flavour" "$mode" "$QCD_MODE" "$PTHAT_MIN")
 
-            if [ -n "$csv_file" ]; then
+            if [ -f "$csv_file" ]; then
                 mv "$csv_file" "$OUTPUT_DIR/"
+                local meta_file="${csv_file}.meta.json"
+                if [ -f "$meta_file" ]; then
+                    mv "$meta_file" "$OUTPUT_DIR/"
+                fi
                 echo "[$(date +%H:%M:%S)] SUCCESS: $csv_file → simulation/"
             else
-                echo "[$(date +%H:%M:%S)] WARNING: CSV not found"
+                local mass_label
+                mass_label=$(mass_to_label "$mass")
+                local candidates
+                candidates=$(ls HNL_${mass_label}GeV_${flavour}_*.csv 2>/dev/null | tr '\n' ' ')
+                echo "[$(date +%H:%M:%S)] WARNING: Expected CSV not found: $csv_file"
+                if [ -n "$candidates" ]; then
+                    echo "[$(date +%H:%M:%S)] WARNING: Candidate files: $candidates"
+                fi
             fi
         else
             echo "[$(date +%H:%M:%S)] FAILED: $mass GeV $flavour (exit $exit_code)"

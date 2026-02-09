@@ -8,7 +8,7 @@ import pandas as pd
 
 from config.production_xsecs import get_parent_sigma_pb, get_parent_tau_br
 from decay.decay_detector import DecayCache, DecaySelection, compute_decay_acceptance, compute_separation_pass_static
-from models.hnl_model_hnlcalc import HNLModel
+from hnl_models.hnl_model_hnlcalc import HNLModel
 from limits.timing_utils import _time_block
 
 
@@ -20,6 +20,55 @@ def couplings_from_eps2(eps2: float, benchmark: str) -> Tuple[float, float, floa
     if benchmark == "001":
         return 0.0, 0.0, eps2
     raise ValueError(f"Unsupported benchmark: {benchmark} (use '100','010','001').")
+
+
+def _normalize_qcd_mode(series: pd.Series | None, n: int) -> np.ndarray:
+    if series is None:
+        return np.full(n, "auto", dtype=object)
+    mode = series.astype(str).str.strip()
+    mode = mode.replace({"": "auto", "nan": "auto", "None": "auto"})
+    return mode.to_numpy(dtype=object)
+
+
+def _normalize_sigma_gen_pb(series: pd.Series | None, n: int) -> np.ndarray:
+    if series is None:
+        return np.full(n, np.nan, dtype=float)
+    return pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+
+
+def _context_groups(qcd_mode: np.ndarray, sigma_gen_pb: np.ndarray) -> dict[tuple[str, str], np.ndarray]:
+    grouped: dict[tuple[str, str], list[int]] = {}
+    for idx, (mode_raw, sigma_raw) in enumerate(zip(qcd_mode, sigma_gen_pb)):
+        mode = str(mode_raw) if mode_raw is not None else "auto"
+        sigma_key = f"{float(sigma_raw):.12g}" if np.isfinite(sigma_raw) else "nan"
+        key = (mode, sigma_key)
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(idx)
+    return {k: np.array(v, dtype=int) for k, v in grouped.items()}
+
+
+def _resolve_parent_sigma_pb(
+    pid: int,
+    qcd_mode: str,
+    sigma_gen_pb: float,
+    missing_slice_sigma_modes: set[str],
+) -> float:
+    qcd_mode = qcd_mode or "auto"
+
+    if qcd_mode == "hardccbar":
+        if np.isfinite(sigma_gen_pb) and sigma_gen_pb > 0.0:
+            return get_parent_sigma_pb(pid, sigma_ccbar_pb=float(sigma_gen_pb))
+        missing_slice_sigma_modes.add(qcd_mode)
+        return get_parent_sigma_pb(pid)
+
+    if qcd_mode in {"hardbbbar", "hardBc"}:
+        if np.isfinite(sigma_gen_pb) and sigma_gen_pb > 0.0:
+            return get_parent_sigma_pb(pid, sigma_bbbar_pb=float(sigma_gen_pb))
+        missing_slice_sigma_modes.add(qcd_mode)
+        return get_parent_sigma_pb(pid)
+
+    return get_parent_sigma_pb(pid)
 
 
 def expected_signal_events(
@@ -78,6 +127,11 @@ def expected_signal_events(
     hits_tube = geom_df["hits_tube"].to_numpy(dtype=bool)
     entry = geom_df["entry_distance"].to_numpy(dtype=float)
     length = geom_df["path_length"].to_numpy(dtype=float)
+    qcd_mode = _normalize_qcd_mode(geom_df["qcd_mode"] if "qcd_mode" in geom_df.columns else None, len(geom_df))
+    sigma_gen_pb = _normalize_sigma_gen_pb(
+        geom_df["sigma_gen_pb"] if "sigma_gen_pb" in geom_df.columns else None,
+        len(geom_df),
+    )
 
     mask_valid = np.isfinite(parent_id)
     if not np.all(mask_valid):
@@ -87,6 +141,8 @@ def expected_signal_events(
         hits_tube = hits_tube[mask_valid]
         entry = entry[mask_valid]
         length = length[mask_valid]
+        qcd_mode = qcd_mode[mask_valid]
+        sigma_gen_pb = sigma_gen_pb[mask_valid]
 
     if len(parent_id) == 0:
         return 0.0
@@ -118,12 +174,16 @@ def expected_signal_events(
                 selection=selection,
                 decay_cache=decay_cache,
             )
+    if not np.all(mask_valid):
+        separation_pass = separation_pass[mask_valid]
     P_decay = P_decay * separation_pass.astype(float)
 
     parent_abs = np.abs(parent_id.astype(int))
     tau_parent_id = None
     if "tau_parent_id" in geom_df.columns:
         tau_parent_id = geom_df["tau_parent_id"].to_numpy(dtype=float)
+        if not np.all(mask_valid):
+            tau_parent_id = tau_parent_id[mask_valid]
         tau_parent_id = np.abs(np.nan_to_num(tau_parent_id, nan=0.0, posinf=0.0, neginf=0.0)).astype(int)
 
     if tau_parent_id is None:
@@ -149,6 +209,7 @@ def expected_signal_events(
     missing_br_pdgs = []
     missing_xsec_pdgs = []
     missing_tau_br_pdgs = []
+    missing_slice_sigma_modes: set[str] = set()
 
     with _time_block(timing, "time_parent_sum_s"):
         for pid in unique_parents:
@@ -159,20 +220,36 @@ def expected_signal_events(
                 missing_br_pdgs.append(int(pid))
                 continue
 
-            sigma_parent_pb = get_parent_sigma_pb(int(pid))
-            if sigma_parent_pb <= 0.0:
-                missing_xsec_pdgs.append(int(pid))
-                continue
-
             mask_parent = np.abs(parent_id) == pid
-            w = weights[mask_parent]
-            P = P_decay[mask_parent]
-            w_sum = np.sum(w)
-            if w_sum <= 0.0:
+            w_parent = weights[mask_parent]
+            P_parent = P_decay[mask_parent]
+            qcd_parent = qcd_mode[mask_parent]
+            sigma_parent_arr = sigma_gen_pb[mask_parent]
+
+            if len(w_parent) == 0:
                 continue
 
-            eff_parent = np.sum(w * P) / w_sum
-            total_expected += lumi_fb * (sigma_parent_pb * 1e3) * BR_parent * eff_parent
+            grouped = _context_groups(qcd_parent, sigma_parent_arr)
+            for (ctx_mode, sigma_key), local_idx in grouped.items():
+                sigma_val = float(sigma_key) if sigma_key != "nan" else np.nan
+                sigma_parent_pb = _resolve_parent_sigma_pb(
+                    int(pid),
+                    ctx_mode,
+                    sigma_val,
+                    missing_slice_sigma_modes,
+                )
+                if sigma_parent_pb <= 0.0:
+                    missing_xsec_pdgs.append(int(pid))
+                    continue
+
+                w = w_parent[local_idx]
+                P = P_parent[local_idx]
+                w_sum = np.sum(w)
+                if w_sum <= 0.0:
+                    continue
+
+                eff_parent = np.sum(w * P) / w_sum
+                total_expected += lumi_fb * (sigma_parent_pb * 1e3) * BR_parent * eff_parent
 
     if np.any(mask_from_tau):
         with _time_block(timing, "time_tau_parent_sum_s"):
@@ -190,20 +267,38 @@ def expected_signal_events(
                         missing_tau_br_pdgs.append(int(pid))
                         continue
 
-                    sigma_parent_pb = get_parent_sigma_pb(int(pid))
-                    if sigma_parent_pb <= 0.0:
-                        missing_xsec_pdgs.append(int(pid))
-                        continue
-
                     mask_parent = mask_from_tau & (tau_parent_id == pid)
-                    w = weights[mask_parent]
-                    P = P_decay[mask_parent]
-                    w_sum = np.sum(w)
-                    if w_sum <= 0.0:
+                    w_parent = weights[mask_parent]
+                    P_parent = P_decay[mask_parent]
+                    qcd_parent = qcd_mode[mask_parent]
+                    sigma_parent_arr = sigma_gen_pb[mask_parent]
+
+                    if len(w_parent) == 0:
                         continue
 
-                    eff_parent = np.sum(w * P) / w_sum
-                    total_expected += lumi_fb * (sigma_parent_pb * 1e3) * br_parent_to_tau * br_tau_to_N * eff_parent
+                    grouped = _context_groups(qcd_parent, sigma_parent_arr)
+                    for (ctx_mode, sigma_key), local_idx in grouped.items():
+                        sigma_val = float(sigma_key) if sigma_key != "nan" else np.nan
+                        sigma_parent_pb = _resolve_parent_sigma_pb(
+                            int(pid),
+                            ctx_mode,
+                            sigma_val,
+                            missing_slice_sigma_modes,
+                        )
+                        if sigma_parent_pb <= 0.0:
+                            missing_xsec_pdgs.append(int(pid))
+                            continue
+
+                        w = w_parent[local_idx]
+                        P = P_parent[local_idx]
+                        w_sum = np.sum(w)
+                        if w_sum <= 0.0:
+                            continue
+
+                        eff_parent = np.sum(w * P) / w_sum
+                        total_expected += (
+                            lumi_fb * (sigma_parent_pb * 1e3) * br_parent_to_tau * br_tau_to_N * eff_parent
+                        )
 
     if missing_br_pdgs and eps2 == 1e-12:
         n_lost = int(np.sum(np.isin(parent_id, missing_br_pdgs)))
@@ -227,6 +322,13 @@ def expected_signal_events(
             f"[WARN] Mass {mass_GeV:.2f} GeV: {len(missing_xsec_pdgs)} parent PDG(s) have no cross-section: {missing_xsec_pdgs}"
         )
         print(f"       → Discarding {n_lost} events (silent data loss)")
+
+    if missing_slice_sigma_modes and eps2 == 1e-12:
+        modes = ", ".join(sorted(missing_slice_sigma_modes))
+        print(
+            f"[WARN] Mass {mass_GeV:.2f} GeV: missing sigma_gen_pb metadata for hard-QCD mode(s): {modes}"
+        )
+        print("       → Fell back to inclusive FONLL normalization for those rows.")
 
     if dirac:
         total_expected *= 2.0
