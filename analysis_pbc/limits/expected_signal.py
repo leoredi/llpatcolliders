@@ -52,21 +52,28 @@ def _resolve_parent_sigma_pb(
     pid: int,
     qcd_mode: str,
     sigma_gen_pb: float,
-    missing_slice_sigma_modes: set[str],
 ) -> float:
     qcd_mode = qcd_mode or "auto"
 
     if qcd_mode == "hardccbar":
         if np.isfinite(sigma_gen_pb) and sigma_gen_pb > 0.0:
             return get_parent_sigma_pb(pid, sigma_ccbar_pb=float(sigma_gen_pb))
-        missing_slice_sigma_modes.add(qcd_mode)
-        return get_parent_sigma_pb(pid)
+        raise ValueError(
+            f"Hard-QCD mode '{qcd_mode}' for parent {pid} has no valid sigma_gen_pb "
+            f"({sigma_gen_pb}). Falling back to inclusive cross-section can strongly "
+            f"bias yields for a pTHat-sliced sample. "
+            f"Provide sigma_gen_pb in .meta.json or use qcd_mode='auto'."
+        )
 
     if qcd_mode in {"hardbbbar", "hardBc"}:
         if np.isfinite(sigma_gen_pb) and sigma_gen_pb > 0.0:
             return get_parent_sigma_pb(pid, sigma_bbbar_pb=float(sigma_gen_pb))
-        missing_slice_sigma_modes.add(qcd_mode)
-        return get_parent_sigma_pb(pid)
+        raise ValueError(
+            f"Hard-QCD mode '{qcd_mode}' for parent {pid} has no valid sigma_gen_pb "
+            f"({sigma_gen_pb}). Falling back to inclusive cross-section can strongly "
+            f"bias yields for a pTHat-sliced sample. "
+            f"Provide sigma_gen_pb in .meta.json or use qcd_mode='auto'."
+        )
 
     return get_parent_sigma_pb(pid)
 
@@ -80,6 +87,8 @@ def expected_signal_events(
     dirac: bool = False,
     separation_m: float | None = None,
     decay_seed: int = 12345,
+    p_min_GeV: float = 0.5,
+    reco_efficiency: float = 1.0,
     decay_cache: DecayCache | None = None,
     separation_pass: np.ndarray | None = None,
     ctau0_m: float | None = None,
@@ -164,7 +173,7 @@ def expected_signal_events(
 
     if separation_pass is None:
         with _time_block(timing, "time_separation_s"):
-            selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed)
+            selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed, p_min_GeV=p_min_GeV)
             separation_pass = compute_decay_acceptance(
                 geom_df=geom_df,
                 mass_GeV=mass_GeV,
@@ -209,7 +218,7 @@ def expected_signal_events(
     missing_br_pdgs = []
     missing_xsec_pdgs = []
     missing_tau_br_pdgs = []
-    missing_slice_sigma_modes: set[str] = set()
+
 
     with _time_block(timing, "time_parent_sum_s"):
         for pid in unique_parents:
@@ -236,7 +245,6 @@ def expected_signal_events(
                     int(pid),
                     ctx_mode,
                     sigma_val,
-                    missing_slice_sigma_modes,
                 )
                 if sigma_parent_pb <= 0.0:
                     missing_xsec_pdgs.append(int(pid))
@@ -283,7 +291,6 @@ def expected_signal_events(
                             int(pid),
                             ctx_mode,
                             sigma_val,
-                            missing_slice_sigma_modes,
                         )
                         if sigma_parent_pb <= 0.0:
                             missing_xsec_pdgs.append(int(pid))
@@ -323,15 +330,11 @@ def expected_signal_events(
         )
         print(f"       → Discarding {n_lost} events (silent data loss)")
 
-    if missing_slice_sigma_modes and eps2 == 1e-12:
-        modes = ", ".join(sorted(missing_slice_sigma_modes))
-        print(
-            f"[WARN] Mass {mass_GeV:.2f} GeV: missing sigma_gen_pb metadata for hard-QCD mode(s): {modes}"
-        )
-        print("       → Fell back to inclusive FONLL normalization for those rows.")
 
     if dirac:
         total_expected *= 2.0
+
+    total_expected *= reco_efficiency
 
     return float(total_expected)
 
@@ -367,6 +370,8 @@ def scan_eps2_for_mass(
     dirac: bool = False,
     separation_m: float | None = None,
     decay_seed: int = 12345,
+    p_min_GeV: float = 0.5,
+    reco_efficiency: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
     eps2_grid = np.logspace(-12, -2, 100)
     Nsig = np.zeros_like(eps2_grid, dtype=float)
@@ -376,7 +381,7 @@ def scan_eps2_for_mass(
     if separation_m is not None:
         from decay.decay_detector import DecaySelection, build_decay_cache
         flavour = benchmark_to_flavour(benchmark)
-        selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed)
+        selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed, p_min_GeV=p_min_GeV)
         decay_cache = build_decay_cache(geom_df, mass_GeV, flavour, selection)
         separation_pass = compute_separation_pass_static(
             geom_df, decay_cache, build_mesh_once(), float(separation_m)
@@ -392,6 +397,8 @@ def scan_eps2_for_mass(
             dirac=dirac,
             separation_m=separation_m,
             decay_seed=decay_seed,
+            p_min_GeV=p_min_GeV,
+            reco_efficiency=reco_efficiency,
             decay_cache=decay_cache,
             separation_pass=separation_pass,
         )

@@ -246,6 +246,61 @@ class HNLModel:
         return br_per_parent
 
 
+    def visible_branching_ratio(self) -> float:
+        """Fraction of total decay width going to channels with ≥2 charged daughters.
+
+        Invisible channels (guaranteed <2 charged tracks):
+          - nu3:  N → ν ν ν
+          - nuP:  N → ν π⁰/η/η'  (neutral meson → γγ only)
+
+        All other channels produce ≥2 charged particles:
+          - null:  N → ν l l̄  (2 charged leptons)
+          - llnu:  N → l₁ l̄₂ ν  (2 charged leptons)
+          - lP:    N → l π±/K±  (2 charged)
+          - lV:    N → l ρ±/K*±  (2+ charged)
+          - nuV:   N → ν ρ⁰/ω/φ  (vector → π⁺π⁻ etc.)
+          - lud:   N → l u d̄  (3+ charged)
+          - nuqq:  N → ν q q̄  (2+ charged hadrons)
+          - lhad/nuhad: composite (handled via quark-hadron duality)
+
+        Note: the MATHUSLA decay libraries contain ALL channels (visible + invisible).
+        The MC sampling in decay_detector.py already implicitly filters invisible events
+        via the ≥2 charged-track requirement. This method is for diagnostics/logging only;
+        BR_vis should NOT be applied as an additional multiplicative factor.
+
+        Follows the same mass-dependent channel selection as HNLCalc.gen_ctau:
+          m ≤ 1 GeV: exclusive hadron modes (lP, lV, nuP, nuV)
+          m > 1 GeV: quark-level modes (lud, nuqq)
+        """
+        import numpy as np
+
+        hnl = self._hnlcalc
+        mass = self.mass_GeV
+        invisible_channels = {"nu3", "nuP"}
+
+        total_vis = 0.0
+        total_all = 0.0
+
+        for channel, modes in hnl.modes_active.items():
+            for mode in modes:
+                if mode not in hnl.model_widths:
+                    continue
+                width = hnl.model_widths[mode][0]
+
+                # Skip channels excluded by mass-dependent quark-hadron duality
+                if mass <= 1.0 and channel in ("nuqq", "lud", "nuhad", "lhad"):
+                    continue
+                if mass > 1.0 and channel in ("nuV", "lV", "nuP", "lP", "nuhad", "lhad"):
+                    continue
+
+                total_all += width
+                if channel not in invisible_channels:
+                    total_vis += width
+
+        if total_all <= 0:
+            return 1.0
+        return float(total_vis / total_all)
+
     def __repr__(self) -> str:
         return (
             f"HNLModel(mass_GeV={self.mass_GeV}, "

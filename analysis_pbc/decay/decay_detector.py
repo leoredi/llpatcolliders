@@ -21,6 +21,7 @@ except Exception:
 class DecaySelection:
     separation_m: float
     seed: int = 12345
+    p_min_GeV: float = 0.5
 
 
 @dataclass
@@ -207,6 +208,8 @@ def build_decay_cache(
             p_rot = rot @ p_rf
             _, p_lab = _boost_along_direction(E_rf, p_rot, beta, direction)
             if not np.all(np.isfinite(p_lab)):
+                continue
+            if np.linalg.norm(p_lab) < selection.p_min_GeV:
                 continue
             dirs.append(_unit_vector(p_lab))
         charged_directions.append(dirs)

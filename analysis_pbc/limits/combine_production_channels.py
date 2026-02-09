@@ -56,10 +56,14 @@ def _variant_priority(base_regime: str, is_ff: bool, qcd_mode: str, pthat_min: f
     return (qcd_priority, ff_priority, pthat_priority)
 
 
-def prefer_best_variant(regime_files):
+def prefer_best_variant(regime_files, allow_variant_drop=False):
     chosen = {}
+    all_candidates = {}
     for base_regime, mode, is_ff, qcd_mode, pthat_min, path in regime_files:
         key = (base_regime, mode)
+        if key not in all_candidates:
+            all_candidates[key] = []
+        all_candidates[key].append((base_regime, mode, is_ff, qcd_mode, pthat_min, path))
         if key not in chosen:
             chosen[key] = (base_regime, mode, is_ff, qcd_mode, pthat_min, path)
             continue
@@ -69,6 +73,25 @@ def prefer_best_variant(regime_files):
         old_priority = _variant_priority(current[0], current[2], current[3], current[4])
         if new_priority > old_priority:
             chosen[key] = (base_regime, mode, is_ff, qcd_mode, pthat_min, path)
+
+    # Detect dropped variants (compare by path, not identity)
+    for key, candidates in all_candidates.items():
+        if len(candidates) > 1:
+            kept_path = str(chosen[key][5])
+            dropped = [c for c in candidates if str(c[5]) != kept_path]
+            if dropped:
+                kept_label = _format_source_label(*chosen[key][:5])
+                dropped_labels = [_format_source_label(*d[:5]) for d in dropped]
+                msg = (
+                    f"Multiple variants for {key}: keeping {kept_label}, "
+                    f"would drop {dropped_labels}. "
+                    f"Pass allow_variant_drop=True to override."
+                )
+                if allow_variant_drop:
+                    print(f"[WARN] {msg}")
+                else:
+                    raise ValueError(msg)
+
     return list(chosen.values())
 
 
@@ -150,6 +173,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without writing files")
     parser.add_argument("--no-cleanup", action="store_true", help="Don't move combined files, just create them in a temporary folder")
     parser.add_argument("--delete-originals", action="store_true", help="Delete original files after combining (opt-in)")
+    parser.add_argument("--allow-variant-drop", action="store_true", help="Allow silently dropping lower-priority pTHat/QCD variants (default: error).")
     args = parser.parse_args()
 
     repo_root = Path(__file__).parent.parent.parent
@@ -171,7 +195,8 @@ def main():
 
     files_by_mass = find_production_files(sim_dir, args.flavour)
     files_by_mass = {
-        key: prefer_best_variant(regimes) for key, regimes in files_by_mass.items()
+        key: prefer_best_variant(regimes, allow_variant_drop=args.allow_variant_drop)
+        for key, regimes in files_by_mass.items()
     }
 
     multi_channel_masses = {k: v for k, v in files_by_mass.items() if len(v) > 1}

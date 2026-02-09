@@ -576,6 +576,25 @@ void configureMesonDecaysToTauNu(Pythia& pythia, double mHNL, bool verbose = tru
         std::cout << "  Bs → Ds(*) τ ν : DISABLED (kinematically forbidden)" << std::endl;
     }
 
+    // -----------------------------------------------------------------------
+    // Bc+ → τ+ ντ (purely leptonic)
+    // SM BR(Bc→τντ) ≈ 2.4% (lattice QCD: HPQCD 2020, arXiv:2007.06956)
+    // m(Bc) = 6.275 GeV >> m(τ) = 1.777 GeV — always kinematically open.
+    // Without forcing this channel, hardBc + fromTau produces near-zero
+    // statistics because Bc→τν is rare in SM branching table.
+    // -----------------------------------------------------------------------
+    double mBc = MESON_MASSES.at(541);
+    if (M_TAU < mBc) {
+        pythia.readString("541:onMode = off");
+        pythia.readString("541:addChannel = 1 1.0 0 -15 16");   // Bc+ → τ+ ντ
+        pythia.readString("-541:onMode = off");
+        pythia.readString("-541:addChannel = 1 1.0 0 15 -16");  // Bc- → τ- ν̄τ
+        if (verbose) std::cout << "  Bc± → τ ν : ENABLED" << std::endl;
+        nChannelsConfigured++;
+    } else if (verbose) {
+        std::cout << "  Bc± → τ ν : DISABLED (kinematically forbidden)" << std::endl;
+    }
+
     if (verbose) {
         std::cout << "Total τν channels configured: " << nChannelsConfigured << std::endl;
         std::cout << "==========================================\n" << std::endl;
@@ -1052,23 +1071,33 @@ int main(int argc, char* argv[]) {
             // Find parent
             int parentPdg = findPhysicalParent(pythia.event, i, HNL_ID);
 
-            // In Bc mode, only keep HNLs from Bc± parents (PDG 541)
-            // Other B-meson parents (B+, B0, Bs) are handled by the
-            // standard beauty mode with their own normalization.
-            if (filterBcParent && std::abs(parentPdg) != 541) {
-                nBcFiltered++;
-                continue;
-            }
+            // Extract tau grandfather (must happen BEFORE Bc filter, since
+            // fromTau events have parentPdg==15 and we need tauParentId
+            // to decide whether the tau came from a Bc).
             int tauParentId = 0;
             if (std::abs(parentPdg) == 15) {
                 int iTop = pythia.event[i].iTopCopy();
-                if (iTop < 0 || iTop >= pythia.event.size()) iTop = i;
+                if (iTop < 0 || iTop >= (int)pythia.event.size()) iTop = i;
                 int iTau = pythia.event[iTop].mother1();
-                if (iTau > 0 && iTau < pythia.event.size()) {
+                if (iTau > 0 && iTau < (int)pythia.event.size()) {
                     int tauParentPdg = findPhysicalParent(pythia.event, iTau, 0);
                     if (tauParentPdg != 0) {
                         tauParentId = std::abs(tauParentPdg);
                     }
+                }
+            }
+
+            // In Bc mode, only keep HNLs originating from Bc± (PDG 541).
+            // Accept both direct production (Bc→ℓN, parentPdg==541) and
+            // tau-chain production (Bc→τν, τ→NX, parentPdg==15 with
+            // tauParentId==541).  Other B-meson parents (B+, B0, Bs) are
+            // handled by the standard beauty mode with their own normalization.
+            if (filterBcParent) {
+                bool isFromBc = (std::abs(parentPdg) == 541)
+                              || (std::abs(parentPdg) == 15 && tauParentId == 541);
+                if (!isFromBc) {
+                    nBcFiltered++;
+                    continue;
                 }
             }
             

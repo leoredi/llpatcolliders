@@ -109,6 +109,11 @@ SIGMA_KL_PB = SIGMA_KAON_PB * 0.5  # ~25 mb
 # Reference: standard inclusive 14 TeV projections used in PBC-style studies
 # (e.g. CERN-PBC-REPORT-2018-007; LHC SM cross-section summaries / HXSWG-style inputs).
 # These are inclusive production cross-sections (not multiplied by leptonic BRs).
+# NLO K-factor for electroweak HNL production (W/Z → ℓN).
+# MadGraph LO → NLO correction factor; defined in run_hnl_scan.py:75 as "used in analysis".
+# Reference: standard NLO/LO ratio for W/Z + heavy neutral lepton production.
+K_FACTOR_EW = 1.3
+
 SIGMA_W_PB = 2.0 * 1e8  # σ(pp→W) ~ 200 nb (W+ + W- combined)
 SIGMA_Z_PB = 6.0 * 1e7  # σ(pp→Z) ~ 60 nb
 
@@ -204,11 +209,11 @@ def get_parent_sigma_pb(
     if pid == 15:
         return (sigma_ccbar * FRAG_C_DS * 2) * 0.0548
 
-    # --- ELECTROWEAK BOSONS ---
+    # --- ELECTROWEAK BOSONS (with NLO K-factor) ---
     if pid == 24:  # W± bosons
-        return SIGMA_W_PB
+        return SIGMA_W_PB * K_FACTOR_EW
     if pid == 23:  # Z boson
-        return SIGMA_Z_PB
+        return SIGMA_Z_PB * K_FACTOR_EW
 
     # Default fallback (shouldn't happen if inputs are clean)
     print(f"[WARNING] Unknown parent PDG {pid} in cross-section lookup. Returning 0.")
@@ -249,6 +254,14 @@ def get_parent_tau_br(parent_pdg: int) -> float:
     # Less precisely measured, assume similar to B0/B+
     if pid == 531:
         return 0.023
+
+    # Bc+ -> tau+ nu_tau (purely leptonic)
+    # BR(Bc→τντ) ≈ 2.4%  (lattice QCD: HPQCD 2020, arXiv:2007.06956;
+    # consistent with PDG 2024 indirect constraints).
+    # This is an analysis-level approximation — the exact value depends on
+    # f_Bc and |V_cb|, with ~10-15% theoretical uncertainty.
+    if pid == 541:
+        return 0.024
 
     return 0.0
 

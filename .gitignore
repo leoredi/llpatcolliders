@@ -3,6 +3,7 @@
 *.so
 *.pcm
 main_hnl_scan
+main_hnl_production
 
 # Output files
 *.root

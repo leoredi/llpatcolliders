@@ -67,6 +67,10 @@ NEVENTS_FROMTAU=$NEVENTS
 MAX_PARALLEL=12
 
 FROMTAU_MASS_THRESHOLD=1.77
+M_BC=6.275
+M_ELECTRON=0.000511
+M_MUON=0.10566
+M_TAU=1.777
 
 PYTHIA_ROOT="$SCRIPT_DIR/pythia8315"
 export DYLD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${DYLD_LIBRARY_PATH:-}"
@@ -88,6 +92,7 @@ echo "  QCD mode: $QCD_MODE" | tee -a "$LOGFILE"
 if [[ -n "$PTHAT_MIN" ]]; then
     echo "  pTHatMin: $PTHAT_MIN GeV" | tee -a "$LOGFILE"
 fi
+echo "  Kinematic prefilter: direct mHNL < (mBc - m_l), fromTau mHNL < ${FROMTAU_MASS_THRESHOLD} GeV" | tee -a "$LOGFILE"
 echo "  Output directory: $OUTPUT_DIR" | tee -a "$LOGFILE"
 echo "  Log file: $LOGFILE" | tee -a "$LOGFILE"
 echo ""
@@ -113,6 +118,62 @@ wait_for_slot() {
     while [ $(count_jobs) -ge $MAX_PARALLEL ]; do
         sleep 1
     done
+}
+
+direct_mass_ceiling() {
+    local flavour="$1"
+    case "$flavour" in
+        electron)
+            echo "$M_BC - $M_ELECTRON" | bc -l
+            ;;
+        muon)
+            echo "$M_BC - $M_MUON" | bc -l
+            ;;
+        tau)
+            echo "$M_BC - $M_TAU" | bc -l
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+can_run_point() {
+    local mass="$1"
+    local flavour="$2"
+    local mode="$3"
+    local mode_lower
+    mode_lower=$(echo "$mode" | tr '[:upper:]' '[:lower:]')
+
+    if [[ "$mode_lower" == "fromtau" ]]; then
+        if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
+            return 0
+        fi
+        return 1
+    fi
+
+    local ceiling
+    ceiling=$(direct_mass_ceiling "$flavour") || return 1
+    if (( $(echo "$mass < $ceiling" | bc -l) )); then
+        return 0
+    fi
+    return 1
+}
+
+skip_reason() {
+    local flavour="$1"
+    local mode="$2"
+    local mode_lower
+    mode_lower=$(echo "$mode" | tr '[:upper:]' '[:lower:]')
+
+    if [[ "$mode_lower" == "fromtau" ]]; then
+        echo "kinematically forbidden: fromTau requires mHNL < ${FROMTAU_MASS_THRESHOLD} GeV"
+        return
+    fi
+
+    local ceiling
+    ceiling=$(direct_mass_ceiling "$flavour")
+    echo "kinematically forbidden: direct mode requires mHNL < ${ceiling} GeV"
 }
 
 mass_to_label() {
@@ -268,10 +329,12 @@ count_tau_runs() {
     local count=0
     for mass in "${TAU_MASSES[@]}"; do
         if [[ "$MODE" == "direct" || "$MODE" == "both" ]]; then
-            count=$((count + 1))
+            if can_run_point "$mass" "tau" "direct"; then
+                count=$((count + 1))
+            fi
         fi
         if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
-            if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
+            if can_run_point "$mass" "tau" "fromTau"; then
                 count=$((count + 1))
             fi
         fi
@@ -279,8 +342,21 @@ count_tau_runs() {
     echo $count
 }
 
-total_electron=${#ELECTRON_MASSES[@]}
-total_muon=${#MUON_MASSES[@]}
+count_direct_runs() {
+    local flavour="$1"
+    shift
+    local count=0
+    local mass
+    for mass in "$@"; do
+        if can_run_point "$mass" "$flavour" "direct"; then
+            count=$((count + 1))
+        fi
+    done
+    echo "$count"
+}
+
+total_electron=$(count_direct_runs "electron" "${ELECTRON_MASSES[@]}")
+total_muon=$(count_direct_runs "muon" "${MUON_MASSES[@]}")
 total_tau=$(count_tau_runs)
 total_jobs=$((total_electron + total_muon + total_tau))
 
@@ -312,10 +388,14 @@ if [[ "$FLAVOUR" == "electron" || "$FLAVOUR" == "all" ]]; then
     echo "============================================" | tee -a "$LOGFILE"
 
     for mass in "${ELECTRON_MASSES[@]}"; do
-        wait_for_slot
-        run_production_job "$mass" "electron" "direct" &
-        completed_jobs=$((completed_jobs + 1))
-        echo "[$completed_jobs/$total_jobs] Queued: $mass GeV electron" | tee -a "$LOGFILE"
+        if can_run_point "$mass" "electron" "direct"; then
+            wait_for_slot
+            run_production_job "$mass" "electron" "direct" &
+            completed_jobs=$((completed_jobs + 1))
+            echo "[$completed_jobs/$total_jobs] Queued: $mass GeV electron" | tee -a "$LOGFILE"
+        else
+            echo "[SKIP] $mass GeV electron (direct): $(skip_reason "electron" "direct")" | tee -a "$LOGFILE"
+        fi
     done
 fi
 
@@ -327,10 +407,14 @@ if [[ "$FLAVOUR" == "muon" || "$FLAVOUR" == "all" ]]; then
     echo "============================================" | tee -a "$LOGFILE"
 
     for mass in "${MUON_MASSES[@]}"; do
-        wait_for_slot
-        run_production_job "$mass" "muon" "direct" &
-        completed_jobs=$((completed_jobs + 1))
-        echo "[$completed_jobs/$total_jobs] Queued: $mass GeV muon" | tee -a "$LOGFILE"
+        if can_run_point "$mass" "muon" "direct"; then
+            wait_for_slot
+            run_production_job "$mass" "muon" "direct" &
+            completed_jobs=$((completed_jobs + 1))
+            echo "[$completed_jobs/$total_jobs] Queued: $mass GeV muon" | tee -a "$LOGFILE"
+        else
+            echo "[SKIP] $mass GeV muon (direct): $(skip_reason "muon" "direct")" | tee -a "$LOGFILE"
+        fi
     done
 fi
 
@@ -343,18 +427,24 @@ if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
 
     for mass in "${TAU_MASSES[@]}"; do
         if [[ "$MODE" == "direct" || "$MODE" == "both" ]]; then
-            wait_for_slot
-            run_production_job "$mass" "tau" "direct" &
-            completed_jobs=$((completed_jobs + 1))
-            echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (direct)" | tee -a "$LOGFILE"
+            if can_run_point "$mass" "tau" "direct"; then
+                wait_for_slot
+                run_production_job "$mass" "tau" "direct" &
+                completed_jobs=$((completed_jobs + 1))
+                echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (direct)" | tee -a "$LOGFILE"
+            else
+                echo "[SKIP] $mass GeV tau (direct): $(skip_reason "tau" "direct")" | tee -a "$LOGFILE"
+            fi
         fi
 
         if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
-            if (( $(echo "$mass < $FROMTAU_MASS_THRESHOLD" | bc -l) )); then
+            if can_run_point "$mass" "tau" "fromTau"; then
                 wait_for_slot
                 run_production_job "$mass" "tau" "fromTau" &
                 completed_jobs=$((completed_jobs + 1))
                 echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
+            else
+                echo "[SKIP] $mass GeV tau (fromTau): $(skip_reason "tau" "fromTau")" | tee -a "$LOGFILE"
             fi
         fi
     done

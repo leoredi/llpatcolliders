@@ -84,6 +84,8 @@ def scan_single_mass(
     dirac=False,
     separation_m=0.001,
     decay_seed=12345,
+    p_min_GeV=0.5,
+    reco_efficiency=1.0,
     quiet=False,
     show_progress=None,
     timing_enabled=False,
@@ -94,8 +96,8 @@ def scan_single_mass(
     with stdout_ctx:
         return _scan_single_mass_impl(
             mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
-            dirac, separation_m, decay_seed, quiet, show_progress, timing_enabled,
-            hnlcalc_per_eps2
+            dirac, separation_m, decay_seed, p_min_GeV, reco_efficiency,
+            quiet, show_progress, timing_enabled, hnlcalc_per_eps2
         )
 
 
@@ -109,6 +111,8 @@ def _scan_single_mass_impl(
     dirac,
     separation_m,
     decay_seed,
+    p_min_GeV,
+    reco_efficiency,
     quiet,
     show_progress,
     timing_enabled,
@@ -200,15 +204,19 @@ def _scan_single_mass_impl(
             model = HNLModel(mass_GeV=mass_val, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
             ctau0_ref = model.ctau0_m
             br_ref = model.production_brs()
+            br_vis = model.visible_branching_ratio()
+        if not quiet:
+            print(f"  BR_vis(≥2 charged) = {br_vis:.3f} [implicit in MC sampling, not applied as factor]")
         if timing is not None:
             timing["n_hnlcalc_eps2_ref"] = float(eps2_ref)
+            timing["br_visible"] = br_vis
 
     with _time_block(timing, "time_decay_cache_s"):
         decay_cache = build_decay_cache(
             geom_df,
             mass_val,
             flavour,
-            DecaySelection(separation_m=separation_m, seed=decay_seed),
+            DecaySelection(separation_m=separation_m, seed=decay_seed, p_min_GeV=p_min_GeV),
             verbose=not quiet,
         )
 
@@ -226,6 +234,8 @@ def _scan_single_mass_impl(
                     dirac=dirac,
                     separation_m=separation_m,
                     decay_seed=decay_seed,
+                    p_min_GeV=p_min_GeV,
+                    reco_efficiency=reco_efficiency,
                     decay_cache=decay_cache,
                     timing=timing,
                 )
@@ -241,6 +251,8 @@ def _scan_single_mass_impl(
                     dirac=dirac,
                     separation_m=separation_m,
                     decay_seed=decay_seed,
+                    p_min_GeV=p_min_GeV,
+                    reco_efficiency=reco_efficiency,
                     decay_cache=decay_cache,
                     ctau0_m=ctau0_m,
                     br_per_parent=br_ref,
@@ -325,10 +337,13 @@ def run_flavour(
     dirac=False,
     separation_m=0.001,
     decay_seed=12345,
+    p_min_GeV=0.5,
+    reco_efficiency=1.0,
     show_progress=None,
     mass_filter=None,
     timing_enabled=False,
     hnlcalc_per_eps2=False,
+    allow_variant_drop=False,
 ):
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
@@ -445,8 +460,12 @@ def run_flavour(
             continue
 
         chosen = {}
+        all_candidates_for_key = {}
         for base_regime, mode, is_ff, qcd_mode, pthat_min, path in items:
             k2 = (base_regime, mode)
+            if k2 not in all_candidates_for_key:
+                all_candidates_for_key[k2] = []
+            all_candidates_for_key[k2].append((base_regime, mode, is_ff, qcd_mode, pthat_min, path))
             if k2 not in chosen:
                 chosen[k2] = (base_regime, mode, is_ff, qcd_mode, pthat_min, path)
                 continue
@@ -455,6 +474,26 @@ def run_flavour(
             old_priority = _variant_priority(current[0], current[2], current[3], current[4])
             if new_priority > old_priority:
                 chosen[k2] = (base_regime, mode, is_ff, qcd_mode, pthat_min, path)
+
+        # Check for dropped variants (compare by path, not identity).
+        # Only enforce for masses matching --mass filter (warn_for_key);
+        # unrelated masses should not block the run.
+        if warn_for_key:
+            for k2, candidates in all_candidates_for_key.items():
+                if len(candidates) > 1:
+                    kept_path = str(chosen[k2][5])
+                    dropped = [c for c in candidates if str(c[5]) != kept_path]
+                    if dropped:
+                        msg = (
+                            f"Multiple variants for {k2} at m={key[0]:.2f}: "
+                            f"keeping {_label(*chosen[k2][:5])}, would drop "
+                            f"{[_label(*d[:5]) for d in dropped]}. "
+                            f"Pass --allow-variant-drop to override."
+                        )
+                        if allow_variant_drop:
+                            print(f"[WARN] {msg}")
+                        else:
+                            raise ValueError(msg)
 
         selected = [v for _, v in sorted(chosen.items(), key=lambda kv: _sort_key(kv[1]))]
         selected_by_mass[key] = [
@@ -493,7 +532,7 @@ def run_flavour(
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
             args_list.append(
-                (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress, timing_enabled, hnlcalc_per_eps2)
+                (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, p_min_GeV, reco_efficiency, show_progress, timing_enabled, hnlcalc_per_eps2)
             )
 
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
@@ -527,6 +566,8 @@ def run_flavour(
                 dirac=dirac,
                 separation_m=separation_m,
                 decay_seed=decay_seed,
+                p_min_GeV=p_min_GeV,
+                reco_efficiency=reco_efficiency,
                 show_progress=show_progress,
                 timing_enabled=timing_enabled,
                 hnlcalc_per_eps2=hnlcalc_per_eps2,
@@ -537,10 +578,11 @@ def run_flavour(
     return pd.DataFrame(results)
 
 def scan_single_mass_wrapper(args):
-    (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, show_progress, timing_enabled, hnlcalc_per_eps2) = args
+    (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, p_min_GeV, reco_efficiency, show_progress, timing_enabled, hnlcalc_per_eps2) = args
     return scan_single_mass(
         mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list,
-        dirac=dirac, separation_m=separation_m, decay_seed=decay_seed, quiet=True,
+        dirac=dirac, separation_m=separation_m, decay_seed=decay_seed,
+        p_min_GeV=p_min_GeV, reco_efficiency=reco_efficiency, quiet=True,
         show_progress=show_progress, timing_enabled=timing_enabled,
         hnlcalc_per_eps2=hnlcalc_per_eps2,
     )
@@ -592,13 +634,39 @@ if __name__ == "__main__":
         help="Optional path for timing CSV (default: output/csv/analysis/HNL_U2_timing.csv).",
     )
     parser.add_argument(
+        "--p-min-gev",
+        type=float,
+        default=0.5,
+        help="Minimum charged-track momentum in GeV/c (default: 0.5, MATHUSLA CDR threshold).",
+    )
+    parser.add_argument(
+        "--reco-efficiency",
+        type=float,
+        default=None,
+        help="Flat reconstruction efficiency factor (recommended: 0.5 per MATHUSLA/ANUBIS). "
+             "If omitted, defaults to 1.0 with a notice.",
+    )
+    parser.add_argument(
         "--hnlcalc-per-eps2",
         action="store_true",
         help="Recompute HNLCalc for every eps2 point (slow, legacy behavior).",
     )
+    parser.add_argument(
+        "--allow-variant-drop",
+        action="store_true",
+        help="Allow silently dropping lower-priority pTHat/QCD variants (default: error).",
+    )
     args = parser.parse_args()
     if args.separation_mm <= 0:
         raise ValueError("--separation-mm must be positive.")
+    if args.p_min_gev < 0:
+        raise ValueError("--p-min-gev must be non-negative.")
+    if args.reco_efficiency is None:
+        args.reco_efficiency = 1.0
+        print("[NOTICE] --reco-efficiency not set, defaulting to 1.0 (no efficiency loss).")
+        print("         For realistic projections, use --reco-efficiency 0.5 (MATHUSLA/ANUBIS).")
+    if not 0.0 < args.reco_efficiency <= 1.0:
+        raise ValueError("--reco-efficiency must be in (0, 1].")
 
     n_workers = args.workers if args.workers else multiprocessing.cpu_count()
     mode_str = f"PARALLEL, {n_workers} workers" if args.parallel else "SINGLE-THREADED"
@@ -613,7 +681,10 @@ if __name__ == "__main__":
     L_HL_LHC_FB = 3000.0
     results_out = ANALYSIS_OUT_DIR / "HNL_U2_limits_summary.csv"
     separation_m = args.separation_mm * 1e-3
+    p_min_GeV = args.p_min_gev
+    reco_efficiency = args.reco_efficiency
     print(f"Decay separation: {args.separation_mm:.3f} mm (seed={args.decay_seed})")
+    print(f"Track p_min: {p_min_GeV:.2f} GeV/c | Reco efficiency: {reco_efficiency:.2f}")
 
     all_results = []
 
@@ -633,10 +704,13 @@ if __name__ == "__main__":
             dirac=args.dirac,
             separation_m=separation_m,
             decay_seed=args.decay_seed,
+            p_min_GeV=p_min_GeV,
+            reco_efficiency=reco_efficiency,
             show_progress=show_progress,
             mass_filter=args.mass,
             timing_enabled=timing_enabled,
             hnlcalc_per_eps2=args.hnlcalc_per_eps2,
+            allow_variant_drop=args.allow_variant_drop,
         )
         df["separation_mm"] = args.separation_mm
         all_results.append(df)
