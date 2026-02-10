@@ -82,15 +82,17 @@ def prefer_best_variant(regime_files, allow_variant_drop=False):
             if dropped:
                 kept_label = _format_source_label(*chosen[key][:5])
                 dropped_labels = [_format_source_label(*d[:5]) for d in dropped]
-                msg = (
-                    f"Multiple variants for {key}: keeping {kept_label}, "
-                    f"would drop {dropped_labels}. "
-                    f"Pass allow_variant_drop=True to override."
-                )
                 if allow_variant_drop:
-                    print(f"[WARN] {msg}")
+                    print(
+                        f"[DROP] {key}: keeping {kept_label}, "
+                        f"dropping {dropped_labels}"
+                    )
                 else:
-                    raise ValueError(msg)
+                    raise ValueError(
+                        f"Multiple variants for {key}: keeping {kept_label}, "
+                        f"would drop {dropped_labels}. "
+                        f"Pass --allow-variant-drop to override."
+                    )
 
     return list(chosen.values())
 

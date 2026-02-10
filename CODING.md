@@ -48,7 +48,16 @@ PYTHIA8=$(pwd)/pythia8315 make
 ./run_parallel_production.sh all direct hardBc 15
 ```
 
-Then optionally run MadGraph EW production (Docker image `mg5-hnl`), combine files, run limits, and make the money plot:
+Then optionally run MadGraph EW production (Docker image `mg5-hnl`):
+
+```bash
+docker run --rm -v "$(pwd):/work" mg5-hnl bash -c \
+  "cd /work/production/madgraph_production && python3 scripts/run_hnl_scan.py --min-mass 2"
+```
+
+`run_hnl_scan.py` flags: `--flavour electron|muon|tau`, `--min-mass <GeV>` (skip low masses where mesons dominate), `--masses <list>`, `--nevents <N>`, `--test` (single point: 15 GeV muon, 1k events). EW production is only relevant above ~2 GeV.
+
+Combine files, run limits, and make the money plot:
 
 ```bash
 cd analysis_pbc

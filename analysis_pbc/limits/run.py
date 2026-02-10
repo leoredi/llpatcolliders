@@ -344,6 +344,7 @@ def run_flavour(
     timing_enabled=False,
     hnlcalc_per_eps2=False,
     allow_variant_drop=False,
+    max_mass=None,
 ):
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
@@ -432,6 +433,7 @@ def run_flavour(
         return (regime_order.get(base_regime, 99), mode_order.get(mode, 99), base_regime, mode or "", variant_order)
 
     selected_by_mass = {}
+    combined_coexist_count = 0
     for key, items in files_by_mass.items():
         warn_for_key = True
         if mass_filter is not None:
@@ -446,15 +448,8 @@ def run_flavour(
             selected = [(chosen[5], _label(chosen[0], chosen[1], chosen[2], chosen[3], chosen[4]))]
 
             if warn_for_key and len(items) > 1:
-                other_names = ", ".join(
-                    _label(r, m, ff, qm, pt)
-                    for r, m, ff, qm, pt, _ in sorted(items, key=_sort_key)
-                    if r != "combined"
-                )
-                print(
-                    f"[WARN] m={key[0]:.2f} {flavour}: found combined + other files ({other_names}); "
-                    "using combined only."
-                )
+                n_other = sum(1 for it in items if it[0] != "combined")
+                combined_coexist_count = combined_coexist_count + n_other
 
             selected_by_mass[key] = selected
             continue
@@ -503,6 +498,12 @@ def run_flavour(
 
     files_by_mass = selected_by_mass
 
+    if combined_coexist_count > 0:
+        print(
+            f"[INFO] {combined_coexist_count} individual regime files coexist with combined files; "
+            "using combined only."
+        )
+
     masses_with_valid_files = {key[0] for key in files_by_mass.keys()}
 
     for f in empty_files:
@@ -521,6 +522,8 @@ def run_flavour(
             more = "..." if len(all_masses) > 10 else ""
             print(f"[WARN] No mass points found for {flavour} at m={mass_filter:.4f} GeV.")
             print(f"       Available masses (first 10): {preview}{more}")
+    if max_mass is not None:
+        mass_points = [mp for mp in mass_points if mp[0] <= max_mass]
     print(f"Found {len(mass_points)} mass points")
 
     if use_parallel:
@@ -614,6 +617,12 @@ if __name__ == "__main__":
         type=float,
         default=None,
         help="Only process a single mass point in GeV (e.g., 2.6).",
+    )
+    parser.add_argument(
+        "--max-mass",
+        type=float,
+        default=None,
+        help="Only process mass points up to this value in GeV (e.g., 5.0).",
     )
     parser.add_argument(
         "--flavour",
@@ -711,6 +720,7 @@ if __name__ == "__main__":
             timing_enabled=timing_enabled,
             hnlcalc_per_eps2=args.hnlcalc_per_eps2,
             allow_variant_drop=args.allow_variant_drop,
+            max_mass=args.max_mass,
         )
         df["separation_mm"] = args.separation_mm
         all_results.append(df)

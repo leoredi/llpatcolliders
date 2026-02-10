@@ -13,7 +13,7 @@ main*Dct.cc
 # Auto-generated PYTHIA config files and cache
 __pycache__/
 production/madgraph/work/
-/py.py
+py.py
 
 # HNLCalc cache (generated at runtime)
 analysis_pbc/model/

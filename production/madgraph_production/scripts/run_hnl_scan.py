@@ -3,12 +3,6 @@
 MadGraph HNL Production Driver (Docker-friendly)
 
 Generates HNL events via electroweak production (W/Z → ℓ N) at LHC 14 TeV.
-Optionally, you can add a third production stream with MadGraph semileptonic
-meson/baryon decays that include form factors (B→DℓN, D→KℓN, Λb→ΛcℓN, etc.).
-Those form-factor samples should be written as
-`HNL_<mass>GeV_<flavour>_{charm|beauty}_ff.csv` into output/csv/simulation/;
-the analysis pipeline will auto-prefer *_ff over the Pythia phase-space
-files. See ../FORMFACTOR_SEMILEPTONIC.md for a how-to.
 
 This script:
 1. Generates MadGraph process directories from proc_card_*.dat templates

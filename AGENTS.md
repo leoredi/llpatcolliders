@@ -33,6 +33,7 @@ Conflict rule: if this file conflicts with code, code wins.
 - mass grid: `config_mass_grid.py`
 - pythia generator: `production/pythia_production/main_hnl_production.cc`
 - pythia batch launcher: `production/pythia_production/run_parallel_production.sh`
+- madgraph EW driver: `production/madgraph_production/scripts/run_hnl_scan.py`
 - production combine: `analysis_pbc/limits/combine_production_channels.py`
 - limit runner: `analysis_pbc/limits/run.py`
 - signal kernel: `analysis_pbc/limits/expected_signal.py`
@@ -43,6 +44,7 @@ Conflict rule: if this file conflicts with code, code wins.
 ## NON_MAIN_UTILITIES
 
 - EW xsec validator: `tools/madgraph/validate_xsec.py`
+- LHE→CSV converter: `production/madgraph_production/scripts/lhe_to_csv.py`
 - pythia monitor: `tools/pythia/monitor_production.sh`
 - custom decay event generation: `tools/decay/generate_hnl_decay_events.py`
 
@@ -73,8 +75,9 @@ PYTHIA8=$(pwd)/pythia8315 make
 Optional EW pass (Docker image name: `mg5-hnl`):
 
 ```bash
-docker run --rm -it -v "$(pwd):/work" mg5-hnl bash
-# inside container: run production/madgraph_production/scripts/run_hnl_scan.py
+docker run --rm -v "$(pwd):/work" mg5-hnl bash -c \
+  "cd /work/production/madgraph_production && python3 scripts/run_hnl_scan.py --min-mass 2"
+# flags: --flavour <e|mu|tau>, --min-mass <GeV>, --masses <list>, --nevents <N>, --test
 ```
 
 Post-production:
@@ -116,5 +119,6 @@ python money_plot/plot_money_island.py
 ```bash
 python tools/docs/check_docs_sync.py
 python tools/analysis/check_hnlcalc_scaling.py
+# after EW production completes:
 python tools/madgraph/validate_xsec.py production/madgraph_production/summary_HNL_EW_production.csv
 ```
