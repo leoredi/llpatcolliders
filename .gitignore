@@ -55,3 +55,6 @@ production/pythia_production/pythia8315/examples/Makefile.inc
 production/pythia_production/pythia8315/examples/*.dat
 production/pythia_production/pythia8315/examples/main*
 production/pythia_production/pythia8315/examples/plot*.py
+
+
+analysis_pbc/decay/external/
