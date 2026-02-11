@@ -78,6 +78,15 @@ For each produced HNL:
 
 The runtime pipeline uses precomputed decay libraries and an HNLCalc interface for lifetime/BR inputs.
 
+Decay-library source priority:
+
+- overlay (`output/decay/generated/`) first,
+- external reference libraries (`analysis_pbc/decay/external/`) second.
+
+For hadronized masses, overlay files are treated as all-inclusive decay samples.
+For low masses (`<= low-mass threshold`), analytical files are still preferred.
+Large decay-mass extrapolation is blocked by default (`|m_requested - m_file| > 0.5 GeV` fails).
+
 ## 7. Signal model
 
 The expected signal is computed as a per-parent sum:
@@ -106,7 +115,8 @@ Tau `direct` runs use the full grid. Tau `fromTau` is only generated below `1.77
 Main projection-level approximations to keep in mind:
 
 - Soft-QCD kaon normalisation is approximate.
-- Some decay-kinematics inputs use nearest available precomputed decay samples.
+- Decay kinematics rely on precomputed libraries; coverage gaps now fail fast when
+  the nearest available decay sample differs by more than `0.5 GeV` (unless explicitly overridden for diagnostics).
 - 3-body decay kinematics in production are simplified relative to full matrix-element treatments.
 
 These are acceptable for fast sensitivity projections, but they are not a full experimental systematics model.

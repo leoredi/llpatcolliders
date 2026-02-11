@@ -79,6 +79,41 @@ cd $REPO
 python money_plot/plot_money_island.py
 ```
 
+## Decay Library Overlay Workflow
+
+Decay files in `analysis_pbc/decay/external/` are treated as read-only.
+Generated decay libraries should be written under:
+
+- `output/decay/generated/`
+
+Generate hadronized-region decay libraries (`mass > low-mass threshold`) with
+flavour-pure couplings (`|U|^2=1e-6` by default, one non-zero flavour at a
+time):
+
+```bash
+python tools/decay/precompute_decay_library_overlay.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --u2-norm 1e-6 \
+  --nevents 20000
+```
+
+Audit coverage and strict mass matching:
+
+```bash
+python tools/decay/audit_decay_coverage.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --out output/decay/coverage_report.csv
+```
+
+By default, decay-file selection fails when `|m_requested - m_file| > 0.5 GeV`.
+For diagnostics only, downgrade failures to warnings with:
+
+```bash
+export HNL_ALLOW_DECAY_MASS_MISMATCH=1
+```
+
 ## Read next
 
 - Physics assumptions and formulas: `PHYSICS.md`

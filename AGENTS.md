@@ -47,6 +47,8 @@ Conflict rule: if this file conflicts with code, code wins.
 - LHE→CSV converter: `production/madgraph_production/scripts/lhe_to_csv.py`
 - pythia monitor: `tools/pythia/monitor_production.sh`
 - custom decay event generation: `tools/decay/generate_hnl_decay_events.py`
+- decay overlay precompute: `tools/decay/precompute_decay_library_overlay.py`
+- decay coverage audit: `tools/decay/audit_decay_coverage.py`
 
 ## RUNTIME_CONSTANTS (CODE-ANCHORED)
 

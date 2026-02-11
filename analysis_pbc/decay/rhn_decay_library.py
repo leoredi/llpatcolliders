@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import warnings
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from typing import Iterable, List, Tuple
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+GENERATED_ROOT = REPO_ROOT / "output" / "decay" / "generated"
 EXTERNAL_ROOT = REPO_ROOT / "analysis_pbc" / "decay" / "external"
 
 FLAVOUR_CONFIG = {
@@ -76,13 +78,23 @@ class DecayFileEntry:
     path: Path
     mass_GeV: float
     category: str
+    source: str
+    source_priority: int
 
 
-def _decay_dir(flavour: str) -> Path:
+def _decay_relpath(flavour: str) -> Path:
     config = FLAVOUR_CONFIG.get(flavour)
     if not config:
         raise ValueError(f"Unknown flavour '{flavour}' for decay library.")
-    return EXTERNAL_ROOT / config["repo"] / config["decay_dir"]
+    return Path(config["repo"]) / config["decay_dir"]
+
+
+def _decay_dirs_with_priority(flavour: str) -> List[Tuple[Path, str, int]]:
+    rel = _decay_relpath(flavour)
+    return [
+        (GENERATED_ROOT / rel, "generated", 0),
+        (EXTERNAL_ROOT / rel, "external", 1),
+    ]
 
 
 def _parse_mass_from_name(path: Path) -> float | None:
@@ -100,22 +112,51 @@ def _categorize_name(path: Path) -> str:
     return "unknown"
 
 
+def _category_rank(category: str) -> int:
+    try:
+        return DECAY_CATEGORY_ORDER.index(category)
+    except ValueError:
+        return len(DECAY_CATEGORY_ORDER)
+
+
+def _entry_order_key(entry: DecayFileEntry, mass_GeV: float) -> Tuple[float, int, int, str]:
+    return (
+        abs(entry.mass_GeV - mass_GeV),
+        entry.source_priority,
+        _category_rank(entry.category),
+        entry.path.name,
+    )
+
+
 @lru_cache(maxsize=6)
 def list_decay_files(flavour: str) -> List[DecayFileEntry]:
-    decay_dir = _decay_dir(flavour)
-    if not decay_dir.exists():
-        raise FileNotFoundError(
-            f"Decay directory not found: {decay_dir}. "
-            "Make sure the MATHUSLA_LLPfiles RHN repositories are present."
-        )
+    seen_names: set[str] = set()
     entries: List[DecayFileEntry] = []
-    for path in decay_dir.glob("*.txt"):
-        mass = _parse_mass_from_name(path)
-        if mass is None:
+    searched_dirs: List[Path] = []
+    for decay_dir, source, source_priority in _decay_dirs_with_priority(flavour):
+        searched_dirs.append(decay_dir)
+        if not decay_dir.exists():
             continue
-        entries.append(DecayFileEntry(path=path, mass_GeV=mass, category=_categorize_name(path)))
+        for path in sorted(decay_dir.glob("*.txt")):
+            # Overlay entries shadow external entries with identical filenames.
+            if path.name in seen_names:
+                continue
+            mass = _parse_mass_from_name(path)
+            if mass is None:
+                continue
+            seen_names.add(path.name)
+            entries.append(
+                DecayFileEntry(
+                    path=path,
+                    mass_GeV=mass,
+                    category=_categorize_name(path),
+                    source=source,
+                    source_priority=source_priority,
+                )
+            )
     if not entries:
-        raise FileNotFoundError(f"No decay files found in {decay_dir}.")
+        searched_str = ", ".join(str(d) for d in searched_dirs)
+        raise FileNotFoundError(f"No decay files found for flavour '{flavour}'. Searched: {searched_str}")
     return entries
 
 
@@ -123,18 +164,31 @@ def _nearest_entry(entries: Iterable[DecayFileEntry], mass_GeV: float) -> DecayF
     entries = list(entries)
     if not entries:
         return None
-    return min(entries, key=lambda e: abs(e.mass_GeV - mass_GeV))
+    return min(entries, key=lambda e: _entry_order_key(e, mass_GeV))
 
 
-def _warn_if_large_mismatch(chosen: DecayFileEntry, mass_GeV: float, max_delta: float) -> None:
+def _allow_large_mismatch_from_env() -> bool:
+    raw = os.environ.get("HNL_ALLOW_DECAY_MASS_MISMATCH", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _enforce_mass_mismatch_policy(chosen: DecayFileEntry, mass_GeV: float, max_delta: float) -> None:
     delta = abs(chosen.mass_GeV - mass_GeV)
-    if delta > max_delta:
-        warnings.warn(
-            f"Large decay-file mass mismatch for {mass_GeV:.3f} GeV: "
-            f"selected {chosen.mass_GeV:.3f} GeV (Δ={delta:.3f} GeV) "
-            f"category={chosen.category} file={chosen.path.name}",
-            UserWarning,
-        )
+    if delta <= max_delta:
+        return
+
+    message = (
+        f"Large decay-file mass mismatch for {mass_GeV:.3f} GeV: "
+        f"selected {chosen.mass_GeV:.3f} GeV (Δ={delta:.3f} GeV) "
+        f"category={chosen.category} source={chosen.source} file={chosen.path}"
+    )
+    if _allow_large_mismatch_from_env():
+        warnings.warn(f"{message} (allowed by HNL_ALLOW_DECAY_MASS_MISMATCH)", UserWarning)
+        return
+    raise ValueError(
+        f"{message}. Refusing to extrapolate beyond {max_delta:.3f} GeV. "
+        "Set HNL_ALLOW_DECAY_MASS_MISMATCH=1 to override for diagnostics."
+    )
 
 
 def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
@@ -145,7 +199,7 @@ def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
         chosen = _nearest_entry(entries, mass_GeV)
         if chosen is None:
             raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
-        _warn_if_large_mismatch(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
+        _enforce_mass_mismatch_policy(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
         return chosen
 
     if mass_GeV <= low_mass_threshold:
@@ -155,7 +209,17 @@ def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
             chosen = _nearest_entry(entries, mass_GeV)
         if chosen is None:
             raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
-        _warn_if_large_mismatch(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
+        _enforce_mass_mismatch_policy(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
+        return chosen
+
+    # Overlay files are generated as all-inclusive decay libraries and
+    # intentionally bypass legacy category filtering.
+    overlay = [e for e in entries if e.source == "generated"]
+    if overlay:
+        chosen = _nearest_entry(overlay, mass_GeV)
+        if chosen is None:
+            raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
+        _enforce_mass_mismatch_policy(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
         return chosen
 
     allowed = [e for e in entries if e.category in priorities and e.category != "analytical2and3bodydecays"]
@@ -164,7 +228,7 @@ def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
         chosen = _nearest_entry(entries, mass_GeV)
     if chosen is None:
         raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
-    _warn_if_large_mismatch(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
+    _enforce_mass_mismatch_policy(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
     return chosen
 
 

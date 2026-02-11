@@ -1,0 +1,14 @@
+[submodule "analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Ue"]
+	path = analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Ue
+	url = https://github.com/davidrcurtin/MATHUSLA_LLPfiles_RHN_Ue
+	ignore = dirty
+
+[submodule "analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Umu"]
+	path = analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Umu
+	url = https://github.com/davidrcurtin/MATHUSLA_LLPfiles_RHN_Umu
+	ignore = dirty
+
+[submodule "analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Utau"]
+	path = analysis_pbc/decay/external/MATHUSLA_LLPfiles_RHN_Utau
+	url = https://github.com/davidrcurtin/MATHUSLA_LLPfiles_RHN_Utau
+	ignore = dirty

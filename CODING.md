@@ -236,6 +236,46 @@ rm -f output/csv/analysis/HNL_U2_limits_summary.csv output/csv/analysis/HNL_U2_t
 
 Important: delete CSV and `.meta.json` sidecars together.
 
+### Decay overlay workflow
+
+The runtime decay selector now supports an overlay root, searched before the
+read-only external decay repositories:
+
+- `output/decay/generated/` (overlay, highest priority)
+- `analysis_pbc/decay/external/` (fallback)
+
+For hadronized masses (`mass > low_mass_threshold`), overlay files are treated
+as all-inclusive decay libraries and bypass legacy category filtering. For low
+masses (`<= low_mass_threshold`), analytical files are still preferred.
+
+Strict mismatch policy:
+
+- Selection fails if `|m_requested - m_file| > 0.5 GeV`.
+- Diagnostics override: `HNL_ALLOW_DECAY_MASS_MISMATCH=1` (warning instead of fail).
+
+Precompute overlay decay libraries (flavour-pure couplings, one non-zero
+coupling per flavour, default `|U|^2=1e-6`):
+
+The precompute driver derives deterministic per-`(flavour,mass)` seeds from
+`--seed`, so each point uses a distinct MG5/Pythia RNG stream.
+
+```bash
+python tools/decay/precompute_decay_library_overlay.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --u2-norm 1e-6 \
+  --nevents 20000
+```
+
+Audit coverage and strict matching:
+
+```bash
+python tools/decay/audit_decay_coverage.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --out output/decay/coverage_report.csv
+```
+
 ## 10. HNLCalc scaling validation
 
 Use `tools/analysis/check_hnlcalc_scaling.py` to verify the scaling

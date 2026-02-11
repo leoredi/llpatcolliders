@@ -19,10 +19,17 @@ import sys
 THIS_FILE = Path(__file__).resolve()
 REPO_ROOT = THIS_FILE.parents[2]
 ANALYSIS_ROOT = REPO_ROOT / "analysis_pbc"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
 
 from hnl_models.hnl_model_hnlcalc import HNLModel
+from tools.decay.decay_library_io import (
+    dataframe_to_event_daughters,
+    format_mass_suffix,
+    write_decay_library_txt,
+)
 
 HBARC_GEV_M = 1.973269804e-16
 
@@ -38,6 +45,9 @@ class RunConfig:
     work_dir: Path
     out_dir: Path
     seed: int
+    output_format: str
+    final_state_mode: str
+    txt_prefix: str
 
 
 def hnl_ctau_and_width(mass_GeV: float, Ue2: float, Umu2: float, Utau2: float) -> tuple[float, float]:
@@ -175,8 +185,8 @@ def _ensure_pythia8_pythonpath() -> None:
 def hadronize_lhe(
     lhe_path: Path,
     max_events: int,
-    stable_pids: Iterable[int],
     seed: int,
+    selected_pids: Iterable[int] | None = None,
 ) -> pd.DataFrame:
     sanitized = sanitize_lhe_beams(lhe_path, lhe_path.parent)
     pythia = load_pythia()
@@ -193,7 +203,7 @@ def hadronize_lhe(
     pythia.init()
 
     rows = []
-    stable_set = {int(pid) for pid in stable_pids}
+    selected_set = {int(pid) for pid in selected_pids} if selected_pids is not None else None
     event_id = 0
 
     while event_id < max_events and pythia.next():
@@ -201,7 +211,7 @@ def hadronize_lhe(
             if not p.isFinal():
                 continue
             pid = int(p.id())
-            if pid not in stable_set:
+            if selected_set is not None and pid not in selected_set:
                 continue
             rows.append(
                 {
@@ -222,6 +232,7 @@ def hadronize_lhe(
 
 
 def build_stable_pid_list() -> List[int]:
+    # Legacy subset used by the old CSV workflow.
     return [
         11, -11,
         13, -13,
@@ -230,6 +241,14 @@ def build_stable_pid_list() -> List[int]:
         2212, -2212,
         22,
     ]
+
+
+def _selected_pids_for_mode(mode: str) -> List[int] | None:
+    if mode == "all":
+        return None
+    if mode == "stable_subset":
+        return build_stable_pid_list()
+    raise ValueError(f"Unknown final-state mode '{mode}'. Use 'all' or 'stable_subset'.")
 
 
 def sanitize_lhe_beams(lhe_path: Path, work_dir: Path) -> Path:
@@ -286,17 +305,26 @@ def generate_for_mass(config: RunConfig, mass_GeV: float) -> None:
     lhe_path = find_lhe_file(proc_dir)
     lhe_path = ensure_lhe_uncompressed(lhe_path, config.work_dir)
 
-    stable_pids = build_stable_pid_list()
-    df = hadronize_lhe(lhe_path, config.nevents, stable_pids, config.seed)
+    selected_pids = _selected_pids_for_mode(config.final_state_mode)
+    df = hadronize_lhe(lhe_path, config.nevents, config.seed, selected_pids=selected_pids)
 
     ctau0_m, gamma_tot = hnl_ctau_and_width(mass_GeV, config.Ue2, config.Umu2, config.Utau2)
-    df["mass_GeV"] = mass_GeV
-    df["ctau0_m"] = ctau0_m
-    df["gamma_tot_GeV"] = gamma_tot
 
-    out_path = config.out_dir / f"HNL_decay_rest_{mass_label}.csv"
-    df.to_csv(out_path, index=False)
-    print(f"Saved {len(df)} particles to {out_path}")
+    if config.output_format in {"csv", "both"}:
+        csv_df = df.copy()
+        csv_df["mass_GeV"] = mass_GeV
+        csv_df["ctau0_m"] = ctau0_m
+        csv_df["gamma_tot_GeV"] = gamma_tot
+        out_csv = config.out_dir / f"HNL_decay_rest_{mass_label}.csv"
+        csv_df.to_csv(out_csv, index=False)
+        print(f"Saved {len(csv_df)} particles to {out_csv}")
+
+    if config.output_format in {"txt", "both"}:
+        event_daughters = dataframe_to_event_daughters(df)
+        mass_suffix = format_mass_suffix(mass_GeV)
+        out_txt = config.out_dir / f"{config.txt_prefix}_{mass_suffix}.txt"
+        n_events = write_decay_library_txt(out_txt, mass_GeV=mass_GeV, event_daughters=event_daughters)
+        print(f"Saved {n_events} decay events to {out_txt}")
 
 
 def parse_masses(value: str) -> List[float]:
@@ -320,6 +348,24 @@ def main() -> None:
     parser.add_argument("--work-dir", type=str, default=str(REPO_ROOT / "analysis_pbc" / "decay" / "work"))
     parser.add_argument("--out-dir", type=str, default=str(REPO_ROOT / "analysis_pbc" / "decay" / "output"))
     parser.add_argument("--seed", type=int, default=12345)
+    parser.add_argument(
+        "--output-format",
+        choices=["csv", "txt", "both"],
+        default="csv",
+        help="Output format: csv (legacy), txt (decay library), or both.",
+    )
+    parser.add_argument(
+        "--final-state-mode",
+        choices=["stable_subset", "all"],
+        default="stable_subset",
+        help="Particle selection for output rows; 'all' is recommended for decay-library txt output.",
+    )
+    parser.add_argument(
+        "--txt-prefix",
+        type=str,
+        default="vN_Ntoall_generated",
+        help="Filename prefix for txt mode (mass suffix is appended automatically).",
+    )
     args = parser.parse_args()
 
     masses = parse_masses(args.masses)
@@ -338,6 +384,9 @@ def main() -> None:
         work_dir=work_dir,
         out_dir=out_dir,
         seed=args.seed,
+        output_format=args.output_format,
+        final_state_mode=args.final_state_mode,
+        txt_prefix=args.txt_prefix,
     )
 
     if not config.mg5_path.exists():
