@@ -42,9 +42,9 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent  # production/madgraph_production
 sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
-    from config_mass_grid import MASS_GRID
+    from config_mass_grid import MASS_GRID, N_EVENTS_DEFAULT
 except ImportError as e:
-    print(f"ERROR: Could not import MASS_GRID from config_mass_grid.py")
+    print(f"ERROR: Could not import from config_mass_grid.py")
     print(f"  Project root: {PROJECT_ROOT}")
     print(f"  Error: {e}")
     sys.exit(1)
@@ -60,8 +60,6 @@ DEFAULT_MG5_EXE = os.environ.get("MG5_PATH", "/opt/MG5_aMC_v3_6_6/bin/mg5_aMC")
 # Flavours
 FLAVOURS = ['electron', 'muon', 'tau']
 
-# Number of events per mass point (default run)
-N_EVENTS_DEFAULT = 100000
 
 # K-factor for NLO correction (not applied here; used in analysis)
 # Actual NLO cross-sections used in analysis are defined in:

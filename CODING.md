@@ -19,9 +19,9 @@ Use these terms consistently across code and docs:
 ## 2. Pipeline map
 
 ```text
-config_mass_grid.py
+config_mass_grid.py  (MASS_GRID, N_EVENTS_DEFAULT, MAX_SIGNAL_EVENTS)
   -> production/pythia_production/main_hnl_production.cc
-  -> production/madgraph_production/scripts/run_hnl_scan.py (optional EW)
+  -> production/madgraph_production/scripts/run_hnl_scan.py (EW)
   -> analysis_pbc/limits/combine_production_channels.py
   -> analysis_pbc/limits/run.py
   -> money_plot/plot_money_island.py
@@ -36,41 +36,99 @@ Main outputs:
 
 ## 3. Full production recipe (transverse detector)
 
-For MATHUSLA/CODEX-b-like geometry, use four Pythia passes:
+The full production chain consists of two main parts: Pythia production for meson-decay channels, and MadGraph production for high-mass Electroweak (EW) channels. Both `N_EVENTS_DEFAULT` and `MAX_SIGNAL_EVENTS` are read from `config_mass_grid.py`.
+
+### Bash
+
+**1. Pythia Production (Meson Decays)**
 
 ```bash
 cd production/pythia_production
-PYTHIA8=$(pwd)/pythia8315 make
+PYTHIA8=$(pwd)/pythia8315 make main_hnl_production
 
 ./run_parallel_production.sh all both
 ./run_parallel_production.sh all direct hardccbar 10
 ./run_parallel_production.sh all direct hardbbbar 10
 ./run_parallel_production.sh all direct hardBc 15
+cd ../..
 ```
 
-Then optionally run MadGraph EW production (Docker image `mg5-hnl`):
+**2. MadGraph Production (EW)**
 
 ```bash
 docker run --rm -v "$(pwd):/work" mg5-hnl bash -c \
-  "cd /work/production/madgraph_production && python3 scripts/run_hnl_scan.py --min-mass 2"
+  "cd /work/production/madgraph_production && \
+   python3 scripts/run_hnl_scan.py --flavour electron --min-mass 3 && \
+   python3 scripts/run_hnl_scan.py --flavour muon --min-mass 3 && \
+   python3 scripts/run_hnl_scan.py --flavour tau --min-mass 3"
 ```
 
-`run_hnl_scan.py` flags: `--flavour electron|muon|tau`, `--min-mass <GeV>` (skip low masses where mesons dominate), `--masses <list>`, `--nevents <N>`, `--test` (single point: 15 GeV muon, 1k events). EW production is only relevant above ~2 GeV.
-
-Combine files, run limits, and make the money plot:
+**3. Analysis and Plotting**
 
 ```bash
 cd analysis_pbc
-python limits/combine_production_channels.py
+python limits/combine_production_channels.py --allow-variant-drop
 python limits/run.py --parallel --workers 12
-cd ../
+cd ..
 python money_plot/plot_money_island.py
 ```
+
+### Fish
+
+**1. Pythia Production (Meson Decays)**
+
+```fish
+set -gx REPO /path/to/llpatcolliders
+cd $REPO
+
+source (conda info --base)/etc/fish/conf.d/conda.fish
+conda activate llpatcolliders
+
+set -gx MPLCONFIGDIR /tmp/mpl-cache
+mkdir -p $MPLCONFIGDIR
+
+cd $REPO/production/pythia_production; or exit 1
+set -lx PYTHIA8 (pwd)/pythia8315
+make
+
+cd $REPO/production/pythia_production; and begin
+    ./run_parallel_production.sh all both auto
+    and ./run_parallel_production.sh all direct hardccbar 10
+    and ./run_parallel_production.sh all direct hardbbbar 10
+    and ./run_parallel_production.sh all direct hardBc 15
+end
+```
+
+**2. MadGraph Production (EW)**
+
+```fish
+docker run --rm -v "$REPO:/work" mg5-hnl:latest /bin/bash -lc "
+set -euo pipefail
+cd /work/production/madgraph_production
+python3 scripts/run_hnl_scan.py --flavour electron --min-mass 3
+python3 scripts/run_hnl_scan.py --flavour muon --min-mass 3
+python3 scripts/run_hnl_scan.py --flavour tau --min-mass 3
+"
+```
+
+**3. Analysis and Plotting**
+
+```fish
+cd $REPO/analysis_pbc
+python limits/combine_production_channels.py --allow-variant-drop
+python limits/run.py --parallel --workers 12
+
+cd $REPO
+python money_plot/plot_money_island.py
+```
+
+### Notes
+
+`run_hnl_scan.py` flags: `--flavour electron|muon|tau`, `--min-mass <GeV>` (skip low masses where mesons dominate), `--masses <list>`, `--nevents <N>`, `--test` (single point: 15 GeV muon, 1k events). EW production is essential for masses above ~2 GeV.
 
 Tau-only rerun does not need a dedicated script:
 
 ```bash
-cd analysis_pbc
 python limits/run.py --parallel --workers 12 --flavour tau
 ```
 
@@ -78,16 +136,17 @@ python limits/run.py --parallel --workers 12 --flavour tau
 
 `production/pythia_production/main_hnl_production.cc`:
 
-- CLI: `./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin]`.
+- CLI: `./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin] [maxSignalEvents]`.
 - `qcdMode=hardccbar` sets `HardQCD:hardccbar` with `PhaseSpace:pTHatMin` (default `10` GeV).
 - `qcdMode=hardbbbar` sets `HardQCD:hardbbbar` with `PhaseSpace:pTHatMin` (default `10` GeV).
 - `qcdMode=hardBc` uses the dedicated Bc card and filters to `|parent_pdg| = 541` in the event loop.
+- `maxSignalEvents` stops the event loop early once enough HNLs are found (0 = unlimited).
 - Every run writes a metadata sidecar containing `qcd_mode`, `sigma_gen_pb`, and `pthat_min_gev`.
 
 `production/pythia_production/run_parallel_production.sh`:
 
 - Batch launcher for full mass scans.
-- Default `nEvents=100000`.
+- Reads `N_EVENTS_DEFAULT` and `MAX_SIGNAL_EVENTS` from `config_mass_grid.py` via `load_mass_grid.sh`.
 - Tau `fromTau` jobs are emitted only for `mass < 1.77 GeV`.
 
 ## 5. Combination and file selection
@@ -101,7 +160,10 @@ python limits/run.py --parallel --workers 12 --flavour tau
   - `hardbbbar`/`hardBc > auto` for `beauty`/`Bc`.
   - `_ff` over non-`_ff` when both exist.
   - higher `pTHat` wins when modes otherwise tie.
-- Concatenates surviving regimes into `HNL_<mass>GeV_<flavour>_combined.csv`.
+- Caps each regime at `MAX_SIGNAL_EVENTS` (from `config_mass_grid.py`) via random subsampling.
+- Concatenates surviving regimes into `HNL_<mass>GeV_<flavour>_all.csv`.
+
+By default, the script will raise an error if it finds multiple simulation files for the same mass point and production regime (e.g., from different `pTHat` runs) to prevent accidental data loss. The `--allow-variant-drop` flag can be passed to both `combine_production_channels.py` and `run.py` to override this, causing the script to simply warn and use the highest-priority variant.
 
 `analysis_pbc/limits/run.py` applies the same discovery/priority logic when combined files are absent.
 
@@ -153,7 +215,8 @@ mass_GeV,flavour,benchmark,eps2_min,eps2_max,peak_events,separation_mm
 Clean restart (recommended after interrupted or mixed production runs):
 
 ```bash
-cd /Users/fredi/sandbox-offline/llpatcolliders
+# Run from the repository root directory
+cd /path/to/your/llpatcolliders
 
 # stop in-flight jobs first (fish-safe)
 pkill -f main_hnl_production; or true

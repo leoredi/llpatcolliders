@@ -763,13 +763,14 @@ int main(int argc, char* argv[]) {
     // -----------------------------------------------------------------------
 
     if (argc < 3) {
-        std::cout << "Usage: " << argv[0] << " <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin]" << std::endl;
-        std::cout << "  mass_GeV:  HNL mass in GeV" << std::endl;
-        std::cout << "  flavor:    electron, muon, tau (PBC benchmark BC6/7/8)" << std::endl;
-        std::cout << "  nEvents:   optional, default 100000" << std::endl;
-        std::cout << "  mode:      optional, 'direct' (default) or 'fromTau' (tau only)" << std::endl;
-        std::cout << "  qcdMode:   optional QCD production mode (default: auto)" << std::endl;
-        std::cout << "  pTHatMin:  optional pTHat minimum in GeV (default: mode-dependent)" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin] [maxSignalEvents]" << std::endl;
+        std::cout << "  mass_GeV:         HNL mass in GeV" << std::endl;
+        std::cout << "  flavor:           electron, muon, tau (PBC benchmark BC6/7/8)" << std::endl;
+        std::cout << "  nEvents:          optional, default 100000 (N_EVENTS_DEFAULT in config_mass_grid.py)" << std::endl;
+        std::cout << "  mode:             optional, 'direct' (default) or 'fromTau' (tau only)" << std::endl;
+        std::cout << "  qcdMode:          optional QCD production mode (default: auto)" << std::endl;
+        std::cout << "  pTHatMin:         optional pTHat minimum in GeV (default: mode-dependent)" << std::endl;
+        std::cout << "  maxSignalEvents:  optional, stop when this many HNLs found (MAX_SIGNAL_EVENTS in config_mass_grid.py, 0=unlimited)" << std::endl;
         std::cout << "\nProduction modes (tau coupling only):" << std::endl;
         std::cout << "  direct:  B/Ds/W → τ N  (mixing at meson/W vertex)" << std::endl;
         std::cout << "  fromTau: B/Ds/W → τ ν, then τ → N X  (mixing at tau decay)" << std::endl;
@@ -780,13 +781,13 @@ int main(int argc, char* argv[]) {
         std::cout << "  hardccbar: Hard cc̄ with pTHatMin (default 10 GeV)" << std::endl;
         std::cout << "  hardbbbar: Hard bb̄ with pTHatMin (default 10 GeV)" << std::endl;
         std::cout << "\nExamples:" << std::endl;
-        std::cout << "  " << argv[0] << " 0.3 muon                            # 300 MeV muon-coupled" << std::endl;
-        std::cout << "  " << argv[0] << " 2.0 electron                        # 2 GeV electron-coupled" << std::endl;
-        std::cout << "  " << argv[0] << " 3.0 tau 100000 direct               # 3 GeV tau, direct" << std::endl;
-        std::cout << "  " << argv[0] << " 3.0 tau 100000 fromTau              # 3 GeV tau, from tau" << std::endl;
-        std::cout << "  " << argv[0] << " 4.0 muon 500000 direct hardBc       # Bc production mode" << std::endl;
-        std::cout << "  " << argv[0] << " 2.0 muon 100000 direct hardccbar 10 # Hard cc̄, pTHat>10" << std::endl;
-        std::cout << "  " << argv[0] << " 3.0 muon 100000 direct hardbbbar 15 # Hard bb̄, pTHat>15" << std::endl;
+        std::cout << "  " << argv[0] << " 0.3 muon                                   # 300 MeV muon-coupled" << std::endl;
+        std::cout << "  " << argv[0] << " 2.0 electron                               # 2 GeV electron-coupled" << std::endl;
+        std::cout << "  " << argv[0] << " 3.0 tau 100000 direct                      # 3 GeV tau, direct" << std::endl;
+        std::cout << "  " << argv[0] << " 3.0 tau 100000 fromTau                     # 3 GeV tau, from tau" << std::endl;
+        std::cout << "  " << argv[0] << " 4.0 muon 500000 direct hardBc              # Bc production mode" << std::endl;
+        std::cout << "  " << argv[0] << " 2.0 muon 100000 direct hardccbar 10        # Hard cc̄, pTHat>10" << std::endl;
+        std::cout << "  " << argv[0] << " 2.0 muon 100000 direct hardccbar 10 100000 # + stop at 100k HNLs" << std::endl;
         return 1;
     }
 
@@ -796,6 +797,7 @@ int main(int argc, char* argv[]) {
     std::string productionMode = (argc >= 5) ? argv[4] : "direct";
     std::string qcdMode = (argc >= 6) ? argv[5] : "auto";
     double pTHatMinUser = (argc >= 7) ? std::stod(argv[6]) : -1.0;
+    int maxSignalEvents = (argc >= 8) ? std::stoi(argv[7]) : 0;  // 0 = unlimited
 
     // Validate production mode
     if (productionMode != "direct" && productionMode != "fromTau") {
@@ -874,6 +876,7 @@ int main(int argc, char* argv[]) {
         std::cout << "pTHatMin:        " << effectivePTHatMin << " GeV" << std::endl;
     }
     std::cout << "Events:          " << nEvents << std::endl;
+    std::cout << "Max signal:      " << (maxSignalEvents > 0 ? std::to_string(maxSignalEvents) : "unlimited") << std::endl;
     std::cout << "============================================\n" << std::endl;
     
     // -----------------------------------------------------------------------
@@ -1141,6 +1144,14 @@ int main(int argc, char* argv[]) {
                     << betaGamma << std::endl;
             
             nHNLfound++;
+        }
+
+        // Early stop: enough signal events collected
+        if (maxSignalEvents > 0 && nHNLfound >= maxSignalEvents) {
+            std::cout << "[STOP] Reached " << nHNLfound << " HNLs (maxSignalEvents="
+                      << maxSignalEvents << ") after " << nEventsProcessed
+                      << "/" << nEvents << " events" << std::endl;
+            break;
         }
     }
     

@@ -27,9 +27,12 @@ ANALYSIS_OUT_DIR = OUTPUT_DIR / "analysis"
 ANALYSIS_ROOT = ANALYSIS_DIR.parent
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 MASS_FILTER_TOL = 5e-4
 
+from config_mass_grid import MAX_SIGNAL_EVENTS
 from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
 from limits.expected_signal import expected_signal_events, couplings_from_eps2
 from limits.timing_utils import _time_block
@@ -71,6 +74,58 @@ def _attach_sim_metadata(geom_df: pd.DataFrame, sim_csv: Path) -> pd.DataFrame:
     if "pthat_min_gev" not in geom_df.columns:
         pthat = pd.to_numeric(pd.Series([meta.get("pthat_min_gev")]), errors="coerce").iloc[0]
         geom_df["pthat_min_gev"] = float(pthat) if np.isfinite(pthat) else np.nan
+    return geom_df
+
+
+def _save_geom_cache(geom_df: pd.DataFrame, geom_csv: Path) -> None:
+    """Save only hit rows (row_idx, entry_distance, path_length) to cache."""
+    hit_mask = geom_df["hits_tube"].values.astype(bool)
+    hit_indices = np.flatnonzero(hit_mask)
+    slim = pd.DataFrame({
+        "row_idx": hit_indices,
+        "entry_distance": geom_df["entry_distance"].values[hit_mask],
+        "path_length": geom_df["path_length"].values[hit_mask],
+    })
+    with tempfile.NamedTemporaryFile(mode='w', dir=geom_csv.parent,
+                                      suffix='.tmp', delete=False) as tmp:
+        slim.to_csv(tmp.name, index=False)
+    os.replace(tmp.name, geom_csv)
+
+
+def _load_geom_cached(sim_csv: Path, geom_csv: Path) -> pd.DataFrame:
+    """Load sim CSV and apply cached geometry columns."""
+    cache_df = pd.read_csv(geom_csv)
+
+    # Detect legacy full-copy cache (has 'hits_tube' column) vs slim cache (has 'row_idx')
+    if "hits_tube" in cache_df.columns and "row_idx" not in cache_df.columns:
+        return cache_df
+
+    geom_df = pd.read_csv(sim_csv)
+    n = len(geom_df)
+    hits_tube = np.zeros(n, dtype=bool)
+    entry_distance = np.full(n, np.nan, dtype=float)
+    path_length = np.full(n, np.nan, dtype=float)
+
+    if len(cache_df) > 0:
+        idx = cache_df["row_idx"].values.astype(int)
+        hits_tube[idx] = True
+        entry_distance[idx] = cache_df["entry_distance"].values
+        path_length[idx] = cache_df["path_length"].values
+
+    geom_df["hits_tube"] = hits_tube
+    geom_df["entry_distance"] = entry_distance
+    geom_df["path_length"] = path_length
+
+    # Reproduce derived columns that preprocess_hnl_csv would compute
+    if "parent_pdg" in geom_df.columns and "parent_id" not in geom_df.columns:
+        geom_df["parent_id"] = geom_df["parent_pdg"].abs()
+    if "p" in geom_df.columns and "momentum" not in geom_df.columns:
+        geom_df["momentum"] = geom_df["p"]
+    if "beta_gamma" not in geom_df.columns:
+        geom_df["beta_gamma"] = geom_df["momentum"] / geom_df["mass"]
+    if "weight" not in geom_df.columns:
+        geom_df["weight"] = 1.0
+
     return geom_df
 
 
@@ -132,9 +187,16 @@ def _scan_single_mass_impl(
         geom_cache_name = f"{sim_csv.stem}_geom.csv"
         geom_csv = GEOM_CACHE_DIR / geom_cache_name
 
-        legacy_geom_csv = GEOM_CACHE_DIR / f"HNL_{mass_str}GeV_{flavour}_geom.csv"
-        if not geom_csv.exists() and legacy_geom_csv.exists():
-            geom_csv = legacy_geom_csv
+        # Check legacy cache names (old _combined_geom.csv or bare _geom.csv)
+        if not geom_csv.exists():
+            for legacy_stem in (
+                f"HNL_{mass_str}GeV_{flavour}_combined_geom",
+                f"HNL_{mass_str}GeV_{flavour}_geom",
+            ):
+                legacy_path = GEOM_CACHE_DIR / f"{legacy_stem}.csv"
+                if legacy_path.exists():
+                    geom_csv = legacy_path
+                    break
 
         if geom_csv.exists() and sim_csv.stat().st_mtime > geom_csv.stat().st_mtime:
             if not quiet:
@@ -144,7 +206,7 @@ def _scan_single_mass_impl(
         if geom_csv.exists():
             _count(timing, "count_geom_cache_hits")
             with _time_block(timing, "time_geom_load_s"):
-                geom_df = pd.read_csv(geom_csv)
+                geom_df = _load_geom_cached(sim_csv, geom_csv)
         else:
             _count(timing, "count_geom_cache_misses")
             if mesh is None:
@@ -156,12 +218,14 @@ def _scan_single_mass_impl(
                 geom_df = preprocess_hnl_csv(sim_csv, mesh, show_progress=show_progress)
 
             with _time_block(timing, "time_geom_write_s"):
-                with tempfile.NamedTemporaryFile(mode='w', dir=geom_csv.parent,
-                                                  suffix='.tmp', delete=False) as tmp:
-                    geom_df.to_csv(tmp.name, index=False)
-                os.replace(tmp.name, geom_csv)
+                _save_geom_cache(geom_df, geom_csv)
 
         geom_df = _attach_sim_metadata(geom_df, sim_csv)
+
+        if len(geom_df) > MAX_SIGNAL_EVENTS:
+            if not quiet:
+                print(f"  [CAP] {regime}: {len(geom_df)} → {MAX_SIGNAL_EVENTS} events")
+            geom_df = geom_df.sample(n=MAX_SIGNAL_EVENTS, random_state=42)
 
         n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
         if not quiet:
@@ -352,7 +416,7 @@ def run_flavour(
 
     pattern = re.compile(
         rf"^HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_"
-        r"((?:kaon|charm|beauty|Bc|ew|combined)(?:_ff)?)"
+        r"((?:kaon|charm|beauty|Bc|ew|all|combined)(?:_ff)?)"
         r"(?:_(direct|fromTau))?"
         r"(?:_(hardBc|hardccbar|hardbbbar)(?:_pTHat([0-9]+(?:p[0-9]+)?))?)?"
         r"\.csv$"
@@ -427,29 +491,31 @@ def run_flavour(
 
     def _sort_key(item):
         base_regime, mode, is_ff, qcd_mode, pthat_min, _ = item
-        regime_order = {"kaon": 0, "charm": 1, "beauty": 2, "Bc": 3, "ew": 4, "combined": 5}
+        regime_order = {"kaon": 0, "charm": 1, "beauty": 2, "Bc": 3, "ew": 4, "all": 5, "combined": 5}
         mode_order = {None: 0, "direct": 1, "fromTau": 2}
         variant_order = _variant_priority(base_regime, is_ff, qcd_mode, pthat_min)
         return (regime_order.get(base_regime, 99), mode_order.get(mode, 99), base_regime, mode or "", variant_order)
 
+    _ALL_REGIMES = {"all", "combined"}  # "combined" is legacy alias for "all"
+
     selected_by_mass = {}
-    combined_coexist_count = 0
+    all_coexist_count = 0
     for key, items in files_by_mass.items():
         warn_for_key = True
         if mass_filter is not None:
             warn_for_key = abs(key[0] - mass_filter) <= MASS_FILTER_TOL
-        combined = [it for it in items if it[0] == "combined"]
-        if combined:
+        all_chan = [it for it in items if it[0] in _ALL_REGIMES]
+        if all_chan:
             chosen = max(
-                combined,
+                all_chan,
                 key=lambda it: _variant_priority(it[0], it[2], it[3], it[4]),
             )
 
             selected = [(chosen[5], _label(chosen[0], chosen[1], chosen[2], chosen[3], chosen[4]))]
 
             if warn_for_key and len(items) > 1:
-                n_other = sum(1 for it in items if it[0] != "combined")
-                combined_coexist_count = combined_coexist_count + n_other
+                n_other = sum(1 for it in items if it[0] not in _ALL_REGIMES)
+                all_coexist_count = all_coexist_count + n_other
 
             selected_by_mass[key] = selected
             continue
@@ -498,10 +564,10 @@ def run_flavour(
 
     files_by_mass = selected_by_mass
 
-    if combined_coexist_count > 0:
+    if all_coexist_count > 0:
         print(
-            f"[INFO] {combined_coexist_count} individual regime files coexist with combined files; "
-            "using combined only."
+            f"[INFO] {all_coexist_count} individual regime files coexist with all-channel files; "
+            "using all-channel only."
         )
 
     masses_with_valid_files = {key[0] for key in files_by_mass.keys()}

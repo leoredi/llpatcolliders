@@ -91,12 +91,13 @@ Physical interpretation of exclusion island boundaries:
 - Lower `eps2` boundary: HNL is too long-lived and decays after the detector.
 - Upper `eps2` boundary: HNL is too short-lived and decays before reaching the detector.
 
-## 8. Mass grid
+## 8. Mass grid and event budget
 
-`config_mass_grid.py` defines a single shared mass grid used by production and analysis:
+`config_mass_grid.py` defines the shared configuration used by production and analysis:
 
-- `130` points.
-- `0.20` to `17.00 GeV`.
+- `MASS_GRID`: `130` points, `0.20` to `17.00 GeV`.
+- `N_EVENTS_DEFAULT`: pp collisions to simulate per production job (default `100k`).
+- `MAX_SIGNAL_EVENTS`: max HNL signal events per channel (default `100k`). Production stops early when this is reached; analysis downsamples if exceeded.
 
 Tau `direct` runs use the full grid. Tau `fromTau` is only generated below `1.77 GeV`.
 

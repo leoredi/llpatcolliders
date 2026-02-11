@@ -50,6 +50,11 @@ Conflict rule: if this file conflicts with code, code wins.
 
 ## RUNTIME_CONSTANTS (CODE-ANCHORED)
 
+Central production config (`config_mass_grid.py`):
+- `N_EVENTS_DEFAULT = 100_000`: pp collisions to simulate per production job.
+- `MAX_SIGNAL_EVENTS = 100_000`: max HNL signal events per channel (caps production early + analysis downsampling).
+
+Other constants:
 - luminosity: `L_HL_LHC_FB = 3000` (`analysis_pbc/limits/run.py`)
 - exclusion threshold: `N_limit = 2.996` (`analysis_pbc/limits/expected_signal.py`)
 - default separation: `--separation-mm 1.0` (`analysis_pbc/limits/run.py`)
@@ -61,32 +66,37 @@ Conflict rule: if this file conflicts with code, code wins.
 
 ## PRODUCTION_PROTOCOL (TRANSVERSE DETECTOR)
 
-Required Pythia passes:
+The production sequence has two main phases, followed by analysis. Both `N_EVENTS_DEFAULT` and `MAX_SIGNAL_EVENTS` are read from `config_mass_grid.py`.
 
+**1. Pythia Production**
 ```bash
 cd production/pythia_production
-PYTHIA8=$(pwd)/pythia8315 make
+PYTHIA8=$(pwd)/pythia8315 make main_hnl_production
 ./run_parallel_production.sh all both
 ./run_parallel_production.sh all direct hardccbar 10
 ./run_parallel_production.sh all direct hardbbbar 10
 ./run_parallel_production.sh all direct hardBc 15
+cd ../..
 ```
 
-Optional EW pass (Docker image name: `mg5-hnl`):
+**2. Electroweak (EW) Production**
 
+EW production is run from the project root using the `mg5-hnl` Docker image.
 ```bash
 docker run --rm -v "$(pwd):/work" mg5-hnl bash -c \
-  "cd /work/production/madgraph_production && python3 scripts/run_hnl_scan.py --min-mass 2"
-# flags: --flavour <e|mu|tau>, --min-mass <GeV>, --masses <list>, --nevents <N>, --test
+  "cd /work/production/madgraph_production && \
+   python3 scripts/run_hnl_scan.py --flavour electron --min-mass 3 && \
+   python3 scripts/run_hnl_scan.py --flavour muon --min-mass 3 && \
+   python3 scripts/run_hnl_scan.py --flavour tau --min-mass 3"
+# flags: --flavour <e|mu|tau>, --min-mass <GeV>, --masses <list>, --nevents <N>, --test (single point: 15 GeV muon, 1k events)
 ```
 
-Post-production:
-
+**3. Post-production**
 ```bash
 cd analysis_pbc
-python limits/combine_production_channels.py
+python limits/combine_production_channels.py --allow-variant-drop
 python limits/run.py --parallel --workers 12
-cd ../
+cd ..
 python money_plot/plot_money_island.py
 ```
 
@@ -95,7 +105,7 @@ python money_plot/plot_money_island.py
 - ignore simulation CSVs with size `<1000 bytes`.
 - simulation filename grammar supports qcd suffixes:
 - `..._<hardBc|hardccbar|hardbbbar>_pTHatX.csv`
-- combined output: `HNL_<mass>GeV_<flavour>_combined.csv`
+- combined output: `HNL_<mass>GeV_<flavour>_all.csv`
 
 ## NORMALIZATION_PATH
 

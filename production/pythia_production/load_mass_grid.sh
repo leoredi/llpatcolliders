@@ -23,4 +23,24 @@ if [ ${#MASS_GRID[@]} -eq 0 ]; then
     exit 1
 fi
 
-[ "${VERBOSE_MASS_GRID:-0}" -eq 1 ] && echo "MASS_GRID: ${#MASS_GRID[@]} points" || true
+N_EVENTS_DEFAULT=$(cd "$PROJECT_ROOT" && $PYTHON -c "
+from config_mass_grid import N_EVENTS_DEFAULT
+print(N_EVENTS_DEFAULT)
+" 2>/dev/null)
+
+if [ -z "$N_EVENTS_DEFAULT" ]; then
+    echo "FATAL: Failed to load N_EVENTS_DEFAULT from config_mass_grid.py" >&2
+    exit 1
+fi
+
+MAX_SIGNAL_EVENTS=$(cd "$PROJECT_ROOT" && $PYTHON -c "
+from config_mass_grid import MAX_SIGNAL_EVENTS
+print(MAX_SIGNAL_EVENTS)
+" 2>/dev/null)
+
+if [ -z "$MAX_SIGNAL_EVENTS" ]; then
+    echo "FATAL: Failed to load MAX_SIGNAL_EVENTS from config_mass_grid.py" >&2
+    exit 1
+fi
+
+[ "${VERBOSE_MASS_GRID:-0}" -eq 1 ] && echo "MASS_GRID: ${#MASS_GRID[@]} points, N_EVENTS=$N_EVENTS_DEFAULT, MAX_SIGNAL=$MAX_SIGNAL_EVENTS" || true

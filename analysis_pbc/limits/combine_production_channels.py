@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
+import sys
 import pandas as pd
 import re
 import json
 from pathlib import Path
 import argparse
 from collections import defaultdict
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from config_mass_grid import MAX_SIGNAL_EVENTS
 
 
 def find_production_files(sim_dir, flavour=None):
@@ -135,6 +139,9 @@ def combine_csvs(csv_paths, output_path):
 
     for base_regime, mode, is_ff, qcd_mode, pthat_min, path in csv_paths:
         df = pd.read_csv(path)
+        if len(df) > MAX_SIGNAL_EVENTS:
+            print(f"      [CAP] {len(df)} → {MAX_SIGNAL_EVENTS} events (random seed=42)")
+            df = df.sample(n=MAX_SIGNAL_EVENTS, random_state=42)
         if "qcd_mode" not in df.columns or "sigma_gen_pb" not in df.columns or "pthat_min_gev" not in df.columns:
             meta = _load_sim_metadata(path)
             if "qcd_mode" not in df.columns:
@@ -164,7 +171,7 @@ def combine_csvs(csv_paths, output_path):
     combined['event'] = range(len(combined))
 
     combined.to_csv(output_path, index=False)
-    print(f"    → Combined: {len(combined):6d} HNLs → {output_path.name}")
+    print(f"    → All channels: {len(combined):6d} HNLs → {output_path.name}")
 
     return len(combined)
 
@@ -173,14 +180,14 @@ def main():
     parser = argparse.ArgumentParser(description="Combine production channels at overlapping masses")
     parser.add_argument("--flavour", choices=["electron", "muon", "tau"], help="Process specific flavour only")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done without writing files")
-    parser.add_argument("--no-cleanup", action="store_true", help="Don't move combined files, just create them in a temporary folder")
-    parser.add_argument("--delete-originals", action="store_true", help="Delete original files after combining (opt-in)")
+    parser.add_argument("--no-cleanup", action="store_true", help="Don't move merged files, just create them in a temporary folder")
+    parser.add_argument("--keep-originals", action="store_true", help="Keep original per-regime files after merging (default: delete them)")
     parser.add_argument("--allow-variant-drop", action="store_true", help="Allow silently dropping lower-priority pTHat/QCD variants (default: error).")
     args = parser.parse_args()
 
     repo_root = Path(__file__).parent.parent.parent
     sim_dir = repo_root / "output" / "csv" / "simulation"
-    combined_dir = sim_dir / "combined"
+    combined_dir = sim_dir / "_merge_tmp"
 
     if not args.dry_run:
         combined_dir.mkdir(exist_ok=True)
@@ -221,7 +228,7 @@ def main():
 
     for (mass_val, flavour), csv_list in sorted(multi_channel_masses.items()):
         mass_str = f"{mass_val:.2f}".replace('.', 'p')
-        output_path = combined_dir / f"HNL_{mass_str}GeV_{flavour}_combined.csv"
+        output_path = combined_dir / f"HNL_{mass_str}GeV_{flavour}_all.csv"
 
         print(f"Mass {mass_val} GeV ({flavour}):")
 
@@ -241,40 +248,43 @@ def main():
 
     if not args.dry_run and not args.no_cleanup:
         print(f"\n{'-' * 70}")
-        print("CLEANUP: Moving combined files")
+        print("CLEANUP: Moving merged files")
         print(f"{'-' * 70}\n")
 
-        combined_files = list(combined_dir.glob("*.csv"))
-        for f in combined_files:
+        merged_files = list(combined_dir.glob("*.csv"))
+        for f in merged_files:
             dest = sim_dir / f.name
             f.rename(dest)
             print(f"  ✓ {f.name} → {sim_dir.name}/")
 
-        if args.delete_originals:
+        if not args.keep_originals:
             print()
             for f in files_to_backup:
                 if f.exists():
                     f.unlink()
                     print(f"  ✓ Deleted: {f.name}")
+                meta = Path(f"{f}.meta.json")
+                if meta.exists():
+                    meta.unlink()
+                    print(f"  ✓ Deleted: {meta.name}")
 
         if combined_dir.exists() and not any(combined_dir.iterdir()):
             combined_dir.rmdir()
 
     print("\n" + "=" * 70)
     if args.dry_run:
-        print(f"DRY RUN: Would create {len(multi_channel_masses)} combined files")
-        if args.delete_originals:
-            print(f"         Would delete {len(set(files_to_backup))} original files")
+        print(f"DRY RUN: Would create {len(multi_channel_masses)} all-channel files")
+        if not args.keep_originals:
+            print(f"         Would delete {len(set(files_to_backup))} original files (pass --keep-originals to keep)")
     elif args.no_cleanup:
-        print(f"✓ Created {total_combined} combined files in: {combined_dir}")
+        print(f"✓ Created {total_combined} all-channel files in: {combined_dir}")
         print(f"\nManual steps needed:")
-        print(f"1. Move combined files to {sim_dir}")
-        print(f"2. (Optional) Delete original files to save space")
+        print(f"1. Move merged files to {sim_dir}")
     else:
-        print(f"✓ Created {total_combined} combined files")
+        print(f"✓ Created {total_combined} all-channel files")
         print(f"✓ Moved to {sim_dir}")
-        if args.delete_originals:
-            print(f"✓ Deleted {len(set(files_to_backup))} original files (data preserved in combined files)")
+        if not args.keep_originals:
+            print(f"✓ Deleted {len(set(files_to_backup))} original files (data preserved in _all.csv files)")
         else:
             print(f"• Kept {len(set(files_to_backup))} original files")
         print(f"\n Ready to run analysis: python limits/run.py")

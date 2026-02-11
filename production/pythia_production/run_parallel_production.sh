@@ -62,7 +62,8 @@ echo "============================================"
 echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NEVENTS=100000
+source "$SCRIPT_DIR/load_mass_grid.sh"
+NEVENTS=$N_EVENTS_DEFAULT
 NEVENTS_FROMTAU=$NEVENTS
 MAX_PARALLEL=12
 
@@ -86,7 +87,8 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOGFILE="${LOG_DIR}/production_run_${TIMESTAMP}.log"
 
 echo "Configuration:" | tee "$LOGFILE"
-echo "  Events per mass: $NEVENTS" | tee -a "$LOGFILE"
+echo "  Events per mass: $NEVENTS (pp collisions)" | tee -a "$LOGFILE"
+echo "  Max signal events: $MAX_SIGNAL_EVENTS (HNL cap)" | tee -a "$LOGFILE"
 echo "  Parallel jobs: $MAX_PARALLEL" | tee -a "$LOGFILE"
 echo "  QCD mode: $QCD_MODE" | tee -a "$LOGFILE"
 if [[ -n "$PTHAT_MIN" ]]; then
@@ -96,8 +98,6 @@ echo "  Kinematic prefilter: direct mHNL < (mBc - m_l), fromTau mHNL < ${FROMTAU
 echo "  Output directory: $OUTPUT_DIR" | tee -a "$LOGFILE"
 echo "  Log file: $LOGFILE" | tee -a "$LOGFILE"
 echo ""
-
-source ./load_mass_grid.sh
 
 ELECTRON_MASSES=("${MASS_GRID[@]}")
 MUON_MASSES=("${MASS_GRID[@]}")
@@ -286,12 +286,10 @@ run_production_job() {
         fi
 
         local cmd=(./main_hnl_production "${mass}" "${flavour}" "${events}" "${mode}")
-        if [[ "$QCD_MODE" != "auto" || -n "$PTHAT_MIN" ]]; then
-            cmd+=("$QCD_MODE")
-            if [[ -n "$PTHAT_MIN" ]]; then
-                cmd+=("$PTHAT_MIN")
-            fi
-        fi
+        # Always pass qcdMode + pTHatMin so we can append maxSignalEvents
+        cmd+=("$QCD_MODE")
+        cmd+=("${PTHAT_MIN:--1}")
+        cmd+=("$MAX_SIGNAL_EVENTS")
         "${cmd[@]}" 2>&1
 
         local exit_code=$?
