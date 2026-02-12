@@ -71,6 +71,7 @@ DECAY_CATEGORY_ORDER = (
 )
 
 MAX_DECAY_FILE_DELTA_GEV = 0.5
+OVERLAY_SWITCH_MASS_GEV = 5.0
 
 
 @dataclass(frozen=True)
@@ -212,20 +213,40 @@ def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
         _enforce_mass_mismatch_policy(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
         return chosen
 
-    # Overlay files are generated as all-inclusive decay libraries and
-    # intentionally bypass legacy category filtering.
-    overlay = [e for e in entries if e.source == "generated"]
-    if overlay:
-        chosen = _nearest_entry(overlay, mass_GeV)
+    if mass_GeV < OVERLAY_SWITCH_MASS_GEV:
+        external = [e for e in entries if e.source == "external"]
+        allowed = [
+            e
+            for e in external
+            if e.category in priorities and e.category != "analytical2and3bodydecays"
+        ]
+        chosen = _nearest_entry(allowed, mass_GeV)
+        if chosen is None:
+            chosen = _nearest_entry(external, mass_GeV)
+        if chosen is None:
+            overlay = [e for e in entries if e.source == "generated"]
+            chosen = _nearest_entry(overlay, mass_GeV)
+            if chosen is not None:
+                warnings.warn(
+                    "No external decay files available below overlay switch mass; "
+                    f"falling back to generated source for flavour={flavour} mass={mass_GeV:.3f} GeV.",
+                    UserWarning,
+                )
         if chosen is None:
             raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
         _enforce_mass_mismatch_policy(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)
         return chosen
 
-    allowed = [e for e in entries if e.category in priorities and e.category != "analytical2and3bodydecays"]
-    chosen = _nearest_entry(allowed, mass_GeV)
-    if chosen is None:
-        chosen = _nearest_entry(entries, mass_GeV)
+    # For masses at/above the switch, require generated overlay files and
+    # treat them as all-inclusive decay samples.
+    overlay = [e for e in entries if e.source == "generated"]
+    if not overlay:
+        raise FileNotFoundError(
+            "No generated decay overlay files found for "
+            f"flavour='{flavour}' at mass {mass_GeV:.3f} GeV (required for m >= {OVERLAY_SWITCH_MASS_GEV:.1f} GeV). "
+            "Run tools/decay/precompute_decay_library_overlay.py to populate output/decay/generated/."
+        )
+    chosen = _nearest_entry(overlay, mass_GeV)
     if chosen is None:
         raise FileNotFoundError(f"No decay files available for flavour '{flavour}'.")
     _enforce_mass_mismatch_policy(chosen, mass_GeV, MAX_DECAY_FILE_DELTA_GEV)

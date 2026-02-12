@@ -17,7 +17,11 @@ if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
 
 from config_mass_grid import MASS_GRID
-from decay.rhn_decay_library import MAX_DECAY_FILE_DELTA_GEV, select_decay_file
+from decay.rhn_decay_library import (
+    MAX_DECAY_FILE_DELTA_GEV,
+    OVERLAY_SWITCH_MASS_GEV,
+    select_decay_file,
+)
 
 ALL_FLAVOURS = ("electron", "muon", "tau")
 
@@ -62,6 +66,12 @@ def main() -> None:
         default=True,
         help="Use MASS_GRID when --masses is not provided (default: true).",
     )
+    parser.add_argument(
+        "--overlay-switch-mass",
+        type=float,
+        default=OVERLAY_SWITCH_MASS_GEV,
+        help="Expected source policy boundary: masses below use external, masses at/above use generated.",
+    )
     parser.add_argument("--out", type=str, default=None, help="Optional CSV report path.")
     args = parser.parse_args()
 
@@ -79,28 +89,52 @@ def main() -> None:
                 "selected_mass_GeV": "",
                 "delta_GeV": "",
                 "source": "",
+                "expected_source": "",
+                "source_policy_status": "",
                 "selected_path": "",
                 "status": "",
                 "error": "",
             }
             try:
+                expected_source = "external" if float(mass) < float(args.overlay_switch_mass) else "generated"
+                row["expected_source"] = expected_source
                 selected = select_decay_file(flavour, mass)
                 delta = abs(float(selected.mass_GeV) - float(mass))
                 row["selected_mass_GeV"] = f"{selected.mass_GeV:.6g}"
                 row["delta_GeV"] = f"{delta:.6g}"
                 row["source"] = selected.source
                 row["selected_path"] = str(selected.path)
+
+                status_parts: List[str] = []
+                errors: List[str] = []
                 if delta > MAX_DECAY_FILE_DELTA_GEV:
-                    row["status"] = "strict_fail"
-                    row["error"] = (
+                    status_parts.append("strict_fail")
+                    errors.append(
                         f"delta {delta:.6g} > threshold {MAX_DECAY_FILE_DELTA_GEV:.6g} "
                         "(selection allowed only via override env var)"
                     )
+                if selected.source == expected_source:
+                    row["source_policy_status"] = "ok"
+                else:
+                    row["source_policy_status"] = "wrong_source"
+                    status_parts.append("wrong_source")
+                    errors.append(
+                        f"selected source={selected.source} but expected source={expected_source} "
+                        f"for mass={mass:.6g} GeV with switch={args.overlay_switch_mass:.6g} GeV"
+                    )
+
+                if status_parts:
+                    row["status"] = "+".join(status_parts)
+                    row["error"] = "; ".join(errors)
                     n_fail += 1
                 else:
                     row["status"] = "ok"
             except Exception as exc:
                 row["status"] = "missing_or_error"
+                row["source_policy_status"] = "n/a"
+                row["expected_source"] = (
+                    "external" if float(mass) < float(args.overlay_switch_mass) else "generated"
+                )
                 row["error"] = str(exc)
                 n_fail += 1
             rows.append(row)
@@ -117,6 +151,8 @@ def main() -> None:
                     "selected_mass_GeV",
                     "delta_GeV",
                     "source",
+                    "expected_source",
+                    "source_policy_status",
                     "selected_path",
                     "status",
                     "error",
@@ -137,4 +173,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

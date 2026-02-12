@@ -238,15 +238,17 @@ Important: delete CSV and `.meta.json` sidecars together.
 
 ### Decay overlay workflow
 
-The runtime decay selector now supports an overlay root, searched before the
-read-only external decay repositories:
+The runtime decay selector supports a generated overlay root while keeping
+external repositories read-only:
 
 - `output/decay/generated/` (overlay, highest priority)
 - `analysis_pbc/decay/external/` (fallback)
 
-For hadronized masses (`mass > low_mass_threshold`), overlay files are treated
-as all-inclusive decay libraries and bypass legacy category filtering. For low
-masses (`<= low_mass_threshold`), analytical files are still preferred.
+Hybrid source-routing policy:
+
+- `mass <= low_mass_threshold`: prefer external `analytical2and3bodydecays`.
+- `low_mass_threshold < mass < 5.0 GeV`: use external hadronized files with legacy category priorities.
+- `mass >= 5.0 GeV`: require generated overlay files (all-inclusive, category bypass).
 
 Strict mismatch policy:
 
@@ -263,8 +265,20 @@ The precompute driver derives deterministic per-`(flavour,mass)` seeds from
 python tools/decay/precompute_decay_library_overlay.py \
   --flavours electron,muon,tau \
   --from-mass-grid \
+  --overlay-min-mass 4.0 \
   --u2-norm 1e-6 \
   --nevents 20000
+```
+
+Validate generated-vs-external overlap in `4.0 <= m < 5.0 GeV`:
+
+```bash
+python tools/decay/validate_decay_overlap.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --min-mass 4.0 \
+  --max-mass 5.0 \
+  --out output/decay/overlap_validation.csv
 ```
 
 Audit coverage and strict matching:
@@ -273,6 +287,7 @@ Audit coverage and strict matching:
 python tools/decay/audit_decay_coverage.py \
   --flavours electron,muon,tau \
   --from-mass-grid \
+  --overlay-switch-mass 5.0 \
   --out output/decay/coverage_report.csv
 ```
 

@@ -46,6 +46,12 @@ def test_hadronized_mass_filter_uses_flavour_threshold():
     assert _hadronized_masses(masses, "muon") == mu_expected
 
 
+def test_hadronized_mass_filter_respects_overlay_min_mass():
+    masses = [0.3, 0.54, 2.0, 3.5, 4.0, 4.1, 6.0]
+    assert _hadronized_masses(masses, "electron", overlay_min_mass_GeV=4.0) == [4.0, 4.1, 6.0]
+    assert _hadronized_masses(masses, "muon", overlay_min_mass_GeV=4.1) == [4.1, 6.0]
+
+
 def test_seed_for_point_deterministic():
     seed_a = _seed_for_point(12345, "electron", 6.0)
     seed_b = _seed_for_point(12345, "electron", 6.0)

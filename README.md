@@ -86,16 +86,33 @@ Generated decay libraries should be written under:
 
 - `output/decay/generated/`
 
-Generate hadronized-region decay libraries (`mass > low-mass threshold`) with
-flavour-pure couplings (`|U|^2=1e-6` by default, one non-zero flavour at a
-time):
+Hybrid routing policy:
+
+- low-mass analytical regime (`mass <= low-mass threshold`): external analytical files.
+- hadronized region below `5 GeV`: external MATHUSLA files.
+- hadronized region at/above `5 GeV`: generated overlay files.
+
+Generate overlay libraries from `>= 4 GeV` (validation overlap + high-mass coverage)
+with flavour-pure couplings (`|U|^2=1e-6` by default, one non-zero flavour at a time):
 
 ```bash
 python tools/decay/precompute_decay_library_overlay.py \
   --flavours electron,muon,tau \
   --from-mass-grid \
+  --overlay-min-mass 4.0 \
   --u2-norm 1e-6 \
   --nevents 20000
+```
+
+Validate the 4-5 GeV overlap between generated and external libraries:
+
+```bash
+python tools/decay/validate_decay_overlap.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --min-mass 4.0 \
+  --max-mass 5.0 \
+  --out output/decay/overlap_validation.csv
 ```
 
 Audit coverage and strict mass matching:
@@ -104,6 +121,7 @@ Audit coverage and strict mass matching:
 python tools/decay/audit_decay_coverage.py \
   --flavours electron,muon,tau \
   --from-mass-grid \
+  --overlay-switch-mass 5.0 \
   --out output/decay/coverage_report.csv
 ```
 

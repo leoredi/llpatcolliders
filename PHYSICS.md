@@ -83,9 +83,14 @@ Decay-library source priority:
 - overlay (`output/decay/generated/`) first,
 - external reference libraries (`analysis_pbc/decay/external/`) second.
 
-For hadronized masses, overlay files are treated as all-inclusive decay samples.
-For low masses (`<= low-mass threshold`), analytical files are still preferred.
+Hybrid source routing is enforced:
+
+- low-mass analytical regime (`mass <= low-mass threshold`): external analytical files.
+- hadronized `mass < 5 GeV`: external MATHUSLA hadronized files.
+- hadronized `mass >= 5 GeV`: generated overlay files (all-inclusive).
+
 Large decay-mass extrapolation is blocked by default (`|m_requested - m_file| > 0.5 GeV` fails).
+The `4-5 GeV` overlap region is used to validate generated libraries against external references.
 
 ## 7. Signal model
 

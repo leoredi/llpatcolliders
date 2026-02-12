@@ -50,27 +50,57 @@ def roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def test_overlay_precedence_on_same_basename(roots):
     external, generated = roots
     flavour = "electron"
-    base = "vN_Ntoall_generated_2.0.txt"
+    base = "vN_Ntoall_generated_6.0.txt"
 
     ext_path = _decay_dir(external, flavour) / base
     gen_path = _decay_dir(generated, flavour) / base
-    _write_simple_decay_file(ext_path, 2.0)
-    _write_simple_decay_file(gen_path, 2.0)
+    _write_simple_decay_file(ext_path, 6.0)
+    _write_simple_decay_file(gen_path, 6.0)
 
-    chosen = lib.select_decay_file(flavour, 2.0)
+    chosen = lib.select_decay_file(flavour, 6.0)
     assert chosen.source == "generated"
     assert chosen.path == gen_path
 
 
-def test_overlay_bypasses_category_filtering(roots):
+def test_below_switch_prefers_external_with_legacy_categories(roots):
     external, generated = roots
     flavour = "electron"
     _write_simple_decay_file(_decay_dir(generated, flavour) / "vN_Ntoall_generated_3.0.txt", 3.0)
     _write_simple_decay_file(_decay_dir(external, flavour) / "vN_Ntoall_inclDs_3.01.txt", 3.01)
 
     chosen = lib.select_decay_file(flavour, 3.0)
+    assert chosen.source == "external"
+    assert chosen.path.name == "vN_Ntoall_inclDs_3.01.txt"
+
+
+def test_above_switch_uses_generated_only(roots):
+    external, generated = roots
+    flavour = "electron"
+    _write_simple_decay_file(_decay_dir(external, flavour) / "vN_Ntoall_inclDs_5.0.txt", 5.0)
+    _write_simple_decay_file(_decay_dir(generated, flavour) / "vN_Ntoall_generated_5.0.txt", 5.0)
+
+    chosen = lib.select_decay_file(flavour, 5.0)
     assert chosen.source == "generated"
-    assert chosen.path.name == "vN_Ntoall_generated_3.0.txt"
+    assert chosen.path.name == "vN_Ntoall_generated_5.0.txt"
+
+
+def test_above_switch_missing_overlay_raises(roots):
+    external, _ = roots
+    flavour = "electron"
+    _write_simple_decay_file(_decay_dir(external, flavour) / "vN_Ntoall_inclDs_6.0.txt", 6.0)
+
+    with pytest.raises(FileNotFoundError, match="No generated decay overlay files found"):
+        lib.select_decay_file(flavour, 6.0)
+
+
+def test_below_switch_missing_external_warns_and_falls_back_to_generated(roots):
+    _, generated = roots
+    flavour = "electron"
+    _write_simple_decay_file(_decay_dir(generated, flavour) / "vN_Ntoall_generated_3.0.txt", 3.0)
+
+    with pytest.warns(UserWarning, match="falling back to generated source"):
+        chosen = lib.select_decay_file(flavour, 3.0)
+    assert chosen.source == "generated"
 
 
 def test_deterministic_tiebreak_for_nearest_overlay(roots):
@@ -129,4 +159,3 @@ def test_generated_txt_parser_compatibility(tmp_path: Path):
     assert len(parsed) == 2
     assert len(parsed[0]) == 2
     assert len(parsed[1]) == 1
-

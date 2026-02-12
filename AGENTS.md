@@ -49,6 +49,7 @@ Conflict rule: if this file conflicts with code, code wins.
 - custom decay event generation: `tools/decay/generate_hnl_decay_events.py`
 - decay overlay precompute: `tools/decay/precompute_decay_library_overlay.py`
 - decay coverage audit: `tools/decay/audit_decay_coverage.py`
+- decay overlap validator: `tools/decay/validate_decay_overlap.py`
 
 ## RUNTIME_CONSTANTS (CODE-ANCHORED)
 

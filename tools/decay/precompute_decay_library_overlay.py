@@ -21,6 +21,7 @@ from tools.decay.decay_library_io import format_mass_suffix
 from tools.decay.generate_hnl_decay_events import RunConfig, generate_for_mass
 
 ALL_FLAVOURS = ("electron", "muon", "tau")
+OVERLAY_MIN_MASS_DEFAULT_GEV = 4.0
 FLAVOUR_SEED_OFFSET = {
     "electron": 1000,
     "muon": 2000,
@@ -51,9 +52,17 @@ def _overlay_out_dir(output_root: Path, flavour: str) -> Path:
     return output_root / cfg["repo"] / cfg["decay_dir"]
 
 
-def _hadronized_masses(masses: List[float], flavour: str) -> List[float]:
+def _hadronized_masses(
+    masses: List[float],
+    flavour: str,
+    overlay_min_mass_GeV: float = 0.0,
+) -> List[float]:
     threshold = float(FLAVOUR_CONFIG[flavour]["low_mass_threshold"])
-    return [m for m in masses if float(m) > threshold]
+    return [
+        m
+        for m in masses
+        if float(m) > threshold and float(m) >= float(overlay_min_mass_GeV)
+    ]
 
 
 def _resolve_masses(args: argparse.Namespace) -> List[float]:
@@ -104,6 +113,7 @@ def main() -> None:
     parser.add_argument("--output-root", type=str, default=str(REPO_ROOT / "output" / "decay" / "generated"))
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--u2-norm", type=float, default=1e-6)
+    parser.add_argument("--overlay-min-mass", type=float, default=OVERLAY_MIN_MASS_DEFAULT_GEV)
     args = parser.parse_args()
 
     flavours = _resolve_flavours(args.flavours)
@@ -116,6 +126,8 @@ def main() -> None:
         raise ValueError("--u2-norm must be positive.")
     if args.nevents <= 0:
         raise ValueError("--nevents must be positive.")
+    if args.overlay_min_mass < 0.0:
+        raise ValueError("--overlay-min-mass must be non-negative.")
 
     output_root = Path(args.output_root).resolve()
     work_root = Path(args.work_dir).resolve()
@@ -127,9 +139,12 @@ def main() -> None:
     skipped = 0
 
     for flavour in flavours:
-        mass_list = _hadronized_masses(masses, flavour)
+        mass_list = _hadronized_masses(masses, flavour, args.overlay_min_mass)
         if not mass_list:
-            print(f"[{flavour}] No masses above hadronized threshold; skipping.")
+            print(
+                f"[{flavour}] No masses in hadronized region above overlay floor "
+                f"({args.overlay_min_mass:.3f} GeV); skipping."
+            )
             continue
 
         Ue2, Umu2, Utau2 = couplings_for_flavour(flavour, args.u2_norm)
