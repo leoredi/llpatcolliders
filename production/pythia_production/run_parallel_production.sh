@@ -63,6 +63,7 @@ echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/load_mass_grid.sh"
+export N_EVENTS_DEFAULT
 NEVENTS=$N_EVENTS_DEFAULT
 NEVENTS_FROMTAU=$NEVENTS
 MAX_PARALLEL=12

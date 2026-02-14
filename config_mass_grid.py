@@ -24,7 +24,7 @@ MASS_GRID = sorted([
 ])
 
 N_EVENTS_DEFAULT = 100_000      # pp collisions to simulate per production job
-MAX_SIGNAL_EVENTS = 100     # max HNL signal events to keep per channel
+MAX_SIGNAL_EVENTS = 1_000   # max HNL signal events to keep per channel
 
 
 def format_mass_for_filename(mass):

@@ -81,6 +81,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <cstdlib>
 #include <map>
 #include <iomanip>
 
@@ -766,7 +767,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Usage: " << argv[0] << " <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin] [maxSignalEvents]" << std::endl;
         std::cout << "  mass_GeV:         HNL mass in GeV" << std::endl;
         std::cout << "  flavor:           electron, muon, tau (PBC benchmark BC6/7/8)" << std::endl;
-        std::cout << "  nEvents:          optional, default 100000 (N_EVENTS_DEFAULT in config_mass_grid.py)" << std::endl;
+        std::cout << "  nEvents:          optional, reads N_EVENTS_DEFAULT env var or config_mass_grid.py" << std::endl;
         std::cout << "  mode:             optional, 'direct' (default) or 'fromTau' (tau only)" << std::endl;
         std::cout << "  qcdMode:          optional QCD production mode (default: auto)" << std::endl;
         std::cout << "  pTHatMin:         optional pTHat minimum in GeV (default: mode-dependent)" << std::endl;
@@ -793,7 +794,10 @@ int main(int argc, char* argv[]) {
 
     double mHNL = std::stod(argv[1]);
     std::string flavor = argv[2];
-    int nEvents = (argc >= 4) ? std::stoi(argv[3]) : 100000;
+    int nEventsDefault = 100000;
+    const char* envNEvents = std::getenv("N_EVENTS_DEFAULT");
+    if (envNEvents) nEventsDefault = std::stoi(envNEvents);
+    int nEvents = (argc >= 4) ? std::stoi(argv[3]) : nEventsDefault;
     std::string productionMode = (argc >= 5) ? argv[4] : "direct";
     std::string qcdMode = (argc >= 6) ? argv[5] : "auto";
     double pTHatMinUser = (argc >= 7) ? std::stod(argv[6]) : -1.0;

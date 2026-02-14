@@ -57,7 +57,7 @@ Conflict rule: if this file conflicts with code, code wins.
 
 Central production config (`config_mass_grid.py`):
 - `N_EVENTS_DEFAULT = 100_000`: pp collisions to simulate per production job.
-- `MAX_SIGNAL_EVENTS = 100`: max HNL signal events per channel (caps production early + analysis downsampling).
+- `MAX_SIGNAL_EVENTS = 1_000`: max HNL signal events per channel (caps production early + analysis downsampling).
 
 Other constants:
 - luminosity: `L_HL_LHC_FB = 3000` (`analysis_pbc/limits/run.py`)
