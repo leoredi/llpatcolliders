@@ -33,6 +33,7 @@ if str(REPO_ROOT) not in sys.path:
 MASS_FILTER_TOL = 5e-4
 
 from config_mass_grid import MAX_SIGNAL_EVENTS
+from decay.brvis_kappa import DEFAULT_KAPPA_TABLE, lookup_kappa, resolve_kappa_table_path
 from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
 from limits.expected_signal import expected_signal_events, couplings_from_eps2
 from limits.timing_utils import _time_block
@@ -139,12 +140,14 @@ def scan_single_mass(
     dirac=False,
     separation_m=0.001,
     decay_seed=12345,
-    p_min_GeV=0.5,
+    p_min_GeV=0.6,
     reco_efficiency=1.0,
     quiet=False,
     show_progress=None,
     timing_enabled=False,
     hnlcalc_per_eps2=False,
+    decay_mode="library",
+    kappa_table_path=None,
 ):
     stdout_ctx = contextlib.redirect_stdout(io.StringIO()) if quiet else contextlib.nullcontext()
 
@@ -152,7 +155,8 @@ def scan_single_mass(
         return _scan_single_mass_impl(
             mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
             dirac, separation_m, decay_seed, p_min_GeV, reco_efficiency,
-            quiet, show_progress, timing_enabled, hnlcalc_per_eps2
+            quiet, show_progress, timing_enabled, hnlcalc_per_eps2,
+            decay_mode, kappa_table_path,
         )
 
 
@@ -172,6 +176,8 @@ def _scan_single_mass_impl(
     show_progress,
     timing_enabled,
     hnlcalc_per_eps2,
+    decay_mode,
+    kappa_table_path,
 ):
     timing = {} if timing_enabled else None
     if timing is not None:
@@ -256,72 +262,95 @@ def _scan_single_mass_impl(
         timing["n_eps2_points"] = int(len(eps2_scan))
     N_scan = []
 
-    from decay.decay_detector import DecaySelection, build_decay_cache
+    decay_mode_norm = str(decay_mode).strip().lower().replace("-", "_")
+    if decay_mode_norm not in {"library", "brvis_kappa"}:
+        raise ValueError(
+            f"Unsupported decay_mode='{decay_mode}'. Use 'library' or 'brvis-kappa'."
+        )
 
     eps2_ref = 1e-6
     ctau0_ref = None
     br_ref = None
-    if not hnlcalc_per_eps2:
+    br_vis = None
+    need_ref_model = (not hnlcalc_per_eps2) or (decay_mode_norm == "brvis_kappa")
+    if need_ref_model:
         from hnl_models.hnl_model_hnlcalc import HNLModel
+
         with _time_block(timing, "time_hnlcalc_ref_s"):
             Ue2, Umu2, Utau2 = couplings_from_eps2(eps2_ref, benchmark)
             model = HNLModel(mass_GeV=mass_val, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
             ctau0_ref = model.ctau0_m
             br_ref = model.production_brs()
             br_vis = model.visible_branching_ratio()
-        if not quiet:
-            print(f"  BR_vis(≥2 charged) = {br_vis:.3f} [implicit in MC sampling, not applied as factor]")
         if timing is not None:
             timing["n_hnlcalc_eps2_ref"] = float(eps2_ref)
-            timing["br_visible"] = br_vis
+            timing["br_visible"] = float(br_vis)
 
-    with _time_block(timing, "time_decay_cache_s"):
-        decay_cache = build_decay_cache(
-            geom_df,
-            mass_val,
-            flavour,
-            DecaySelection(separation_m=separation_m, seed=decay_seed, p_min_GeV=p_min_GeV),
-            verbose=not quiet,
+    kappa_eff = np.nan
+    kappa_path_resolved = ""
+    if decay_mode_norm == "brvis_kappa":
+        kappa_path = resolve_kappa_table_path(kappa_table_path)
+        kappa_path_resolved = str(kappa_path)
+        kappa_eff = lookup_kappa(
+            flavour=flavour,
+            mass_GeV=mass_val,
+            p_min_GeV=p_min_GeV,
+            separation_mm=separation_m * 1e3,
+            table_path=kappa_path,
         )
+        if not quiet:
+            print(
+                f"  BR_vis(>=2 charged)={float(br_vis):.4f}, "
+                f"kappa={float(kappa_eff):.4f} [{kappa_path.name}]"
+            )
 
-    if not quiet:
-        print("  Precomputing decay cache for separation scan...")
+    decay_cache = None
+    if decay_mode_norm == "library":
+        from decay.decay_detector import DecaySelection, build_decay_cache
+
+        with _time_block(timing, "time_decay_cache_s"):
+            decay_cache = build_decay_cache(
+                geom_df,
+                mass_val,
+                flavour,
+                DecaySelection(separation_m=separation_m, seed=decay_seed, p_min_GeV=p_min_GeV),
+                verbose=not quiet,
+            )
+        if not quiet:
+            print("  Precomputing decay cache for separation scan...")
+
     with _time_block(timing, "time_eps2_scan_s"):
         for eps2 in eps2_scan:
+            base_kwargs = dict(
+                geom_df=geom_df,
+                mass_GeV=mass_val,
+                eps2=eps2,
+                benchmark=benchmark,
+                lumi_fb=lumi_fb,
+                dirac=dirac,
+                separation_m=separation_m,
+                decay_seed=decay_seed,
+                p_min_GeV=p_min_GeV,
+                reco_efficiency=reco_efficiency,
+                decay_mode=decay_mode_norm,
+                br_vis=br_vis if decay_mode_norm == "brvis_kappa" else None,
+                kappa_eff=float(kappa_eff) if decay_mode_norm == "brvis_kappa" else None,
+                timing=timing,
+            )
             if hnlcalc_per_eps2:
                 N = expected_signal_events(
-                    geom_df,
-                    mass_val,
-                    eps2,
-                    benchmark,
-                    lumi_fb,
-                    dirac=dirac,
-                    separation_m=separation_m,
-                    decay_seed=decay_seed,
-                    p_min_GeV=p_min_GeV,
-                    reco_efficiency=reco_efficiency,
+                    **base_kwargs,
                     decay_cache=decay_cache,
-                    timing=timing,
                 )
             else:
                 ctau0_m = ctau0_ref * (eps2_ref / eps2)
                 br_scale = eps2 / eps2_ref
                 N = expected_signal_events(
-                    geom_df,
-                    mass_val,
-                    eps2,
-                    benchmark,
-                    lumi_fb,
-                    dirac=dirac,
-                    separation_m=separation_m,
-                    decay_seed=decay_seed,
-                    p_min_GeV=p_min_GeV,
-                    reco_efficiency=reco_efficiency,
+                    **base_kwargs,
                     decay_cache=decay_cache,
                     ctau0_m=ctau0_m,
                     br_per_parent=br_ref,
                     br_scale=br_scale,
-                    timing=timing,
                 )
             N_scan.append(N)
 
@@ -338,7 +367,11 @@ def _scan_single_mass_impl(
             "benchmark": benchmark,
             "eps2_min": np.nan,
             "eps2_max": np.nan,
-            "peak_events": N_scan.max()
+            "peak_events": N_scan.max(),
+            "decay_mode": decay_mode_norm,
+            "br_vis": float(br_vis) if br_vis is not None else np.nan,
+            "kappa_eff": float(kappa_eff) if np.isfinite(kappa_eff) else np.nan,
+            "kappa_table_path": kappa_path_resolved,
         }
         if timing is not None:
             result.update(timing)
@@ -386,7 +419,11 @@ def _scan_single_mass_impl(
         "benchmark": benchmark,
         "eps2_min": eps2_min,
         "eps2_max": eps2_max,
-        "peak_events": peak_events
+        "peak_events": peak_events,
+        "decay_mode": decay_mode_norm,
+        "br_vis": float(br_vis) if br_vis is not None else np.nan,
+        "kappa_eff": float(kappa_eff) if np.isfinite(kappa_eff) else np.nan,
+        "kappa_table_path": kappa_path_resolved,
     }
     if timing is not None:
         result.update(timing)
@@ -401,7 +438,7 @@ def run_flavour(
     dirac=False,
     separation_m=0.001,
     decay_seed=12345,
-    p_min_GeV=0.5,
+    p_min_GeV=0.6,
     reco_efficiency=1.0,
     show_progress=None,
     mass_filter=None,
@@ -409,6 +446,8 @@ def run_flavour(
     hnlcalc_per_eps2=False,
     allow_variant_drop=False,
     max_mass=None,
+    decay_mode="library",
+    kappa_table_path=None,
 ):
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
@@ -601,7 +640,24 @@ def run_flavour(
         for (mass_val, mass_str) in mass_points:
             sim_list = files_by_mass[(mass_val, mass_str)]
             args_list.append(
-                (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, p_min_GeV, reco_efficiency, show_progress, timing_enabled, hnlcalc_per_eps2)
+                (
+                    mass_val,
+                    mass_str,
+                    flavour,
+                    benchmark,
+                    lumi_fb,
+                    sim_list,
+                    dirac,
+                    separation_m,
+                    decay_seed,
+                    p_min_GeV,
+                    reco_efficiency,
+                    show_progress,
+                    timing_enabled,
+                    hnlcalc_per_eps2,
+                    decay_mode,
+                    kappa_table_path,
+                )
             )
 
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
@@ -640,6 +696,8 @@ def run_flavour(
                 show_progress=show_progress,
                 timing_enabled=timing_enabled,
                 hnlcalc_per_eps2=hnlcalc_per_eps2,
+                decay_mode=decay_mode,
+                kappa_table_path=kappa_table_path,
             )
             if res:
                 results.append(res)
@@ -647,13 +705,32 @@ def run_flavour(
     return pd.DataFrame(results)
 
 def scan_single_mass_wrapper(args):
-    (mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list, dirac, separation_m, decay_seed, p_min_GeV, reco_efficiency, show_progress, timing_enabled, hnlcalc_per_eps2) = args
+    (
+        mass_val,
+        mass_str,
+        flavour,
+        benchmark,
+        lumi_fb,
+        sim_list,
+        dirac,
+        separation_m,
+        decay_seed,
+        p_min_GeV,
+        reco_efficiency,
+        show_progress,
+        timing_enabled,
+        hnlcalc_per_eps2,
+        decay_mode,
+        kappa_table_path,
+    ) = args
     return scan_single_mass(
         mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list,
         dirac=dirac, separation_m=separation_m, decay_seed=decay_seed,
         p_min_GeV=p_min_GeV, reco_efficiency=reco_efficiency, quiet=True,
         show_progress=show_progress, timing_enabled=timing_enabled,
         hnlcalc_per_eps2=hnlcalc_per_eps2,
+        decay_mode=decay_mode,
+        kappa_table_path=kappa_table_path,
     )
 
 if __name__ == "__main__":
@@ -711,8 +788,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--p-min-gev",
         type=float,
-        default=0.5,
-        help="Minimum charged-track momentum in GeV/c (default: 0.5, MATHUSLA CDR threshold).",
+        default=0.6,
+        help="Minimum charged-track momentum in GeV/c (default: 0.6).",
+    )
+    parser.add_argument(
+        "--decay-mode",
+        type=str,
+        choices=["library", "brvis-kappa"],
+        default="library",
+        help="Decay acceptance mode: full library sampling or calibrated BR_vis*kappa surrogate.",
+    )
+    parser.add_argument(
+        "--kappa-table",
+        type=str,
+        default=str(DEFAULT_KAPPA_TABLE),
+        help="Path to calibrated kappa table (used by --decay-mode brvis-kappa).",
     )
     parser.add_argument(
         "--reco-efficiency",
@@ -760,6 +850,9 @@ if __name__ == "__main__":
     reco_efficiency = args.reco_efficiency
     print(f"Decay separation: {args.separation_mm:.3f} mm (seed={args.decay_seed})")
     print(f"Track p_min: {p_min_GeV:.2f} GeV/c | Reco efficiency: {reco_efficiency:.2f}")
+    print(f"Decay mode: {args.decay_mode}")
+    if args.decay_mode == "brvis-kappa":
+        print(f"Kappa table: {resolve_kappa_table_path(args.kappa_table)}")
 
     all_results = []
 
@@ -787,8 +880,17 @@ if __name__ == "__main__":
             hnlcalc_per_eps2=args.hnlcalc_per_eps2,
             allow_variant_drop=args.allow_variant_drop,
             max_mass=args.max_mass,
+            decay_mode=args.decay_mode,
+            kappa_table_path=args.kappa_table,
         )
         df["separation_mm"] = args.separation_mm
+        df["p_min_gev"] = p_min_GeV
+        df["decay_mode"] = args.decay_mode
+        df["kappa_table_path"] = (
+            str(resolve_kappa_table_path(args.kappa_table))
+            if args.decay_mode == "brvis-kappa"
+            else ""
+        )
         all_results.append(df)
 
     final_df = pd.concat(all_results, ignore_index=True)

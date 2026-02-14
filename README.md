@@ -93,14 +93,14 @@ Hybrid routing policy:
 - hadronized region at/above `5 GeV`: generated overlay files.
 
 Generate overlay libraries from `>= 4 GeV` (validation overlap + high-mass coverage)
-with flavour-pure couplings (`|U|^2=1e-6` by default, one non-zero flavour at a time):
+with flavour-pure couplings (`|U|^2=1e-3` by default, one non-zero flavour at a time):
 
 ```bash
 python tools/decay/precompute_decay_library_overlay.py \
   --flavours electron,muon,tau \
   --from-mass-grid \
   --overlay-min-mass 4.0 \
-  --u2-norm 1e-6 \
+  --u2-norm 1e-3 \
   --nevents 20000
 ```
 
@@ -123,6 +123,54 @@ python tools/decay/audit_decay_coverage.py \
   --from-mass-grid \
   --overlay-switch-mass 5.0 \
   --out output/decay/coverage_report.csv
+```
+
+## Calibrated Fast Decay Mode (`brvis-kappa`)
+
+For faster limits scans, a calibrated analytical surrogate is available:
+
+- `P_decay` from geometry + lifetime (same as baseline),
+- multiplied by `BR_vis` from HNLCalc,
+- multiplied by calibrated `kappa(mass, flavour)`.
+
+Calibration convention is fixed to:
+
+- `p_min = 0.6 GeV`
+- `separation = 1.0 mm`
+
+Build dense-mass calibration and report:
+
+```bash
+python tools/decay/calibrate_brvis_kappa.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --p-min-gev 0.6 \
+  --separation-mm 1.0 \
+  --out output/csv/analysis/decay_kappa_table.csv \
+  --report output/csv/analysis/decay_kappa_validation.csv
+```
+
+Validate calibrated mode against library mode:
+
+```bash
+python tools/decay/validate_brvis_kappa.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --p-min-gev 0.6 \
+  --separation-mm 1.0 \
+  --kappa-table output/csv/analysis/decay_kappa_table.csv \
+  --out output/csv/analysis/decay_kappa_validation_check.csv
+```
+
+Run limits with the calibrated mode:
+
+```bash
+cd analysis_pbc
+python limits/run.py --parallel --workers 12 \
+  --decay-mode brvis-kappa \
+  --kappa-table ../output/csv/analysis/decay_kappa_table.csv \
+  --p-min-gev 0.6 \
+  --separation-mm 1.0
 ```
 
 By default, decay-file selection fails when `|m_requested - m_file| > 0.5 GeV`.

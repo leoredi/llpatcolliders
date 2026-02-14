@@ -256,7 +256,7 @@ Strict mismatch policy:
 - Diagnostics override: `HNL_ALLOW_DECAY_MASS_MISMATCH=1` (warning instead of fail).
 
 Precompute overlay decay libraries (flavour-pure couplings, one non-zero
-coupling per flavour, default `|U|^2=1e-6`):
+coupling per flavour, default `|U|^2=1e-3`):
 
 The precompute driver derives deterministic per-`(flavour,mass)` seeds from
 `--seed`, so each point uses a distinct MG5/Pythia RNG stream.
@@ -266,7 +266,7 @@ python tools/decay/precompute_decay_library_overlay.py \
   --flavours electron,muon,tau \
   --from-mass-grid \
   --overlay-min-mass 4.0 \
-  --u2-norm 1e-6 \
+  --u2-norm 1e-3 \
   --nevents 20000
 ```
 
@@ -289,6 +289,53 @@ python tools/decay/audit_decay_coverage.py \
   --from-mass-grid \
   --overlay-switch-mass 5.0 \
   --out output/decay/coverage_report.csv
+```
+
+### Calibrated analytical decay mode (`brvis-kappa`)
+
+`limits/run.py` now supports two decay-acceptance modes:
+
+- `library` (default baseline): full decay-library sampling.
+- `brvis-kappa`: fast surrogate using `P_decay * BR_vis * kappa(mass,flavour)`.
+
+Required calibration convention for `brvis-kappa`:
+
+- `--p-min-gev 0.6`
+- `--separation-mm 1.0`
+
+Generate dense calibration from selected available mass points:
+
+```bash
+python tools/decay/calibrate_brvis_kappa.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --p-min-gev 0.6 \
+  --separation-mm 1.0 \
+  --out output/csv/analysis/decay_kappa_table.csv \
+  --report output/csv/analysis/decay_kappa_validation.csv
+```
+
+Validate calibrated mode on held-out seed(s):
+
+```bash
+python tools/decay/validate_brvis_kappa.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --p-min-gev 0.6 \
+  --separation-mm 1.0 \
+  --kappa-table output/csv/analysis/decay_kappa_table.csv \
+  --out output/csv/analysis/decay_kappa_validation_check.csv
+```
+
+Run limits with the calibrated mode:
+
+```bash
+cd analysis_pbc
+python limits/run.py --parallel --workers 12 \
+  --decay-mode brvis-kappa \
+  --kappa-table ../output/csv/analysis/decay_kappa_table.csv \
+  --p-min-gev 0.6 \
+  --separation-mm 1.0
 ```
 
 ## 10. HNLCalc scaling validation

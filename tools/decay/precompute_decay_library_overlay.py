@@ -112,7 +112,16 @@ def main() -> None:
     parser.add_argument("--work-dir", type=str, default=str(REPO_ROOT / "analysis_pbc" / "decay" / "work"))
     parser.add_argument("--output-root", type=str, default=str(REPO_ROOT / "output" / "decay" / "generated"))
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--u2-norm", type=float, default=1e-6)
+    parser.add_argument(
+        "--u2-norm",
+        type=float,
+        default=1e-3,
+        help=(
+            "Coupling |U_l|^2 for MG5 generation. Rest-frame kinematics "
+            "are coupling-independent for single-flavour benchmarks, so a "
+            "larger value improves MG5 efficiency at no physics cost."
+        ),
+    )
     parser.add_argument("--overlay-min-mass", type=float, default=OVERLAY_MIN_MASS_DEFAULT_GEV)
     args = parser.parse_args()
 

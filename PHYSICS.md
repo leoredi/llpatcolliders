@@ -92,6 +92,13 @@ Hybrid source routing is enforced:
 Large decay-mass extrapolation is blocked by default (`|m_requested - m_file| > 0.5 GeV` fails).
 The `4-5 GeV` overlap region is used to validate generated libraries against external references.
 
+Alternative calibrated fast mode (`decay_mode = brvis-kappa`):
+
+- keeps the same geometric `P_decay` term,
+- replaces explicit daughter sampling with `BR_vis * kappa(m_N, flavour)`,
+- is calibrated against the library baseline at fixed analysis cuts:
+  `p_min = 0.6 GeV`, `separation = 1.0 mm`.
+
 ## 7. Signal model
 
 The expected signal is computed as a per-parent sum:
@@ -99,6 +106,14 @@ The expected signal is computed as a per-parent sum:
 ```text
 N_sig = L * sum_parents [ sigma_parent * BR(parent -> N + X) * P_decay * epsilon_sep ]
 ```
+
+For `brvis-kappa` mode, `epsilon_sep` is replaced by the calibrated factor:
+
+```text
+epsilon_fast = BR_vis(HNLCalc) * kappa(mass, flavour)
+```
+
+and the same per-parent production + geometry terms are kept unchanged.
 
 Physical interpretation of exclusion island boundaries:
 

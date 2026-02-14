@@ -50,6 +50,8 @@ Conflict rule: if this file conflicts with code, code wins.
 - decay overlay precompute: `tools/decay/precompute_decay_library_overlay.py`
 - decay coverage audit: `tools/decay/audit_decay_coverage.py`
 - decay overlap validator: `tools/decay/validate_decay_overlap.py`
+- brvis-kappa calibrator: `tools/decay/calibrate_brvis_kappa.py`
+- brvis-kappa validator: `tools/decay/validate_brvis_kappa.py`
 
 ## RUNTIME_CONSTANTS (CODE-ANCHORED)
 
@@ -61,6 +63,8 @@ Other constants:
 - luminosity: `L_HL_LHC_FB = 3000` (`analysis_pbc/limits/run.py`)
 - exclusion threshold: `N_limit = 2.996` (`analysis_pbc/limits/expected_signal.py`)
 - default separation: `--separation-mm 1.0` (`analysis_pbc/limits/run.py`)
+- default p-min: `--p-min-gev 0.6` (`analysis_pbc/limits/run.py`)
+- decay modes: `library|brvis-kappa` (`analysis_pbc/limits/run.py`)
 - tau fromTau threshold: `1.77 GeV` (`production/pythia_production/run_parallel_production.sh`)
 - FONLL/LHCb reference cross-sections (`analysis_pbc/config/production_xsecs.py`):
 - `sigma(ccbar) = 23.6 mb`

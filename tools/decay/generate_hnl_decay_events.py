@@ -7,6 +7,7 @@ import gzip
 import os
 import shutil
 import subprocess
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List
@@ -182,52 +183,152 @@ def _ensure_pythia8_pythonpath() -> None:
         )
 
 
+def _parse_lhe_events(lhe_path: Path) -> List[List[dict]]:
+    """Parse LHE file into a list of events, each a list of particle dicts."""
+    events: List[List[dict]] = []
+    in_event = False
+    current: List[dict] = []
+
+    with open(lhe_path) as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped == "<event>":
+                in_event = True
+                current = []
+                continue
+            if stripped == "</event>":
+                in_event = False
+                if current:
+                    events.append(current)
+                continue
+            if not in_event or stripped.startswith("#") or stripped.startswith("<"):
+                continue
+            parts = stripped.split()
+            if len(parts) < 13:
+                continue
+            current.append({
+                "pid": int(parts[0]),
+                "lhe_status": int(parts[1]),
+                "col": int(parts[4]),
+                "acol": int(parts[5]),
+                "px": float(parts[6]),
+                "py": float(parts[7]),
+                "pz": float(parts[8]),
+                "e": float(parts[9]),
+                "m": float(parts[10]),
+            })
+    return events
+
+
+def _needs_hadronization(pid: int) -> bool:
+    absid = abs(pid)
+    return (1 <= absid <= 6) or absid == 21
+
+
+_UNSTABLE_LEPTONS = {15}  # tau
+
+
+def _needs_pythia(pid: int) -> bool:
+    """True if this particle requires Pythia processing (hadronization or decay)."""
+    return _needs_hadronization(pid) or abs(pid) in _UNSTABLE_LEPTONS
+
+
 def hadronize_lhe(
     lhe_path: Path,
     max_events: int,
     seed: int,
     selected_pids: Iterable[int] | None = None,
 ) -> pd.DataFrame:
-    sanitized = sanitize_lhe_beams(lhe_path, lhe_path.parent)
+    # Parse LHE events directly instead of using Pythia's LHEF reader,
+    # which fails on decay-at-rest events with BSM beam IDs.
+    lhe_events = _parse_lhe_events(lhe_path)
+    if max_events > 0:
+        lhe_events = lhe_events[:max_events]
+
     pythia = load_pythia()
-    pythia.readString("Beams:frameType = 4")
-    pythia.readString(f"Beams:LHEF = {sanitized}")
+    # Skip process generation; we fill the event record manually.
     pythia.readString("ProcessLevel:all = off")
-    pythia.readString("PartonLevel:all = off")
     pythia.readString("HadronLevel:all = on")
     pythia.readString("HadronLevel:Decay = on")
     pythia.readString("ParticleDecays:limitTau0 = on")
     pythia.readString("ParticleDecays:tau0Max = 10.0")
-    pythia.readString(f"Random:seed = {seed}")
     pythia.readString("Random:setSeed = on")
+    pythia.readString(f"Random:seed = {seed}")
+    pythia.readString("Next:numberShowInfo = 0")
+    pythia.readString("Next:numberShowProcess = 0")
+    pythia.readString("Next:numberShowEvent = 0")
     pythia.init()
 
-    rows = []
+    rows: List[dict] = []
     selected_set = {int(pid) for pid in selected_pids} if selected_pids is not None else None
-    event_id = 0
+    n_failed = 0
 
-    while event_id < max_events and pythia.next():
-        for p in pythia.event:
-            if not p.isFinal():
+    for event_id, particles in enumerate(lhe_events):
+        final = [p for p in particles if p["lhe_status"] == 1]
+        needs_pythia = any(_needs_pythia(p["pid"]) for p in final)
+
+        if not needs_pythia:
+            # Truly stable leptonic event (e/mu + neutrinos only) — safe to bypass.
+            for p in final:
+                pid = p["pid"]
+                if selected_set is not None and pid not in selected_set:
+                    continue
+                rows.append({
+                    "event": event_id, "pid": pid,
+                    "E": p["e"], "px": p["px"], "py": p["py"],
+                    "pz": p["pz"], "mass": p["m"],
+                })
+            continue
+
+        # Fill Pythia event record — hadronize partons and/or decay unstable leptons.
+        pythia.event.reset()
+        for p in final:
+            # Status 23 = outgoing from hardest subprocess.  Pythia
+            # hadronizes colored particles (col/acol != 0) and leaves
+            # color-singlet leptons untouched.
+            pythia.event.append(
+                p["pid"], 23, p["col"], p["acol"],
+                p["px"], p["py"], p["pz"], p["e"], p["m"],
+            )
+
+        if not pythia.next():
+            n_failed += 1
+            continue
+
+        for i in range(pythia.event.size()):
+            if not pythia.event[i].isFinal():
                 continue
-            pid = int(p.id())
+            pid = int(pythia.event[i].id())
             if selected_set is not None and pid not in selected_set:
                 continue
-            rows.append(
-                {
-                    "event": event_id,
-                    "pid": pid,
-                    "E": float(p.e()),
-                    "px": float(p.px()),
-                    "py": float(p.py()),
-                    "pz": float(p.pz()),
-                    "mass": float(p.m()),
-                }
-            )
-        event_id += 1
+            rows.append({
+                "event": event_id, "pid": pid,
+                "E": float(pythia.event[i].e()),
+                "px": float(pythia.event[i].px()),
+                "py": float(pythia.event[i].py()),
+                "pz": float(pythia.event[i].pz()),
+                "mass": float(pythia.event[i].m()),
+            })
 
-    if event_id == 0:
-        raise RuntimeError("No events processed by Pythia.")
+    n_total = len(lhe_events)
+    if n_total == 0:
+        raise RuntimeError("No LHE events found in file.")
+
+    if n_failed > 0:
+        warnings.warn(
+            f"hadronize_lhe: Pythia hadronization failed for "
+            f"{n_failed}/{n_total} events.",
+            UserWarning,
+        )
+
+    n_with_daughters = len({r["event"] for r in rows}) if rows else 0
+    if max_events > 0 and n_with_daughters < 0.9 * max_events:
+        warnings.warn(
+            f"hadronize_lhe: only {n_with_daughters}/{max_events} events "
+            f"produced usable daughters ({n_with_daughters / max_events:.1%}).",
+            UserWarning,
+        )
+
     return pd.DataFrame(rows)
 
 
@@ -249,42 +350,6 @@ def _selected_pids_for_mode(mode: str) -> List[int] | None:
     if mode == "stable_subset":
         return build_stable_pid_list()
     raise ValueError(f"Unknown final-state mode '{mode}'. Use 'all' or 'stable_subset'.")
-
-
-def sanitize_lhe_beams(lhe_path: Path, work_dir: Path) -> Path:
-    text = lhe_path.read_text()
-    lines = text.splitlines()
-    init_idx = None
-    for i, line in enumerate(lines):
-        if line.strip() == "<init>":
-            init_idx = i
-            break
-    if init_idx is None or init_idx + 1 >= len(lines):
-        return lhe_path
-
-    fields = lines[init_idx + 1].split()
-    if len(fields) < 10:
-        return lhe_path
-
-    id_a = fields[0]
-    id_b = fields[1]
-    e_a = fields[2]
-    e_b = fields[3]
-
-    allowed_beams = {"11", "-11", "13", "-13", "22", "2212", "-2212", "2112", "-2112"}
-    if id_a not in allowed_beams or id_b not in allowed_beams:
-        fields[0] = "0"
-        fields[1] = "0"
-        fields[2] = "0.000000e+00"
-        fields[3] = "0.000000e+00"
-    elif id_b == "0":
-        fields[1] = id_a
-        fields[3] = e_a if e_b == "0.000000e+00" else e_b
-    lines[init_idx + 1] = " ".join(fields)
-
-    out_path = work_dir / f"{lhe_path.stem}_sanitized{lhe_path.suffix}"
-    out_path.write_text("\n".join(lines) + "\n")
-    return out_path
 
 
 def generate_for_mass(config: RunConfig, mass_GeV: float) -> None:

@@ -94,8 +94,17 @@ def expected_signal_events(
     ctau0_m: float | None = None,
     br_per_parent: Dict[int, float] | None = None,
     br_scale: float | None = None,
+    decay_mode: str = "library",
+    br_vis: float | None = None,
+    kappa_eff: float | None = None,
     timing: dict | None = None,
 ) -> float:
+    decay_mode_norm = str(decay_mode).strip().lower().replace("-", "_")
+    if decay_mode_norm not in {"library", "brvis_kappa"}:
+        raise ValueError(
+            f"Unsupported decay_mode='{decay_mode}'. Use 'library' or 'brvis_kappa'."
+        )
+
     if timing is not None:
         timing["count_eps2_calls"] = timing.get("count_eps2_calls", 0) + 1
     if ctau0_m is None or br_per_parent is None:
@@ -171,21 +180,32 @@ def expected_signal_events(
             arg_path = -length[mask_hits] / lam[mask_hits]
             P_decay[mask_hits] = np.exp(arg_entry) * (-np.expm1(arg_path))
 
-    if separation_pass is None:
-        with _time_block(timing, "time_separation_s"):
-            selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed, p_min_GeV=p_min_GeV)
-            separation_pass = compute_decay_acceptance(
-                geom_df=geom_df,
-                mass_GeV=mass_GeV,
-                flavour=benchmark_to_flavour(benchmark),
-                ctau0_m=ctau0_m,
-                mesh=build_mesh_once(),
-                selection=selection,
-                decay_cache=decay_cache,
-            )
-    if not np.all(mask_valid):
-        separation_pass = separation_pass[mask_valid]
-    P_decay = P_decay * separation_pass.astype(float)
+    if decay_mode_norm == "library":
+        if separation_pass is None:
+            with _time_block(timing, "time_separation_s"):
+                selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed, p_min_GeV=p_min_GeV)
+                separation_pass = compute_decay_acceptance(
+                    geom_df=geom_df,
+                    mass_GeV=mass_GeV,
+                    flavour=benchmark_to_flavour(benchmark),
+                    ctau0_m=ctau0_m,
+                    mesh=build_mesh_once(),
+                    selection=selection,
+                    decay_cache=decay_cache,
+                )
+        if not np.all(mask_valid):
+            separation_pass = separation_pass[mask_valid]
+        P_decay = P_decay * separation_pass.astype(float)
+    else:
+        if br_vis is None or not np.isfinite(float(br_vis)):
+            raise ValueError("decay_mode='brvis_kappa' requires finite br_vis.")
+        if kappa_eff is None or not np.isfinite(float(kappa_eff)):
+            raise ValueError("decay_mode='brvis_kappa' requires finite kappa_eff.")
+        if float(br_vis) < 0.0:
+            raise ValueError("decay_mode='brvis_kappa' requires br_vis >= 0.")
+        if float(kappa_eff) < 0.0:
+            raise ValueError("decay_mode='brvis_kappa' requires kappa_eff >= 0.")
+        P_decay = P_decay * float(br_vis) * float(kappa_eff)
 
     parent_abs = np.abs(parent_id.astype(int))
     tau_parent_id = None
@@ -372,13 +392,22 @@ def scan_eps2_for_mass(
     decay_seed: int = 12345,
     p_min_GeV: float = 0.5,
     reco_efficiency: float = 1.0,
+    decay_mode: str = "library",
+    br_vis: float | None = None,
+    kappa_eff: float | None = None,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
     eps2_grid = np.logspace(-12, -2, 100)
     Nsig = np.zeros_like(eps2_grid, dtype=float)
 
+    decay_mode_norm = str(decay_mode).strip().lower().replace("-", "_")
+    if decay_mode_norm not in {"library", "brvis_kappa"}:
+        raise ValueError(
+            f"Unsupported decay_mode='{decay_mode}'. Use 'library' or 'brvis_kappa'."
+        )
+
     decay_cache = None
     separation_pass = None
-    if separation_m is not None:
+    if separation_m is not None and decay_mode_norm == "library":
         from decay.decay_detector import DecaySelection, build_decay_cache
         flavour = benchmark_to_flavour(benchmark)
         selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed, p_min_GeV=p_min_GeV)
@@ -401,6 +430,9 @@ def scan_eps2_for_mass(
             reco_efficiency=reco_efficiency,
             decay_cache=decay_cache,
             separation_pass=separation_pass,
+            decay_mode=decay_mode_norm,
+            br_vis=br_vis,
+            kappa_eff=kappa_eff,
         )
 
     mask = Nsig >= N_limit
