@@ -68,6 +68,17 @@ def main() -> None:
     parser.add_argument("--switch-mass", type=float, default=5.0)
     parser.add_argument("--p-min-gev", type=float, default=0.6)
     parser.add_argument("--separation-mm", type=float, default=1.0)
+    parser.add_argument(
+        "--max-signal-events",
+        type=int,
+        default=None,
+        help="Optional cap on signal events per input file during calibration (default: no cap).",
+    )
+    parser.add_argument(
+        "--allow-variant-drop",
+        action="store_true",
+        help="Allow dropping lower-priority pTHat/QCD variants instead of erroring.",
+    )
     parser.add_argument("--calib-seeds", type=str, default="12345,22345,32345")
     parser.add_argument("--val-seed", type=int, default=42345)
     parser.add_argument("--out", type=str, default=str(DEFAULT_OUT))
@@ -81,6 +92,8 @@ def main() -> None:
         raise ValueError("--p-min-gev must be positive.")
     if args.separation_mm <= 0.0:
         raise ValueError("--separation-mm must be positive.")
+    if args.max_signal_events is not None and args.max_signal_events <= 0:
+        raise ValueError("--max-signal-events must be positive when provided.")
 
     flavours = resolve_flavours(args.flavours)
     masses = resolve_masses(args.masses, args.from_mass_grid, args.min_mass, args.max_mass)
@@ -96,7 +109,12 @@ def main() -> None:
 
     for flavour in flavours:
         benchmark = FLAVOUR_TO_BENCHMARK[flavour]
-        points = available_mass_points(flavour, selected_masses=masses, max_mass=args.max_mass)
+        points = available_mass_points(
+            flavour,
+            selected_masses=masses,
+            max_mass=args.max_mass,
+            allow_variant_drop=args.allow_variant_drop,
+        )
         if not args.quiet:
             print(f"[{flavour}] points={len(points)}")
 
@@ -119,7 +137,13 @@ def main() -> None:
                 "error": "",
             }
             try:
-                geom_df = load_geom_for_sim_files(sim_files, mass_str=mass_str, flavour=flavour, show_progress=False)
+                geom_df = load_geom_for_sim_files(
+                    sim_files,
+                    mass_str=mass_str,
+                    flavour=flavour,
+                    show_progress=False,
+                    max_signal_events=args.max_signal_events,
+                )
                 if len(geom_df) == 0:
                     raise RuntimeError("No geometry rows loaded for point.")
 

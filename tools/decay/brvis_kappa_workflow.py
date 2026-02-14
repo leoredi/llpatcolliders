@@ -18,7 +18,7 @@ if str(REPO_ROOT) not in sys.path:
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
 
-from config_mass_grid import MASS_GRID, MAX_SIGNAL_EVENTS
+from config_mass_grid import MASS_GRID
 from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
 from limits import run as limits_run
 
@@ -79,6 +79,7 @@ def discover_sim_files_for_flavour(
     flavour: str,
     selected_masses: List[float] | None = None,
     max_mass: float | None = None,
+    allow_variant_drop: bool = False,
 ) -> Dict[Tuple[float, str], List[Tuple[Path, str]]]:
     selected_masses = selected_masses or []
 
@@ -189,6 +190,20 @@ def discover_sim_files_for_flavour(
                 chosen[k2] = (base_regime, mode, is_ff, qcd_mode, pthat_min, path)
 
         selected = [v for _, v in sorted(chosen.items(), key=lambda kv: _sort_key(kv[1]))]
+        for k2 in {(base_regime, mode) for base_regime, mode, *_ in items}:
+            candidates = [it for it in items if (it[0], it[1]) == k2]
+            if len(candidates) <= 1:
+                continue
+            kept = chosen[k2]
+            kept_path = str(kept[5])
+            dropped = [c for c in candidates if str(c[5]) != kept_path]
+            if dropped and not allow_variant_drop:
+                raise ValueError(
+                    f"Multiple variants for {k2} at m={key[0]:.2f}: "
+                    f"keeping {_label(*kept[:5])}, would drop "
+                    f"{[_label(*d[:5]) for d in dropped]}. "
+                    f"Pass --allow-variant-drop to override."
+                )
         selected_by_mass[key] = [
             (path, _label(base_regime, mode, is_ff, qcd_mode, pthat_min))
             for base_regime, mode, is_ff, qcd_mode, pthat_min, path in selected
@@ -202,6 +217,7 @@ def load_geom_for_sim_files(
     mass_str: str,
     flavour: str,
     show_progress: bool | None = False,
+    max_signal_events: int | None = None,
 ) -> pd.DataFrame:
     geom_dfs: List[pd.DataFrame] = []
     mesh = None
@@ -232,8 +248,8 @@ def load_geom_for_sim_files(
             limits_run._save_geom_cache(geom_df, geom_csv)
 
         geom_df = limits_run._attach_sim_metadata(geom_df, sim_csv)
-        if len(geom_df) > MAX_SIGNAL_EVENTS:
-            geom_df = geom_df.sample(n=MAX_SIGNAL_EVENTS, random_state=42)
+        if max_signal_events is not None and max_signal_events > 0 and len(geom_df) > max_signal_events:
+            geom_df = geom_df.sample(n=max_signal_events, random_state=42)
         geom_dfs.append(geom_df)
 
     if not geom_dfs:
@@ -245,11 +261,13 @@ def available_mass_points(
     flavour: str,
     selected_masses: List[float] | None = None,
     max_mass: float | None = None,
+    allow_variant_drop: bool = False,
 ) -> List[Tuple[float, str, List[Tuple[Path, str]]]]:
     selected = discover_sim_files_for_flavour(
         flavour=flavour,
         selected_masses=selected_masses,
         max_mass=max_mass,
+        allow_variant_drop=allow_variant_drop,
     )
     return [
         (mass_val, mass_str, selected[(mass_val, mass_str)])
