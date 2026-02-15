@@ -46,15 +46,26 @@ The batch launcher emits `fromTau` only for `m_N < 1.77 GeV`.
 For higher masses, the pipeline can add `ew` files from `W/Z -> N` production.
 These are merged with meson channels at the same `(mass, flavour)`.
 
-## 4. QCD slicing for transverse detectors
+## 4. QCD production strategy
 
-At O(100 m) transverse distance, acceptance is dominated by boosted HNLs.
-To populate the high-`pT` tail efficiently, production uses four Pythia passes:
+Standard PBC projections (MATHUSLA, ANUBIS, CODEX-b) use FONLL differential
+cross-sections for meson kinematics. Our pipeline uses Pythia inclusive
+generation with FONLL cross-sections for normalisation — a simpler approach
+that gives equivalent results for meson-decay channels.
 
-- `auto` (baseline SoftQCD pass).
-- `hardccbar` with default `pTHatMin = 10 GeV`.
-- `hardbbbar` with default `pTHatMin = 10 GeV`.
-- `hardBc` with default `pTHatMin = 15 GeV` and parent filter `|parent_pdg| = 541`.
+Production uses two Pythia passes:
+
+- `auto`: inclusive SoftQCD (kaon regime) or hard-QCD (charm/beauty) depending
+  on mass. Provides sufficient statistics across the full mass grid except
+  for the Bc-only regime at high mass.
+- `hardBc`: enriched bb̄ production (`HardQCD:gg2bbbar` + `qqbar2bbbar`,
+  `pTHatMin = 15 GeV`) with parent filter `|parent_pdg| = 541`. Required
+  for `m_N > 5 GeV` where Bc is the only meson parent and `auto` yields
+  O(100) HNLs vs O(100k) at lower masses.
+
+Legacy modes `hardccbar` and `hardbbbar` are still supported by the code
+but are not needed: `auto` gives O(100k) HNLs per mass point throughout
+the kaon, charm, and beauty regimes.
 
 The combination stage keeps the best variant per regime/mode and concatenates regimes.
 
@@ -89,6 +100,14 @@ Hybrid source routing is enforced:
 - hadronized `mass < 5 GeV`: external MATHUSLA hadronized files.
 - hadronized `mass >= 5 GeV`: generated overlay files (all-inclusive).
 
+Parsing convention:
+
+- External decay libraries may store PDG IDs as integral float text
+  (for example `16.0`). The loader normalizes integral float PID tokens to
+  integer IDs before applying visibility logic.
+- Agreement fixes should preserve physics-complete generated content; neutrino
+  stripping is not used as a compatibility patch.
+
 Large decay-mass extrapolation is blocked by default (`|m_requested - m_file| > 0.5 GeV` fails).
 The `4-5 GeV` overlap region is used to validate generated libraries against external references.
 
@@ -98,6 +117,17 @@ Alternative calibrated fast mode (`decay_mode = brvis-kappa`):
 - replaces explicit daughter sampling with `BR_vis * kappa(m_N, flavour)`,
 - is calibrated against the library baseline at fixed analysis cuts:
   `p_min = 0.6 GeV`, `separation = 1.0 mm`.
+
+PBC-style decay QA sign-off (recommended before final limits):
+
+- overlap gate in `4 <= m < 5 GeV`: `validate_decay_overlap.py` must report all points `ok`.
+- source-policy + strict-match gate on full grid: `audit_decay_coverage.py` must report all points `ok`.
+- fast-surrogate gate: `validate_brvis_kappa.py` must report all points `ok` at the calibrated cuts.
+
+Interpretation:
+
+- these checks establish consistency at the projection level used by PBC-style studies,
+- they do not replace a full detector-level reconstruction/background analysis.
 
 ## 7. Signal model
 
@@ -124,9 +154,9 @@ Physical interpretation of exclusion island boundaries:
 
 `config_mass_grid.py` defines the shared configuration used by production and analysis:
 
-- `MASS_GRID`: `130` points, `0.20` to `17.00 GeV`.
+- `MASS_GRID`: `116` points, `0.20` to `10.00 GeV`.
 - `N_EVENTS_DEFAULT`: pp collisions to simulate per production job (default `100k`).
-- `MAX_SIGNAL_EVENTS`: max HNL signal events per channel (default `100k`). Production stops early when this is reached; analysis downsamples if exceeded.
+- `MAX_SIGNAL_EVENTS`: max HNL signal events per channel (default `1k`). Production stops early when this is reached; analysis downsamples if exceeded.
 
 Tau `direct` runs use the full grid. Tau `fromTau` is only generated below `1.77 GeV`.
 

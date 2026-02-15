@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 import sys
 
 import pytest
 
 HERE = Path(__file__).resolve()
-REPO_ROOT = HERE.parents[2]
+REPO_ROOT = HERE.parents[3]
 ANALYSIS_ROOT = REPO_ROOT / "analysis_pbc"
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
@@ -105,3 +106,93 @@ def test_check_delta_warns_with_override(monkeypatch: pytest.MonkeyPatch):
 def test_relative_diff_uses_reference_denominator():
     assert overlap._relative_diff(10.0, 8.0) == pytest.approx(0.25)
     assert overlap._relative_diff(0.0, 0.0) == pytest.approx(0.0)
+
+
+def test_overlap_main_identical_external_and_generated_passes(
+    roots, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    external, generated = roots
+    flavour = "electron"
+    mass = 4.2
+    event_daughters = [[(2.0, 0.0, 0.0, 0.0, 0.0, 11), (1.0, 0.0, 0.0, 0.0, 0.0, 12)]]
+
+    write_decay_library_txt(
+        _decay_dir(external, flavour) / "vN_Ntoall_inclDs_4.2.txt",
+        mass_GeV=mass,
+        event_daughters=event_daughters,
+    )
+    write_decay_library_txt(
+        _decay_dir(generated, flavour) / "vN_Ntoall_generated_4.2.txt",
+        mass_GeV=mass,
+        event_daughters=event_daughters,
+    )
+
+    out_csv = tmp_path / "overlap_ok.csv"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "validate_decay_overlap.py",
+            "--flavours",
+            flavour,
+            "--masses",
+            "4.2",
+            "--min-mass",
+            "4.0",
+            "--max-mass",
+            "5.0",
+            "--out",
+            str(out_csv),
+        ],
+    )
+    overlap.main()
+
+    rows = list(csv.DictReader(out_csv.open()))
+    assert len(rows) == 1
+    assert rows[0]["status"] == "ok"
+
+
+def test_overlap_main_visible_fraction_shift_fails(
+    roots, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    external, generated = roots
+    flavour = "electron"
+    mass = 4.2
+
+    # External has one invisible daughter -> visible fraction = 0.5.
+    write_decay_library_txt(
+        _decay_dir(external, flavour) / "vN_Ntoall_inclDs_4.2.txt",
+        mass_GeV=mass,
+        event_daughters=[[(1.0, 0.0, 0.0, 0.0, 0.0, 11), (1.0, 0.0, 0.0, 0.0, 0.0, 12)]],
+    )
+    # Generated is fully visible -> visible fraction = 1.0.
+    write_decay_library_txt(
+        _decay_dir(generated, flavour) / "vN_Ntoall_generated_4.2.txt",
+        mass_GeV=mass,
+        event_daughters=[[(2.0, 0.0, 0.0, 0.0, 0.0, 11)]],
+    )
+
+    out_csv = tmp_path / "overlap_fail.csv"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "validate_decay_overlap.py",
+            "--flavours",
+            flavour,
+            "--masses",
+            "4.2",
+            "--min-mass",
+            "4.0",
+            "--max-mass",
+            "5.0",
+            "--out",
+            str(out_csv),
+        ],
+    )
+    with pytest.raises(SystemExit, match="1"):
+        overlap.main()
+
+    rows = list(csv.DictReader(out_csv.open()))
+    assert len(rows) == 1
+    assert "visible_frac_fail" in rows[0]["status"]

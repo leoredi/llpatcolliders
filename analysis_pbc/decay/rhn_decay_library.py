@@ -53,6 +53,7 @@ DECAY_PRIORITIES = {
     ),
     "tau": (
         "lightfonly",
+        "lightfsonly",
         "lightfstau",
         "lightfstauK",
     ),
@@ -61,6 +62,7 @@ DECAY_PRIORITIES = {
 DECAY_CATEGORY_ORDER = (
     "lightfstauK",
     "lightfstau",
+    "lightfsonly",
     "lightfonly",
     "inclDs",
     "inclDD",
@@ -192,6 +194,18 @@ def _enforce_mass_mismatch_policy(chosen: DecayFileEntry, mass_GeV: float, max_d
     )
 
 
+def _parse_pid_token(token: str, tol: float = 1e-6) -> int:
+    """
+    Parse PID tokens encoded as either integer text ("16") or integral float
+    text ("16.0"). Reject non-integral values (e.g. "16.5").
+    """
+    pid_float = float(token)
+    pid_int = int(round(pid_float))
+    if abs(pid_float - pid_int) > tol:
+        raise ValueError(f"Non-integral PID token: {token}")
+    return pid_int
+
+
 def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
     entries = list_decay_files(flavour)
     low_mass_threshold = FLAVOUR_CONFIG[flavour]["low_mass_threshold"]
@@ -253,20 +267,31 @@ def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
     return chosen
 
 
-def _parse_decay_event_block(lines: List[str]) -> List[Tuple[float, float, float, float, float, int]]:
+def _parse_decay_event_block(lines: List[str]) -> Tuple[List[Tuple[float, float, float, float, float, int]], int]:
     daughters: List[Tuple[float, float, float, float, float, int]] = []
+    malformed_rows = 0
     if not lines:
-        return daughters
+        return daughters, malformed_rows
     for line in lines[1:]:
         parts = [p.strip() for p in line.split(",") if p.strip()]
         if len(parts) < 6:
             continue
         try:
             E, px, py, pz, mass, pid = parts[:6]
-            daughters.append((float(E), float(px), float(py), float(pz), float(mass), int(pid)))
+            daughters.append(
+                (
+                    float(E),
+                    float(px),
+                    float(py),
+                    float(pz),
+                    float(mass),
+                    _parse_pid_token(pid),
+                )
+            )
         except ValueError:
+            malformed_rows += 1
             continue
-    return daughters
+    return daughters, malformed_rows
 
 
 @lru_cache(maxsize=32)
@@ -278,10 +303,12 @@ def load_decay_events(path: Path) -> List[List[Tuple[float, float, float, float,
 
     events: List[List[Tuple[float, float, float, float, float, int]]] = []
     current: List[str] = []
+    malformed_rows = 0
     for line in lines:
         if not line:
             if current:
-                event = _parse_decay_event_block(current)
+                event, malformed = _parse_decay_event_block(current)
+                malformed_rows += malformed
                 if event:
                     events.append(event)
                 current = []
@@ -290,9 +317,15 @@ def load_decay_events(path: Path) -> List[List[Tuple[float, float, float, float,
             continue
         current.append(line)
     if current:
-        event = _parse_decay_event_block(current)
+        event, malformed = _parse_decay_event_block(current)
+        malformed_rows += malformed
         if event:
             events.append(event)
+    if malformed_rows > 0:
+        warnings.warn(
+            f"Skipped {malformed_rows} malformed daughter row(s) while parsing decay file: {path}",
+            UserWarning,
+        )
     if not events:
         raise ValueError(f"No decay events parsed from {path}")
     return events

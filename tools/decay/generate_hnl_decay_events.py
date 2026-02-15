@@ -94,6 +94,8 @@ add process n1 > vl q q~
 add process n1 > vl~ q q~
 add process n1 > l- l+ vl
 add process n1 > l- l+ vl~
+add process n1 > vl vl vl~
+add process n1 > vl~ vl~ vl
 
 output {proc_dir} -nojpeg
 """

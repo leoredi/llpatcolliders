@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 HERE = Path(__file__).resolve()
-REPO_ROOT = HERE.parents[2]
+REPO_ROOT = HERE.parents[3]
 ANALYSIS_ROOT = REPO_ROOT / "analysis_pbc"
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
@@ -125,3 +125,31 @@ def test_brvis_kappa_requires_br_vis_and_kappa():
             br_per_parent={511: 0.1},
             br_scale=1.0,
         )
+
+
+def test_brvis_kappa_ignores_decay_cache_and_separation_pass_inputs():
+    geom_df = _geom_df()
+
+    kwargs = dict(
+        geom_df=geom_df,
+        mass_GeV=4.0,
+        eps2=1e-6,
+        benchmark="100",
+        lumi_fb=1.0,
+        separation_m=1e-3,
+        decay_mode="brvis_kappa",
+        br_vis=0.8,
+        kappa_eff=0.5,
+        ctau0_m=1.0,
+        br_per_parent={511: 0.1},
+        br_scale=1.0,
+    )
+
+    n_base = es.expected_signal_events(**kwargs)
+    n_with_library_artifacts = es.expected_signal_events(
+        **kwargs,
+        decay_cache=object(),
+        separation_pass=np.array([False, False], dtype=bool),
+    )
+
+    assert n_with_library_artifacts == pytest.approx(n_base, rel=0.0, abs=0.0)

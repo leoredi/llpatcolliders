@@ -46,9 +46,7 @@ The full production chain consists of two main parts: Pythia production for meso
 cd production/pythia_production
 PYTHIA8=$(pwd)/pythia8315 make main_hnl_production
 
-./run_parallel_production.sh all both
-./run_parallel_production.sh all direct hardccbar 10
-./run_parallel_production.sh all direct hardbbbar 10
+./run_parallel_production.sh all both auto
 ./run_parallel_production.sh all direct hardBc 15
 cd ../..
 ```
@@ -93,8 +91,6 @@ make
 
 cd $REPO/production/pythia_production; and begin
     ./run_parallel_production.sh all both auto
-    and ./run_parallel_production.sh all direct hardccbar 10
-    and ./run_parallel_production.sh all direct hardbbbar 10
     and ./run_parallel_production.sh all direct hardBc 15
 end
 ```
@@ -124,6 +120,8 @@ python money_plot/plot_money_island.py
 
 ### Notes
 
+Only `auto` + `hardBc` Pythia passes are needed. The `auto` mode gives O(100k) HNL events per mass point throughout the kaon, charm, and beauty regimes. `hardBc` enriches Bc production for `m_N > 5 GeV` where auto yields only O(100) events.
+
 `run_hnl_scan.py` flags: `--flavour electron|muon|tau`, `--min-mass <GeV>` (skip low masses where mesons dominate), `--masses <list>`, `--nevents <N>`, `--test` (single point: 15 GeV muon, 1k events). EW production is essential for masses above ~2 GeV.
 
 Tau-only rerun does not need a dedicated script:
@@ -137,9 +135,9 @@ python limits/run.py --parallel --workers 12 --flavour tau
 `production/pythia_production/main_hnl_production.cc`:
 
 - CLI: `./main_hnl_production <mass_GeV> <flavor> [nEvents] [mode] [qcdMode] [pTHatMin] [maxSignalEvents]`.
-- `qcdMode=hardccbar` sets `HardQCD:hardccbar` with `PhaseSpace:pTHatMin` (default `10` GeV).
-- `qcdMode=hardbbbar` sets `HardQCD:hardbbbar` with `PhaseSpace:pTHatMin` (default `10` GeV).
-- `qcdMode=hardBc` uses the dedicated Bc card and filters to `|parent_pdg| = 541` in the event loop.
+- `qcdMode=auto` (default): inclusive SoftQCD or hard-QCD depending on mass. Sufficient for kaon, charm, and beauty regimes.
+- `qcdMode=hardBc` uses the dedicated Bc card and filters to `|parent_pdg| = 541` in the event loop. Required for `m_N > 5 GeV` (Bc-only regime).
+- Legacy modes `hardccbar` and `hardbbbar` are still supported but not needed (auto gives O(100k) HNLs throughout charm/beauty).
 - `maxSignalEvents` stops the event loop early once enough HNLs are found (0 = unlimited).
 - Every run writes a metadata sidecar containing `qcd_mode`, `sigma_gen_pb`, and `pthat_min_gev`.
 
@@ -250,6 +248,8 @@ Hybrid source-routing policy:
 - `low_mass_threshold < mass < 5.0 GeV`: use external hadronized files with legacy category priorities.
 - `mass >= 5.0 GeV`: require generated overlay files (all-inclusive, category bypass).
 
+Global mass grid (`config_mass_grid.py`) is `116` points from `0.20` to `10.00 GeV`.
+
 Strict mismatch policy:
 
 - Selection fails if `|m_requested - m_file| > 0.5 GeV`.
@@ -270,6 +270,42 @@ python tools/decay/precompute_decay_library_overlay.py \
   --nevents 20000
 ```
 
+Container permission-safe variant (for `--user` runs that hit `/.config`
+or matplotlib cache permission errors):
+
+```bash
+docker run --rm -it \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
+  -e XDG_CONFIG_HOME=/tmp/.config \
+  -e XDG_CACHE_HOME=/tmp/.cache \
+  -e MPLCONFIGDIR=/tmp/.config/matplotlib \
+  -v "$(pwd):/work" \
+  mg5-hnl:latest \
+  /bin/bash -lc '
+    set -euo pipefail
+    mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$MPLCONFIGDIR"
+    cd /work
+    python3 tools/decay/precompute_decay_library_overlay.py \
+      --flavours electron,muon,tau \
+      --from-mass-grid \
+      --overlay-min-mass 4.0 \
+      --u2-norm 1e-3 \
+      --nevents 20000
+  '
+```
+
+MG5 warnings about missing `fastjet-config`, `lhapdf-config`, or
+`eMELA-config` are expected for this decay precompute and are non-fatal
+unless the command exits non-zero.
+
+Precompute overwrite is enabled by default; pass `--no-overwrite` to skip
+existing generated files.
+
+Limits/combination mass discovery is file-driven. When mass-grid boundaries
+change, manually archive/remove stale `>10 GeV` simulation and generated decay
+files before runs.
+
 Validate generated-vs-external overlap in `4.0 <= m < 5.0 GeV`:
 
 ```bash
@@ -280,6 +316,15 @@ python tools/decay/validate_decay_overlap.py \
   --max-mass 5.0 \
   --out output/decay/overlap_validation.csv
 ```
+
+Parser note:
+
+- External MATHUSLA decay files sometimes encode PID tokens as integral floats
+  (for example `16.0`). `analysis_pbc/decay/rhn_decay_library.py::load_decay_events`
+  normalizes integral float tokens to integer PDG IDs and warns when malformed
+  rows are dropped.
+- Do not strip neutrino species from generated overlay files as a compatibility
+  workaround; fix parser/format issues at source instead.
 
 Audit coverage and strict matching:
 
@@ -338,6 +383,47 @@ python limits/run.py --parallel --workers 12 \
   --separation-mm 1.0
 ```
 
+### Decay physics sign-off gates
+
+Before using results in physics plots/tables, run these three gates and require
+zero failures:
+
+1. Overlap agreement in `4 <= m < 5 GeV`:
+
+```bash
+python tools/decay/validate_decay_overlap.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --min-mass 4.0 \
+  --max-mass 5.0 \
+  --out output/decay/overlap_check_now.csv
+```
+
+2. Hybrid routing + strict mismatch coverage:
+
+```bash
+python tools/decay/audit_decay_coverage.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --overlay-switch-mass 5.0 \
+  --out output/decay/coverage_check_now.csv
+```
+
+3. `brvis-kappa` surrogate consistency vs library mode:
+
+```bash
+python tools/decay/validate_brvis_kappa.py \
+  --flavours electron,muon,tau \
+  --from-mass-grid \
+  --p-min-gev 0.6 \
+  --separation-mm 1.0 \
+  --kappa-table output/csv/analysis/decay_kappa_table.csv \
+  --out output/csv/analysis/decay_kappa_validation_check.csv
+```
+
+For projection realism, set `--reco-efficiency` explicitly in limits runs
+(for example `0.5`) instead of relying on the default idealized `1.0`.
+
 ## 10. HNLCalc scaling validation
 
 Use `tools/analysis/check_hnlcalc_scaling.py` to verify the scaling
@@ -382,7 +468,21 @@ What it checks:
 
 If this fails, update docs or code so both sides agree.
 
-## 12. Optional utilities (non-main sequence)
+## 12. Production input validation
+
+`tools/tests/production/test_production_inputs.py` validates production cross-sections,
+fragmentation fractions, Pythia settings, and channel completeness against
+literature references (MATHUSLA, Bondarenko et al., PDG, ALICE):
+
+```bash
+pytest tools/tests/production/test_production_inputs.py -v
+```
+
+Covers: base cross-sections (FONLL ranges), charm/beauty fragmentation fractions,
+factor-of-2 convention, Pythia card settings, EW K-factor, tau parent BRs,
+and channel completeness vs PBC standard.
+
+## 13. Optional utilities (non-main sequence)
 
 These are intentionally out of the core production/analysis chain and are kept
 under `tools/`:

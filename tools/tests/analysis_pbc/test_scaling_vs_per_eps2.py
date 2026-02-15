@@ -11,7 +11,7 @@ import pandas as pd
 
 HERE = Path(__file__).resolve()
 import sys
-REPO_ROOT = HERE.parents[2]
+REPO_ROOT = HERE.parents[3]
 ANALYSIS_ROOT = REPO_ROOT / "analysis_pbc"
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))

@@ -111,7 +111,12 @@ def main() -> None:
     parser.add_argument("--mg5-path", type=str, default="/opt/MG5_aMC_v3_6_6/bin/mg5_aMC")
     parser.add_argument("--work-dir", type=str, default=str(REPO_ROOT / "analysis_pbc" / "decay" / "work"))
     parser.add_argument("--output-root", type=str, default=str(REPO_ROOT / "output" / "decay" / "generated"))
-    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--overwrite",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Overwrite existing overlay files by default (use --no-overwrite to keep existing files).",
+    )
     parser.add_argument(
         "--u2-norm",
         type=float,
@@ -142,6 +147,7 @@ def main() -> None:
     work_root = Path(args.work_dir).resolve()
     output_root.mkdir(parents=True, exist_ok=True)
     work_root.mkdir(parents=True, exist_ok=True)
+    print(f"[config] overwrite={'on' if args.overwrite else 'off'}")
 
     total_jobs = 0
     completed = 0

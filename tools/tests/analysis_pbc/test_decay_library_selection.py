@@ -8,7 +8,7 @@ import sys
 import pytest
 
 HERE = Path(__file__).resolve()
-REPO_ROOT = HERE.parents[2]
+REPO_ROOT = HERE.parents[3]
 ANALYSIS_ROOT = REPO_ROOT / "analysis_pbc"
 if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
@@ -159,3 +159,76 @@ def test_generated_txt_parser_compatibility(tmp_path: Path):
     assert len(parsed) == 2
     assert len(parsed[0]) == 2
     assert len(parsed[1]) == 1
+
+
+def test_decimal_pid_tokens_are_parsed_as_ints(tmp_path: Path):
+    path = tmp_path / "decimal_pid.txt"
+    path.write_text(
+        "\n".join(
+            [
+                "Format is groups of ...",
+                "10.0,0.0,0.0,0.0,5.0,9900012,N",
+                "1.0,0.0,0.0,1.0,0.0,16.0,vt",
+                "1.0,0.0,0.0,-1.0,0.0,-16.0,vt~",
+                "1.0,0.0,0.0,0.0,0.0,11.0,e-",
+                "1.0,0.0,0.0,0.0,0.0,22.0,gamma",
+                "",
+                "",
+            ]
+        )
+    )
+
+    parsed = lib.load_decay_events(path)
+    pids = {daughter[5] for daughter in parsed[0]}
+    assert pids == {16, -16, 11, 22}
+    assert all(isinstance(pid, int) for pid in pids)
+
+
+def test_non_integral_pid_row_is_dropped_with_warning(tmp_path: Path):
+    path = tmp_path / "bad_pid.txt"
+    path.write_text(
+        "\n".join(
+            [
+                "Format is groups of ...",
+                "10.0,0.0,0.0,0.0,5.0,9900012,N",
+                "1.0,0.0,0.0,1.0,0.0,16.5,bad",
+                "1.0,0.0,0.0,0.0,0.0,11.0,e-",
+                "",
+                "",
+            ]
+        )
+    )
+
+    with pytest.warns(UserWarning, match="Skipped 1 malformed daughter row"):
+        parsed = lib.load_decay_events(path)
+    assert len(parsed) == 1
+    assert len(parsed[0]) == 1
+    assert parsed[0][0][5] == 11
+
+
+def test_visible_fraction_uses_decimal_neutrino_pid(tmp_path: Path):
+    path = tmp_path / "visible_fraction_decimal_nu.txt"
+    path.write_text(
+        "\n".join(
+            [
+                "Format is groups of ...",
+                "10.0,0.0,0.0,0.0,5.0,9900012,N",
+                "1.0,0.0,0.0,1.0,0.0,16.0,vt",
+                "1.0,0.0,0.0,-1.0,0.0,11.0,e-",
+                "",
+                "",
+            ]
+        )
+    )
+
+    events = lib.load_decay_events(path)
+    total_e = 0.0
+    visible_e = 0.0
+    for daughter in events[0]:
+        pid = int(daughter[5])
+        e = float(daughter[0])
+        total_e += e
+        if abs(pid) not in (12, 14, 16):
+            visible_e += e
+    assert total_e == pytest.approx(2.0)
+    assert visible_e / total_e == pytest.approx(0.5)
