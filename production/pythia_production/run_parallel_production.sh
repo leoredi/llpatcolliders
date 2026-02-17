@@ -68,11 +68,21 @@ NEVENTS=$N_EVENTS_DEFAULT
 NEVENTS_FROMTAU=$NEVENTS
 MAX_PARALLEL=12
 
-FROMTAU_MASS_THRESHOLD=1.77
-M_BC=6.275
-M_ELECTRON=0.000511
-M_MUON=0.10566
-M_TAU=1.777
+FROMTAU_MASS_THRESHOLD=1.776
+M_BC=6.274470
+M_ELECTRON=0.000510999
+M_MUON=0.105658376
+M_TAU=1.776932
+M_PI_CHARGED=0.13957039
+M_KPLUS=0.493677
+M_KL=0.497611
+M_K0=0.497611
+M_DPLUS=1.869661
+M_D0=1.864838
+M_DS=1.968351
+M_LAMBDA0=1.115683
+M_LAMBDAC=2.286460
+TAU_DIRECT_CHARM_CEILING=$(echo "$M_DS - $M_TAU" | bc -l)
 
 PYTHIA_ROOT="$SCRIPT_DIR/pythia8315"
 export DYLD_LIBRARY_PATH="$PYTHIA_ROOT/lib:${DYLD_LIBRARY_PATH:-}"
@@ -139,6 +149,49 @@ direct_mass_ceiling() {
     esac
 }
 
+direct_kaon_regime_ceiling() {
+    local flavour="$1"
+    local m_l
+    case "$flavour" in
+        electron) m_l="$M_ELECTRON" ;;
+        muon) m_l="$M_MUON" ;;
+        *) return 1 ;;
+    esac
+
+    local kplus_limit kl_limit
+    kplus_limit=$(echo "$M_KPLUS - $m_l" | bc -l)
+    kl_limit=$(echo "$M_KL - $M_PI_CHARGED - $m_l" | bc -l)
+    if (( $(echo "$kplus_limit > $kl_limit" | bc -l) )); then
+        echo "$kplus_limit"
+    else
+        echo "$kl_limit"
+    fi
+}
+
+direct_charm_regime_ceiling() {
+    local flavour="$1"
+    local m_l
+    case "$flavour" in
+        electron) m_l="$M_ELECTRON" ;;
+        muon) m_l="$M_MUON" ;;
+        *) return 1 ;;
+    esac
+
+    local dplus_2body ds_2body d0_3body dplus_3body lambdac_3body maxv
+    dplus_2body=$(echo "$M_DPLUS - $m_l" | bc -l)
+    ds_2body=$(echo "$M_DS - $m_l" | bc -l)
+    d0_3body=$(echo "$M_D0 - $M_KPLUS - $m_l" | bc -l)
+    dplus_3body=$(echo "$M_DPLUS - $M_K0 - $m_l" | bc -l)
+    lambdac_3body=$(echo "$M_LAMBDAC - $M_LAMBDA0 - $m_l" | bc -l)
+
+    maxv="$dplus_2body"
+    if (( $(echo "$ds_2body > $maxv" | bc -l) )); then maxv="$ds_2body"; fi
+    if (( $(echo "$d0_3body > $maxv" | bc -l) )); then maxv="$d0_3body"; fi
+    if (( $(echo "$dplus_3body > $maxv" | bc -l) )); then maxv="$dplus_3body"; fi
+    if (( $(echo "$lambdac_3body > $maxv" | bc -l) )); then maxv="$lambdac_3body"; fi
+    echo "$maxv"
+}
+
 can_run_point() {
     local mass="$1"
     local flavour="$2"
@@ -185,7 +238,8 @@ mass_to_label() {
 determine_regime() {
     local mass="$1"
     local flavour="$2"
-    local qcd_mode="$3"
+    local mode="$3"
+    local qcd_mode="$4"
 
     if [[ "$qcd_mode" == "hardBc" ]]; then
         echo "Bc"
@@ -201,7 +255,13 @@ determine_regime() {
     fi
 
     if [[ "$flavour" == "tau" ]]; then
-        if (( $(echo "$mass < 2.0" | bc -l) )); then
+        local mode_lower
+        mode_lower=$(echo "$mode" | tr '[:upper:]' '[:lower:]')
+        if [[ "$mode_lower" == "fromtau" ]]; then
+            echo "charm"
+            return
+        fi
+        if (( $(echo "$mass < $TAU_DIRECT_CHARM_CEILING" | bc -l) )); then
             echo "charm"
         else
             echo "beauty"
@@ -209,9 +269,13 @@ determine_regime() {
         return
     fi
 
-    if (( $(echo "$mass < 0.5" | bc -l) )); then
+    local kaon_ceiling charm_ceiling
+    kaon_ceiling=$(direct_kaon_regime_ceiling "$flavour")
+    charm_ceiling=$(direct_charm_regime_ceiling "$flavour")
+
+    if (( $(echo "$mass < $kaon_ceiling" | bc -l) )); then
         echo "kaon"
-    elif (( $(echo "$mass < 2.0" | bc -l) )); then
+    elif (( $(echo "$mass < $charm_ceiling" | bc -l) )); then
         echo "charm"
     else
         echo "beauty"
@@ -250,7 +314,7 @@ expected_output_csv() {
     local mass_label
     mass_label=$(mass_to_label "$mass")
     local regime
-    regime=$(determine_regime "$mass" "$flavour" "$qcd_mode")
+    regime=$(determine_regime "$mass" "$flavour" "$mode" "$qcd_mode")
 
     local name="HNL_${mass_label}GeV_${flavour}_${regime}"
     if [[ "$flavour" == "tau" ]]; then
@@ -275,8 +339,10 @@ run_production_job() {
     local mass=$1
     local flavour=$2
     local mode=${3:-direct}
+    local qcd_mode=${4:-$QCD_MODE}
+    local pthat_min=${5:-$PTHAT_MIN}
 
-    local log_file="${LOG_DIR}/HNL_${mass}GeV_${flavour}_${mode}_${TIMESTAMP}.log"
+    local log_file="${LOG_DIR}/HNL_${mass}GeV_${flavour}_${mode}_${qcd_mode}_${TIMESTAMP}.log"
 
     {
         echo "[$(date +%H:%M:%S)] Starting: $mass GeV $flavour ($mode)"
@@ -288,8 +354,8 @@ run_production_job() {
 
         local cmd=(./main_hnl_production "${mass}" "${flavour}" "${events}" "${mode}")
         # Always pass qcdMode + pTHatMin so we can append maxSignalEvents
-        cmd+=("$QCD_MODE")
-        cmd+=("${PTHAT_MIN:--1}")
+        cmd+=("$qcd_mode")
+        cmd+=("${pthat_min:--1}")
         cmd+=("$MAX_SIGNAL_EVENTS")
         "${cmd[@]}" 2>&1
 
@@ -298,7 +364,7 @@ run_production_job() {
         if [ $exit_code -eq 0 ]; then
             sleep 0.5
             local csv_file
-            csv_file=$(expected_output_csv "$mass" "$flavour" "$mode" "$QCD_MODE" "$PTHAT_MIN")
+            csv_file=$(expected_output_csv "$mass" "$flavour" "$mode" "$qcd_mode" "$pthat_min")
 
             if [ -f "$csv_file" ]; then
                 mv "$csv_file" "$OUTPUT_DIR/"
@@ -334,7 +400,12 @@ count_tau_runs() {
         fi
         if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
             if can_run_point "$mass" "tau" "fromTau"; then
-                count=$((count + 1))
+                if [[ "$QCD_MODE" == "auto" ]]; then
+                    # In auto mode, split tau fromTau into explicit charm + beauty components.
+                    count=$((count + 2))
+                else
+                    count=$((count + 1))
+                fi
             fi
         fi
     done
@@ -438,10 +509,22 @@ if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
 
         if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
             if can_run_point "$mass" "tau" "fromTau"; then
-                wait_for_slot
-                run_production_job "$mass" "tau" "fromTau" &
-                completed_jobs=$((completed_jobs + 1))
-                echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
+                if [[ "$QCD_MODE" == "auto" ]]; then
+                    wait_for_slot
+                    run_production_job "$mass" "tau" "fromTau" "hardccbar" &
+                    completed_jobs=$((completed_jobs + 1))
+                    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau, hardccbar)" | tee -a "$LOGFILE"
+
+                    wait_for_slot
+                    run_production_job "$mass" "tau" "fromTau" "hardbbbar" &
+                    completed_jobs=$((completed_jobs + 1))
+                    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau, hardbbbar)" | tee -a "$LOGFILE"
+                else
+                    wait_for_slot
+                    run_production_job "$mass" "tau" "fromTau" &
+                    completed_jobs=$((completed_jobs + 1))
+                    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
+                fi
             else
                 echo "[SKIP] $mass GeV tau (fromTau): $(skip_reason "tau" "fromTau")" | tee -a "$LOGFILE"
             fi

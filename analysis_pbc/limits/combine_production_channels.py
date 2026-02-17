@@ -9,7 +9,13 @@ import argparse
 from collections import defaultdict
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from config_mass_grid import MAX_SIGNAL_EVENTS
+
+from analysis_pbc.limits.overlap_resolution import (
+    OverlapSample,
+    filter_dataframe_by_norm_keys,
+    format_norm_key,
+    resolve_parent_overlap,
+)
 
 
 def find_production_files(sim_dir, flavour=None):
@@ -134,14 +140,38 @@ def _load_sim_metadata(sim_csv: Path) -> dict:
     return {}
 
 
-def combine_csvs(csv_paths, output_path):
+def combine_csvs(resolved_samples, output_path):
     dfs = []
 
-    for base_regime, mode, is_ff, qcd_mode, pthat_min, path in csv_paths:
+    for (
+        base_regime,
+        mode,
+        is_ff,
+        qcd_mode,
+        pthat_min,
+        path,
+        owned_keys,
+        owned_events,
+        total_events,
+    ) in resolved_samples:
         df = pd.read_csv(path)
-        if len(df) > MAX_SIGNAL_EVENTS:
-            print(f"      [CAP] {len(df)} → {MAX_SIGNAL_EVENTS} events (random seed=42)")
-            df = df.sample(n=MAX_SIGNAL_EVENTS, random_state=42)
+        if len(owned_keys) > 0:
+            n_before = len(df)
+            df = filter_dataframe_by_norm_keys(df, owned_keys)
+            if len(df) == 0:
+                print(f"    [SKIP] {path.name}: overlap resolver kept 0 rows")
+                continue
+            if len(df) != int(owned_events):
+                print(
+                    f"    [WARN] overlap ownership count mismatch for {path.name}: "
+                    f"resolver={int(owned_events)}, filtered={len(df)}"
+                )
+            if n_before != int(total_events):
+                print(
+                    f"    [WARN] source row count changed for {path.name}: "
+                    f"resolver={int(total_events)}, loaded={n_before}"
+                )
+
         if "qcd_mode" not in df.columns or "sigma_gen_pb" not in df.columns or "pthat_min_gev" not in df.columns:
             meta = _load_sim_metadata(path)
             if "qcd_mode" not in df.columns:
@@ -164,7 +194,16 @@ def combine_csvs(csv_paths, output_path):
         df["source_qcd_mode"] = qcd_mode
         df["source_pthat_min_gev"] = float(pthat_min) if pthat_min is not None else float("nan")
         dfs.append(df)
-        print(f"    {_format_source_label(base_regime, mode, is_ff, qcd_mode, pthat_min):30s}: {len(df):6d} HNLs")
+        kept_keys = ", ".join(format_norm_key(k) for k in owned_keys)
+        print(
+            f"    {_format_source_label(base_regime, mode, is_ff, qcd_mode, pthat_min):30s}: "
+            f"{len(df):6d}/{int(total_events):6d} HNLs"
+        )
+        print(f"      keys: {kept_keys}")
+
+    if len(dfs) == 0:
+        print("    [WARN] No rows left after overlap filtering; skipping output.")
+        return 0
 
     combined = pd.concat(dfs, ignore_index=True)
 
@@ -183,7 +222,28 @@ def main():
     parser.add_argument("--no-cleanup", action="store_true", help="Don't move merged files, just create them in a temporary folder")
     parser.add_argument("--keep-originals", action="store_true", help="Keep original per-regime files after merging (default: delete them)")
     parser.add_argument("--allow-variant-drop", action="store_true", help="Allow silently dropping lower-priority pTHat/QCD variants (default: error).")
+    parser.add_argument(
+        "--overlap-min-events",
+        type=int,
+        default=0,
+        help="Optional minimum owned events required after overlap resolution per merged mass (0 disables).",
+    )
+    parser.add_argument(
+        "--strict-overlap-min-events",
+        action="store_true",
+        help="Fail when --overlap-min-events is not met (default: warn only).",
+    )
+    parser.add_argument(
+        "--allow-tau-all",
+        action="store_true",
+        help=(
+            "Allow creating tau _all.csv files. "
+            "Default keeps tau components separate (direct/fromTau/ew)."
+        ),
+    )
     args = parser.parse_args()
+    if args.overlap_min_events < 0:
+        raise ValueError("--overlap-min-events must be non-negative.")
 
     repo_root = Path(__file__).parent.parent.parent
     sim_dir = repo_root / "output" / "csv" / "simulation"
@@ -209,10 +269,28 @@ def main():
     }
 
     multi_channel_masses = {k: v for k, v in files_by_mass.items() if len(v) > 1}
+    skipped_tau = []
+    if not args.allow_tau_all:
+        filtered = {}
+        for (mass_val, flavour), regimes in multi_channel_masses.items():
+            if flavour == "tau":
+                skipped_tau.append((mass_val, flavour, regimes))
+                continue
+            filtered[(mass_val, flavour)] = regimes
+        multi_channel_masses = filtered
 
     if not multi_channel_masses:
-        print("✓ No overlapping production channels found")
-        print("  (Each mass has only one production file)")
+        if skipped_tau:
+            print("✓ No non-tau overlapping production channels to combine")
+            print("  Tau overlaps were left unmerged (explicit components policy).")
+            preview = ", ".join(
+                f"{m:.2f}" for m, _, _ in sorted(skipped_tau, key=lambda x: (x[0], x[1]))[:10]
+            )
+            more = "..." if len(skipped_tau) > 10 else ""
+            print(f"  Skipped tau overlap masses: {preview}{more}")
+        else:
+            print("✓ No overlapping production channels found")
+            print("  (Each mass has only one production file)")
         return
 
     print(f"Found {len(multi_channel_masses)} masses with multiple production channels:\n")
@@ -220,6 +298,13 @@ def main():
     for (mass_val, flavour), regimes in sorted(multi_channel_masses.items()):
         regime_names = [_format_source_label(r, m, ff, qm, pt) for r, m, ff, qm, pt, _ in regimes]
         print(f"  m = {mass_val:5.1f} GeV ({flavour}): {', '.join(regime_names)}")
+
+    if skipped_tau:
+        preview = ", ".join(
+            f"{m:.2f}" for m, _, _ in sorted(skipped_tau, key=lambda x: (x[0], x[1]))[:10]
+        )
+        more = "..." if len(skipped_tau) > 10 else ""
+        print(f"\n[SKIP] Tau overlaps left unmerged by default at masses: {preview}{more}")
 
     print(f"\n{'-' * 70}\n")
 
@@ -229,19 +314,72 @@ def main():
     for (mass_val, flavour), csv_list in sorted(multi_channel_masses.items()):
         mass_str = f"{mass_val:.2f}".replace('.', 'p')
         output_path = combined_dir / f"HNL_{mass_str}GeV_{flavour}_all.csv"
+        context = f"m={mass_val:.2f} ({flavour})"
+        overlap_samples = [
+            OverlapSample(
+                base_regime=base_regime,
+                mode=mode,
+                is_ff=is_ff,
+                qcd_mode=qcd_mode,
+                pthat_min=pthat_min,
+                path=path,
+            )
+            for base_regime, mode, is_ff, qcd_mode, pthat_min, path in csv_list
+        ]
+        overlap = resolve_parent_overlap(
+            overlap_samples,
+            context=context,
+            min_events_per_mass=int(args.overlap_min_events),
+            strict_min_events=bool(args.strict_overlap_min_events),
+        )
+        for msg in overlap.warnings:
+            print(msg)
+
+        resolved_csv_list = [
+            (
+                resolved.sample.base_regime,
+                resolved.sample.mode,
+                resolved.sample.is_ff,
+                resolved.sample.qcd_mode,
+                resolved.sample.pthat_min,
+                resolved.sample.path,
+                resolved.owned_keys,
+                resolved.owned_events,
+                resolved.total_events,
+            )
+            for resolved in overlap.samples
+        ]
 
         print(f"Mass {mass_val} GeV ({flavour}):")
 
         if args.dry_run:
-            print(f"    [DRY RUN] Would combine {len(csv_list)} files")
-            for base_regime, mode, is_ff, qcd_mode, pthat_min, fpath in csv_list:
-                print(f"              - {_format_source_label(base_regime, mode, is_ff, qcd_mode, pthat_min)}: {fpath.name}")
+            print(f"    [DRY RUN] Would combine {len(resolved_csv_list)} files")
+            for (
+                base_regime,
+                mode,
+                is_ff,
+                qcd_mode,
+                pthat_min,
+                fpath,
+                owned_keys,
+                owned_events,
+                total_events,
+            ) in resolved_csv_list:
+                print(
+                    "              - "
+                    f"{_format_source_label(base_regime, mode, is_ff, qcd_mode, pthat_min)}: "
+                    f"{fpath.name} ({int(owned_events)}/{int(total_events)} rows)"
+                )
+                print(
+                    "                keys: "
+                    + ", ".join(format_norm_key(k) for k in owned_keys)
+                )
             continue
 
-        n_total = combine_csvs(csv_list, output_path)
+        n_total = combine_csvs(resolved_csv_list, output_path)
         total_combined += 1
 
-        for _, _, _, _, _, fpath in csv_list:
+        for _, _, _, _, _, fpath, _, _, _ in resolved_csv_list:
             files_to_backup.append(fpath)
 
         print()

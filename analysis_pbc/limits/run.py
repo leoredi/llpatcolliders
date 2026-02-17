@@ -7,6 +7,7 @@ import io
 import json
 import tempfile
 import contextlib
+from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -32,10 +33,23 @@ if str(REPO_ROOT) not in sys.path:
 
 MASS_FILTER_TOL = 5e-4
 
-from config_mass_grid import MAX_SIGNAL_EVENTS
 from decay.brvis_kappa import DEFAULT_KAPPA_TABLE, lookup_kappa, resolve_kappa_table_path
-from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
+from geometry.per_parent_efficiency import (
+    DEFAULT_DETECTOR_THICKNESS_M,
+    GeometryConfig,
+    build_drainage_gallery_mesh,
+    geometry_metadata,
+    geometry_tag,
+    is_default_geometry_config,
+    normalize_geometry_config,
+    preprocess_hnl_csv,
+)
 from limits.expected_signal import expected_signal_events, couplings_from_eps2
+from limits.overlap_resolution import (
+    OverlapSample,
+    filter_dataframe_by_norm_keys,
+    resolve_parent_overlap,
+)
 from limits.timing_utils import _time_block
 
 
@@ -139,8 +153,11 @@ def scan_single_mass(
     sim_files,
     dirac=False,
     separation_m=0.001,
+    max_separation_m=None,
+    separation_policy="all-pairs-min",
     decay_seed=12345,
     p_min_GeV=0.6,
+    geometry_config=None,
     reco_efficiency=1.0,
     quiet=False,
     show_progress=None,
@@ -154,7 +171,8 @@ def scan_single_mass(
     with stdout_ctx:
         return _scan_single_mass_impl(
             mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
-            dirac, separation_m, decay_seed, p_min_GeV, reco_efficiency,
+            dirac, separation_m, max_separation_m, separation_policy,
+            decay_seed, p_min_GeV, geometry_config, reco_efficiency,
             quiet, show_progress, timing_enabled, hnlcalc_per_eps2,
             decay_mode, kappa_table_path,
         )
@@ -169,8 +187,11 @@ def _scan_single_mass_impl(
     sim_files,
     dirac,
     separation_m,
+    max_separation_m,
+    separation_policy,
     decay_seed,
     p_min_GeV,
+    geometry_config,
     reco_efficiency,
     quiet,
     show_progress,
@@ -183,19 +204,31 @@ def _scan_single_mass_impl(
     if timing is not None:
         timing["count_geom_files"] = len(sim_files)
 
+    geometry_cfg = normalize_geometry_config(geometry_config)
+    geom_tag = geometry_tag(geometry_cfg)
+    default_geometry = is_default_geometry_config(geometry_cfg)
+
     if not quiet:
         print(f"\n[{flavour} {mass_val} GeV] Processing ({len(sim_files)} production file(s))...")
 
     geom_dfs = []
     mesh = None
 
-    for sim_csv, regime in sim_files:
-        geom_cache_name = f"{sim_csv.stem}_geom.csv"
+    for entry in sim_files:
+        if len(entry) == 2:
+            sim_csv, regime = entry
+            owned_keys = ()
+        elif len(entry) == 3:
+            sim_csv, regime, owned_keys = entry
+        else:
+            raise ValueError(f"Unsupported sim file entry: {entry}")
+        geom_cache_name = f"{sim_csv.stem}_geom_{geom_tag}.csv"
         geom_csv = GEOM_CACHE_DIR / geom_cache_name
 
-        # Check legacy cache names (old _combined_geom.csv or bare _geom.csv)
-        if not geom_csv.exists():
+        # Check legacy cache names only for default geometry config.
+        if default_geometry and not geom_csv.exists():
             for legacy_stem in (
+                sim_csv.stem + "_geom",
                 f"HNL_{mass_str}GeV_{flavour}_combined_geom",
                 f"HNL_{mass_str}GeV_{flavour}_geom",
             ):
@@ -217,7 +250,7 @@ def _scan_single_mass_impl(
             _count(timing, "count_geom_cache_misses")
             if mesh is None:
                 with _time_block(timing, "time_mesh_build_s"):
-                    mesh = build_drainage_gallery_mesh()
+                    mesh = build_drainage_gallery_mesh(geometry_cfg)
             if not quiet:
                 print(f"  Computing geometry for {sim_csv.name} (caching to {geom_csv.name})...")
             with _time_block(timing, "time_geom_compute_s"):
@@ -228,10 +261,17 @@ def _scan_single_mass_impl(
 
         geom_df = _attach_sim_metadata(geom_df, sim_csv)
 
-        if len(geom_df) > MAX_SIGNAL_EVENTS:
-            if not quiet:
-                print(f"  [CAP] {regime}: {len(geom_df)} → {MAX_SIGNAL_EVENTS} events")
-            geom_df = geom_df.sample(n=MAX_SIGNAL_EVENTS, random_state=42)
+        if len(owned_keys) > 0:
+            n_before = len(geom_df)
+            geom_df = filter_dataframe_by_norm_keys(geom_df, owned_keys)
+            if len(geom_df) == 0:
+                if not quiet:
+                    print(f"  Skipping {sim_csv.name}: overlap resolver kept 0 events")
+                continue
+            if not quiet and len(geom_df) != n_before:
+                print(
+                    f"  Overlap ownership filter: kept {len(geom_df)}/{n_before} rows from {sim_csv.name}"
+                )
 
         n_hits = geom_df['hits_tube'].sum() if 'hits_tube' in geom_df.columns else 0
         if not quiet:
@@ -297,6 +337,7 @@ def _scan_single_mass_impl(
             p_min_GeV=p_min_GeV,
             separation_mm=separation_m * 1e3,
             table_path=kappa_path,
+            geometry_config=geometry_cfg,
         )
         if not quiet:
             print(
@@ -313,7 +354,13 @@ def _scan_single_mass_impl(
                 geom_df,
                 mass_val,
                 flavour,
-                DecaySelection(separation_m=separation_m, seed=decay_seed, p_min_GeV=p_min_GeV),
+                DecaySelection(
+                    separation_m=separation_m,
+                    seed=decay_seed,
+                    p_min_GeV=p_min_GeV,
+                    max_separation_m=max_separation_m,
+                    separation_policy=separation_policy,
+                ),
                 verbose=not quiet,
             )
         if not quiet:
@@ -329,8 +376,11 @@ def _scan_single_mass_impl(
                 lumi_fb=lumi_fb,
                 dirac=dirac,
                 separation_m=separation_m,
+                max_separation_m=max_separation_m,
+                separation_policy=separation_policy,
                 decay_seed=decay_seed,
                 p_min_GeV=p_min_GeV,
+                geometry_config=geometry_cfg,
                 reco_efficiency=reco_efficiency,
                 decay_mode=decay_mode_norm,
                 br_vis=br_vis if decay_mode_norm == "brvis_kappa" else None,
@@ -437,21 +487,29 @@ def run_flavour(
     n_workers=None,
     dirac=False,
     separation_m=0.001,
+    max_separation_m=None,
+    separation_policy="all-pairs-min",
     decay_seed=12345,
     p_min_GeV=0.6,
+    geometry_config: GeometryConfig | None = None,
     reco_efficiency=1.0,
     show_progress=None,
     mass_filter=None,
     timing_enabled=False,
     hnlcalc_per_eps2=False,
     allow_variant_drop=False,
+    overlap_min_events=0,
+    strict_overlap_min_events=False,
     max_mass=None,
     decay_mode="library",
     kappa_table_path=None,
+    allow_legacy_tau_all=False,
 ):
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
     print(f"{'='*60}")
+
+    geometry_cfg = normalize_geometry_config(geometry_config)
 
     pattern = re.compile(
         rf"^HNL_([0-9]+p[0-9]{{1,2}})GeV_{flavour}_"
@@ -489,6 +547,35 @@ def run_flavour(
     for mass_val, mass_str, base_regime, mode, is_ff, qcd_mode, pthat_min, path in files:
         key = (mass_val, mass_str)
         files_by_mass.setdefault(key, []).append((base_regime, mode, is_ff, qcd_mode, pthat_min, path))
+
+    if flavour == "tau" and not allow_legacy_tau_all:
+        filtered_by_mass = {}
+        legacy_only_masses = []
+        for key, items in files_by_mass.items():
+            legacy_items = [it for it in items if it[0] in {"all", "combined"}]
+            component_items = [it for it in items if it[0] not in {"all", "combined"}]
+            if component_items:
+                if legacy_items:
+                    dropped = ", ".join(sorted({it[5].name for it in legacy_items}))
+                    print(
+                        f"[WARN] m={key[0]:.2f} (tau): ignoring legacy tau_all/tau_combined inputs: {dropped}"
+                    )
+                filtered_by_mass[key] = component_items
+                continue
+            if legacy_items:
+                legacy_only_masses.append((key[0], sorted(it[5].name for it in legacy_items)))
+
+        if legacy_only_masses:
+            legacy_only_masses = sorted(legacy_only_masses, key=lambda x: x[0])
+            preview = ", ".join(f"{m:.2f}" for m, _ in legacy_only_masses[:10])
+            more = "..." if len(legacy_only_masses) > 10 else ""
+            raise ValueError(
+                "Tau analysis requires explicit component files (direct/fromTau/ew); "
+                "legacy *_tau_all.csv or *_tau_combined.csv are not accepted by default. "
+                f"Missing component masses: {preview}{more}. "
+                "Regenerate tau production and rerun, or pass --allow-legacy-tau-all to bypass."
+            )
+        files_by_mass = filtered_by_mass
 
     def _label(
         base_regime: str,
@@ -535,29 +622,51 @@ def run_flavour(
         variant_order = _variant_priority(base_regime, is_ff, qcd_mode, pthat_min)
         return (regime_order.get(base_regime, 99), mode_order.get(mode, 99), base_regime, mode or "", variant_order)
 
-    _ALL_REGIMES = {"all", "combined"}  # "combined" is legacy alias for "all"
+    def _resolve_overlap_selection(
+        mass_key: tuple[float, str],
+        variants: list[tuple[str, str | None, bool, str, float | None, Path]],
+        *,
+        warn_for_key: bool,
+    ) -> list[tuple[Path, str, tuple[tuple[str, int], ...]]]:
+        overlap_samples = [
+            OverlapSample(
+                base_regime=base_regime,
+                mode=mode,
+                is_ff=is_ff,
+                qcd_mode=qcd_mode,
+                pthat_min=pthat_min,
+                path=path,
+            )
+            for base_regime, mode, is_ff, qcd_mode, pthat_min, path in variants
+        ]
+        context = f"m={mass_key[0]:.2f} ({flavour})"
+        overlap = resolve_parent_overlap(
+            overlap_samples,
+            context=context,
+            min_events_per_mass=int(overlap_min_events),
+            strict_min_events=bool(strict_overlap_min_events),
+        )
+        if warn_for_key:
+            for msg in overlap.warnings:
+                print(msg)
+
+        resolved_entries: list[tuple[Path, str, tuple[tuple[str, int], ...]]] = []
+        for resolved in overlap.samples:
+            sample = resolved.sample
+            resolved_entries.append(
+                (
+                    sample.path,
+                    _label(sample.base_regime, sample.mode, sample.is_ff, sample.qcd_mode, sample.pthat_min),
+                    resolved.owned_keys,
+                )
+            )
+        return resolved_entries
 
     selected_by_mass = {}
-    all_coexist_count = 0
     for key, items in files_by_mass.items():
         warn_for_key = True
         if mass_filter is not None:
             warn_for_key = abs(key[0] - mass_filter) <= MASS_FILTER_TOL
-        all_chan = [it for it in items if it[0] in _ALL_REGIMES]
-        if all_chan:
-            chosen = max(
-                all_chan,
-                key=lambda it: _variant_priority(it[0], it[2], it[3], it[4]),
-            )
-
-            selected = [(chosen[5], _label(chosen[0], chosen[1], chosen[2], chosen[3], chosen[4]))]
-
-            if warn_for_key and len(items) > 1:
-                n_other = sum(1 for it in items if it[0] not in _ALL_REGIMES)
-                all_coexist_count = all_coexist_count + n_other
-
-            selected_by_mass[key] = selected
-            continue
 
         chosen = {}
         all_candidates_for_key = {}
@@ -596,18 +705,13 @@ def run_flavour(
                             raise ValueError(msg)
 
         selected = [v for _, v in sorted(chosen.items(), key=lambda kv: _sort_key(kv[1]))]
-        selected_by_mass[key] = [
-            (path, _label(base_regime, mode, is_ff, qcd_mode, pthat_min))
-            for base_regime, mode, is_ff, qcd_mode, pthat_min, path in selected
-        ]
+        selected_by_mass[key] = _resolve_overlap_selection(
+            key,
+            selected,
+            warn_for_key=warn_for_key,
+        )
 
     files_by_mass = selected_by_mass
-
-    if all_coexist_count > 0:
-        print(
-            f"[INFO] {all_coexist_count} individual regime files coexist with all-channel files; "
-            "using all-channel only."
-        )
 
     masses_with_valid_files = {key[0] for key in files_by_mass.keys()}
 
@@ -649,8 +753,11 @@ def run_flavour(
                     sim_list,
                     dirac,
                     separation_m,
+                    max_separation_m,
+                    separation_policy,
                     decay_seed,
                     p_min_GeV,
+                    geometry_cfg,
                     reco_efficiency,
                     show_progress,
                     timing_enabled,
@@ -690,8 +797,11 @@ def run_flavour(
                 sim_list,
                 dirac=dirac,
                 separation_m=separation_m,
+                max_separation_m=max_separation_m,
+                separation_policy=separation_policy,
                 decay_seed=decay_seed,
                 p_min_GeV=p_min_GeV,
+                geometry_config=geometry_cfg,
                 reco_efficiency=reco_efficiency,
                 show_progress=show_progress,
                 timing_enabled=timing_enabled,
@@ -714,8 +824,11 @@ def scan_single_mass_wrapper(args):
         sim_list,
         dirac,
         separation_m,
+        max_separation_m,
+        separation_policy,
         decay_seed,
         p_min_GeV,
+        geometry_config,
         reco_efficiency,
         show_progress,
         timing_enabled,
@@ -725,8 +838,10 @@ def scan_single_mass_wrapper(args):
     ) = args
     return scan_single_mass(
         mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list,
-        dirac=dirac, separation_m=separation_m, decay_seed=decay_seed,
-        p_min_GeV=p_min_GeV, reco_efficiency=reco_efficiency, quiet=True,
+        dirac=dirac, separation_m=separation_m, max_separation_m=max_separation_m,
+        separation_policy=separation_policy, decay_seed=decay_seed,
+        p_min_GeV=p_min_GeV, geometry_config=geometry_config,
+        reco_efficiency=reco_efficiency, quiet=True,
         show_progress=show_progress, timing_enabled=timing_enabled,
         hnlcalc_per_eps2=hnlcalc_per_eps2,
         decay_mode=decay_mode,
@@ -743,6 +858,43 @@ if __name__ == "__main__":
         type=float,
         default=1.0,
         help="Minimum charged-track separation at detector surface in mm (default: 1.0)",
+    )
+    parser.add_argument(
+        "--max-separation-mm",
+        type=float,
+        default=None,
+        help="Optional exploratory upper bound on charged-track separation at detector surface in mm.",
+    )
+    parser.add_argument(
+        "--separation-policy",
+        type=str,
+        choices=["all-pairs-min", "any-pair-window"],
+        default="all-pairs-min",
+        help=(
+            "Pairwise separation policy: all-pairs-min (baseline) requires all pair distances in window; "
+            "any-pair-window passes if any pair is in window."
+        ),
+    )
+    parser.add_argument(
+        "--geometry-model",
+        type=str,
+        choices=["tube", "profile"],
+        default="tube",
+        help="Geometry model: tube (baseline) or exploratory profile.",
+    )
+    parser.add_argument(
+        "--detector-thickness-m",
+        type=float,
+        default=DEFAULT_DETECTOR_THICKNESS_M,
+        help=(
+            "Detector thickness in meters for geometry-model=profile (default: "
+            f"{DEFAULT_DETECTOR_THICKNESS_M})."
+        ),
+    )
+    parser.add_argument(
+        "--profile-inset-floor",
+        action="store_true",
+        help="For geometry-model=profile, inset the floor by detector thickness (exploratory).",
     )
     parser.add_argument(
         "--decay-seed",
@@ -821,17 +973,63 @@ if __name__ == "__main__":
         action="store_true",
         help="Allow silently dropping lower-priority pTHat/QCD variants (default: error).",
     )
+    parser.add_argument(
+        "--overlap-min-events",
+        type=int,
+        default=0,
+        help=(
+            "Optional minimum owned simulation events required per mass point after overlap resolution. "
+            "Set 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--strict-overlap-min-events",
+        action="store_true",
+        help="Fail when --overlap-min-events is not met (default: warn only).",
+    )
+    parser.add_argument(
+        "--allow-legacy-tau-all",
+        action="store_true",
+        help=(
+            "Allow legacy tau _all/_combined files. "
+            "Default behavior requires explicit tau components (direct/fromTau/ew)."
+        ),
+    )
     args = parser.parse_args()
     if args.separation_mm <= 0:
         raise ValueError("--separation-mm must be positive.")
+    if args.max_separation_mm is not None and args.max_separation_mm <= 0:
+        raise ValueError("--max-separation-mm must be positive when provided.")
+    if args.max_separation_mm is not None and args.max_separation_mm <= args.separation_mm:
+        raise ValueError("--max-separation-mm must be strictly greater than --separation-mm.")
     if args.p_min_gev < 0:
         raise ValueError("--p-min-gev must be non-negative.")
+    if args.overlap_min_events < 0:
+        raise ValueError("--overlap-min-events must be non-negative.")
     if args.reco_efficiency is None:
         args.reco_efficiency = 1.0
         print("[NOTICE] --reco-efficiency not set, defaulting to 1.0 (no efficiency loss).")
         print("         For realistic projections, use --reco-efficiency 0.5 (MATHUSLA/ANUBIS).")
     if not 0.0 < args.reco_efficiency <= 1.0:
         raise ValueError("--reco-efficiency must be in (0, 1].")
+
+    geometry_cfg = normalize_geometry_config(
+        GeometryConfig(
+            model=args.geometry_model,
+            detector_thickness_m=args.detector_thickness_m,
+            profile_inset_floor=args.profile_inset_floor,
+        )
+    )
+
+    if args.decay_mode == "brvis-kappa" and args.max_separation_mm is not None:
+        raise ValueError(
+            "--max-separation-mm is not supported with --decay-mode brvis-kappa. "
+            "Treat max separation as exploratory library-only cut."
+        )
+    if args.decay_mode == "brvis-kappa" and args.separation_policy != "all-pairs-min":
+        raise ValueError(
+            "--separation-policy must be 'all-pairs-min' with --decay-mode brvis-kappa."
+        )
 
     n_workers = args.workers if args.workers else multiprocessing.cpu_count()
     mode_str = f"PARALLEL, {n_workers} workers" if args.parallel else "SINGLE-THREADED"
@@ -846,11 +1044,21 @@ if __name__ == "__main__":
     L_HL_LHC_FB = 3000.0
     results_out = ANALYSIS_OUT_DIR / "HNL_U2_limits_summary.csv"
     separation_m = args.separation_mm * 1e-3
+    max_separation_m = args.max_separation_mm * 1e-3 if args.max_separation_mm is not None else None
     p_min_GeV = args.p_min_gev
     reco_efficiency = args.reco_efficiency
     print(f"Decay separation: {args.separation_mm:.3f} mm (seed={args.decay_seed})")
+    if args.max_separation_mm is not None:
+        print(f"Max separation (exploratory): {args.max_separation_mm:.3f} mm")
+    print(f"Separation policy: {args.separation_policy}")
     print(f"Track p_min: {p_min_GeV:.2f} GeV/c | Reco efficiency: {reco_efficiency:.2f}")
+    if args.overlap_min_events > 0:
+        mode = "strict" if args.strict_overlap_min_events else "warn"
+        print(f"Overlap minimum events: {args.overlap_min_events} ({mode})")
+    if args.allow_legacy_tau_all:
+        print("[WARN] Legacy tau _all/_combined inputs are enabled.")
     print(f"Decay mode: {args.decay_mode}")
+    print(f"Geometry: {geometry_cfg.model} (tag={geometry_tag(geometry_cfg)})")
     if args.decay_mode == "brvis-kappa":
         print(f"Kappa table: {resolve_kappa_table_path(args.kappa_table)}")
 
@@ -871,17 +1079,23 @@ if __name__ == "__main__":
             n_workers=args.workers,
             dirac=args.dirac,
             separation_m=separation_m,
+            max_separation_m=max_separation_m,
+            separation_policy=args.separation_policy,
             decay_seed=args.decay_seed,
             p_min_GeV=p_min_GeV,
+            geometry_config=geometry_cfg,
             reco_efficiency=reco_efficiency,
             show_progress=show_progress,
             mass_filter=args.mass,
             timing_enabled=timing_enabled,
             hnlcalc_per_eps2=args.hnlcalc_per_eps2,
             allow_variant_drop=args.allow_variant_drop,
+            overlap_min_events=args.overlap_min_events,
+            strict_overlap_min_events=args.strict_overlap_min_events,
             max_mass=args.max_mass,
             decay_mode=args.decay_mode,
             kappa_table_path=args.kappa_table,
+            allow_legacy_tau_all=args.allow_legacy_tau_all,
         )
         df["separation_mm"] = args.separation_mm
         df["p_min_gev"] = p_min_GeV
@@ -896,6 +1110,25 @@ if __name__ == "__main__":
     final_df = pd.concat(all_results, ignore_index=True)
     final_df.to_csv(results_out, index=False)
 
+    summary_meta = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "separation_mm": float(args.separation_mm),
+        "max_separation_mm": None if args.max_separation_mm is None else float(args.max_separation_mm),
+        "separation_policy": args.separation_policy,
+        "p_min_gev": float(p_min_GeV),
+        "decay_mode": args.decay_mode,
+        "overlap_min_events": int(args.overlap_min_events),
+        "strict_overlap_min_events": bool(args.strict_overlap_min_events),
+        "allow_legacy_tau_all": bool(args.allow_legacy_tau_all),
+        "kappa_table_path": (
+            str(resolve_kappa_table_path(args.kappa_table)) if args.decay_mode == "brvis-kappa" else ""
+        ),
+        "geometry": geometry_metadata(geometry_cfg),
+    }
+    summary_meta_path = ANALYSIS_OUT_DIR / "HNL_U2_limits_summary.meta.json"
+    with summary_meta_path.open("w", encoding="utf-8") as f:
+        json.dump(summary_meta, f, indent=2, sort_keys=True)
+
     if timing_enabled:
         timing_out = Path(args.timing_out) if args.timing_out else (ANALYSIS_OUT_DIR / "HNL_U2_timing.csv")
         timing_cols = [c for c in final_df.columns if c.startswith("time_") or c.startswith("count_") or c.startswith("n_")]
@@ -906,6 +1139,8 @@ if __name__ == "__main__":
     print(f"COMPLETE!")
     print(f"Saved {len(final_df)} mass points to:")
     print(f"  {results_out}")
+    print("Run metadata:")
+    print(f"  {summary_meta_path}")
     if timing_enabled:
         print(f"Timing breakdown saved to:")
         print(f"  {timing_out}")

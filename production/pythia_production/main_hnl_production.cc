@@ -84,6 +84,7 @@
 #include <cstdlib>
 #include <map>
 #include <iomanip>
+#include <algorithm>
 
 using namespace Pythia8;
 
@@ -118,23 +119,29 @@ const std::vector<int> BARYONS_3BODY = {
     5122   // Λb -> Λc ℓ N
 };
 
-// Lepton masses (GeV)
-const double M_ELECTRON = 0.000511;
-const double M_MUON = 0.10566;
-const double M_TAU = 1.777;
+// Lepton masses (GeV), PDG 2025 central values
+const double M_ELECTRON = 0.000510999;
+const double M_MUON = 0.105658376;
+const double M_TAU = 1.776932;
 
-// Meson masses (GeV) - for kinematic checks
+// Meson masses (GeV), PDG 2025 central values (rounded where needed)
 const std::map<int, double> MESON_MASSES = {
-    {130, 0.498},   // K_L (neutral kaon, long-lived)
-    {321, 0.494},   // K+
-    {411, 1.870},   // D+
-    {421, 1.865},   // D0
-    {431, 1.968},   // Ds+
-    {511, 5.280},   // B0
-    {521, 5.279},   // B+
-    {531, 5.367},   // Bs
-    {541, 6.275}    // Bc+
+    {130, 0.497611}, // K_L (neutral kaon, long-lived)
+    {321, 0.493677}, // K+
+    {411, 1.869661}, // D+
+    {421, 1.864838}, // D0
+    {431, 1.968351}, // Ds+
+    {511, 5.279717}, // B0
+    {521, 5.279406}, // B+
+    {531, 5.366932}, // Bs
+    {541, 6.274470}  // Bc+
 };
+
+// Additional hadron masses (GeV) used in semileptonic thresholds.
+const double M_PI_CHARGED = 0.13957039;
+const double M_K0 = 0.497611;
+const double M_LAMBDA0 = 1.115683;
+const double M_LAMBDA_C = 2.286460;
 
 // ==========================================================================
 // Helper functions
@@ -170,18 +177,73 @@ bool isKinematicallyAllowed2Body(double mParent, double mLepton, double mHNL) {
     return (mHNL < mParent - mLepton);
 }
 
-// Determine production regime based on HNL mass and flavor
-// For tau coupling: kaons cannot produce taus (m_K < m_tau), so use charm/beauty
-std::string getProductionRegime(double mHNL, const std::string& flavor = "") {
-    // Tau coupling requires heavy meson parents (Ds, B) - kaons cannot produce taus
+double kaonRegimeCeiling(double mLepton) {
+    // K+ -> l N and KL -> pi l N
+    const double kplus_2body = MESON_MASSES.at(321) - mLepton;
+    const double kl_3body = MESON_MASSES.at(130) - M_PI_CHARGED - mLepton;
+    return std::max(kplus_2body, kl_3body);
+}
+
+double charmRegimeCeiling(double mLepton) {
+    // Charm channels implemented in configureMesonDecays:
+    // D+ -> lN, Ds -> lN, D0 -> K l N, D+ -> K0 l N, Lc -> L0 l N
+    const double dplus_2body = MESON_MASSES.at(411) - mLepton;
+    const double ds_2body = MESON_MASSES.at(431) - mLepton;
+    const double d0_3body = MESON_MASSES.at(421) - MESON_MASSES.at(321) - mLepton;
+    const double dplus_3body = MESON_MASSES.at(411) - M_K0 - mLepton;
+    const double lambdac_3body = M_LAMBDA_C - M_LAMBDA0 - mLepton;
+    return std::max({dplus_2body, ds_2body, d0_3body, dplus_3body, lambdac_3body});
+}
+
+double representativeDplusLeptonicWeight(int leptonID) {
+    // PDG-inspired relative normalization when D+ semileptonic is also open:
+    // - e channel: BR(D+->eN)-like component is tiny vs D+->K0 e N
+    // - mu channel: BR(D+->muN)-like component is still subdominant
+    if (std::abs(leptonID) == 11) return 1.0e-4;
+    if (std::abs(leptonID) == 13) return 4.0e-3;
+    return 1.0;
+}
+
+double representativeBplusLeptonicWeight(int leptonID) {
+    // PDG-inspired: B+ purely leptonic modes are tiny compared to semileptonic B->D l nu.
+    if (std::abs(leptonID) == 11 || std::abs(leptonID) == 13) return 1.0e-5;
+    return 1.0;
+}
+
+double tauDirectCharmRegimeCeiling() {
+    // Direct tau channels configured from charm card:
+    // D+ -> tau N, Ds -> tau N. (3-body charm channels with tau are kinematically closed.)
+    const double dplus_2body = MESON_MASSES.at(411) - M_TAU;
+    const double ds_2body = MESON_MASSES.at(431) - M_TAU;
+    return std::max(dplus_2body, ds_2body);
+}
+
+// Determine production regime based on HNL mass/flavor/mode and implemented channel thresholds.
+// QCD override modes (hardccbar/hardbbbar/hardBc) are applied later in main().
+std::string getProductionRegime(
+    double mHNL,
+    const std::string& flavor,
+    double mLepton,
+    const std::string& productionMode
+) {
+    // Tau coupling has two distinct production chains:
+    //  - direct: meson/W -> tau N
+    //  - fromTau: meson/W -> tau nu, tau -> N X
+    // For fromTau in auto mode, keep charm default (Ds-dominated) and add beauty
+    // contributions via dedicated hardbbbar runs in the launcher.
     if (flavor == "tau") {
-        if (mHNL < 2.0) return "charm";   // Ds-dominated for tau
-        return "beauty";                   // B-dominated for tau
+        if (productionMode == "fromTau") {
+            return "charm";
+        }
+        if (mHNL < tauDirectCharmRegimeCeiling()) return "charm";
+        return "beauty";
     }
-    // Electron/muon coupling: standard mass-based regime
-    if (mHNL < 0.5) return "kaon";        // Kaon-dominated regime
-    if (mHNL < 2.0) return "charm";       // Charm-dominated regime
-    return "beauty";                       // Beauty regime (2.0-10.0 GeV)
+    // Electron/muon coupling: use kinematic ceilings instead of fixed 0.5/2.0 cuts.
+    const double kaon_ceiling = kaonRegimeCeiling(mLepton);
+    const double charm_ceiling = charmRegimeCeiling(mLepton);
+    if (mHNL < kaon_ceiling) return "kaon";
+    if (mHNL < charm_ceiling) return "charm";
+    return "beauty";
 }
 
 // Convert mass to filename-safe label
@@ -270,10 +332,11 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     
     // D+ -> ℓ+ N
     if (isKinematicallyAllowed2Body(MESON_MASSES.at(411), mLepton, mHNL)) {
+        const double dplus_leptonic_weight = representativeDplusLeptonicWeight(leptonID);
         pythia.readString("411:onMode = off");
-        pythia.readString("411:addChannel = 1 1.0 0 " + lepBar + " " + hnl);
+        pythia.readString("411:addChannel = 1 " + std::to_string(dplus_leptonic_weight) + " 0 " + lepBar + " " + hnl);
         pythia.readString("-411:onMode = off");
-        pythia.readString("-411:addChannel = 1 1.0 0 " + lep + " " + hnl);
+        pythia.readString("-411:addChannel = 1 " + std::to_string(dplus_leptonic_weight) + " 0 " + lep + " " + hnl);
         if (verbose) std::cout << "  D± -> ℓ N : ENABLED" << std::endl;
         nChannelsConfigured++;
     } else if (verbose) {
@@ -294,10 +357,11 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     
     // B+ -> ℓ+ N
     if (isKinematicallyAllowed2Body(MESON_MASSES.at(521), mLepton, mHNL)) {
+        const double bplus_leptonic_weight = representativeBplusLeptonicWeight(leptonID);
         pythia.readString("521:onMode = off");
-        pythia.readString("521:addChannel = 1 1.0 0 " + lepBar + " " + hnl);
+        pythia.readString("521:addChannel = 1 " + std::to_string(bplus_leptonic_weight) + " 0 " + lepBar + " " + hnl);
         pythia.readString("-521:onMode = off");
-        pythia.readString("-521:addChannel = 1 1.0 0 " + lep + " " + hnl);
+        pythia.readString("-521:addChannel = 1 " + std::to_string(bplus_leptonic_weight) + " 0 " + lep + " " + hnl);
         if (verbose) std::cout << "  B± -> ℓ N : ENABLED" << std::endl;
         nChannelsConfigured++;
     } else if (verbose) {
@@ -328,8 +392,7 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     // relative to K_L (HNLCalc handles this via lifetime in BR calculation).
     // NOTE: K_L has mayDecay=off by default in Pythia (long-lived for detector sim).
     double mKL = MESON_MASSES.at(130);
-    double mPiCharged = 0.140;  // π± mass
-    if (mHNL + mLepton + mPiCharged < mKL) {
+    if (mHNL + mLepton + M_PI_CHARGED < mKL) {
         pythia.readString("130:mayDecay = on");
         pythia.readString("130:onMode = off");
         // K_L → π⁻ ℓ⁺ N
@@ -358,12 +421,12 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
 
     // D+ -> K0bar ℓ+ N (semileptonic, K0bar = -311)
     double mDplus = MESON_MASSES.at(411);
-    double mK0 = 0.498;  // K0 mass
+    double mK0 = M_K0;
     if (mHNL + mLepton + mK0 < mDplus) {
         // Note: D+ 2-body leptonic D+ → ℓ N is already added above
         // This adds the semileptonic channel
-        pythia.readString("411:addChannel = 1 0.5 0 -311 " + lepBar + " " + hnl);
-        pythia.readString("-411:addChannel = 1 0.5 0 311 " + lep + " " + hnl);
+        pythia.readString("411:addChannel = 1 1.0 0 -311 " + lepBar + " " + hnl);
+        pythia.readString("-411:addChannel = 1 1.0 0 311 " + lep + " " + hnl);
         if (verbose) std::cout << "  D± -> K0 ℓ N : ENABLED (3-body)" << std::endl;
         nChannelsConfigured++;
     } else if (verbose) {
@@ -390,8 +453,8 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     if (mHNL + mLepton + mD0mass < mBplus) {
         // Note: B+ 2-body leptonic B+ → ℓ N is already added above
         // This adds the semileptonic channel
-        pythia.readString("521:addChannel = 1 0.5 0 -421 " + lepBar + " " + hnl);
-        pythia.readString("-521:addChannel = 1 0.5 0 421 " + lep + " " + hnl);
+        pythia.readString("521:addChannel = 1 1.0 0 -421 " + lepBar + " " + hnl);
+        pythia.readString("-521:addChannel = 1 1.0 0 421 " + lep + " " + hnl);
         if (verbose) std::cout << "  B± -> D0 ℓ N : ENABLED (3-body)" << std::endl;
         nChannelsConfigured++;
     } else if (verbose) {
@@ -427,7 +490,7 @@ void configureMesonDecays(Pythia& pythia, int leptonID,
     }
 
     // Λc -> Λ ℓ+ N (baryon semileptonic)
-    double mLambda0 = 1.115;  // Lambda^0 mass
+    double mLambda0 = M_LAMBDA0;
     if (mHNL + mLepton + mLambda0 < mLc) {
         pythia.readString("4122:onMode = off");
         pythia.readString("4122:addChannel = 1 1.0 0 3122 " + lep + " " + hnl);
@@ -832,7 +895,7 @@ int main(int argc, char* argv[]) {
     //   τ → π N:  m_N < 1.64 GeV
     //   τ → μ ν N: m_N < 1.67 GeV
     //   τ → e ν N: m_N < 1.78 GeV (practical limit)
-    double mTauMinusE = M_TAU - M_ELECTRON;  // ~1.777 GeV
+    double mTauMinusE = M_TAU - M_ELECTRON;  // ~1.776 GeV
     if (productionMode == "fromTau" && mHNL > mTauMinusE) {
         std::cerr << "Error: 'fromTau' mode kinematically forbidden for mHNL = "
                   << mHNL << " GeV" << std::endl;
@@ -847,7 +910,7 @@ int main(int argc, char* argv[]) {
     getLeptonInfo(flavor, leptonID, neutrinoID, mLepton, flavorLabel);
 
     // Determine production regime (tau uses charm/beauty, not kaon)
-    std::string regime = getProductionRegime(mHNL, flavorLabel);
+    std::string regime = getProductionRegime(mHNL, flavorLabel, mLepton, productionMode);
 
     // Override regime for specific QCD modes
     if (qcdMode == "hardBc") {
