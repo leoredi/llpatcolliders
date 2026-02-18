@@ -17,6 +17,12 @@ if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
 
 from decay.brvis_kappa import lookup_kappa, resolve_kappa_table_path
+from geometry.per_parent_efficiency import (
+    DEFAULT_TUBE_RADIUS_M,
+    GeometryConfig,
+    geometry_metadata,
+    normalize_geometry_config,
+)
 from hnl_models.hnl_model_hnlcalc import HNLModel
 from limits.expected_signal import couplings_from_eps2, expected_signal_events
 from tools.decay.brvis_kappa_workflow import (
@@ -58,6 +64,19 @@ def main() -> None:
     parser.add_argument("--p-min-gev", type=float, default=0.6)
     parser.add_argument("--separation-mm", type=float, default=1.0)
     parser.add_argument(
+        "--geometry-model",
+        type=str,
+        choices=["tube", "profile"],
+        default="tube",
+        help="Geometry model used for validation (must match kappa calibration).",
+    )
+    parser.add_argument("--detector-thickness-m", type=float, default=0.24)
+    parser.add_argument(
+        "--profile-inset-floor",
+        action="store_true",
+        help="For profile geometry, inset floor by detector thickness.",
+    )
+    parser.add_argument(
         "--max-signal-events",
         type=int,
         default=None,
@@ -82,6 +101,16 @@ def main() -> None:
         raise ValueError("--separation-mm must be positive.")
     if args.max_signal_events is not None and args.max_signal_events <= 0:
         raise ValueError("--max-signal-events must be positive when provided.")
+
+    geometry_cfg = normalize_geometry_config(
+        GeometryConfig(
+            model=args.geometry_model,
+            tube_radius_m=DEFAULT_TUBE_RADIUS_M,
+            detector_thickness_m=args.detector_thickness_m,
+            profile_inset_floor=args.profile_inset_floor,
+        )
+    )
+    geom_meta = geometry_metadata(geometry_cfg)
 
     flavours = resolve_flavours(args.flavours)
     masses = resolve_masses(args.masses, args.from_mass_grid, args.min_mass, args.max_mass)
@@ -113,6 +142,11 @@ def main() -> None:
                 "threshold": "",
                 "status": "",
                 "error": "",
+                "geometry_tag": geom_meta["geometry_tag"],
+                "geometry_model": geom_meta["model"],
+                "tube_radius_m": f"{geom_meta['tube_radius_m']:.8g}",
+                "detector_thickness_m": f"{geom_meta['detector_thickness_m']:.8g}",
+                "profile_inset_floor": str(bool(geom_meta["profile_inset_floor"])).lower(),
             }
             try:
                 from tools.decay.brvis_kappa_workflow import load_geom_for_sim_files
@@ -123,6 +157,7 @@ def main() -> None:
                     flavour=flavour,
                     show_progress=False,
                     max_signal_events=args.max_signal_events,
+                    geometry_config=geometry_cfg,
                 )
                 if len(geom_df) == 0:
                     raise RuntimeError("No geometry rows loaded for point.")
@@ -139,6 +174,7 @@ def main() -> None:
                     p_min_GeV=args.p_min_gev,
                     separation_mm=args.separation_mm,
                     table_path=kappa_table_path,
+                    geometry_config=geometry_cfg,
                 )
 
                 n_lib = expected_signal_events(
@@ -148,9 +184,11 @@ def main() -> None:
                     benchmark=benchmark,
                     lumi_fb=3000.0,
                     separation_m=args.separation_mm * 1e-3,
+                    separation_policy="all-pairs-min",
                     decay_seed=args.val_seed,
                     p_min_GeV=args.p_min_gev,
                     decay_mode="library",
+                    geometry_config=geometry_cfg,
                     ctau0_m=ctau0_m,
                     br_per_parent=br_per_parent,
                     br_scale=1.0,
@@ -162,10 +200,12 @@ def main() -> None:
                     benchmark=benchmark,
                     lumi_fb=3000.0,
                     separation_m=args.separation_mm * 1e-3,
+                    separation_policy="all-pairs-min",
                     p_min_GeV=args.p_min_gev,
                     decay_mode="brvis_kappa",
                     br_vis=br_vis,
                     kappa_eff=kappa_eff,
+                    geometry_config=geometry_cfg,
                     ctau0_m=ctau0_m,
                     br_per_parent=br_per_parent,
                     br_scale=1.0,
@@ -202,7 +242,21 @@ def main() -> None:
     _write_csv(
         out_path,
         rows_sorted,
-        ["flavour", "mass_GeV", "N_lib", "N_pred", "rel_diff", "threshold", "status", "error"],
+        [
+            "flavour",
+            "mass_GeV",
+            "N_lib",
+            "N_pred",
+            "rel_diff",
+            "threshold",
+            "status",
+            "error",
+            "geometry_tag",
+            "geometry_model",
+            "tube_radius_m",
+            "detector_thickness_m",
+            "profile_inset_floor",
+        ],
     )
 
     print(

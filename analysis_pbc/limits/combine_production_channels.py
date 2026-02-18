@@ -39,6 +39,10 @@ def find_production_files(sim_dir, flavour=None):
             pthat_token = match.group(6)
             pthat_min = float(pthat_token.replace("p", ".")) if pthat_token else None
 
+            if qcd_mode in {"hardccbar", "hardbbbar"}:
+                print(f"[WARN] Skipping hard-sliced sample in nominal combine: {f.name}")
+                continue
+
             if flavour and file_flavour != flavour:
                 continue
 

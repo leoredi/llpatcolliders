@@ -36,7 +36,7 @@ Main outputs:
 
 ## 3. Full production recipe (transverse detector)
 
-The full production chain consists of two main parts: Pythia production for meson-decay channels, and MadGraph production for high-mass Electroweak (EW) channels. Both `N_EVENTS_DEFAULT` and `MAX_SIGNAL_EVENTS` are read from `config_mass_grid.py`.
+The full production chain consists of two main parts: Pythia production for meson-decay channels, and MadGraph production for high-mass Electroweak (EW) channels. Both `N_EVENTS_DEFAULT` and `MAX_SIGNAL_EVENTS` are read from `config_mass_grid.py` (`MAX_SIGNAL_EVENTS=0` means unlimited).
 
 ### Bash
 
@@ -145,7 +145,8 @@ python limits/run.py --parallel --workers 12 --flavour tau
 
 - Batch launcher for full mass scans.
 - Reads `N_EVENTS_DEFAULT` and `MAX_SIGNAL_EVENTS` from `config_mass_grid.py` via `load_mass_grid.sh`.
-- Tau `fromTau` jobs are emitted only for `mass < 1.77 GeV`.
+- Tau `fromTau` jobs are emitted only for `mass < 1.78 GeV`.
+- In `auto` mode, tau `fromTau` is inclusive (one job per mass; no implicit `hardccbar/hardbbbar` split).
 
 ## 5. Combination and file selection
 
@@ -153,17 +154,22 @@ python limits/run.py --parallel --workers 12 --flavour tau
 
 - Parses simulation filenames and groups by `(mass, flavour)`.
 - Skips tiny files (`<1000` bytes).
+- Nominal combine ignores `hardccbar` and `hardbbbar` samples.
 - Chooses the best variant per `(regime, mode)` using priority:
-  - `hardccbar > auto` for `charm`.
-  - `hardbbbar`/`hardBc > auto` for `beauty`/`Bc`.
+  - `hardBc > auto` for `Bc`.
   - `_ff` over non-`_ff` when both exist.
   - higher `pTHat` wins when modes otherwise tie.
-- Caps each regime at `MAX_SIGNAL_EVENTS` (from `config_mass_grid.py`) via random subsampling.
-- Concatenates surviving regimes into `HNL_<mass>GeV_<flavour>_all.csv`.
+- Resolves overlapping channels by normalization keys (per-parent ownership), then filters each dataframe to owned keys.
+- By default, keeps tau channels as explicit components (`direct`, `fromTau`, `ew`) and does not emit tau `_all.csv` unless `--allow-tau-all` is set.
+- Writes `HNL_<mass>GeV_<flavour>_all.csv` for merged non-tau overlaps.
 
-By default, the script will raise an error if it finds multiple simulation files for the same mass point and production regime (e.g., from different `pTHat` runs) to prevent accidental data loss. The `--allow-variant-drop` flag can be passed to both `combine_production_channels.py` and `run.py` to override this, causing the script to simply warn and use the highest-priority variant.
+By default, the script raises on ambiguous same-regime variants (for example multiple `pTHat` slices) to prevent accidental drops. Pass `--allow-variant-drop` to warn and keep the top-priority variant.
 
-`analysis_pbc/limits/run.py` applies the same discovery/priority logic when combined files are absent.
+`analysis_pbc/limits/run.py` applies the same nominal selection guards:
+
+- skips `hardccbar` / `hardbbbar` files,
+- rejects legacy tau `_all/_combined` inputs unless `--allow-legacy-tau-all` is passed,
+- resolves overlap ownership by parent normalization keys before computing acceptance.
 
 ## 6. Normalisation path
 
@@ -228,7 +234,7 @@ find output/csv/simulation -maxdepth 1 -name 'HNL_*.csv' -delete
 find output/csv/simulation -maxdepth 1 -name 'HNL_*.csv.meta.json' -delete
 
 # remove downstream caches/results
-find output/csv/geometry -maxdepth 1 -name 'HNL_*_geom.csv' -delete
+find output/csv/geometry -maxdepth 1 -name 'HNL_*_geom*.csv' -delete
 rm -f output/csv/analysis/HNL_U2_limits_summary.csv output/csv/analysis/HNL_U2_timing.csv
 ```
 
@@ -383,6 +389,26 @@ python limits/run.py --parallel --workers 12 \
   --separation-mm 1.0
 ```
 
+Exploratory options in `limits/run.py` (library mode only):
+
+- `--max-separation-mm`: optional upper separation cut for systematic studies.
+- `--separation-policy`: `all-pairs-min` (baseline default) or `any-pair-window` (exploratory).
+- `--geometry-model`: `tube` (baseline default) or `profile` (exploratory geometry).
+- `--detector-thickness-m`, `--profile-inset-floor`: profile-geometry controls.
+
+Baseline production/limit plots should remain on defaults:
+
+- `--separation-mm 1.0`
+- no `--max-separation-mm`
+- `--separation-policy all-pairs-min`
+- `--geometry-model tube`
+
+`brvis-kappa` guardrails:
+
+- only supports `--separation-policy all-pairs-min`
+- rejects `--max-separation-mm`
+- calibrated tables without geometry metadata are legacy and only valid for the default geometry tuple.
+
 ### Decay physics sign-off gates
 
 Before using results in physics plots/tables, run these three gates and require
@@ -490,3 +516,4 @@ under `tools/`:
 - Pythia live monitor: `tools/pythia/monitor_production.sh`
 - EW xsec sanity check: `tools/madgraph/validate_xsec.py`
 - Custom decay sample generation: `tools/decay/generate_hnl_decay_events.py`
+- Separation-cut scan orchestrator: `tools/analysis/scan_separation_cuts.py`

@@ -153,3 +153,41 @@ def test_brvis_kappa_ignores_decay_cache_and_separation_pass_inputs():
     )
 
     assert n_with_library_artifacts == pytest.approx(n_base, rel=0.0, abs=0.0)
+
+
+def test_brvis_kappa_rejects_max_separation_cut():
+    with pytest.raises(ValueError, match="does not support max_separation_m"):
+        es.expected_signal_events(
+            geom_df=_geom_df(),
+            mass_GeV=4.0,
+            eps2=1e-6,
+            benchmark="100",
+            lumi_fb=1.0,
+            separation_m=1e-3,
+            max_separation_m=0.1,
+            decay_mode="brvis_kappa",
+            br_vis=0.8,
+            kappa_eff=0.5,
+            ctau0_m=1.0,
+            br_per_parent={511: 0.1},
+            br_scale=1.0,
+        )
+
+
+def test_brvis_kappa_rejects_non_legacy_policy():
+    with pytest.raises(ValueError, match="supports only separation_policy='all-pairs-min'"):
+        es.expected_signal_events(
+            geom_df=_geom_df(),
+            mass_GeV=4.0,
+            eps2=1e-6,
+            benchmark="100",
+            lumi_fb=1.0,
+            separation_m=1e-3,
+            separation_policy="any-pair-window",
+            decay_mode="brvis_kappa",
+            br_vis=0.8,
+            kappa_eff=0.5,
+            ctau0_m=1.0,
+            br_per_parent={511: 0.1},
+            br_scale=1.0,
+        )

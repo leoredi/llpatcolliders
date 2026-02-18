@@ -96,7 +96,7 @@ def test_library_seed_sensitivity_sanity(monkeypatch: pytest.MonkeyPatch):
         return out
 
     monkeypatch.setattr(es, "compute_decay_acceptance", fake_acceptance)
-    monkeypatch.setattr(es, "build_mesh_once", lambda: object())
+    monkeypatch.setattr(es, "build_mesh_once", lambda *args, **kwargs: object())
 
     kwargs = dict(
         geom_df=_geom_df(),

@@ -39,7 +39,8 @@ Tau has two production modes:
 - `direct`: parent meson/boson produces `tau + N` at the primary decay.
 - `fromTau`: parent produces a tau first, then `tau -> N X`.
 
-The batch launcher emits `fromTau` only for `m_N < 1.77 GeV`.
+The batch launcher emits `fromTau` only for `m_N < 1.78 GeV`.
+In nominal `auto` runs this is an inclusive sample (no implicit hard-slice split).
 
 ### 3.2 Electroweak production (MadGraph)
 
@@ -63,11 +64,13 @@ Production uses two Pythia passes:
   for `m_N > 5 GeV` where Bc is the only meson parent and `auto` yields
   O(100) HNLs vs O(100k) at lower masses.
 
-Legacy modes `hardccbar` and `hardbbbar` are still supported by the code
-but are not needed: `auto` gives O(100k) HNLs per mass point throughout
-the kaon, charm, and beauty regimes.
+Legacy modes `hardccbar` and `hardbbbar` are still supported by the generator
+for diagnostics, but nominal combine/limits runs ignore them.
 
-The combination stage keeps the best variant per regime/mode and concatenates regimes.
+The overlap stage resolves parent ownership by normalization keys so duplicated
+parents are counted once. Tau channels are kept as explicit components
+(`direct`, `fromTau`, `ew`) in nominal analysis; legacy tau `_all/_combined`
+inputs are disabled by default.
 
 ## 5. Cross-section normalisation
 
@@ -86,6 +89,7 @@ For each produced HNL:
 1. Geometry determines whether the trajectory intersects the detector and gives path length.
 2. Decay probability in fiducial volume uses `beta*gamma`, path geometry, and `ctau`.
 3. Decay visibility requires charged-track separation above the configured threshold (default `1 mm`).
+   Baseline policy is `all-pairs-min` with no upper-separation cut.
 
 The runtime pipeline uses precomputed decay libraries and an HNLCalc interface for lifetime/BR inputs.
 
@@ -117,6 +121,14 @@ Alternative calibrated fast mode (`decay_mode = brvis-kappa`):
 - replaces explicit daughter sampling with `BR_vis * kappa(m_N, flavour)`,
 - is calibrated against the library baseline at fixed analysis cuts:
   `p_min = 0.6 GeV`, `separation = 1.0 mm`.
+- currently assumes the baseline separation policy (`all-pairs-min`) and no max-separation cut.
+- legacy kappa tables without geometry metadata are treated as default-geometry only.
+
+Exploratory systematic knobs (not baseline physics assumptions):
+
+- `--max-separation-mm` upper separation window bound.
+- `--separation-policy any-pair-window` as a less conservative pair acceptance.
+- `--geometry-model profile` to compare against the baseline `--geometry-model tube`.
 
 PBC-style decay QA sign-off (recommended before final limits):
 
@@ -156,9 +168,9 @@ Physical interpretation of exclusion island boundaries:
 
 - `MASS_GRID`: `116` points, `0.20` to `10.00 GeV`.
 - `N_EVENTS_DEFAULT`: pp collisions to simulate per production job (default `100k`).
-- `MAX_SIGNAL_EVENTS`: max HNL signal events per channel (default `1k`). Production stops early when this is reached; analysis downsamples if exceeded.
+- `MAX_SIGNAL_EVENTS`: max HNL signal events per production job (`0` = unlimited, no early stop).
 
-Tau `direct` runs use the full grid. Tau `fromTau` is only generated below `1.77 GeV`.
+Tau `direct` runs use the full grid. Tau `fromTau` is only generated below `1.78 GeV`.
 
 ## 9. Dominant approximations
 

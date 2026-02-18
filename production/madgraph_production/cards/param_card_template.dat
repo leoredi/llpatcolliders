@@ -50,7 +50,7 @@ Block mass
   16 0.000000e+00 # vt : 0.0 
   21 0.000000e+00 # g : 0.0 
   22 0.000000e+00 # a : 0.0 
-  24 7.995123e+01 # w+ : cmath.sqrt(MZ__exp__2/2. + cmath.sqrt(MZ__exp__4/4. - (aEW*cmath.pi*MZ__exp__2)/(Gf*sqrt__2))) 
+  24 8.037700e+01 # w+ (PDG 2025 central value, GeV)
 
 ###################################
 ## INFORMATION FOR NUMIXING

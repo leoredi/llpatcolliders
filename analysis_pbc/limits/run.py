@@ -538,6 +538,10 @@ def run_flavour(
         pthat_token = match.group(5)
         pthat_min = float(pthat_token.replace("p", ".")) if pthat_token else None
 
+        if qcd_mode in {"hardccbar", "hardbbbar"}:
+            print(f"[WARN] Skipping hard-sliced sample in nominal analysis: {f.name}")
+            continue
+
         is_ff = regime_token.endswith("_ff")
         base_regime = regime_token.replace("_ff", "")
 

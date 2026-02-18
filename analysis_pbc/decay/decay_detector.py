@@ -22,6 +22,8 @@ class DecaySelection:
     separation_m: float
     seed: int = 12345
     p_min_GeV: float = 0.5
+    max_separation_m: float | None = None
+    separation_policy: str = "all-pairs-min"
 
 
 @dataclass
@@ -29,6 +31,50 @@ class DecayCache:
     charged_directions: List[List[np.ndarray]]
     decay_u: np.ndarray
     hit_indices: np.ndarray
+
+
+def _normalize_separation_policy(policy: str) -> str:
+    policy_norm = str(policy).strip().lower().replace("_", "-")
+    if policy_norm not in {"all-pairs-min", "any-pair-window"}:
+        raise ValueError(
+            f"Unsupported separation policy '{policy}'. "
+            "Use 'all-pairs-min' or 'any-pair-window'."
+        )
+    return policy_norm
+
+
+def pairwise_separation_pass(
+    points: np.ndarray,
+    min_separation_m: float,
+    max_separation_m: float | None = None,
+    separation_policy: str = "all-pairs-min",
+) -> bool:
+    if len(points) < 2:
+        return False
+
+    policy_norm = _normalize_separation_policy(separation_policy)
+    min_sep = float(min_separation_m)
+    max_sep = None if max_separation_m is None else float(max_separation_m)
+
+    diffs = points[:, None, :] - points[None, :, :]
+    dists = np.linalg.norm(diffs, axis=2)
+    tri = np.triu_indices(len(points), k=1)
+    pair_dists = dists[tri]
+    if pair_dists.size == 0:
+        return False
+
+    if policy_norm == "all-pairs-min":
+        # Explicitly enforce: min(pairwise) >= min_sep and, if requested, max(pairwise) <= max_sep.
+        min_pair = float(np.min(pair_dists))
+        max_pair = float(np.max(pair_dists))
+        if min_pair < min_sep:
+            return False
+        if max_sep is not None and max_pair > max_sep:
+            return False
+        return True
+
+    upper = np.inf if max_sep is None else max_sep
+    return bool(np.any((pair_dists >= min_sep) & (pair_dists <= upper)))
 
 
 def _unit_vector(vec: np.ndarray) -> np.ndarray:
@@ -312,11 +358,12 @@ def compute_decay_acceptance(
             continue
 
         points = np.stack(charged_hits, axis=0)
-        diffs = points[:, None, :] - points[None, :, :]
-        dists = np.linalg.norm(diffs, axis=2)
-        np.fill_diagonal(dists, np.inf)
-        min_dist = float(np.min(dists))
-        if min_dist >= selection.separation_m:
+        if pairwise_separation_pass(
+            points=points,
+            min_separation_m=selection.separation_m,
+            max_separation_m=selection.max_separation_m,
+            separation_policy=selection.separation_policy,
+        ):
             separation_pass[idx] = True
 
     return separation_pass
@@ -327,6 +374,8 @@ def compute_separation_pass_static(
     decay_cache: DecayCache,
     mesh: trimesh.Trimesh,
     separation_m: float,
+    max_separation_m: float | None = None,
+    separation_policy: str = "all-pairs-min",
 ) -> np.ndarray:
     n_total = len(geom_df)
     separation_pass = np.zeros(n_total, dtype=bool)
@@ -365,11 +414,12 @@ def compute_separation_pass_static(
             continue
 
         points = np.stack(charged_hits, axis=0)
-        diffs = points[:, None, :] - points[None, :, :]
-        dists = np.linalg.norm(diffs, axis=2)
-        np.fill_diagonal(dists, np.inf)
-        min_dist = float(np.min(dists))
-        if min_dist >= separation_m:
+        if pairwise_separation_pass(
+            points=points,
+            min_separation_m=separation_m,
+            max_separation_m=max_separation_m,
+            separation_policy=separation_policy,
+        ):
             separation_pass[idx] = True
 
     return separation_pass

@@ -121,6 +121,18 @@ def main() -> int:
     run_text = _read(RUN_FILE)
     lumi_fb = _must_match_float(r"L_HL_LHC_FB\s*=\s*([0-9.]+)", run_text, "L_HL_LHC_FB")
 
+    required_run_flags = [
+        "--separation-mm",
+        "--max-separation-mm",
+        "--separation-policy",
+        "--geometry-model",
+        "--detector-thickness-m",
+        "--profile-inset-floor",
+    ]
+    for flag in required_run_flags:
+        if flag not in run_text:
+            failures.append(f"Code missing expected run.py flag: {flag}")
+
     expected_signal_text = _read(EXPECTED_SIGNAL_FILE)
     n_limit = _must_match_float(r"N_limit\s*:\s*float\s*=\s*([0-9.]+)", expected_signal_text, "N_limit")
 
@@ -155,6 +167,13 @@ def main() -> int:
         ("optional utility path (pythia monitor)", r"tools/pythia/monitor_production\.sh"),
         ("optional utility path (EW validator)", r"tools/madgraph/validate_xsec\.py"),
         ("optional utility path (decay generator)", r"tools/decay/generate_hnl_decay_events\.py"),
+        ("run flag docs (--max-separation-mm)", r"--max-separation-mm"),
+        ("run flag docs (--separation-policy)", r"--separation-policy"),
+        ("run flag docs (--geometry-model)", r"--geometry-model"),
+        ("separation policy docs (all-pairs-min)", r"all-pairs-min"),
+        ("separation policy docs (any-pair-window)", r"any-pair-window"),
+        ("geometry model docs (tube)", r"\btube\b"),
+        ("geometry model docs (profile)", r"\bprofile\b"),
     ]
 
     for label, pattern in required_doc_checks:

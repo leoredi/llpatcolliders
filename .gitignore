@@ -29,6 +29,7 @@ output/
 production/output/
 production/madgraph_production/work/
 production/pythia_production/HNL_*.log
+production/pythia_production/HNL_*.csv.meta.json
 output/logs/
 
 # Temporary
@@ -38,6 +39,7 @@ tmp/
 # Misc files
 .DS_Store
 .mplcache/
+.claude/
 
 # pythia local inst (version-independent patterns)
 pythia/**/lib/
@@ -59,3 +61,4 @@ production/pythia_production/pythia8315/examples/plot*.py
 
 # Decay work directories (MG5/Pythia scratch)
 analysis_pbc/decay/work/
+production/pythia_production/model/

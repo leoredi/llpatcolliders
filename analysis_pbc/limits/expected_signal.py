@@ -7,7 +7,19 @@ import numpy as np
 import pandas as pd
 
 from config.production_xsecs import get_parent_sigma_pb, get_parent_tau_br
-from decay.decay_detector import DecayCache, DecaySelection, compute_decay_acceptance, compute_separation_pass_static
+from decay.decay_detector import (
+    DecayCache,
+    DecaySelection,
+    _normalize_separation_policy,
+    compute_decay_acceptance,
+    compute_separation_pass_static,
+)
+from geometry.per_parent_efficiency import (
+    GeometryConfig,
+    build_drainage_gallery_mesh,
+    geometry_tag,
+    normalize_geometry_config,
+)
 from hnl_models.hnl_model_hnlcalc import HNLModel
 from limits.timing_utils import _time_block
 
@@ -86,6 +98,8 @@ def expected_signal_events(
     lumi_fb: float,
     dirac: bool = False,
     separation_m: float | None = None,
+    max_separation_m: float | None = None,
+    separation_policy: str = "all-pairs-min",
     decay_seed: int = 12345,
     p_min_GeV: float = 0.6,
     reco_efficiency: float = 1.0,
@@ -98,6 +112,7 @@ def expected_signal_events(
     br_vis: float | None = None,
     kappa_eff: float | None = None,
     timing: dict | None = None,
+    geometry_config: GeometryConfig | None = None,
 ) -> float:
     decay_mode_norm = str(decay_mode).strip().lower().replace("-", "_")
     if decay_mode_norm not in {"library", "brvis_kappa"}:
@@ -120,6 +135,26 @@ def expected_signal_events(
 
     if separation_m is None:
         raise ValueError("Decay-based efficiency is mandatory: provide separation_m.")
+
+    separation_policy_norm = _normalize_separation_policy(separation_policy)
+    if max_separation_m is not None and float(max_separation_m) <= float(separation_m):
+        raise ValueError(
+            f"max_separation_m must be > separation_m (got {max_separation_m} <= {separation_m})."
+        )
+
+    if decay_mode_norm == "brvis_kappa":
+        if max_separation_m is not None:
+            raise ValueError(
+                "decay_mode='brvis_kappa' does not support max_separation_m. "
+                "Recalibrate kappa tables for this cut first."
+            )
+        if separation_policy_norm != "all-pairs-min":
+            raise ValueError(
+                "decay_mode='brvis_kappa' supports only separation_policy='all-pairs-min'. "
+                "Recalibrate kappa tables for alternative policies."
+            )
+
+    geometry_cfg = normalize_geometry_config(geometry_config)
 
     required_cols = [
         "parent_id",
@@ -183,13 +218,19 @@ def expected_signal_events(
     if decay_mode_norm == "library":
         if separation_pass is None:
             with _time_block(timing, "time_separation_s"):
-                selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed, p_min_GeV=p_min_GeV)
+                selection = DecaySelection(
+                    separation_m=float(separation_m),
+                    seed=decay_seed,
+                    p_min_GeV=p_min_GeV,
+                    max_separation_m=max_separation_m,
+                    separation_policy=separation_policy_norm,
+                )
                 separation_pass = compute_decay_acceptance(
                     geom_df=geom_df,
                     mass_GeV=mass_GeV,
                     flavour=benchmark_to_flavour(benchmark),
                     ctau0_m=ctau0_m,
-                    mesh=build_mesh_once(),
+                    mesh=build_mesh_once(geometry_cfg),
                     selection=selection,
                     decay_cache=decay_cache,
                 )
@@ -359,16 +400,17 @@ def expected_signal_events(
     return float(total_expected)
 
 
-_MESH_CACHE = None
+_MESH_CACHE: dict[str, object] = {}
 
 
-def build_mesh_once():
-    global _MESH_CACHE
-    if _MESH_CACHE is None:
-        from geometry.per_parent_efficiency import build_drainage_gallery_mesh
-
-        _MESH_CACHE = build_drainage_gallery_mesh()
-    return _MESH_CACHE
+def build_mesh_once(geometry_config: GeometryConfig | None = None):
+    cfg = normalize_geometry_config(geometry_config)
+    tag = geometry_tag(cfg)
+    mesh = _MESH_CACHE.get(tag)
+    if mesh is None:
+        mesh = build_drainage_gallery_mesh(cfg)
+        _MESH_CACHE[tag] = mesh
+    return mesh
 
 
 def benchmark_to_flavour(benchmark: str) -> str:
@@ -389,15 +431,21 @@ def scan_eps2_for_mass(
     N_limit: float = 2.996,
     dirac: bool = False,
     separation_m: float | None = None,
+    max_separation_m: float | None = None,
+    separation_policy: str = "all-pairs-min",
     decay_seed: int = 12345,
     p_min_GeV: float = 0.6,
     reco_efficiency: float = 1.0,
     decay_mode: str = "library",
     br_vis: float | None = None,
     kappa_eff: float | None = None,
+    geometry_config: GeometryConfig | None = None,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[float], Optional[float]]:
     eps2_grid = np.logspace(-12, -2, 100)
     Nsig = np.zeros_like(eps2_grid, dtype=float)
+
+    geometry_cfg = normalize_geometry_config(geometry_config)
+    separation_policy_norm = _normalize_separation_policy(separation_policy)
 
     decay_mode_norm = str(decay_mode).strip().lower().replace("-", "_")
     if decay_mode_norm not in {"library", "brvis_kappa"}:
@@ -410,10 +458,21 @@ def scan_eps2_for_mass(
     if separation_m is not None and decay_mode_norm == "library":
         from decay.decay_detector import DecaySelection, build_decay_cache
         flavour = benchmark_to_flavour(benchmark)
-        selection = DecaySelection(separation_m=float(separation_m), seed=decay_seed, p_min_GeV=p_min_GeV)
+        selection = DecaySelection(
+            separation_m=float(separation_m),
+            seed=decay_seed,
+            p_min_GeV=p_min_GeV,
+            max_separation_m=max_separation_m,
+            separation_policy=separation_policy_norm,
+        )
         decay_cache = build_decay_cache(geom_df, mass_GeV, flavour, selection)
         separation_pass = compute_separation_pass_static(
-            geom_df, decay_cache, build_mesh_once(), float(separation_m)
+            geom_df,
+            decay_cache,
+            build_mesh_once(geometry_cfg),
+            float(separation_m),
+            max_separation_m=max_separation_m,
+            separation_policy=separation_policy_norm,
         )
 
     for i, eps2 in enumerate(eps2_grid):
@@ -425,6 +484,8 @@ def scan_eps2_for_mass(
             lumi_fb=lumi_fb,
             dirac=dirac,
             separation_m=separation_m,
+            max_separation_m=max_separation_m,
+            separation_policy=separation_policy_norm,
             decay_seed=decay_seed,
             p_min_GeV=p_min_GeV,
             reco_efficiency=reco_efficiency,
@@ -433,6 +494,7 @@ def scan_eps2_for_mass(
             decay_mode=decay_mode_norm,
             br_vis=br_vis,
             kappa_eff=kappa_eff,
+            geometry_config=geometry_cfg,
         )
 
     mask = Nsig >= N_limit

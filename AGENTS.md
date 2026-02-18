@@ -53,21 +53,28 @@ Conflict rule: if this file conflicts with code, code wins.
 - decay overlap validator: `tools/decay/validate_decay_overlap.py`
 - brvis-kappa calibrator: `tools/decay/calibrate_brvis_kappa.py`
 - brvis-kappa validator: `tools/decay/validate_brvis_kappa.py`
+- separation scan utility: `tools/analysis/scan_separation_cuts.py`
 
 ## RUNTIME_CONSTANTS (CODE-ANCHORED)
 
 Central production config (`config_mass_grid.py`):
 - `MASS_GRID = 116 points`: `0.20` to `10.00 GeV`.
 - `N_EVENTS_DEFAULT = 100_000`: pp collisions to simulate per production job.
-- `MAX_SIGNAL_EVENTS = 1_000`: max HNL signal events per channel (caps production early + analysis downsampling).
+- `MAX_SIGNAL_EVENTS = 0`: max HNL signal events per production job (`0` = unlimited, no early stop).
 
 Other constants:
 - luminosity: `L_HL_LHC_FB = 3000` (`analysis_pbc/limits/run.py`)
 - exclusion threshold: `N_limit = 2.996` (`analysis_pbc/limits/expected_signal.py`)
 - default separation: `--separation-mm 1.0` (`analysis_pbc/limits/run.py`)
+- optional max separation (exploratory): `--max-separation-mm` (`analysis_pbc/limits/run.py`)
+- separation policy default: `--separation-policy all-pairs-min` (`analysis_pbc/limits/run.py`)
 - default p-min: `--p-min-gev 0.6` (`analysis_pbc/limits/run.py`)
 - decay modes: `library|brvis-kappa` (`analysis_pbc/limits/run.py`)
-- tau fromTau threshold: `1.77 GeV` (`production/pythia_production/run_parallel_production.sh`)
+- geometry model default: `--geometry-model tube` (`analysis_pbc/limits/run.py`)
+- geometry model exploratory option: `--geometry-model profile` (`analysis_pbc/limits/run.py`)
+- default tube radius (effective, fixed): `1.54 m` (`analysis_pbc/geometry/per_parent_efficiency.py`)
+- profile controls: `--detector-thickness-m 0.24`, `--profile-inset-floor` (`analysis_pbc/limits/run.py`)
+- tau fromTau threshold: `1.78 GeV` (`production/pythia_production/run_parallel_production.sh`)
 - FONLL/LHCb reference cross-sections (`analysis_pbc/config/production_xsecs.py`):
 - `sigma(ccbar) = 23.6 mb`
 - `sigma(bbbar) = 495 microbarn`
@@ -85,6 +92,7 @@ PYTHIA8=$(pwd)/pythia8315 make main_hnl_production
 ./run_parallel_production.sh all direct hardBc 15
 cd ../..
 ```
+Notes: in `auto` mode, tau `fromTau` runs are inclusive (single job per allowed mass; no implicit hardccbar/hardbbbar split).
 
 **2. Electroweak (EW) Production**
 
@@ -112,7 +120,9 @@ python money_plot/plot_money_island.py
 - ignore simulation CSVs with size `<1000 bytes`.
 - simulation filename grammar supports qcd suffixes:
 - `..._<hardBc|hardccbar|hardbbbar>_pTHatX.csv`
-- combined output: `HNL_<mass>GeV_<flavour>_all.csv`
+- nominal combine/run ignore `hardccbar` and `hardbbbar` samples.
+- tau nominal analysis requires explicit components (`direct/fromTau/ew`); legacy `*_tau_all.csv` / `*_tau_combined.csv` are rejected unless explicitly enabled.
+- overlap combine output (non-tau default): `HNL_<mass>GeV_<flavour>_all.csv`
 
 ## NORMALIZATION_PATH
 
@@ -128,6 +138,8 @@ python money_plot/plot_money_island.py
 - on restart cleanup, delete `HNL_*.csv` and `HNL_*.csv.meta.json` together.
 - canonical simulation location is `output/csv/simulation/`; files left in `production/pythia_production/` are staging leftovers.
 - if geometry definition changes, invalidate `output/csv/geometry/` cache.
+- geometry-tagged caches are named `<sim_stem>_geom_<geometry_tag>.csv`; default geometry may reuse legacy `_geom.csv`.
+- nominal limits should not consume `hardccbar` / `hardbbbar` inputs.
 - use `abs(parent_pdg)` for parent BR/cross-section lookup.
 - if `hardBc` stats are sparse, increase event count before interpreting gaps.
 

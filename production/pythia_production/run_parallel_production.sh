@@ -400,12 +400,7 @@ count_tau_runs() {
         fi
         if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
             if can_run_point "$mass" "tau" "fromTau"; then
-                if [[ "$QCD_MODE" == "auto" ]]; then
-                    # In auto mode, split tau fromTau into explicit charm + beauty components.
-                    count=$((count + 2))
-                else
-                    count=$((count + 1))
-                fi
+                count=$((count + 1))
             fi
         fi
     done
@@ -509,22 +504,10 @@ if [[ "$FLAVOUR" == "tau" || "$FLAVOUR" == "all" ]]; then
 
         if [[ "$MODE" == "fromtau" || "$MODE" == "both" ]]; then
             if can_run_point "$mass" "tau" "fromTau"; then
-                if [[ "$QCD_MODE" == "auto" ]]; then
-                    wait_for_slot
-                    run_production_job "$mass" "tau" "fromTau" "hardccbar" &
-                    completed_jobs=$((completed_jobs + 1))
-                    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau, hardccbar)" | tee -a "$LOGFILE"
-
-                    wait_for_slot
-                    run_production_job "$mass" "tau" "fromTau" "hardbbbar" &
-                    completed_jobs=$((completed_jobs + 1))
-                    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau, hardbbbar)" | tee -a "$LOGFILE"
-                else
-                    wait_for_slot
-                    run_production_job "$mass" "tau" "fromTau" &
-                    completed_jobs=$((completed_jobs + 1))
-                    echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
-                fi
+                wait_for_slot
+                run_production_job "$mass" "tau" "fromTau" &
+                completed_jobs=$((completed_jobs + 1))
+                echo "[$completed_jobs/$total_jobs] Queued: $mass GeV tau (fromTau)" | tee -a "$LOGFILE"
             else
                 echo "[SKIP] $mass GeV tau (fromTau): $(skip_reason "tau" "fromTau")" | tee -a "$LOGFILE"
             fi

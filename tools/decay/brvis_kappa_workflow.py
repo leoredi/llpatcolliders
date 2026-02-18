@@ -19,7 +19,14 @@ if str(ANALYSIS_ROOT) not in sys.path:
     sys.path.insert(0, str(ANALYSIS_ROOT))
 
 from config_mass_grid import MASS_GRID
-from geometry.per_parent_efficiency import build_drainage_gallery_mesh, preprocess_hnl_csv
+from geometry.per_parent_efficiency import (
+    GeometryConfig,
+    build_drainage_gallery_mesh,
+    geometry_tag,
+    is_default_geometry_config,
+    normalize_geometry_config,
+    preprocess_hnl_csv,
+)
 from limits import run as limits_run
 
 MASS_FILTER_TOL = 5e-4
@@ -218,16 +225,21 @@ def load_geom_for_sim_files(
     flavour: str,
     show_progress: bool | None = False,
     max_signal_events: int | None = None,
+    geometry_config: GeometryConfig | None = None,
 ) -> pd.DataFrame:
     geom_dfs: List[pd.DataFrame] = []
     mesh = None
+    geometry_cfg = normalize_geometry_config(geometry_config)
+    geom_tag = geometry_tag(geometry_cfg)
+    default_geometry = is_default_geometry_config(geometry_cfg)
 
     for sim_csv, regime in sim_files:
-        geom_cache_name = f"{sim_csv.stem}_geom.csv"
+        geom_cache_name = f"{sim_csv.stem}_geom_{geom_tag}.csv"
         geom_csv = limits_run.GEOM_CACHE_DIR / geom_cache_name
 
-        if not geom_csv.exists():
+        if default_geometry and not geom_csv.exists():
             for legacy_stem in (
+                sim_csv.stem + "_geom",
                 f"HNL_{mass_str}GeV_{flavour}_combined_geom",
                 f"HNL_{mass_str}GeV_{flavour}_geom",
             ):
@@ -243,7 +255,7 @@ def load_geom_for_sim_files(
             geom_df = limits_run._load_geom_cached(sim_csv, geom_csv)
         else:
             if mesh is None:
-                mesh = build_drainage_gallery_mesh()
+                mesh = build_drainage_gallery_mesh(geometry_cfg)
             geom_df = preprocess_hnl_csv(sim_csv, mesh, show_progress=show_progress)
             limits_run._save_geom_cache(geom_df, geom_csv)
 

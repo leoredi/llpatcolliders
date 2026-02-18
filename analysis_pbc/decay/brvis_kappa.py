@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from geometry.per_parent_efficiency import GeometryConfig, geometry_tag, is_default_geometry_config, normalize_geometry_config
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_KAPPA_TABLE = REPO_ROOT / "output" / "csv" / "analysis" / "decay_kappa_table.csv"
 REQUIRED_P_MIN_GEV = 0.6
@@ -21,6 +23,13 @@ REQUIRED_COLUMNS = (
 )
 MASS_MATCH_TOL = 1.0e-6
 CUT_MATCH_TOL = 1.0e-6
+OPTIONAL_GEOMETRY_COLUMNS = (
+    "geometry_tag",
+    "geometry_model",
+    "tube_radius_m",
+    "detector_thickness_m",
+    "profile_inset_floor",
+)
 
 
 class KappaTableError(ValueError):
@@ -59,6 +68,28 @@ def _load_kappa_table_cached(path_str: str) -> pd.DataFrame:
 
     for col in ("mass_GeV", "kappa", "p_min_GeV", "separation_mm"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    for col in ("tube_radius_m", "detector_thickness_m"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "profile_inset_floor" in df.columns:
+        val = df["profile_inset_floor"].astype(str).str.strip().str.lower()
+        mapper = {
+            "true": True,
+            "1": True,
+            "yes": True,
+            "false": False,
+            "0": False,
+            "no": False,
+        }
+        parsed = val.map(mapper)
+        bad_mask = parsed.isna()
+        if bad_mask.any():
+            bad_idx = int(df.index[bad_mask][0])
+            raise KappaTableError(
+                f"Kappa table {path} has non-boolean profile_inset_floor at row {bad_idx}."
+            )
+        df["profile_inset_floor"] = parsed.astype(bool)
 
     bad = df[
         (~np.isfinite(df["mass_GeV"]))
@@ -108,12 +139,96 @@ def _require_cut_consistency(df: pd.DataFrame, p_min_GeV: float, separation_mm: 
         )
 
 
+def _require_geometry_consistency(
+    df: pd.DataFrame,
+    geometry_config: GeometryConfig | None,
+    path: Path,
+) -> None:
+    cfg = normalize_geometry_config(geometry_config)
+    runtime_tag = geometry_tag(cfg)
+
+    has_any_geometry_col = any(col in df.columns for col in OPTIONAL_GEOMETRY_COLUMNS)
+    if not has_any_geometry_col:
+        if not is_default_geometry_config(cfg):
+            raise KappaTableError(
+                f"Kappa table {path} has no geometry metadata and is treated as legacy default-only. "
+                f"Runtime geometry '{runtime_tag}' is non-default; recalibrate kappa for this geometry."
+            )
+        return
+
+    if "geometry_tag" not in df.columns:
+        raise KappaTableError(
+            f"Kappa table {path} has partial geometry metadata but is missing 'geometry_tag'. "
+            "Recalibrate to produce a consistent table."
+        )
+
+    tags = np.unique(df["geometry_tag"].astype(str).str.strip().to_numpy())
+    if len(tags) != 1:
+        raise KappaTableError(
+            f"Kappa table {path} mixes multiple geometry_tag values: {tags.tolist()}"
+        )
+    table_tag = str(tags[0])
+    if table_tag != runtime_tag:
+        raise KappaTableError(
+            f"Kappa table geometry_tag mismatch: table={table_tag}, runtime={runtime_tag}. "
+            "Recalibrate kappa table for the requested geometry."
+        )
+
+    if "geometry_model" in df.columns:
+        vals = np.unique(df["geometry_model"].astype(str).str.strip().str.lower().to_numpy())
+        if len(vals) != 1:
+            raise KappaTableError(
+                f"Kappa table {path} mixes multiple geometry_model values: {vals.tolist()}"
+            )
+        if str(vals[0]) != cfg.model:
+            raise KappaTableError(
+                f"Kappa table geometry_model mismatch: table={vals[0]}, runtime={cfg.model}."
+            )
+
+    if "tube_radius_m" in df.columns:
+        vals = np.unique(df["tube_radius_m"].to_numpy(dtype=float))
+        if len(vals) != 1:
+            raise KappaTableError(
+                f"Kappa table {path} mixes multiple tube_radius_m values: {vals.tolist()}"
+            )
+        if not np.isfinite(vals[0]) or abs(float(vals[0]) - float(cfg.tube_radius_m)) > CUT_MATCH_TOL:
+            raise KappaTableError(
+                f"Kappa table tube_radius_m mismatch: table={float(vals[0]):.6g} m, "
+                f"runtime={float(cfg.tube_radius_m):.6g} m"
+            )
+
+    if "detector_thickness_m" in df.columns:
+        vals = np.unique(df["detector_thickness_m"].to_numpy(dtype=float))
+        if len(vals) != 1:
+            raise KappaTableError(
+                f"Kappa table {path} mixes multiple detector_thickness_m values: {vals.tolist()}"
+            )
+        if not np.isfinite(vals[0]) or abs(float(vals[0]) - float(cfg.detector_thickness_m)) > CUT_MATCH_TOL:
+            raise KappaTableError(
+                f"Kappa table detector_thickness_m mismatch: table={float(vals[0]):.6g} m, "
+                f"runtime={float(cfg.detector_thickness_m):.6g} m"
+            )
+
+    if "profile_inset_floor" in df.columns:
+        vals = np.unique(df["profile_inset_floor"].astype(bool).to_numpy())
+        if len(vals) != 1:
+            raise KappaTableError(
+                f"Kappa table {path} mixes multiple profile_inset_floor values: {vals.tolist()}"
+            )
+        if bool(vals[0]) != bool(cfg.profile_inset_floor):
+            raise KappaTableError(
+                f"Kappa table profile_inset_floor mismatch: table={bool(vals[0])}, "
+                f"runtime={bool(cfg.profile_inset_floor)}"
+            )
+
+
 def lookup_kappa(
     flavour: str,
     mass_GeV: float,
     p_min_GeV: float,
     separation_mm: float,
     table_path: str | Path | None = None,
+    geometry_config: GeometryConfig | None = None,
 ) -> float:
     flavour = str(flavour).strip().lower()
     mass = float(mass_GeV)
@@ -121,6 +236,7 @@ def lookup_kappa(
     df = _load_kappa_table_cached(str(path))
 
     _require_cut_consistency(df, float(p_min_GeV), float(separation_mm), path)
+    _require_geometry_consistency(df, geometry_config, path)
 
     df_flavour = df[df["flavour"] == flavour].copy()
     if len(df_flavour) == 0:
