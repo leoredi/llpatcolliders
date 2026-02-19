@@ -33,9 +33,7 @@ if str(REPO_ROOT) not in sys.path:
 
 MASS_FILTER_TOL = 5e-4
 
-from decay.brvis_kappa import DEFAULT_KAPPA_TABLE, lookup_kappa, resolve_kappa_table_path
 from geometry.per_parent_efficiency import (
-    DEFAULT_DETECTOR_THICKNESS_M,
     GeometryConfig,
     build_drainage_gallery_mesh,
     geometry_metadata,
@@ -162,9 +160,6 @@ def scan_single_mass(
     quiet=False,
     show_progress=None,
     timing_enabled=False,
-    hnlcalc_per_eps2=False,
-    decay_mode="library",
-    kappa_table_path=None,
 ):
     stdout_ctx = contextlib.redirect_stdout(io.StringIO()) if quiet else contextlib.nullcontext()
 
@@ -173,8 +168,7 @@ def scan_single_mass(
             mass_val, mass_str, flavour, benchmark, lumi_fb, sim_files,
             dirac, separation_m, max_separation_m, separation_policy,
             decay_seed, p_min_GeV, geometry_config, reco_efficiency,
-            quiet, show_progress, timing_enabled, hnlcalc_per_eps2,
-            decay_mode, kappa_table_path,
+            quiet, show_progress, timing_enabled,
         )
 
 
@@ -196,9 +190,6 @@ def _scan_single_mass_impl(
     quiet,
     show_progress,
     timing_enabled,
-    hnlcalc_per_eps2,
-    decay_mode,
-    kappa_table_path,
 ):
     timing = {} if timing_enabled else None
     if timing is not None:
@@ -302,73 +293,39 @@ def _scan_single_mass_impl(
         timing["n_eps2_points"] = int(len(eps2_scan))
     N_scan = []
 
-    decay_mode_norm = str(decay_mode).strip().lower().replace("-", "_")
-    if decay_mode_norm not in {"library", "brvis_kappa"}:
-        raise ValueError(
-            f"Unsupported decay_mode='{decay_mode}'. Use 'library' or 'brvis-kappa'."
-        )
-
     eps2_ref = 1e-6
-    ctau0_ref = None
-    br_ref = None
-    br_vis = None
-    need_ref_model = (not hnlcalc_per_eps2) or (decay_mode_norm == "brvis_kappa")
-    if need_ref_model:
-        from hnl_models.hnl_model_hnlcalc import HNLModel
+    from hnl_models.hnl_model_hnlcalc import HNLModel
 
-        with _time_block(timing, "time_hnlcalc_ref_s"):
-            Ue2, Umu2, Utau2 = couplings_from_eps2(eps2_ref, benchmark)
-            model = HNLModel(mass_GeV=mass_val, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
-            ctau0_ref = model.ctau0_m
-            br_ref = model.production_brs()
-            br_vis = model.visible_branching_ratio()
-        if timing is not None:
-            timing["n_hnlcalc_eps2_ref"] = float(eps2_ref)
-            timing["br_visible"] = float(br_vis)
+    with _time_block(timing, "time_hnlcalc_ref_s"):
+        Ue2, Umu2, Utau2 = couplings_from_eps2(eps2_ref, benchmark)
+        model = HNLModel(mass_GeV=mass_val, Ue2=Ue2, Umu2=Umu2, Utau2=Utau2)
+        ctau0_ref = model.ctau0_m
+        br_ref = model.production_brs()
 
-    kappa_eff = np.nan
-    kappa_path_resolved = ""
-    if decay_mode_norm == "brvis_kappa":
-        kappa_path = resolve_kappa_table_path(kappa_table_path)
-        kappa_path_resolved = str(kappa_path)
-        kappa_eff = lookup_kappa(
-            flavour=flavour,
-            mass_GeV=mass_val,
-            p_min_GeV=p_min_GeV,
-            separation_mm=separation_m * 1e3,
-            table_path=kappa_path,
-            geometry_config=geometry_cfg,
+    from decay.decay_detector import DecaySelection, build_decay_cache
+
+    with _time_block(timing, "time_decay_cache_s"):
+        decay_cache = build_decay_cache(
+            geom_df,
+            mass_val,
+            flavour,
+            DecaySelection(
+                separation_m=separation_m,
+                seed=decay_seed,
+                p_min_GeV=p_min_GeV,
+                max_separation_m=max_separation_m,
+                separation_policy=separation_policy,
+            ),
+            verbose=not quiet,
         )
-        if not quiet:
-            print(
-                f"  BR_vis(>=2 charged)={float(br_vis):.4f}, "
-                f"kappa={float(kappa_eff):.4f} [{kappa_path.name}]"
-            )
-
-    decay_cache = None
-    if decay_mode_norm == "library":
-        from decay.decay_detector import DecaySelection, build_decay_cache
-
-        with _time_block(timing, "time_decay_cache_s"):
-            decay_cache = build_decay_cache(
-                geom_df,
-                mass_val,
-                flavour,
-                DecaySelection(
-                    separation_m=separation_m,
-                    seed=decay_seed,
-                    p_min_GeV=p_min_GeV,
-                    max_separation_m=max_separation_m,
-                    separation_policy=separation_policy,
-                ),
-                verbose=not quiet,
-            )
-        if not quiet:
-            print("  Precomputing decay cache for separation scan...")
+    if not quiet:
+        print("  Precomputing decay cache for separation scan...")
 
     with _time_block(timing, "time_eps2_scan_s"):
         for eps2 in eps2_scan:
-            base_kwargs = dict(
+            ctau0_m = ctau0_ref * (eps2_ref / eps2)
+            br_scale = eps2 / eps2_ref
+            N = expected_signal_events(
                 geom_df=geom_df,
                 mass_GeV=mass_val,
                 eps2=eps2,
@@ -382,26 +339,12 @@ def _scan_single_mass_impl(
                 p_min_GeV=p_min_GeV,
                 geometry_config=geometry_cfg,
                 reco_efficiency=reco_efficiency,
-                decay_mode=decay_mode_norm,
-                br_vis=br_vis if decay_mode_norm == "brvis_kappa" else None,
-                kappa_eff=float(kappa_eff) if decay_mode_norm == "brvis_kappa" else None,
                 timing=timing,
+                decay_cache=decay_cache,
+                ctau0_m=ctau0_m,
+                br_per_parent=br_ref,
+                br_scale=br_scale,
             )
-            if hnlcalc_per_eps2:
-                N = expected_signal_events(
-                    **base_kwargs,
-                    decay_cache=decay_cache,
-                )
-            else:
-                ctau0_m = ctau0_ref * (eps2_ref / eps2)
-                br_scale = eps2 / eps2_ref
-                N = expected_signal_events(
-                    **base_kwargs,
-                    decay_cache=decay_cache,
-                    ctau0_m=ctau0_m,
-                    br_per_parent=br_ref,
-                    br_scale=br_scale,
-                )
             N_scan.append(N)
 
     N_scan = np.array(N_scan)
@@ -418,10 +361,6 @@ def _scan_single_mass_impl(
             "eps2_min": np.nan,
             "eps2_max": np.nan,
             "peak_events": N_scan.max(),
-            "decay_mode": decay_mode_norm,
-            "br_vis": float(br_vis) if br_vis is not None else np.nan,
-            "kappa_eff": float(kappa_eff) if np.isfinite(kappa_eff) else np.nan,
-            "kappa_table_path": kappa_path_resolved,
         }
         if timing is not None:
             result.update(timing)
@@ -470,10 +409,6 @@ def _scan_single_mass_impl(
         "eps2_min": eps2_min,
         "eps2_max": eps2_max,
         "peak_events": peak_events,
-        "decay_mode": decay_mode_norm,
-        "br_vis": float(br_vis) if br_vis is not None else np.nan,
-        "kappa_eff": float(kappa_eff) if np.isfinite(kappa_eff) else np.nan,
-        "kappa_table_path": kappa_path_resolved,
     }
     if timing is not None:
         result.update(timing)
@@ -496,14 +431,8 @@ def run_flavour(
     show_progress=None,
     mass_filter=None,
     timing_enabled=False,
-    hnlcalc_per_eps2=False,
     allow_variant_drop=False,
-    overlap_min_events=0,
-    strict_overlap_min_events=False,
     max_mass=None,
-    decay_mode="library",
-    kappa_table_path=None,
-    allow_legacy_tau_all=False,
 ):
     print(f"\n{'='*60}")
     print(f"FLAVOUR: {flavour.upper()} (Benchmark {benchmark})")
@@ -552,7 +481,7 @@ def run_flavour(
         key = (mass_val, mass_str)
         files_by_mass.setdefault(key, []).append((base_regime, mode, is_ff, qcd_mode, pthat_min, path))
 
-    if flavour == "tau" and not allow_legacy_tau_all:
+    if flavour == "tau":
         filtered_by_mass = {}
         legacy_only_masses = []
         for key, items in files_by_mass.items():
@@ -575,9 +504,9 @@ def run_flavour(
             more = "..." if len(legacy_only_masses) > 10 else ""
             raise ValueError(
                 "Tau analysis requires explicit component files (direct/fromTau/ew); "
-                "legacy *_tau_all.csv or *_tau_combined.csv are not accepted by default. "
+                "legacy *_tau_all.csv or *_tau_combined.csv are not accepted. "
                 f"Missing component masses: {preview}{more}. "
-                "Regenerate tau production and rerun, or pass --allow-legacy-tau-all to bypass."
+                "Regenerate tau production and rerun."
             )
         files_by_mass = filtered_by_mass
 
@@ -647,8 +576,6 @@ def run_flavour(
         overlap = resolve_parent_overlap(
             overlap_samples,
             context=context,
-            min_events_per_mass=int(overlap_min_events),
-            strict_min_events=bool(strict_overlap_min_events),
         )
         if warn_for_key:
             for msg in overlap.warnings:
@@ -765,9 +692,6 @@ def run_flavour(
                     reco_efficiency,
                     show_progress,
                     timing_enabled,
-                    hnlcalc_per_eps2,
-                    decay_mode,
-                    kappa_table_path,
                 )
             )
 
@@ -809,9 +733,6 @@ def run_flavour(
                 reco_efficiency=reco_efficiency,
                 show_progress=show_progress,
                 timing_enabled=timing_enabled,
-                hnlcalc_per_eps2=hnlcalc_per_eps2,
-                decay_mode=decay_mode,
-                kappa_table_path=kappa_table_path,
             )
             if res:
                 results.append(res)
@@ -836,9 +757,6 @@ def scan_single_mass_wrapper(args):
         reco_efficiency,
         show_progress,
         timing_enabled,
-        hnlcalc_per_eps2,
-        decay_mode,
-        kappa_table_path,
     ) = args
     return scan_single_mass(
         mass_val, mass_str, flavour, benchmark, lumi_fb, sim_list,
@@ -847,9 +765,6 @@ def scan_single_mass_wrapper(args):
         p_min_GeV=p_min_GeV, geometry_config=geometry_config,
         reco_efficiency=reco_efficiency, quiet=True,
         show_progress=show_progress, timing_enabled=timing_enabled,
-        hnlcalc_per_eps2=hnlcalc_per_eps2,
-        decay_mode=decay_mode,
-        kappa_table_path=kappa_table_path,
     )
 
 if __name__ == "__main__":
@@ -858,158 +773,43 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=None, help="Number of workers (default: all CPU cores)")
     parser.add_argument("--dirac", action="store_true", help="Dirac HNL interpretation (×2 yield vs Majorana)")
     parser.add_argument(
-        "--separation-mm",
-        type=float,
-        default=1.0,
+        "--separation-mm", type=float, default=1.0,
         help="Minimum charged-track separation at detector surface in mm (default: 1.0)",
     )
     parser.add_argument(
-        "--max-separation-mm",
-        type=float,
-        default=None,
-        help="Optional exploratory upper bound on charged-track separation at detector surface in mm.",
+        "--max-separation-mm", type=float, default=None,
+        help="Optional upper bound on charged-track separation at detector surface in mm.",
     )
     parser.add_argument(
-        "--separation-policy",
-        type=str,
-        choices=["all-pairs-min", "any-pair-window"],
+        "--separation-policy", type=str, choices=["all-pairs-min", "any-pair-window"],
         default="all-pairs-min",
-        help=(
-            "Pairwise separation policy: all-pairs-min (baseline) requires all pair distances in window; "
-            "any-pair-window passes if any pair is in window."
-        ),
+        help="Pairwise separation policy (default: all-pairs-min).",
     )
+    parser.add_argument("--decay-seed", type=int, default=12345, help="Random seed for decay sampling")
+    parser.add_argument("--no-progress", action="store_true", help="Disable tqdm progress bars")
+    parser.add_argument("--mass", type=float, default=None, help="Only process a single mass point in GeV")
+    parser.add_argument("--max-mass", type=float, default=None, help="Only process mass points up to this value in GeV")
     parser.add_argument(
-        "--geometry-model",
-        type=str,
-        choices=["tube", "profile"],
-        default="tube",
-        help="Geometry model: tube (baseline) or exploratory profile.",
+        "--flavour", type=str, choices=["electron", "muon", "tau"], default=None,
+        help="Only process one flavour.",
     )
+    parser.add_argument("--timing", action="store_true", help="Record per-mass timing breakdown")
+    parser.add_argument("--timing-out", type=str, default=None, help="Optional path for timing CSV")
+    parser.add_argument("--p-min-gev", type=float, default=0.6, help="Minimum charged-track momentum in GeV/c")
     parser.add_argument(
-        "--detector-thickness-m",
-        type=float,
-        default=DEFAULT_DETECTOR_THICKNESS_M,
-        help=(
-            "Detector thickness in meters for geometry-model=profile (default: "
-            f"{DEFAULT_DETECTOR_THICKNESS_M})."
-        ),
+        "--reco-efficiency", type=float, default=None,
+        help="Flat reconstruction efficiency factor (recommended: 0.5 per MATHUSLA/ANUBIS).",
     )
-    parser.add_argument(
-        "--profile-inset-floor",
-        action="store_true",
-        help="For geometry-model=profile, inset the floor by detector thickness (exploratory).",
-    )
-    parser.add_argument(
-        "--decay-seed",
-        type=int,
-        default=12345,
-        help="Random seed for decay sampling (default: 12345)",
-    )
-    parser.add_argument(
-        "--no-progress",
-        action="store_true",
-        help="Disable tqdm progress bars (auto-disabled in non-TTY environments)",
-    )
-    parser.add_argument(
-        "--mass",
-        type=float,
-        default=None,
-        help="Only process a single mass point in GeV (e.g., 2.6).",
-    )
-    parser.add_argument(
-        "--max-mass",
-        type=float,
-        default=None,
-        help="Only process mass points up to this value in GeV (e.g., 5.0).",
-    )
-    parser.add_argument(
-        "--flavour",
-        type=str,
-        choices=["electron", "muon", "tau"],
-        default=None,
-        help="Only process one flavour: electron, muon, or tau.",
-    )
-    parser.add_argument(
-        "--timing",
-        action="store_true",
-        help="Record per-mass timing breakdown (adds time_* columns).",
-    )
-    parser.add_argument(
-        "--timing-out",
-        type=str,
-        default=None,
-        help="Optional path for timing CSV (default: output/csv/analysis/HNL_U2_timing.csv).",
-    )
-    parser.add_argument(
-        "--p-min-gev",
-        type=float,
-        default=0.6,
-        help="Minimum charged-track momentum in GeV/c (default: 0.6).",
-    )
-    parser.add_argument(
-        "--decay-mode",
-        type=str,
-        choices=["library", "brvis-kappa"],
-        default="library",
-        help="Decay acceptance mode: full library sampling or calibrated BR_vis*kappa surrogate.",
-    )
-    parser.add_argument(
-        "--kappa-table",
-        type=str,
-        default=str(DEFAULT_KAPPA_TABLE),
-        help="Path to calibrated kappa table (used by --decay-mode brvis-kappa).",
-    )
-    parser.add_argument(
-        "--reco-efficiency",
-        type=float,
-        default=None,
-        help="Flat reconstruction efficiency factor (recommended: 0.5 per MATHUSLA/ANUBIS). "
-             "If omitted, defaults to 1.0 with a notice.",
-    )
-    parser.add_argument(
-        "--hnlcalc-per-eps2",
-        action="store_true",
-        help="Recompute HNLCalc for every eps2 point (slow, legacy behavior).",
-    )
-    parser.add_argument(
-        "--allow-variant-drop",
-        action="store_true",
+    parser.add_argument("--allow-variant-drop", action="store_true",
         help="Allow silently dropping lower-priority pTHat/QCD variants (default: error).",
-    )
-    parser.add_argument(
-        "--overlap-min-events",
-        type=int,
-        default=0,
-        help=(
-            "Optional minimum owned simulation events required per mass point after overlap resolution. "
-            "Set 0 to disable."
-        ),
-    )
-    parser.add_argument(
-        "--strict-overlap-min-events",
-        action="store_true",
-        help="Fail when --overlap-min-events is not met (default: warn only).",
-    )
-    parser.add_argument(
-        "--allow-legacy-tau-all",
-        action="store_true",
-        help=(
-            "Allow legacy tau _all/_combined files. "
-            "Default behavior requires explicit tau components (direct/fromTau/ew)."
-        ),
     )
     args = parser.parse_args()
     if args.separation_mm <= 0:
         raise ValueError("--separation-mm must be positive.")
-    if args.max_separation_mm is not None and args.max_separation_mm <= 0:
-        raise ValueError("--max-separation-mm must be positive when provided.")
     if args.max_separation_mm is not None and args.max_separation_mm <= args.separation_mm:
         raise ValueError("--max-separation-mm must be strictly greater than --separation-mm.")
     if args.p_min_gev < 0:
         raise ValueError("--p-min-gev must be non-negative.")
-    if args.overlap_min_events < 0:
-        raise ValueError("--overlap-min-events must be non-negative.")
     if args.reco_efficiency is None:
         args.reco_efficiency = 1.0
         print("[NOTICE] --reco-efficiency not set, defaulting to 1.0 (no efficiency loss).")
@@ -1017,23 +817,7 @@ if __name__ == "__main__":
     if not 0.0 < args.reco_efficiency <= 1.0:
         raise ValueError("--reco-efficiency must be in (0, 1].")
 
-    geometry_cfg = normalize_geometry_config(
-        GeometryConfig(
-            model=args.geometry_model,
-            detector_thickness_m=args.detector_thickness_m,
-            profile_inset_floor=args.profile_inset_floor,
-        )
-    )
-
-    if args.decay_mode == "brvis-kappa" and args.max_separation_mm is not None:
-        raise ValueError(
-            "--max-separation-mm is not supported with --decay-mode brvis-kappa. "
-            "Treat max separation as exploratory library-only cut."
-        )
-    if args.decay_mode == "brvis-kappa" and args.separation_policy != "all-pairs-min":
-        raise ValueError(
-            "--separation-policy must be 'all-pairs-min' with --decay-mode brvis-kappa."
-        )
+    geometry_cfg = normalize_geometry_config(GeometryConfig())
 
     n_workers = args.workers if args.workers else multiprocessing.cpu_count()
     mode_str = f"PARALLEL, {n_workers} workers" if args.parallel else "SINGLE-THREADED"
@@ -1053,18 +837,10 @@ if __name__ == "__main__":
     reco_efficiency = args.reco_efficiency
     print(f"Decay separation: {args.separation_mm:.3f} mm (seed={args.decay_seed})")
     if args.max_separation_mm is not None:
-        print(f"Max separation (exploratory): {args.max_separation_mm:.3f} mm")
+        print(f"Max separation: {args.max_separation_mm:.3f} mm")
     print(f"Separation policy: {args.separation_policy}")
     print(f"Track p_min: {p_min_GeV:.2f} GeV/c | Reco efficiency: {reco_efficiency:.2f}")
-    if args.overlap_min_events > 0:
-        mode = "strict" if args.strict_overlap_min_events else "warn"
-        print(f"Overlap minimum events: {args.overlap_min_events} ({mode})")
-    if args.allow_legacy_tau_all:
-        print("[WARN] Legacy tau _all/_combined inputs are enabled.")
-    print(f"Decay mode: {args.decay_mode}")
     print(f"Geometry: {geometry_cfg.model} (tag={geometry_tag(geometry_cfg)})")
-    if args.decay_mode == "brvis-kappa":
-        print(f"Kappa table: {resolve_kappa_table_path(args.kappa_table)}")
 
     all_results = []
 
@@ -1092,23 +868,11 @@ if __name__ == "__main__":
             show_progress=show_progress,
             mass_filter=args.mass,
             timing_enabled=timing_enabled,
-            hnlcalc_per_eps2=args.hnlcalc_per_eps2,
             allow_variant_drop=args.allow_variant_drop,
-            overlap_min_events=args.overlap_min_events,
-            strict_overlap_min_events=args.strict_overlap_min_events,
             max_mass=args.max_mass,
-            decay_mode=args.decay_mode,
-            kappa_table_path=args.kappa_table,
-            allow_legacy_tau_all=args.allow_legacy_tau_all,
         )
         df["separation_mm"] = args.separation_mm
         df["p_min_gev"] = p_min_GeV
-        df["decay_mode"] = args.decay_mode
-        df["kappa_table_path"] = (
-            str(resolve_kappa_table_path(args.kappa_table))
-            if args.decay_mode == "brvis-kappa"
-            else ""
-        )
         all_results.append(df)
 
     final_df = pd.concat(all_results, ignore_index=True)
@@ -1120,13 +884,6 @@ if __name__ == "__main__":
         "max_separation_mm": None if args.max_separation_mm is None else float(args.max_separation_mm),
         "separation_policy": args.separation_policy,
         "p_min_gev": float(p_min_GeV),
-        "decay_mode": args.decay_mode,
-        "overlap_min_events": int(args.overlap_min_events),
-        "strict_overlap_min_events": bool(args.strict_overlap_min_events),
-        "allow_legacy_tau_all": bool(args.allow_legacy_tau_all),
-        "kappa_table_path": (
-            str(resolve_kappa_table_path(args.kappa_table)) if args.decay_mode == "brvis-kappa" else ""
-        ),
         "geometry": geometry_metadata(geometry_cfg),
     }
     summary_meta_path = ANALYSIS_OUT_DIR / "HNL_U2_limits_summary.meta.json"

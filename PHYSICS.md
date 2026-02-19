@@ -115,31 +115,7 @@ Parsing convention:
 Large decay-mass extrapolation is blocked by default (`|m_requested - m_file| > 0.5 GeV` fails).
 The `4-5 GeV` overlap region is used to validate generated libraries against external references.
 
-Alternative calibrated fast mode (`decay_mode = brvis-kappa`):
-
-- keeps the same geometric `P_decay` term,
-- replaces explicit daughter sampling with `BR_vis * kappa(m_N, flavour)`,
-- is calibrated against the library baseline at fixed analysis cuts:
-  `p_min = 0.6 GeV`, `separation = 1.0 mm`.
-- currently assumes the baseline separation policy (`all-pairs-min`) and no max-separation cut.
-- legacy kappa tables without geometry metadata are treated as default-geometry only.
-
-Exploratory systematic knobs (not baseline physics assumptions):
-
-- `--max-separation-mm` upper separation window bound.
-- `--separation-policy any-pair-window` as a less conservative pair acceptance.
-- `--geometry-model profile` to compare against the baseline `--geometry-model tube`.
-
-PBC-style decay QA sign-off (recommended before final limits):
-
-- overlap gate in `4 <= m < 5 GeV`: `validate_decay_overlap.py` must report all points `ok`.
-- source-policy + strict-match gate on full grid: `audit_decay_coverage.py` must report all points `ok`.
-- fast-surrogate gate: `validate_brvis_kappa.py` must report all points `ok` at the calibrated cuts.
-
-Interpretation:
-
-- these checks establish consistency at the projection level used by PBC-style studies,
-- they do not replace a full detector-level reconstruction/background analysis.
+The `4-5 GeV` overlap region is used to validate generated libraries against external references.
 
 ## 7. Signal model
 
@@ -148,14 +124,6 @@ The expected signal is computed as a per-parent sum:
 ```text
 N_sig = L * sum_parents [ sigma_parent * BR(parent -> N + X) * P_decay * epsilon_sep ]
 ```
-
-For `brvis-kappa` mode, `epsilon_sep` is replaced by the calibrated factor:
-
-```text
-epsilon_fast = BR_vis(HNLCalc) * kappa(mass, flavour)
-```
-
-and the same per-parent production + geometry terms are kept unchanged.
 
 Physical interpretation of exclusion island boundaries:
 

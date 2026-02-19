@@ -37,23 +37,12 @@ Conflict rule: if this file conflicts with code, code wins.
 - production combine: `analysis_pbc/limits/combine_production_channels.py`
 - limit runner: `analysis_pbc/limits/run.py`
 - signal kernel: `analysis_pbc/limits/expected_signal.py`
-- hnlcalc scaling validator: `tools/analysis/check_hnlcalc_scaling.py`
 - xsecs/frag config: `analysis_pbc/config/production_xsecs.py`
 - money plot: `money_plot/plot_money_island.py`
 
 ## NON_MAIN_UTILITIES
 
-- production input tests: `tools/tests/production/test_production_inputs.py`
-- EW xsec validator: `tools/madgraph/validate_xsec.py`
 - LHE→CSV converter: `production/madgraph_production/scripts/lhe_to_csv.py`
-- pythia monitor: `tools/pythia/monitor_production.sh`
-- custom decay event generation: `tools/decay/generate_hnl_decay_events.py`
-- decay overlay precompute: `tools/decay/precompute_decay_library_overlay.py`
-- decay coverage audit: `tools/decay/audit_decay_coverage.py`
-- decay overlap validator: `tools/decay/validate_decay_overlap.py`
-- brvis-kappa calibrator: `tools/decay/calibrate_brvis_kappa.py`
-- brvis-kappa validator: `tools/decay/validate_brvis_kappa.py`
-- separation scan utility: `tools/analysis/scan_separation_cuts.py`
 
 ## RUNTIME_CONSTANTS (CODE-ANCHORED)
 
@@ -66,14 +55,11 @@ Other constants:
 - luminosity: `L_HL_LHC_FB = 3000` (`analysis_pbc/limits/run.py`)
 - exclusion threshold: `N_limit = 2.996` (`analysis_pbc/limits/expected_signal.py`)
 - default separation: `--separation-mm 1.0` (`analysis_pbc/limits/run.py`)
-- optional max separation (exploratory): `--max-separation-mm` (`analysis_pbc/limits/run.py`)
+- optional max separation: `--max-separation-mm` (`analysis_pbc/limits/run.py`)
 - separation policy default: `--separation-policy all-pairs-min` (`analysis_pbc/limits/run.py`)
 - default p-min: `--p-min-gev 0.6` (`analysis_pbc/limits/run.py`)
-- decay modes: `library|brvis-kappa` (`analysis_pbc/limits/run.py`)
-- geometry model default: `--geometry-model tube` (`analysis_pbc/limits/run.py`)
-- geometry model exploratory option: `--geometry-model profile` (`analysis_pbc/limits/run.py`)
+- geometry model: `tube` (`analysis_pbc/limits/run.py`)
 - default tube radius (effective, fixed): `1.54 m` (`analysis_pbc/geometry/per_parent_efficiency.py`)
-- profile controls: `--detector-thickness-m 0.24`, `--profile-inset-floor` (`analysis_pbc/limits/run.py`)
 - tau fromTau threshold: `1.78 GeV` (`production/pythia_production/run_parallel_production.sh`)
 - FONLL/LHCb reference cross-sections (`analysis_pbc/config/production_xsecs.py`):
 - `sigma(ccbar) = 23.6 mb`
@@ -145,13 +131,5 @@ python money_plot/plot_money_island.py
 
 ## VALIDATION_COMMANDS
 
-```bash
-python tools/docs/check_docs_sync.py
-python tools/analysis/check_hnlcalc_scaling.py
-python tools/decay/validate_decay_overlap.py --flavours electron,muon,tau --from-mass-grid --min-mass 4.0 --max-mass 5.0 --out output/decay/overlap_check_now.csv
-python tools/decay/audit_decay_coverage.py --flavours electron,muon,tau --from-mass-grid --overlay-switch-mass 5.0 --out output/decay/coverage_check_now.csv
-python tools/decay/validate_brvis_kappa.py --flavours electron,muon,tau --from-mass-grid --p-min-gev 0.6 --separation-mm 1.0 --kappa-table output/csv/analysis/decay_kappa_table.csv --out output/csv/analysis/decay_kappa_validation_check.csv
-pytest tools/tests/production/test_production_inputs.py -v
-# after EW production completes:
-python tools/madgraph/validate_xsec.py production/madgraph_production/summary_HNL_EW_production.csv
-```
+No dedicated validation scripts remain. Verify results by inspecting
+`output/csv/analysis/HNL_U2_limits_summary.csv` and the money plot.

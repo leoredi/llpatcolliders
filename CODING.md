@@ -168,7 +168,7 @@ By default, the script raises on ambiguous same-regime variants (for example mul
 `analysis_pbc/limits/run.py` applies the same nominal selection guards:
 
 - skips `hardccbar` / `hardbbbar` files,
-- rejects legacy tau `_all/_combined` inputs unless `--allow-legacy-tau-all` is passed,
+- rejects legacy tau `_all/_combined` inputs,
 - resolves overlap ownership by parent normalization keys before computing acceptance.
 
 ## 6. Normalisation path
@@ -312,17 +312,6 @@ Limits/combination mass discovery is file-driven. When mass-grid boundaries
 change, manually archive/remove stale `>10 GeV` simulation and generated decay
 files before runs.
 
-Validate generated-vs-external overlap in `4.0 <= m < 5.0 GeV`:
-
-```bash
-python tools/decay/validate_decay_overlap.py \
-  --flavours electron,muon,tau \
-  --from-mass-grid \
-  --min-mass 4.0 \
-  --max-mass 5.0 \
-  --out output/decay/overlap_validation.csv
-```
-
 Parser note:
 
 - External MATHUSLA decay files sometimes encode PID tokens as integral floats
@@ -332,188 +321,11 @@ Parser note:
 - Do not strip neutrino species from generated overlay files as a compatibility
   workaround; fix parser/format issues at source instead.
 
-Audit coverage and strict matching:
-
-```bash
-python tools/decay/audit_decay_coverage.py \
-  --flavours electron,muon,tau \
-  --from-mass-grid \
-  --overlay-switch-mass 5.0 \
-  --out output/decay/coverage_report.csv
-```
-
-### Calibrated analytical decay mode (`brvis-kappa`)
-
-`limits/run.py` now supports two decay-acceptance modes:
-
-- `library` (default baseline): full decay-library sampling.
-- `brvis-kappa`: fast surrogate using `P_decay * BR_vis * kappa(mass,flavour)`.
-
-Required calibration convention for `brvis-kappa`:
-
-- `--p-min-gev 0.6`
-- `--separation-mm 1.0`
-
-Generate dense calibration from selected available mass points:
-
-```bash
-python tools/decay/calibrate_brvis_kappa.py \
-  --flavours electron,muon,tau \
-  --from-mass-grid \
-  --p-min-gev 0.6 \
-  --separation-mm 1.0 \
-  --out output/csv/analysis/decay_kappa_table.csv \
-  --report output/csv/analysis/decay_kappa_validation.csv
-```
-
-Validate calibrated mode on held-out seed(s):
-
-```bash
-python tools/decay/validate_brvis_kappa.py \
-  --flavours electron,muon,tau \
-  --from-mass-grid \
-  --p-min-gev 0.6 \
-  --separation-mm 1.0 \
-  --kappa-table output/csv/analysis/decay_kappa_table.csv \
-  --out output/csv/analysis/decay_kappa_validation_check.csv
-```
-
-Run limits with the calibrated mode:
-
-```bash
-cd analysis_pbc
-python limits/run.py --parallel --workers 12 \
-  --decay-mode brvis-kappa \
-  --kappa-table ../output/csv/analysis/decay_kappa_table.csv \
-  --p-min-gev 0.6 \
-  --separation-mm 1.0
-```
-
-Exploratory options in `limits/run.py` (library mode only):
-
-- `--max-separation-mm`: optional upper separation cut for systematic studies.
-- `--separation-policy`: `all-pairs-min` (baseline default) or `any-pair-window` (exploratory).
-- `--geometry-model`: `tube` (baseline default) or `profile` (exploratory geometry).
-- `--detector-thickness-m`, `--profile-inset-floor`: profile-geometry controls.
-
-Baseline production/limit plots should remain on defaults:
-
-- `--separation-mm 1.0`
-- no `--max-separation-mm`
-- `--separation-policy all-pairs-min`
-- `--geometry-model tube`
-
-`brvis-kappa` guardrails:
-
-- only supports `--separation-policy all-pairs-min`
-- rejects `--max-separation-mm`
-- calibrated tables without geometry metadata are legacy and only valid for the default geometry tuple.
-
-### Decay physics sign-off gates
-
-Before using results in physics plots/tables, run these three gates and require
-zero failures:
-
-1. Overlap agreement in `4 <= m < 5 GeV`:
-
-```bash
-python tools/decay/validate_decay_overlap.py \
-  --flavours electron,muon,tau \
-  --from-mass-grid \
-  --min-mass 4.0 \
-  --max-mass 5.0 \
-  --out output/decay/overlap_check_now.csv
-```
-
-2. Hybrid routing + strict mismatch coverage:
-
-```bash
-python tools/decay/audit_decay_coverage.py \
-  --flavours electron,muon,tau \
-  --from-mass-grid \
-  --overlay-switch-mass 5.0 \
-  --out output/decay/coverage_check_now.csv
-```
-
-3. `brvis-kappa` surrogate consistency vs library mode:
-
-```bash
-python tools/decay/validate_brvis_kappa.py \
-  --flavours electron,muon,tau \
-  --from-mass-grid \
-  --p-min-gev 0.6 \
-  --separation-mm 1.0 \
-  --kappa-table output/csv/analysis/decay_kappa_table.csv \
-  --out output/csv/analysis/decay_kappa_validation_check.csv
-```
 
 For projection realism, set `--reco-efficiency` explicitly in limits runs
 (for example `0.5`) instead of relying on the default idealized `1.0`.
 
-## 10. HNLCalc scaling validation
+## 10. HNLCalc scaling assumption
 
-Use `tools/analysis/check_hnlcalc_scaling.py` to verify the scaling
-assumption used by the fast limit scan (`ctau ∝ 1/eps2`, `BR ∝ eps2`).
-
-Default smoke check:
-
-```bash
-python tools/analysis/check_hnlcalc_scaling.py
-```
-
-Custom validation (multiple masses/flavours and tighter tolerance):
-
-```bash
-python tools/analysis/check_hnlcalc_scaling.py \
-  --masses 0.5,2.6,6.0 \
-  --flavours electron,muon,tau \
-  --eps2 1e-8,1e-6,1e-4 \
-  --eps2-ref 1e-6 \
-  --tol 5e-4 \
-  --seed 12345
-```
-
-Interpretation:
-
-- Exit code `0`: scaling validated for tested points.
-- Exit code non-zero: at least one test point fails tolerance.
-
-## 11. Documentation drift control
-
-Use this checker before merging documentation updates:
-
-```bash
-python tools/docs/check_docs_sync.py
-```
-
-What it checks:
-
-- Code constants: mass-grid size/range, tau `fromTau` threshold, `L=3000 fb^-1`, `N=2.996`, FONLL cross-sections.
-- QCD mode names used by production.
-- Required anchors in `README.md`, `CODING.md`, and `PHYSICS.md`.
-
-If this fails, update docs or code so both sides agree.
-
-## 12. Production input validation
-
-`tools/tests/production/test_production_inputs.py` validates production cross-sections,
-fragmentation fractions, Pythia settings, and channel completeness against
-literature references (MATHUSLA, Bondarenko et al., PDG, ALICE):
-
-```bash
-pytest tools/tests/production/test_production_inputs.py -v
-```
-
-Covers: base cross-sections (FONLL ranges), charm/beauty fragmentation fractions,
-factor-of-2 convention, Pythia card settings, EW K-factor, tau parent BRs,
-and channel completeness vs PBC standard.
-
-## 13. Optional utilities (non-main sequence)
-
-These are intentionally out of the core production/analysis chain and are kept
-under `tools/`:
-
-- Pythia live monitor: `tools/pythia/monitor_production.sh`
-- EW xsec sanity check: `tools/madgraph/validate_xsec.py`
-- Custom decay sample generation: `tools/decay/generate_hnl_decay_events.py`
-- Separation-cut scan orchestrator: `tools/analysis/scan_separation_cuts.py`
+The fast limit scan uses the scaling relation `ctau ∝ 1/eps2` and `BR ∝ eps2`.
+This is valid in the single-coupling benchmark regime used by this pipeline.

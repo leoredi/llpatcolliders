@@ -17,63 +17,25 @@ except Exception:
 
 GEOMETRY_SCHEMA_VERSION = 1
 DEFAULT_TUBE_RADIUS_M = 1.54  # 1.4 m nominal tube * 1.1 envelope margin.
-DEFAULT_DETECTOR_THICKNESS_M = 0.24
-ALLOWED_GEOMETRY_MODELS = {"tube", "profile"}
-
-# Tunnel profile parameters (Position C measurements, meters).
-TUNNEL_ALPHA = 2.90
-TUNNEL_BETA = 3.15
-TUNNEL_GAMMA = 2.90
-TUNNEL_DELTA = 1.90
-TUNNEL_WALL_HEIGHT = TUNNEL_BETA - TUNNEL_DELTA
 
 
 @dataclass(frozen=True)
 class GeometryConfig:
     model: str = "tube"
     tube_radius_m: float = DEFAULT_TUBE_RADIUS_M
-    detector_thickness_m: float = DEFAULT_DETECTOR_THICKNESS_M
-    profile_inset_floor: bool = False
 
 
 def normalize_geometry_config(config: GeometryConfig | None = None) -> GeometryConfig:
     cfg = config if config is not None else GeometryConfig()
     model = str(cfg.model).strip().lower()
-    if model not in ALLOWED_GEOMETRY_MODELS:
-        raise ValueError(
-            f"Unsupported geometry model '{cfg.model}'. Allowed: {sorted(ALLOWED_GEOMETRY_MODELS)}."
-        )
+    if model != "tube":
+        raise ValueError(f"Unsupported geometry model '{cfg.model}'. Only 'tube' is supported.")
 
     tube_radius = float(cfg.tube_radius_m)
     if tube_radius <= 0.0:
         raise ValueError(f"tube_radius_m must be positive, got {tube_radius}.")
 
-    det_thickness = float(cfg.detector_thickness_m)
-    if det_thickness <= 0.0:
-        raise ValueError(f"detector_thickness_m must be positive, got {det_thickness}.")
-
-    inset_floor = bool(cfg.profile_inset_floor)
-
-    if model == "tube":
-        # Canonicalize unused profile fields so tube tags are stable.
-        det_thickness = DEFAULT_DETECTOR_THICKNESS_M
-        inset_floor = False
-    else:
-        # Canonicalize unused tube field so profile tags are stable.
-        tube_radius = DEFAULT_TUBE_RADIUS_M
-        max_allowed = min(TUNNEL_ALPHA, TUNNEL_GAMMA, 2.0 * TUNNEL_DELTA) / 2.0
-        if det_thickness >= max_allowed:
-            raise ValueError(
-                f"detector_thickness_m={det_thickness} is too large for profile geometry "
-                f"(must be < {max_allowed:.3f} m)."
-            )
-
-    return GeometryConfig(
-        model=model,
-        tube_radius_m=tube_radius,
-        detector_thickness_m=det_thickness,
-        profile_inset_floor=inset_floor,
-    )
+    return GeometryConfig(model=model, tube_radius_m=tube_radius)
 
 
 def geometry_tag(config: GeometryConfig | None = None) -> str:
@@ -193,108 +155,6 @@ def create_tube_mesh(path_points: np.ndarray,
     return np.array(vertices, dtype=float), np.array(faces, dtype=int)
 
 
-def tunnel_profile_points(
-    n_arch: int = 32,
-    n_wall: int = 4,
-    inset: float = 0.0,
-    inset_floor: bool = False,
-) -> np.ndarray:
-    half_w = TUNNEL_GAMMA / 2.0 - inset
-    half_floor = TUNNEL_ALPHA / 2.0 - inset
-    wall_h = TUNNEL_WALL_HEIGHT
-    a = TUNNEL_GAMMA / 2.0 - inset
-    b = TUNNEL_DELTA - inset
-    floor_y = inset if inset_floor else 0.0
-
-    points: list[list[float]] = []
-    points.append([-half_floor, floor_y])
-    points.append([half_floor, floor_y])
-
-    for i in range(1, n_wall + 1):
-        frac = i / n_wall
-        y = floor_y + (wall_h - floor_y) * frac if inset_floor else frac * wall_h
-        x = half_floor + (half_w - half_floor) * frac
-        points.append([x, y])
-
-    for i in range(1, n_arch):
-        angle = np.pi * i / n_arch
-        x = a * np.cos(angle)
-        y = wall_h + b * np.sin(angle)
-        points.append([x, y])
-
-    for i in range(n_wall, 0, -1):
-        frac = i / n_wall
-        y = floor_y + (wall_h - floor_y) * frac if inset_floor else frac * wall_h
-        x = half_floor + (half_w - half_floor) * frac
-        points.append([-x, y])
-
-    points_arr = np.array(points, dtype=float)
-
-    # Shift the profile so y=0 is cross-section centroid, matching tube behavior.
-    rect_area = TUNNEL_ALPHA * TUNNEL_WALL_HEIGHT
-    rect_cy = TUNNEL_WALL_HEIGHT / 2.0
-    a0 = TUNNEL_GAMMA / 2.0
-    b0 = TUNNEL_DELTA
-    ellipse_area = np.pi * a0 * b0 / 2.0
-    ellipse_cy = TUNNEL_WALL_HEIGHT + 4.0 * b0 / (3.0 * np.pi)
-    total_area = rect_area + ellipse_area
-    centroid_y = (rect_area * rect_cy + ellipse_area * ellipse_cy) / total_area
-    points_arr[:, 1] -= centroid_y
-
-    return points_arr
-
-
-def create_profile_mesh(path_points: np.ndarray, profile_2d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    n_profile = len(profile_2d)
-    vertices: list[np.ndarray] = []
-    faces: list[list[int]] = []
-
-    for i in range(len(path_points)):
-        if i == 0:
-            tangent = path_points[1] - path_points[0]
-        elif i == len(path_points) - 1:
-            tangent = path_points[i] - path_points[i - 1]
-        else:
-            tangent = path_points[i + 1] - path_points[i - 1]
-        tangent = tangent / np.linalg.norm(tangent)
-
-        if abs(tangent[2]) < 0.9:
-            world_up = np.array([0.0, 0.0, 1.0])
-        else:
-            world_up = np.array([1.0, 0.0, 0.0])
-
-        right = np.cross(tangent, world_up)
-        right = right / np.linalg.norm(right)
-        up = np.cross(right, tangent)
-        up = up / np.linalg.norm(up)
-
-        for j in range(n_profile):
-            offset = profile_2d[j, 0] * right + profile_2d[j, 1] * up
-            vertices.append(path_points[i] + offset)
-
-        if i > 0:
-            for j in range(n_profile):
-                v1 = (i - 1) * n_profile + j
-                v2 = (i - 1) * n_profile + (j + 1) % n_profile
-                v3 = i * n_profile + (j + 1) % n_profile
-                v4 = i * n_profile + j
-                faces.append([v1, v4, v3])
-                faces.append([v1, v3, v2])
-
-    center_start = len(vertices)
-    vertices.append(path_points[0].copy())
-    for j in range(n_profile):
-        faces.append([center_start, (j + 1) % n_profile, j])
-
-    center_end = len(vertices)
-    vertices.append(path_points[-1].copy())
-    last = (len(path_points) - 1) * n_profile
-    for j in range(n_profile):
-        faces.append([center_end, last + j, last + (j + 1) % n_profile])
-
-    return np.array(vertices, dtype=float), np.array(faces, dtype=int)
-
-
 def build_drainage_gallery_mesh(config: GeometryConfig | None = None) -> trimesh.Trimesh:
     cfg = normalize_geometry_config(config)
     correctedVert = [
@@ -362,14 +222,7 @@ def build_drainage_gallery_mesh(config: GeometryConfig | None = None) -> trimesh
         dtype=float,
     )
 
-    if cfg.model == "tube":
-        vertices, faces = create_tube_mesh(path_3d, radius=cfg.tube_radius_m, n_segments=32)
-    else:
-        profile_fiducial = tunnel_profile_points(
-            inset=cfg.detector_thickness_m,
-            inset_floor=cfg.profile_inset_floor,
-        )
-        vertices, faces = create_profile_mesh(path_3d, profile_fiducial)
+    vertices, faces = create_tube_mesh(path_3d, radius=cfg.tube_radius_m, n_segments=32)
 
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
 

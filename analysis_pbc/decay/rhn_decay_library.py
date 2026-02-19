@@ -258,7 +258,7 @@ def select_decay_file(flavour: str, mass_GeV: float) -> DecayFileEntry:
         raise FileNotFoundError(
             "No generated decay overlay files found for "
             f"flavour='{flavour}' at mass {mass_GeV:.3f} GeV (required for m >= {OVERLAY_SWITCH_MASS_GEV:.1f} GeV). "
-            "Run tools/decay/precompute_decay_library_overlay.py to populate output/decay/generated/."
+            "Populate output/decay/generated/ with decay overlay files for this mass point."
         )
     chosen = _nearest_entry(overlay, mass_GeV)
     if chosen is None:
