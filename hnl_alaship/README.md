@@ -130,4 +130,6 @@ Verified result: **270/348 mass points have sensitivity** (full 3D daughter ray-
 ## See also
 
 - `HOWTO_RUN.md` for step-by-step instructions
+- `LITERATURE_STANDARD.md` for the PBC BC6/BC7/BC8 conventions, plot
+  standards, and the pipeline-vs-standard checklist
 - `../geometry/gargoyle_geometry.py` for the shared detector geometry
