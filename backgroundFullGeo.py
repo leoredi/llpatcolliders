@@ -2,7 +2,7 @@
 Beam Muon Trident Background MC — Full Tunnel Geometry
 =======================================================
 
-Uses the identical tunnel mesh and ray-casting as the signal code.
+Uses the shared tunnel mesh and ray-casting from grendel_geometry.
 Muons originate from the IP (origin), traverse through rock + CMS,
 and enter the tunnel fiducial volume at various (eta, phi).
 
@@ -13,7 +13,7 @@ anchored to the milliQan measurement:
 For a muon at distance r:  Phi(r) = Phi_mQ × (33/r)^2
 
 Approach:
-  1. Build the tunnel fiducial mesh (identical to signal code)
+  1. Load the tunnel fiducial mesh from grendel_geometry
   2. Sample muon (eta, phi) isotropically in the solid angle 
      subtended by the tunnel
   3. Ray-cast from IP to get entry/exit points and path length
@@ -26,18 +26,20 @@ Compatible with: decayProbPerEvent_2body.py
 """
 
 import numpy as np
-import trimesh
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from scipy.integrate import quad
 from scipy.interpolate import interp1d
 from tqdm import tqdm
-from dataclasses import dataclass
+
+from grendel_geometry import (
+    TUNNEL_GAMMA, DETECTOR_THICKNESS,
+    eta_phi_to_direction, mesh_fiducial, path_3d_fiducial,
+)
 
 # =============================================================================
-# Constants (same as signal code + background code)
+# Constants (background-specific)
 # =============================================================================
-SPEED_OF_LIGHT = 299792458.0
 ALPHA_EM       = 1.0 / 137.036
 R_E            = 2.8179e-15    # m
 M_ELECTRON     = 0.000511      # GeV
@@ -51,15 +53,7 @@ E_THRESHOLD = 15.0                # GeV production threshold
 
 # Analysis cuts
 E_CUT   = 0.600   # GeV
-SEP_MIN = 0.001   # m (1 cm)
-
-# Tunnel geometry constants (from signal code)
-TUNNEL_ALPHA = 2.90
-TUNNEL_BETA  = 3.15
-TUNNEL_GAMMA = 2.90
-TUNNEL_DELTA = 1.90
-TUNNEL_WALL_HEIGHT = TUNNEL_BETA - TUNNEL_DELTA
-DETECTOR_THICKNESS = 0.24
+SEP_MIN = 0.001   # m (1 mm)
 
 FIDUCIAL_WIDTH = TUNNEL_GAMMA - 2 * DETECTOR_THICKNESS
 SEP_MAX = FIDUCIAL_WIDTH  # ~2.42 m
@@ -69,160 +63,6 @@ AIR_Z   = 7.3
 AIR_A   = 14.5
 AIR_RHO = 1.205e-3  # g/cm^3
 AIR_N   = N_A * AIR_RHO / AIR_A  # atoms/cm^3
-
-
-# =============================================================================
-# Tunnel geometry (copied from signal code)
-# =============================================================================
-
-def tunnel_profile_points(n_arch=32, n_wall=4, inset=0.0, inset_floor=False):
-    half_w = TUNNEL_GAMMA / 2 - inset
-    half_floor = TUNNEL_ALPHA / 2 - inset
-    wall_h = TUNNEL_WALL_HEIGHT
-    a = TUNNEL_GAMMA / 2 - inset
-    b = TUNNEL_DELTA - inset
-    floor_y = inset if inset_floor else 0.0
-    points = []
-    points.append([-half_floor, floor_y])
-    points.append([half_floor, floor_y])
-    for i in range(1, n_wall + 1):
-        frac = i / n_wall
-        y = floor_y + (wall_h - floor_y) * frac if inset_floor else frac * wall_h
-        x = half_floor + (half_w - half_floor) * frac
-        points.append([x, y])
-    for i in range(1, n_arch):
-        angle = np.pi * i / n_arch
-        x = a * np.cos(angle)
-        y = wall_h + b * np.sin(angle)
-        points.append([x, y])
-    for i in range(n_wall, 0, -1):
-        frac = i / n_wall
-        y = floor_y + (wall_h - floor_y) * frac if inset_floor else frac * wall_h
-        x = half_floor + (half_w - half_floor) * frac
-        points.append([-x, y])
-    points = np.array(points)
-    rect_area = TUNNEL_ALPHA * TUNNEL_WALL_HEIGHT
-    rect_cy = TUNNEL_WALL_HEIGHT / 2
-    a0 = TUNNEL_GAMMA / 2
-    b0 = TUNNEL_DELTA
-    ellipse_area = np.pi * a0 * b0 / 2
-    ellipse_cy = TUNNEL_WALL_HEIGHT + 4 * b0 / (3 * np.pi)
-    total_area = rect_area + ellipse_area
-    centroid_y = (rect_area * rect_cy + ellipse_area * ellipse_cy) / total_area
-    points[:, 1] -= centroid_y
-    return points
-
-
-def create_profile_mesh(path_points, profile_2d):
-    n_profile = len(profile_2d)
-    vertices = []
-    faces = []
-    for i in range(len(path_points)):
-        if i == 0:
-            tangent = path_points[1] - path_points[0]
-        elif i == len(path_points) - 1:
-            tangent = path_points[i] - path_points[i - 1]
-        else:
-            tangent = path_points[i + 1] - path_points[i - 1]
-        tangent = tangent / np.linalg.norm(tangent)
-        if abs(tangent[2]) < 0.9:
-            world_up = np.array([0, 0, 1])
-        else:
-            world_up = np.array([1, 0, 0])
-        right = np.cross(tangent, world_up)
-        right = right / np.linalg.norm(right)
-        up = np.cross(right, tangent)
-        up = up / np.linalg.norm(up)
-        for j in range(n_profile):
-            offset = profile_2d[j, 0] * right + profile_2d[j, 1] * up
-            vertices.append(path_points[i] + offset)
-        if i > 0:
-            for j in range(n_profile):
-                v1 = (i - 1) * n_profile + j
-                v2 = (i - 1) * n_profile + (j + 1) % n_profile
-                v3 = i * n_profile + (j + 1) % n_profile
-                v4 = i * n_profile + j
-                faces.append([v1, v4, v3])
-                faces.append([v1, v3, v2])
-    center_start = len(vertices)
-    vertices.append(path_points[0].copy())
-    for j in range(n_profile):
-        faces.append([center_start, (j + 1) % n_profile, j])
-    center_end = len(vertices)
-    vertices.append(path_points[-1].copy())
-    last = (len(path_points) - 1) * n_profile
-    for j in range(n_profile):
-        faces.append([center_end, last + j, last + (j + 1) % n_profile])
-    return np.array(vertices), np.array(faces)
-
-
-def build_tunnel_mesh():
-    """Build the fiducial volume mesh (identical to signal code)."""
-    correctedVert = [
-        (-86.57954338701529, 0.1882163986665546),
-        (-1731.590867740335, 3.764327973349282),
-        (-3549.761278867689, 7.716872345365118),
-        (-5887.408950317142, 12.798715109387558),
-        (-8053.403266181902, -504.23173203003535),
-        (-10046.991360867298, -1282.5065405198511),
-        (-11783.350377373874, -2930.9057600491833),
-        (-12913.652590171332, -4580.622494369192),
-        (-13095.344153684957, -7536.749251839814),
-        (-13099.610392054752, -9015.000846973791),
-        (-13278.792403586143, -11101.567842600896),
-        (-13372.39869252341, -13536.146959364076),
-        (-13292.093029091975, -15710.234580371536),
-        (-12779.140603923677, -17972.21925955668),
-        (-11659.12755425337, -19887.69754879509),
-        (-10105.714877251532, -21630.204967658145),
-        (-7512.845769209047, -23201.0590309365),
-        (-5262.530506741277, -23466.820585854904),
-        (-2751.72374851779, -23472.278861416264),
-        (-241.41890069074725, -23651.64908934632),
-        (1749.6596420124115, -23742.93404270002),
-        (3827.568683300815, -23747.45123626804),
-        (6078.6368113632525, -23752.344862633392),
-        (8502.613071001502, -23844.570897980426),
-        (11446.568501358292, -23764.01427935077),
-        (13438.399909656131, -23594.431304151418),
-        (15777.051401898476, -23251.689242178036),
-        (18289.614846509525, -22648.455684448927),
-        (20889.761655300477, -21697.58643838109),
-        (23143.841245741598, -20659.00835053422),
-        (25486.006110759066, -19098.88262197991),
-        (27742.09334278597, -17364.656724658227),
-        (28871.391734790544, -16062.763895075637),
-        (30781.662703665817, -14153.873179790575),
-        (32518.021720172394, -12505.473960261239),
-        (34513.49197884447, -11075.029330388788),
-        (36636.57295581305, -10427.47081077351),
-        (38759.40297758341, -9866.868267342572),
-        (41357.416667189485, -9655.12481884172),
-        (43694.93886103982, -9703.684649697909),
-        (46379.03018363646, -9666.041369964427),
-        (49409.43967978114, -9629.150955825604),
-        (51660.88424064092, -9503.610617914434),
-        (54258.0195870532, -9596.213086058811),
-        (57028.564975437745, -9602.236010816167),
-        (59539.87364405768, -9433.782334008818),
-        (62050.42944708294, -9526.196585754526),
-    ]
-
-    correctedVertWithShift = []
-    for x, y in correctedVert:
-        correctedVertWithShift.append(
-            ((x - 11908.8279764855) / 1000, (y + 13591.106147774964) / 1000))
-
-    Z_POSITION = 22
-    path_3d = np.array([[x, y, Z_POSITION] for x, y in correctedVertWithShift])
-
-    profile_fiducial = tunnel_profile_points(inset=DETECTOR_THICKNESS, inset_floor=False)
-    verts, faces = create_profile_mesh(path_3d, profile_fiducial)
-    mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-    if mesh.volume < 0:
-        mesh.invert()
-
-    return mesh, path_3d
 
 
 # =============================================================================
@@ -326,7 +166,6 @@ class TunnelBackgroundMC:
         self.flux = MuonFlux()
         
         # Determine the bounding solid angle of the tunnel seen from the IP.
-        # Use the mesh bounding box to define an eta-phi window.
         self._setup_angular_bounds()
     
     def _setup_angular_bounds(self):
@@ -334,28 +173,25 @@ class TunnelBackgroundMC:
         Compute the eta-phi bounding box of the tunnel as seen from IP.
         This lets us sample muon directions efficiently.
         """
-        # Use tunnel centerline path_3d to get angular range
         vecs = self.path_3d - self.origin
         r = np.linalg.norm(vecs, axis=1)
         
-        # Convert to eta, phi
+        # CMS convention: Z = beam axis
         theta = np.arccos(np.clip(vecs[:, 2] / r, -1, 1))
         eta = -np.log(np.tan(theta / 2 + 1e-10))
         phi = np.arctan2(vecs[:, 1], vecs[:, 0])
         
         # Add margin for the tunnel cross-section (~1.5 m radius at ~30 m)
-        margin_angle = np.arctan(2.0 / 30.0)  # ~4 degrees
-        margin_eta = margin_angle / np.sin(np.mean(theta))  # approximate
+        margin_angle = np.arctan(2.0 / 30.0)
+        margin_eta = margin_angle / np.sin(np.mean(theta))
         
         self.eta_min = eta.min() - abs(margin_eta)
         self.eta_max = eta.max() + abs(margin_eta)
         self.phi_min = phi.min() - margin_angle
         self.phi_max = phi.max() + margin_angle
         
-        # Solid angle of the bounding box (approximate)
         d_eta = self.eta_max - self.eta_min
         d_phi = self.phi_max - self.phi_min
-        # dΩ = dη dφ (in eta-phi space, this is exact for the rapidity measure)
         self.solid_angle_eta_phi = d_eta * d_phi
         
         print(f"  Tunnel angular range from IP:")
@@ -364,55 +200,31 @@ class TunnelBackgroundMC:
               f"([{np.degrees(self.phi_min):.2f}, {np.degrees(self.phi_max):.2f}] deg)")
         print(f"    Bounding deta×dphi = {d_eta:.3f} × {d_phi:.4f} = {self.solid_angle_eta_phi:.4f}")
     
-    def _eta_phi_to_direction(self, eta, phi):
-        """Convert (eta, phi) to unit direction vector."""
-        theta = 2 * np.arctan(np.exp(-eta))
-        dx = np.sin(theta) * np.cos(phi)
-        dy = np.sin(theta) * np.sin(phi)
-        dz = np.cos(theta)
-        return np.array([dx, dy, dz])
-    
     def _sample_pair_forced(self, E_muon, path_length):
         """
         Sample trident e+e- pair kinematics (forced production).
         
         Every call produces a pair. The caller is responsible for
         weighting the event by P(trident).
-        
-        Args:
-            E_muon: muon energy (GeV)
-            path_length: total air path through fiducial volume (m)
-        
-        Returns: dict of pair properties
         """
-        # Vertex position: uniform along the path
         frac = self.rng.uniform()
         d_remaining = path_length * (1.0 - frac)
         
-        # Sample pair energy fraction v = E_pair / E_muon
         v = self._sample_v(E_muon)
         E_pair = v * E_muon
         
-        # Sample asymmetry rho: dσ/drho ~ 1/(1-rho^2) roughly
         rho = self.rng.uniform(-0.85, 0.85)
         E_plus = E_pair * (1 + rho) / 2
         E_minus = E_pair * (1 - rho) / 2
         
-        # Opening angle between e+ and e-
         theta_open = 2 * M_ELECTRON / E_pair / max(np.sqrt(1 - rho**2), 0.01)
-        
-        # Each electron's angle from muon direction
         theta_eplus = M_ELECTRON / max(E_plus, M_ELECTRON)
         theta_eminus = M_ELECTRON / max(E_minus, M_ELECTRON)
         
-        # Separation at the wall (using remaining distance)
         separation = theta_open * d_remaining
-        
-        # Muon-electron separations
         sep_mu_eplus = theta_eplus * d_remaining
         sep_mu_eminus = theta_eminus * d_remaining
         
-        # Apply cuts
         passes_E = (E_plus > E_CUT) and (E_minus > E_CUT)
         passes_sep_min = separation > SEP_MIN
         passes_sep_max = separation < SEP_MAX
@@ -450,25 +262,15 @@ class TunnelBackgroundMC:
         Run the full MC with forced trident production.
         
         Every muon that hits the tunnel produces exactly one trident,
-        weighted by P(trident). This is far more efficient than 
-        Poisson sampling when P(trident) ~ 10^-6.
-        
-        Args:
-            n_rays: number of muon directions to sample
-        
-        Returns: dict with results
+        weighted by P(trident).
         """
         print(f"\nRunning full-geometry background MC (forced trident)...")
         print(f"  Sampling {n_rays:,} muon directions in bounding box")
         
-        # Sample eta, phi uniformly in the bounding box
         eta_samples = self.rng.uniform(self.eta_min, self.eta_max, n_rays)
         phi_samples = self.rng.uniform(self.phi_min, self.phi_max, n_rays)
-        
-        # Sample muon energies
         E_samples = self.flux.sample_energy(n_rays, self.rng)
         
-        # Ray-cast all muons
         n_hit = 0
         n_pass = 0
         
@@ -490,7 +292,7 @@ class TunnelBackgroundMC:
             phi = phi_samples[i]
             E_mu = E_samples[i]
             
-            direction = self._eta_phi_to_direction(eta, phi)
+            direction = eta_phi_to_direction(eta, phi)
             
             locations, _, _ = self.mesh.ray.intersects_location(
                 ray_origins=[self.origin], ray_directions=[direction])
@@ -521,7 +323,6 @@ class TunnelBackgroundMC:
                 'weight': ray_weight,
             })
             
-            # Forced trident: always produce a pair, weight by P(trident)
             P_tri = trident_probability(E_mu, path_length)
             pair = self._sample_pair_forced(E_mu, path_length)
             
@@ -753,18 +554,10 @@ def plot_results(results, save_path=None):
 
 if __name__ == "__main__":
     
-    print("Building tunnel fiducial mesh...")
-    mesh, path_3d = build_tunnel_mesh()
-    print(f"  Fiducial volume: {mesh.volume:.1f} m^3")
-    
     origin = np.array([0, 0, 0])
     
-    mc = TunnelBackgroundMC(mesh, path_3d, origin, seed=123)
+    mc = TunnelBackgroundMC(mesh_fiducial, path_3d_fiducial, origin, seed=123)
     
-    # Run with oversampling to get more trident statistics.
-    # oversample_trident=100 means we attempt 100 trident trials per muon
-    # that hits the tunnel, each with weight/100.
-    # This doesn't change the expected rate, just reduces variance.
     results = mc.run(n_rays=500_000)
     
     print(f"\n{'='*60}")

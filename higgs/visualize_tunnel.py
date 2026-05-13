@@ -1,5 +1,5 @@
 """
-Visualize the GARGOYLE tunnel geometry.
+Visualize the GRENDEL tunnel geometry.
 
 Produces a 4-panel static figure and an interactive 3D matplotlib window.
 CMS convention: X = horizontal transverse, Y = vertical (up), Z = beam axis.
@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-from gargoyle_geometry import (
+from grendel_geometry import (
     mesh_fiducial, path_3d_fiducial,
     tunnel_profile_points, create_profile_mesh,
     Y_POSITION, DETECTOR_THICKNESS,
@@ -195,7 +195,7 @@ ax4.grid(True, alpha=0.3)
 ax4.axis('equal')
 ax4.legend(fontsize=8)
 
-fig.suptitle('GARGOYLE Tunnel Geometry', fontsize=14, y=1.01)
+fig.suptitle('GRENDEL Tunnel Geometry', fontsize=14, y=1.01)
 plt.tight_layout()
 
 # ── Print statistics ─────────────────────────────────────────────────
@@ -253,7 +253,7 @@ ax.text(origin[0], origin[2]+axis_len, origin[1], 'Z (beam)', fontsize=12)
 ax.set_xlabel('X (m)', fontsize=10)
 ax.set_ylabel('Z (beam, m)', fontsize=10)
 ax.set_zlabel('Y (up, m)', fontsize=10)
-ax.set_title('GARGOYLE Tunnel — Interactive 3D (rotate with mouse)', fontsize=14)
+ax.set_title('GRENDEL Tunnel — Interactive 3D (rotate with mouse)', fontsize=14)
 ax.view_init(elev=20, azim=45)
 ax.set_box_aspect([1, 1, 0.5])
 ax.legend(fontsize=10)

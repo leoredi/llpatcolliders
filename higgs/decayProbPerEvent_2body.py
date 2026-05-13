@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.integrate import quad
 
-from gargoyle_geometry import (
+from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
     calculate_decay_length, cache_geometry, mesh_fiducial,
 )

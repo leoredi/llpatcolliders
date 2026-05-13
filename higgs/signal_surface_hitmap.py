@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from tqdm import tqdm
 
-from gargoyle_geometry import (
+from grendel_geometry import (
     TUNNEL_ALPHA, TUNNEL_GAMMA, TUNNEL_DELTA,
     TUNNEL_WALL_HEIGHT, DETECTOR_THICKNESS,
     tunnel_profile_points, eta_phi_to_direction,

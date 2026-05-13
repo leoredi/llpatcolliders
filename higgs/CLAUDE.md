@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Physics analysis scripts for the **GARGOYLE** detector concept — a long-lived particle (LLP) detector proposed for the CMS PX56 drainage tunnel at CERN. The three main scripts evaluate signal acceptance, background rates, and tracking coverage optimization.
+Physics analysis scripts for the **GRENDEL** detector concept — a long-lived particle (LLP) detector proposed for the CMS PX56 drainage tunnel at CERN. The three main scripts evaluate signal acceptance, background rates, and tracking coverage optimization.
 
 ## Running the scripts
 
@@ -32,7 +32,7 @@ Units: `pt` and `momentum` in GeV/c, `mass` in GeV/c², angles in radians (CMS c
 
 ## Architecture
 
-### `gargoyle_geometry.py` — shared geometry module (imported by all three scripts)
+### `grendel_geometry.py` — shared geometry module (imported by all three scripts)
 
 The central module. Builds the 3D fiducial volume mesh on import and exposes it as `mesh_fiducial` and `path_3d_fiducial`. Key responsibilities:
 
@@ -41,7 +41,7 @@ The central module. Builds the 3D fiducial volume mesh on import and exposes it 
 - **Centreline** (`correctedVertWithShift`): 47 surveyed PX56 tunnel points converted from mm to metres and shifted so the CMS IP is at the origin. Tunnel runs at `Y_POSITION = 22 m` above the IP.
 - **Ray-casting utilities**: `cache_geometry` (batch ray-cast + cache entry/exit distances), `eta_phi_to_direction` (η,φ → unit vector), `calculate_decay_length` (βγcτ).
 
-Because the mesh is built at module import time (last line of the file), importing `gargoyle_geometry` takes a few seconds.
+Because the mesh is built at module import time (last line of the file), importing `grendel_geometry` takes a few seconds.
 
 ### `decayProbPerEvent_2body.py` — signal acceptance
 
@@ -56,7 +56,7 @@ Outputs `particle_decay_results_2body.csv` and comparison plots against external
 
 ### `background_trident.py` — muon trident background MC
 
-Estimates beam-muon trident rate (μN → μNe⁺e⁻ in air) via forced production. Muon flux is anchored to the milliQan measurement (0.3 fb⁻¹ cm⁻² at 33 m, ∝ 1/r²). Energy spectrum is E⁻²·⁷ exp(−E/200 GeV) above 15 GeV. All geometry calls use `gargoyle_geometry` identically to the signal code.
+Estimates beam-muon trident rate (μN → μNe⁺e⁻ in air) via forced production. Muon flux is anchored to the milliQan measurement (0.3 fb⁻¹ cm⁻² at 33 m, ∝ 1/r²). Energy spectrum is E⁻²·⁷ exp(−E/200 GeV) above 15 GeV. All geometry calls use `grendel_geometry` identically to the signal code.
 
 ### `signal_surface_hitmap.py` — tracking coverage optimisation
 
