@@ -13,15 +13,15 @@ M_ELECTRON = 0.000511  # GeV/c²
 
 # Analysis cuts
 P_CUT   = 0.600    # GeV/c — minimum electron momentum
-SEP_MIN = 0.001    # m — minimum separation at detector (1 mm)
+SEP_MIN = 0.01    # m — minimum separation at detector (1 cm)
 SEP_MAX = 10.0      # m — maximum separation at detector
-DCA_CUT = 0.1  # m (1 cm) — maximum DCA between reconstructed tracks
+DCA_CUT = 0.1  # m (10 cm) — maximum DCA between reconstructed tracks
 
 outString = "15GeV"
-sample_csv = "LLP40GeV.csv"
+sample_csv = "LLPSmall.csv"
 
 # Tracking resolution
-HIT_RESOLUTION = 0.003  # m (1 mm per layer)
+HIT_RESOLUTION = 0.01  # m (3 mm per layer)
 N_LAYERS       = 2       # number of tracking layers (stations)
 
 # ============================================================
@@ -815,7 +815,6 @@ if __name__ == "__main__":
     print("="*50)
     
     lifetimes = np.logspace(-10.5, -3.5, 20)
-    exit()
     scan = analyze_decay_vs_lifetime(sample_csv, geo_cache, lifetimes)
     
     # === Plotting ===
@@ -855,10 +854,10 @@ if __name__ == "__main__":
     
     ax4 = axes[1, 1]
     ax4.loglog(lifetimes * SPEED_OF_LIGHT, scan['exclusion'],
-               color='blue', linewidth=2, label="milliQan (with cuts)")
-    ax4.loglog(lifetimes * SPEED_OF_LIGHT, scan['exclusion_no_cuts'],
-               color='blue', linewidth=2, linestyle='--', alpha=0.5,
-               label="milliQan (no cuts)")
+               color='blue', linewidth=2, label="GRENDEL")
+    # ax4.loglog(lifetimes * SPEED_OF_LIGHT, scan['exclusion_no_cuts'],
+    #            color='blue', linewidth=2, linestyle='--', alpha=0.5,
+    #            label="milliQan (no cuts)")
     ax4.set_xlabel(r'$c\tau$ (m)')
     ax4.set_ylabel('BR')
     ax4.grid(True, which="both", ls="-", alpha=0.2)
@@ -867,27 +866,28 @@ if __name__ == "__main__":
     if df_results['mass'].iloc[0] == 15:
         ext["MATHUSLA"] = np.loadtxt("external/MATHUSLA.csv", delimiter=",")
         ext["CODEX"] = np.loadtxt("external/CODEX.csv", delimiter=",")
-        ext["ANUBIS"] = np.loadtxt("external/ANUBIS.csv", delimiter=",")
-        ext["ANUBISOpt"] = np.loadtxt("external/ANUBISOpt.csv", delimiter=",")
+        ext["CMS"] = np.loadtxt("external/CMS.csv", delimiter=",")
+        # ext["ANUBISOpt"] = np.loadtxt("external/ANUBISOpt.csv", delimiter=",")
         ext["ANUBISCons"] = np.loadtxt("external/ANUBISUpdateCons.csv", delimiter=",")
     
         ax4.loglog(ext["MATHUSLA"][:, 0], ext["MATHUSLA"][:, 1],
                    color="green", linewidth=2, label="MATHUSLA")
         ax4.loglog(ext["CODEX"][:, 0], ext["CODEX"][:, 1],
                    color="cyan", linewidth=2, label="CODEX-b")
-        ax4.loglog(ext["ANUBIS"][:, 0], ext["ANUBIS"][:, 1],
-                   color="purple", linewidth=2, label="ANUBIS")
-        ax4.loglog(ext["ANUBISOpt"][:, 0], ext["ANUBISOpt"][:, 1],
-                   color="purple", linewidth=2, linestyle="--", label="ANUBIS Opt")
+        ax4.loglog(ext["CMS"][:, 0], ext["CMS"][:, 1],
+                   color="purple", linewidth=2, label="CMS")
+        # ax4.loglog(ext["ANUBISOpt"][:, 0], ext["ANUBISOpt"][:, 1],
+        #            color="purple", linewidth=2, linestyle="--", label="ANUBIS Opt")
         ax4.loglog(ext["ANUBISCons"][:, 0], ext["ANUBISCons"][:, 1],
                    color="magenta", linewidth=2, linestyle="--", label="ANUBIS Cons")
-        ax4.legend(fontsize=8, loc='upper right')
+        ax4.legend(fontsize=8, loc='lower right')
+        ax4.set_ylim([1E-5,1])
     elif df_results['mass'].iloc[0] == 0.5:
         ext["CODEX"] = np.loadtxt("external/CODEX0p5.csv", delimiter=",")
     
         ax4.loglog(ext["CODEX"][:, 0], ext["CODEX"][:, 1],
                    color="cyan", linewidth=2, label="CODEX-b")
-        ax4.legend(fontsize=8, loc='upper right')
+        ax4.legend(fontsize=8, loc='lower right')
         
     plt.tight_layout()
     plt.savefig('exclusion_2body'+outString+'.png', dpi=150)

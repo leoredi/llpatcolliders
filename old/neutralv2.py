@@ -47,6 +47,7 @@ outer6=cubiroot((8,-10.9),(27.9,2.7),(25,-3),0.03,20)
 outer = outer1 + outer2 + outer3 + outer4 + outer5 +outer6
 inside = inside1 + inside2 + inside3 + inside4 + inside5 +inside6
 insideline = LineString(inside)
+print(inside)
 c_detector = Polygon(outer + inside[::-1])
 
 #test = Polygon([(0,0),(30*np.cos(np.radians(-135)),30*np.sin(np.radians(-135))),(30*np.cos(np.radians(-90)),30*np.sin(np.radians(-90)))])
@@ -59,26 +60,25 @@ origin = Point(0,0)
 #print(dist)
 
 
-#plotting
-#fig, ax = plt.subplots(figsize=(10, 10))
-#x, y = c_detector.exterior.xy
-#ax.plot(*origin.xy, 'o', color="Red")
-#ax.fill(x, y, facecolor='green', edgecolor='black', linewidth=2, label="Detector")
-#ax.set_aspect('equal')
-#ax.set_xlim(-40, 40)
-#ax.set_ylim(-40, 40)
-#plt.legend(loc="upper right")
-#plt.title("Detector")
-#plt.grid(True)
-#plt.show()
-
+# # plotting
+# fig, ax = plt.subplots(figsize=(10, 10))
+# x, y = c_detector.exterior.xy
+# ax.plot(*origin.xy, 'o', color="Red")
+# ax.fill(x, y, facecolor='green', edgecolor='black', linewidth=2, label="Detector")
+# ax.set_aspect('equal')
+# ax.set_xlim(-40, 40)
+# ax.set_ylim(-40, 40)
+# plt.legend(loc="upper right")
+# plt.title("Detector")
+# plt.grid(True)
+# plt.show()
 #slicing the geometry 
 #getting the L1 distance per angle section
-phi = np.linspace(-235, 15, 100)
+phi = np.linspace(0,360)
 deltaphi = np.array([])
 for j in range(len(phi)-1):
     #phi[j] = np.radians(phi[j])
-    diff = phi[j] - phi[j+1]
+    diff = np.radians(phi[j]) -np.radians(phi[j+1])
     diff= abs(phi)
     deltaphi = np.append(deltaphi,diff)
 xarr=np.array([])
@@ -96,16 +96,37 @@ for i in range(len(phi)):
     if i!=0 :
         temp= Polygon([(0,0),(xarr[i-1],yarr[i-1]),(xarr[i],yarr[i])])
         slice = shapely.intersection(c_detector,temp) 
-        dist = shapely.distance(origin, slice)
+        # plt.plot(*temp.exterior.xy)
+        # plt.show()
+        # exirt()
+        dist = shapely.distance(origin, slice)#+1.4#Adding distance to true center of cavern
         L1= np.append(L1,dist)
       
 
 Estimate=np.array([])
 d=15
-
+# plt.plot(phi[1:],L1)
+# plt.show()
+# exit()
+totalEst = 0
 for k in range(len(phi)-1):
-    Probestimate = (1/(4*np.pi))*deltaphi[k]*np.exp(-L1[k]/d)*2.8/d
+    #Need Z to be from max to min cavern height at a radius of L1
+    #what range of theta will achieve this?
+    #Note that deltaphi should not be part of this calculation (should really change to lines rather than polygon for phi)
+    # theta_central = np.tan(L1[k]/22.5)
+    theta_up = np.arctan2(L1[k],(22.5+1.4))
+    theta_down = np.arctan2(L1[k],(22.5-1.4))
+    deltatheta = abs(theta_up-theta_down)
+    print(phi[k],L1[k],theta_up,theta_down)
+    totalR = np.sqrt(L1[k]*L1[k]+22.5*22.5)
+    if np.isnan(L1[k]):
+        Probestimate = 0
+    else:
+        Probestimate = (1/(2*np.pi))*deltatheta*np.exp(-totalR/d)*2.8/d
     Estimate=np.append(Estimate,Probestimate)
+    totalEst += Probestimate
+totalEst/=k
+print(totalEst)
 #print(Estimate)
 plt.figure(figsize=(10, 4))
 plt.plot(phi[:-1],Estimate, color='skyblue')
@@ -114,7 +135,8 @@ plt.ylabel('Probability')
 plt.title('Estimated probability d=15')
 plt.grid(True)
 plt.tight_layout()
-plt.show()
+# plt.show()
+
 
 def solidangle(a):
     return a
@@ -123,18 +145,25 @@ def depth(L,d):
 
 Exact=np.array([])
 for k in range(len(phi)-1):
-    a=deltaphi[k]
-    angle =quad(solidangle,phi[k],phi[k+1])
+    # a=deltaphi[k]
+    # angle = quad(solidangle,np.arctan2(L1[k],(22.5+1.4)),np.arctan2(L1[k],(22.5-1.4)))
+    theta_up = np.arctan2(L1[k],(22.5+1.4))
+    theta_down = np.arctan2(L1[k],(22.5-1.4))
+    deltatheta = abs(theta_up-theta_down)
     d=15
-    detector =quad(depth,L1[k],L1[k]+2.8,args=(d))
-    Prob = (1/(4*np.pi))*-1*angle[0]*detector[0]
+    totalR = np.sqrt(L1[k]*L1[k]+22.5*22.5)
+    if np.isnan(L1[k]):
+        Probestimate = 0
+    else:
+        detector =quad(depth,totalR-1.4,totalR+1.4,args=(d))
+        Prob = (1/(2*np.pi))*deltatheta*detector[0]
     Exact=np.append(Exact,Prob)
 #print(Estimate)
-plt.figure(figsize=(10, 4))
+# plt.figure(figsize=(10, 4))
 plt.plot(phi[:-1],Exact, color='Red')
-plt.xlabel('Phi (degrees)')
-plt.ylabel('Probability')
-plt.title('Probability d=15')
-plt.grid(True)
-plt.tight_layout()
+# plt.xlabel('Phi (degrees)')
+# plt.ylabel('Probability')
+# plt.title('Probability d=15')
+# plt.grid(True)
+# plt.tight_layout()
 plt.show()
