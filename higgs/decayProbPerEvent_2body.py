@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.integrate import quad
 
-from gargoyle_geometry import (
+from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
     calculate_decay_length, cache_geometry, mesh_fiducial,
 )
@@ -14,9 +14,15 @@ M_ELECTRON = 0.000511  # GeV/c²
 # Analysis cuts
 P_CUT   = 0.600    # GeV/c — minimum electron momentum
 SEP_MIN = 0.001    # m — minimum separation at detector (1 mm)
-SEP_MAX = 1.0      # m — maximum separation at detector (10 cm)
+SEP_MAX = 10.0      # m — maximum separation at detector
+DCA_CUT = 0.1  # m (1 cm) — maximum DCA between reconstructed tracks
 
-outString = "1GeV"
+outString = "15GeV"
+sample_csv = "LLP40GeV.csv"
+
+# Tracking resolution
+HIT_RESOLUTION = 0.003  # m (1 mm per layer)
+N_LAYERS       = 2       # number of tracking layers (stations)
 
 # ============================================================
 # Two-body decay acceptance (analytical)
@@ -261,35 +267,40 @@ def analyze_decay_vs_lifetime(csv_file, geo_cache, lifetime_range,
 
 
 def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
-                       rng_seed=42):
+                       rng_seed=42, hit_resolution=HIT_RESOLUTION,
+                       n_layers=N_LAYERS):
     """
     Monte Carlo sample decay positions and rest-frame angles to build
-    a distribution of electron-pair separations at the detector.
-    
+    distributions of electron-pair separations, pointing angles, and DCA.
+
     For each particle that hits the fiducial volume:
       1. Sample decay position d from (1/λ) exp(-d/λ) within [entry, exit]
-         using inverse CDF sampling
-      2. Sample |cosθ*| uniformly in [0, β] (forward requirement)
-      3. Compute opening angle θ_12 from cos(θ_12) = 1 - 2/(γ²(1-β²cos²θ*))
-      4. Compute separation = θ_12 × d_remaining
-    
-    Each sample is weighted by the exponential decay probability so the
-    histogram represents the physical separation distribution.
-    
+      2. Sample |cosθ*| uniformly in [0, 1]
+      3. Compute lab-frame electron angles from boost kinematics
+      4. Place true hits at inner/outer tracking layers (separated by
+         DETECTOR_THICKNESS), then smear by hit_resolution
+      5. Reconstruct tracks from smeared hits → separation, pointing, DCA
+      6. Check that reconstructed vertex (PCA) is inside the fiducial volume
+
+    Set hit_resolution=0 to recover truth-level distributions (DCA=0).
+
     Returns:
-        separations: array of separation values (m)
-        weights: array of per-sample weights (decay probability contribution)
-        momenta: array of parent LLP momentum for each sample
+        separations, weights, momenta, pointing_angles, p_soft, dca,
+        vtx_in_fiducial  (all 1-D arrays of the same length)
     """
     rng = np.random.default_rng(rng_seed)
-    
+
     hits = geo_cache['hits']
     hit_idx = np.where(hits)[0]
-    
+
     all_seps = []
     all_weights = []
     all_momenta = []
-    
+    all_pointing = []
+    all_p_soft = []
+    all_dca = []
+    all_vtx_in = []
+
     for idx in hit_idx:
         entry = geo_cache['entry_d'][idx]
         exit_ = geo_cache['exit_d'][idx]
@@ -297,54 +308,208 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         beta = geo_cache['beta'][idx]
         mass = geo_cache['mass'][idx]
         p_llp = geo_cache['momentum'][idx]
-        
+        N = n_samples_per_particle
+
         decay_length = calculate_decay_length(p_llp, mass, lifetime_seconds)
         path_length = exit_ - entry
-        
+
         # Inverse CDF sampling of decay position within [entry, exit]
-        u = rng.uniform(0, 1, n_samples_per_particle)
+        u = rng.uniform(0, 1, N)
         exp_entry = np.exp(-entry / decay_length)
         exp_exit = np.exp(-exit_ / decay_length)
         denom = exp_entry - exp_exit
         if denom < 1e-300:
-            continue  # Negligible decay probability
-        
+            continue
+
         d_samples = -decay_length * np.log(exp_entry - u * denom)
-        d_remaining = exit_ - d_samples
-        
-        # Weight: overall probability that the particle decays in the fiducial volume
+        D = exit_ - d_samples  # distance from vertex to inner tracking layer
+
         p_decay = exp_entry * (1 - np.exp(-path_length / decay_length))
-        w = p_decay / n_samples_per_particle
-        
-        # Sample |cosθ*| uniformly in [0, 1]
-        cos_theta_star = rng.uniform(0, 1, n_samples_per_particle)
-        
-        # Compute opening angle
-        denom_angle = gamma**2 * (1 - beta**2 * cos_theta_star**2)
-        cos_theta_12 = 1 - 2.0 / denom_angle
-        cos_theta_12 = np.clip(cos_theta_12, -1, 1)
-        theta_12 = np.arccos(cos_theta_12)
-        
-        # Separation at detector
-        sep = theta_12 * d_remaining
-        
+        w = p_decay / N
+
+        # Sample rest-frame decay angle
+        cos_theta_star = rng.uniform(0, 1, N)
+        sin_theta_star = np.sqrt(1 - cos_theta_star**2)
+
+        # Softer electron momentum (truth, not affected by resolution)
+        p_soft = gamma * mass / 2 * (1 - beta * cos_theta_star)
+
+        # Lab-frame angles from LLP direction (small-angle regime)
+        # e1 (harder): tanα₁ = sinθ* / γ(cosθ*+β)
+        # e2 (softer): tanα₂ = sinθ* / γ(β-cosθ*)  — opposite side of LLP axis
+        tan_a1 = sin_theta_star / (gamma * (cos_theta_star + beta))
+        tan_a2 = sin_theta_star / (gamma * (beta - cos_theta_star))
+
+        L = DETECTOR_THICKNESS
+
+        # ---- 3D reconstruction in local frame ----
+        # Origin = true vertex, ẑ = LLP direction, x̂ = decay plane
+        # True hit positions at inner (z=D) and outer (z=D+L) tracking layers
+        x1_in_true  = D * tan_a1
+        x2_in_true  = -D * tan_a2
+        x1_out_true = (D + L) * tan_a1
+        x2_out_true = -(D + L) * tan_a2
+        # y = 0 for both (in the decay plane)
+
+        if hit_resolution > 0:
+            noise = rng.normal(0, hit_resolution, (8, N))
+            x1_in  = x1_in_true  + noise[0]
+            y1_in  = noise[1]
+            x1_out = x1_out_true + noise[2]
+            y1_out = noise[3]
+            x2_in  = x2_in_true  + noise[4]
+            y2_in  = noise[5]
+            x2_out = x2_out_true + noise[6]
+            y2_out = noise[7]
+        else:
+            x1_in  = x1_in_true;  y1_in  = np.zeros(N)
+            x1_out = x1_out_true; y1_out = np.zeros(N)
+            x2_in  = x2_in_true;  y2_in  = np.zeros(N)
+            x2_out = x2_out_true; y2_out = np.zeros(N)
+
+        # Reconstructed track directions (unnormalised)
+        dx1 = x1_out - x1_in;  dy1 = y1_out - y1_in   # dz = L
+        dx2 = x2_out - x2_in;  dy2 = y2_out - y2_in
+
+        # --- Separation at inner tracking layer ---
+        sep = np.sqrt((x1_in - x2_in)**2 + (y1_in - y2_in)**2)
+
+        # --- Pointing angle (bisector vs ẑ = LLP direction) ---
+        mag1 = np.sqrt(dx1**2 + dy1**2 + L**2)
+        mag2 = np.sqrt(dx2**2 + dy2**2 + L**2)
+        bx = dx1 / mag1 + dx2 / mag2
+        by = dy1 / mag1 + dy2 / mag2
+        bz = L / mag1 + L / mag2
+        bmag = np.sqrt(bx**2 + by**2 + bz**2)
+        pointing = np.arccos(np.clip(bz / bmag, -1, 1))
+
+        # --- DCA between reconstructed tracks ---
+        # Lines: P_i + t_i * d_i, with P_i at inner-layer hits (z = D)
+        # Cross product n = d1 × d2
+        nx = dy1 * L - L * dy2
+        ny = L * dx2 - dx1 * L
+        nz = dx1 * dy2 - dy1 * dx2
+        n_mag = np.sqrt(nx**2 + ny**2 + nz**2)
+
+        wx = x1_in - x2_in
+        wy = y1_in - y2_in
+        # wz = 0 (both at z = D)
+
+        dca = np.where(n_mag > 1e-30,
+                       np.abs(wx * nx + wy * ny) / n_mag,
+                       np.sqrt(wx**2 + wy**2))
+
+        # --- PCA (point of closest approach) → reconstructed vertex ---
+        a_coeff = dx1**2 + dy1**2 + L**2
+        b_coeff = dx1 * dx2 + dy1 * dy2 + L**2
+        c_coeff = dx2**2 + dy2**2 + L**2
+        d_coeff = dx1 * wx + dy1 * wy
+        e_coeff = dx2 * wx + dy2 * wy
+        det = a_coeff * c_coeff - b_coeff**2
+        det_safe = np.where(np.abs(det) < 1e-30, 1e-30, det)
+        t1 = (b_coeff * e_coeff - c_coeff * d_coeff) / det_safe
+        t2 = (a_coeff * e_coeff - b_coeff * d_coeff) / det_safe
+
+        # PCA midpoint z in local frame (vertex at z=0)
+        pca_z = D + 0.5 * (t1 + t2) * L
+
+        # Reconstructed vertex distance from IP along LLP direction
+        d_vtx = d_samples + pca_z
+        vtx_in = (d_vtx > entry) & (d_vtx < exit_)
+
         all_seps.append(sep)
-        all_weights.append(np.full(n_samples_per_particle, w))
-        all_momenta.append(np.full(n_samples_per_particle, p_llp))
-    
+        all_weights.append(np.full(N, w))
+        all_momenta.append(np.full(N, p_llp))
+        all_pointing.append(pointing)
+        all_p_soft.append(p_soft)
+        all_dca.append(dca)
+        all_vtx_in.append(vtx_in)
+
     if not all_seps:
-        return np.array([]), np.array([]), np.array([])
-    
+        empty = np.array([])
+        return empty, empty, empty, empty, empty, empty, np.array([], dtype=bool)
+
     return (np.concatenate(all_seps),
             np.concatenate(all_weights),
-            np.concatenate(all_momenta))
+            np.concatenate(all_momenta),
+            np.concatenate(all_pointing),
+            np.concatenate(all_p_soft),
+            np.concatenate(all_dca),
+            np.concatenate(all_vtx_in))
+
+
+
+
+def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
+                  p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
+                  dca_cut=DCA_CUT, pointing_cut=None):
+    """
+    Apply signal selection cuts sequentially and return a cutflow table.
+
+    Parameters
+    ----------
+    dca_cut : float
+        Maximum DCA between reconstructed tracks (m).
+    pointing_cut : float or None
+        Maximum pointing angle (rad). If None, no pointing cut is applied.
+
+    Returns
+    -------
+    cutflow : list of dicts with keys 'cut', 'efficiency',
+              'marginal_efficiency', 'weighted_yield'
+    """
+    total_w = weights.sum()
+    if total_w == 0:
+        return []
+
+    mask = np.ones(len(seps), dtype=bool)
+    rows = []
+
+    def add_row(name, m):
+        w = weights[m].sum()
+        prev_w = weights[prev_mask].sum()
+        rows.append({
+            'cut': name,
+            'weighted_yield': w,
+            'efficiency': w / total_w,
+            'marginal_efficiency': w / prev_w if prev_w > 0 else 0,
+        })
+
+    prev_mask = mask.copy()
+    add_row('Decay in fiducial', mask)
+
+    prev_mask = mask.copy()
+    mask = mask & (p_soft >= p_cut)
+    add_row(f'p_soft > {p_cut*1000:.0f} MeV/c', mask)
+
+    prev_mask = mask.copy()
+    mask = mask & (seps >= sep_min)
+    add_row(f'sep > {sep_min*1000:.0f} mm', mask)
+
+    prev_mask = mask.copy()
+    mask = mask & (seps <= sep_max)
+    add_row(f'sep < {sep_max*100:.0f} cm', mask)
+
+    prev_mask = mask.copy()
+    mask = mask & (dca <= dca_cut)
+    add_row(f'DCA < {dca_cut*100:.1f} cm', mask)
+
+    prev_mask = mask.copy()
+    mask = mask & vtx_in
+    add_row('Vertex in fiducial', mask)
+
+    if pointing_cut is not None:
+        prev_mask = mask.copy()
+        mask = mask & (pointing <= pointing_cut)
+        add_row(f'pointing < {pointing_cut*1000:.1f} mrad', mask)
+
+    return rows
 
 
 # ============================================================
 # Main
 # ============================================================
 if __name__ == "__main__":
-    sample_csv = "LLPSmall.csv"
     origin = [0, 0, 0]
     
     print(f"  Detector thickness: {DETECTOR_THICKNESS*100:.0f} cm")
@@ -405,8 +570,11 @@ if __name__ == "__main__":
     print("SEPARATION DISTRIBUTION")
     print("="*50)
     
-    seps, weights, momenta = sample_separations(
+    seps, weights, momenta, pointing, p_soft, dca, vtx_in = sample_separations(
         geo_cache, lifetime, n_samples_per_particle=200)
+
+    print(f"  Hit resolution: {HIT_RESOLUTION*1000:.1f} mm, "
+          f"N layers: {N_LAYERS}, DCA cut: {DCA_CUT*100:.1f} cm")
     
     if len(seps) > 0:
         fig_sep, axes_sep = plt.subplots(1, 3, figsize=(18, 5))
@@ -470,12 +638,184 @@ if __name__ == "__main__":
         if len(accepted_seps) > 0:
             print(f"  Median separation (accepted):  {np.median(accepted_seps)*100:.1f} cm")
 
+    # --- Pointing angle distribution ---
+    if len(pointing) > 0:
+        print("\n" + "="*50)
+        print("POINTING ANGLE DISTRIBUTION")
+        print("="*50)
+
+        # Apply separation acceptance to pointing angles
+        in_window = (seps >= SEP_MIN) & (seps <= SEP_MAX)
+        pointing_acc = pointing[in_window]
+        weights_acc = weights[in_window]
+        momenta_acc = momenta[in_window]
+
+        pointing_mrad = pointing_acc * 1000
+
+        fig_pt, axes_pt = plt.subplots(1, 3, figsize=(18, 5))
+
+        ax = axes_pt[0]
+        bins_pt = np.linspace(0, np.percentile(pointing_mrad, 99.5), 80)
+        ax.hist(pointing_mrad, bins=bins_pt, weights=weights_acc,
+                color='darkorange', edgecolor='black', linewidth=0.3, alpha=0.8)
+        ax.set_xlabel('Pointing angle (mrad)')
+        ax.set_ylabel('Weighted counts (decay prob.)')
+        ax.set_title(f'Pointing angle: bisector vs LLP direction\n'
+                     f'(τ = {lifetime*1e9:.0f} ns, accepted decays)')
+        median_pt = np.median(pointing_mrad)
+        ax.axvline(median_pt, color='red', linestyle='--', linewidth=2,
+                   label=f'Median = {median_pt:.2f} mrad')
+        ax.legend(fontsize=9)
+
+        ax2 = axes_pt[1]
+        bins_log_pt = np.logspace(np.log10(max(pointing_mrad.min(), 1e-3)),
+                                  np.log10(pointing_mrad.max()), 80)
+        ax2.hist(pointing_mrad, bins=bins_log_pt, weights=weights_acc,
+                 color='darkorange', edgecolor='black', linewidth=0.3, alpha=0.8)
+        ax2.set_xscale('log')
+        ax2.set_xlabel('Pointing angle (mrad)')
+        ax2.set_ylabel('Weighted counts (decay prob.)')
+        ax2.set_title('Log-scale pointing angle')
+
+        ax3 = axes_pt[2]
+        mask_fin = np.isfinite(pointing_mrad) & (pointing_mrad > 0)
+        h = ax3.hist2d(momenta_acc[mask_fin], pointing_mrad[mask_fin],
+                       bins=[np.linspace(0, 500, 50),
+                             np.linspace(0, np.percentile(pointing_mrad, 99), 50)],
+                       weights=weights_acc[mask_fin],
+                       cmap='viridis', cmin=1e-20)
+        ax3.set_xlabel('LLP momentum (GeV/c)')
+        ax3.set_ylabel('Pointing angle (mrad)')
+        ax3.set_title('Pointing angle vs LLP momentum')
+        plt.colorbar(h[3], ax=ax3, label='Weighted counts')
+
+        plt.tight_layout()
+        plt.savefig('pointing_angle'+outString+'.png', dpi=150)
+        plt.show()
+
+        print(f"  Median pointing angle (accepted): {median_pt:.3f} mrad")
+        p90 = np.percentile(pointing_mrad, 90)
+        p99 = np.percentile(pointing_mrad, 99)
+        print(f"  90th percentile: {p90:.3f} mrad")
+        print(f"  99th percentile: {p99:.3f} mrad")
+
+        # Convert to spatial resolution at the IP distance
+        mean_entry = np.nanmean(geo_cache['entry_d'][geo_cache['hits']])
+        print(f"  At mean entry distance ({mean_entry:.0f} m):")
+        print(f"    Median miss distance: {median_pt * mean_entry:.1f} mm")
+        print(f"    90th pct miss distance: {p90 * mean_entry:.1f} mm")
+
+    # --- DCA distribution ---
+    if len(dca) > 0:
+        print("\n" + "="*50)
+        print("DCA DISTRIBUTION")
+        print("="*50)
+
+        in_window = (seps >= SEP_MIN) & (seps <= SEP_MAX)
+        dca_acc = dca[in_window]
+        weights_dca = weights[in_window]
+        momenta_dca = momenta[in_window]
+
+        dca_cm = dca_acc * 100
+
+        fig_dca, axes_dca = plt.subplots(1, 3, figsize=(18, 5))
+
+        ax = axes_dca[0]
+        pct99 = np.percentile(dca_cm, 99.5) if len(dca_cm) > 0 else 10
+        bins_dca = np.linspace(0, max(pct99, DCA_CUT * 100 * 2), 80)
+        ax.hist(dca_cm, bins=bins_dca, weights=weights_dca,
+                color='seagreen', edgecolor='black', linewidth=0.3, alpha=0.8)
+        ax.axvline(DCA_CUT * 100, color='red', linestyle='--', linewidth=2,
+                   label=f'DCA cut = {DCA_CUT*100:.1f} cm')
+        ax.set_xlabel('DCA (cm)')
+        ax.set_ylabel('Weighted counts (decay prob.)')
+        ax.set_title(f'Track DCA (τ = {lifetime*1e9:.0f} ns, '
+                     f'σ_hit = {HIT_RESOLUTION*1000:.1f} mm)')
+        ax.legend(fontsize=9)
+
+        ax2 = axes_dca[1]
+        bins_log_dca = np.logspace(np.log10(max(dca_cm[dca_cm > 0].min(), 1e-4))
+                                   if np.any(dca_cm > 0) else -4,
+                                   np.log10(max(dca_cm.max(), 1)), 80)
+        ax2.hist(dca_cm, bins=bins_log_dca, weights=weights_dca,
+                 color='seagreen', edgecolor='black', linewidth=0.3, alpha=0.8)
+        ax2.axvline(DCA_CUT * 100, color='red', linestyle='--', linewidth=2,
+                    label=f'DCA cut = {DCA_CUT*100:.1f} cm')
+        ax2.set_xscale('log')
+        ax2.set_xlabel('DCA (cm)')
+        ax2.set_ylabel('Weighted counts (decay prob.)')
+        ax2.set_title('DCA (log scale)')
+        ax2.legend(fontsize=9)
+
+        ax3 = axes_dca[2]
+        mask_fin = np.isfinite(dca_cm) & (dca_cm > 0)
+        if np.any(mask_fin):
+            h = ax3.hist2d(momenta_dca[mask_fin], dca_cm[mask_fin],
+                           bins=[np.linspace(0, 500, 50),
+                                 np.linspace(0, max(pct99, DCA_CUT * 100 * 2), 50)],
+                           weights=weights_dca[mask_fin],
+                           cmap='viridis', cmin=1e-20)
+            ax3.axhline(DCA_CUT * 100, color='red', linestyle='--', linewidth=2,
+                        label=f'DCA cut = {DCA_CUT*100:.1f} cm')
+            ax3.set_xlabel('LLP momentum (GeV/c)')
+            ax3.set_ylabel('DCA (cm)')
+            ax3.set_title('DCA vs LLP momentum')
+            ax3.legend(fontsize=9, loc='upper right')
+            plt.colorbar(h[3], ax=ax3, label='Weighted counts')
+
+        plt.tight_layout()
+        plt.savefig('dca_' + outString + '.png', dpi=150)
+        plt.show()
+
+        median_dca = np.median(dca_cm)
+        w_total = weights_dca.sum()
+        frac_dca = weights_dca[dca_acc <= DCA_CUT].sum() / w_total \
+            if w_total > 0 else 0
+        vtx_in_acc = vtx_in[in_window]
+        frac_vtx = weights_dca[vtx_in_acc].sum() / w_total \
+            if w_total > 0 else 0
+        print(f"  Median DCA: {median_dca:.4f} cm")
+        print(f"  Fraction passing DCA < {DCA_CUT*100:.1f} cm: {frac_dca:.4f}")
+        print(f"  Fraction with vertex in fiducial: {frac_vtx:.4f}")
+        print(f"  (fractions above computed after separation cuts)")
+
+    # --- Cutflow table ---
+    if len(seps) > 0:
+        print("\n" + "="*50)
+        print("CUTFLOW TABLE")
+        print("="*50)
+
+        cutflow = build_cutflow(seps, pointing, weights, momenta, p_soft,
+                                dca, vtx_in)
+        cutflow_df = pd.DataFrame(cutflow)
+        print(f"\n{'Cut':<25} {'Eff (cumul.)':<15} {'Eff (margin.)':<15}")
+        print("-" * 55)
+        for row in cutflow:
+            print(f"{row['cut']:<25} {row['efficiency']:<15.4f} "
+                  f"{row['marginal_efficiency']:<15.4f}")
+
+        cutflow_df.to_csv('cutflow_' + outString + '.csv', index=False)
+        print(f"\nCutflow saved to cutflow_{outString}.csv")
+
+    # --- Save MC distributions for overlay plotting ---
+    if len(seps) > 0:
+        np.savez('mc_distributions_' + outString + '.npz',
+                 seps=seps, pointing=pointing, weights=weights,
+                 momenta=momenta, p_soft=p_soft,
+                 dca=dca, vtx_in=vtx_in,
+                 lifetime=lifetime, label=outString,
+                 p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
+                 dca_cut=DCA_CUT,
+                 hit_resolution=HIT_RESOLUTION, n_layers=N_LAYERS)
+        print(f"MC distributions saved to mc_distributions_{outString}.npz")
+
     # Lifetime scan
     print("\n" + "="*50)
     print("LIFETIME SCAN")
     print("="*50)
     
-    lifetimes = np.logspace(-9.5, -4.5, 20)
+    lifetimes = np.logspace(-10.5, -3.5, 20)
+    exit()
     scan = analyze_decay_vs_lifetime(sample_csv, geo_cache, lifetimes)
     
     # === Plotting ===
@@ -524,24 +864,31 @@ if __name__ == "__main__":
     ax4.grid(True, which="both", ls="-", alpha=0.2)
     
     ext = {}
-    ext["MATHUSLA"] = np.loadtxt("external/MATHUSLA.csv", delimiter=",")
-    ext["CODEX"] = np.loadtxt("external/CODEX.csv", delimiter=",")
-    ext["ANUBIS"] = np.loadtxt("external/ANUBIS.csv", delimiter=",")
-    ext["ANUBISOpt"] = np.loadtxt("external/ANUBISOpt.csv", delimiter=",")
-    ext["ANUBISCons"] = np.loadtxt("external/ANUBISUpdateCons.csv", delimiter=",")
+    if df_results['mass'].iloc[0] == 15:
+        ext["MATHUSLA"] = np.loadtxt("external/MATHUSLA.csv", delimiter=",")
+        ext["CODEX"] = np.loadtxt("external/CODEX.csv", delimiter=",")
+        ext["ANUBIS"] = np.loadtxt("external/ANUBIS.csv", delimiter=",")
+        ext["ANUBISOpt"] = np.loadtxt("external/ANUBISOpt.csv", delimiter=",")
+        ext["ANUBISCons"] = np.loadtxt("external/ANUBISUpdateCons.csv", delimiter=",")
     
-    ax4.loglog(ext["MATHUSLA"][:, 0], ext["MATHUSLA"][:, 1],
-               color="green", linewidth=2, label="MATHUSLA")
-    ax4.loglog(ext["CODEX"][:, 0], ext["CODEX"][:, 1],
-               color="cyan", linewidth=2, label="CODEX-b")
-    ax4.loglog(ext["ANUBIS"][:, 0], ext["ANUBIS"][:, 1],
-               color="purple", linewidth=2, label="ANUBIS")
-    ax4.loglog(ext["ANUBISOpt"][:, 0], ext["ANUBISOpt"][:, 1],
-               color="purple", linewidth=2, linestyle="--", label="ANUBIS Opt")
-    ax4.loglog(ext["ANUBISCons"][:, 0], ext["ANUBISCons"][:, 1],
-               color="magenta", linewidth=2, linestyle="--", label="ANUBIS Cons")
-    ax4.legend(fontsize=8, loc='upper right')
+        ax4.loglog(ext["MATHUSLA"][:, 0], ext["MATHUSLA"][:, 1],
+                   color="green", linewidth=2, label="MATHUSLA")
+        ax4.loglog(ext["CODEX"][:, 0], ext["CODEX"][:, 1],
+                   color="cyan", linewidth=2, label="CODEX-b")
+        ax4.loglog(ext["ANUBIS"][:, 0], ext["ANUBIS"][:, 1],
+                   color="purple", linewidth=2, label="ANUBIS")
+        ax4.loglog(ext["ANUBISOpt"][:, 0], ext["ANUBISOpt"][:, 1],
+                   color="purple", linewidth=2, linestyle="--", label="ANUBIS Opt")
+        ax4.loglog(ext["ANUBISCons"][:, 0], ext["ANUBISCons"][:, 1],
+                   color="magenta", linewidth=2, linestyle="--", label="ANUBIS Cons")
+        ax4.legend(fontsize=8, loc='upper right')
+    elif df_results['mass'].iloc[0] == 0.5:
+        ext["CODEX"] = np.loadtxt("external/CODEX0p5.csv", delimiter=",")
     
+        ax4.loglog(ext["CODEX"][:, 0], ext["CODEX"][:, 1],
+                   color="cyan", linewidth=2, label="CODEX-b")
+        ax4.legend(fontsize=8, loc='upper right')
+        
     plt.tight_layout()
     plt.savefig('exclusion_2body'+outString+'.png', dpi=150)
     plt.show()
