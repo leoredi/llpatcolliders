@@ -21,7 +21,7 @@ outString = "15GeV"
 sample_csv = "LLPSmall.csv"
 
 # Tracking resolution
-HIT_RESOLUTION = 0.01  # m (3 mm per layer)
+HIT_RESOLUTION = 0.003  # m (3 mm per layer)
 N_LAYERS       = 2       # number of tracking layers (stations)
 
 # ============================================================
