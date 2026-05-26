@@ -89,7 +89,7 @@ ax1.text(origin[0], origin[2]+arrow, origin[1], 'Z (beam)', fontsize=10)
 ax1.set_xlabel('X (m)')
 ax1.set_ylabel('Z (beam, m)')
 ax1.set_zlabel('Y (up, m)')
-ax1.set_title('3D Tunnel Mesh')
+ax1.set_title('3D Active Decay Volume (inner tracker boundary)')
 ax1.legend(fontsize=8)
 
 # ── Panel 2: Top view (X-Z plane, bird's eye) ───────────────────────
@@ -150,63 +150,115 @@ ax3.legend(fontsize=8)
 ax3.set_ylim(-5, Y_POSITION + 10)
 
 # ── Panel 4: Cross-section view ─────────────────────────────────────
+#
+# Geometry: two tracker layers (separated by DETECTOR_THICKNESS) on the
+# walls + ceiling, veto scintillator on the floor. The ACTIVE DECAY
+# VOLUME is the air interior bounded by the inner tracker layer (top
+# and sides) and the floor scintillator (bottom).
+#
+# Visualization layers (from outside in):
+#   blue solid line     — outer tracker layer (at tunnel wall)
+#   blue dashed line    — inner tracker layer (24 cm inside outer)
+#   blue hatched band   — tracker shell between the two layers
+#   red filled region   — active decay volume (interior)
+#   green strip on y=0  — veto scintillator on the floor
+#
+# Note: mesh_fiducial is built from the inner-tracker profile and the
+# tunnel floor, so its volume IS the active decay volume — NOT the
+# tracker shell.
 
 ax4 = fig.add_subplot(224)
 
-# Outer tunnel wall and fiducial inset
 outer = tunnel_profile_points(inset=0)
 inner = tunnel_profile_points(inset=DETECTOR_THICKNESS)
 outer_closed = np.vstack([outer, outer[0]])
 inner_closed = np.vstack([inner, inner[0]])
 
-ax4.plot(outer_closed[:, 0], outer_closed[:, 1], 'b-', linewidth=2,
-         label='Tunnel wall')
-ax4.plot(inner_closed[:, 0], inner_closed[:, 1], 'r--', linewidth=2,
-         label=f'Fiducial (inset {DETECTOR_THICKNESS*100:.0f} cm)')
-ax4.fill(outer_closed[:, 0], outer_closed[:, 1], alpha=0.08, color='blue')
-ax4.fill(inner_closed[:, 0], inner_closed[:, 1], alpha=0.12, color='red')
+# Active decay volume (interior of inner tracker layer + floor)
+ax4.fill(inner_closed[:, 0], inner_closed[:, 1], alpha=0.35, color='red',
+         label='Active decay volume')
 
-# Surface labels
-ax4.text(0, outer[:, 1].min() - 0.25, 'Floor', ha='center', fontsize=9)
-ax4.text(outer[:, 0].max() + 0.15, 0, 'Right\nWall', ha='left',
-         va='center', fontsize=9)
-ax4.text(outer[:, 0].min() - 0.15, 0, 'Left\nWall', ha='right',
-         va='center', fontsize=9)
-ax4.text(0, outer[:, 1].max() + 0.15, 'Arch / Ceiling', ha='center',
-         fontsize=9)
+# Tracker shell (between outer and inner layers) drawn as a hatched ring
+shell_x = np.concatenate([outer_closed[:, 0], inner_closed[::-1, 0]])
+shell_y = np.concatenate([outer_closed[:, 1], inner_closed[::-1, 1]])
+ax4.fill(shell_x, shell_y, facecolor='none', edgecolor='steelblue',
+         hatch='///', linewidth=0, alpha=0.7,
+         label=f'Tracker shell ({DETECTOR_THICKNESS*100:.0f} cm, 2 layers)')
 
-# Dimension annotations
+# The two tracker-layer outlines
+ax4.plot(outer_closed[:, 0], outer_closed[:, 1], '-', color='navy',
+         linewidth=2, label='Outer tracker layer (at wall)')
+ax4.plot(inner_closed[:, 0], inner_closed[:, 1], '--', color='navy',
+         linewidth=1.5, label='Inner tracker layer')
+
+# Veto scintillator: a thin band sitting just below the floor of the
+# active volume (full tunnel width at y = floor)
+floor_y = outer[:, 1].min()
+scint_thick = 0.08
+ax4.fill_between([-TUNNEL_ALPHA / 2, TUNNEL_ALPHA / 2],
+                 floor_y - scint_thick, floor_y,
+                 color='green', alpha=0.6, label='Veto scintillator (floor)')
+
+# Dimension annotations (kept; surface labels removed to avoid clutter
+# now that everything is named in the legend)
 half_w = TUNNEL_ALPHA / 2
 bot_y = outer[:, 1].min()
 top_y = outer[:, 1].max()
-ax4.annotate('', xy=(half_w, bot_y - 0.35), xytext=(-half_w, bot_y - 0.35),
+
+# Horizontal: floor width (placed below the scintillator)
+ax4.annotate('', xy=(half_w, bot_y - 0.45), xytext=(-half_w, bot_y - 0.45),
              arrowprops=dict(arrowstyle='<->', color='gray'))
-ax4.text(0, bot_y - 0.55, f'{TUNNEL_ALPHA:.2f} m', ha='center', fontsize=8,
+ax4.text(0, bot_y - 0.70, f'{TUNNEL_ALPHA:.2f} m', ha='center', fontsize=8,
          color='gray')
-ax4.annotate('', xy=(half_w + 0.35, top_y), xytext=(half_w + 0.35, bot_y),
+
+# Vertical: total height (placed well outside the right wall labels)
+dim_x = half_w + 0.55
+ax4.annotate('', xy=(dim_x, top_y), xytext=(dim_x, bot_y),
              arrowprops=dict(arrowstyle='<->', color='gray'))
-ax4.text(half_w + 0.55, (top_y + bot_y) / 2, f'{TUNNEL_BETA:.2f} m',
+ax4.text(dim_x + 0.18, (top_y + bot_y) / 2, f'{TUNNEL_BETA:.2f} m',
          ha='left', fontsize=8, color='gray', rotation=90, va='center')
+
+# Leave extra room above so the legend doesn't sit on the arch
+ax4.set_xlim(-half_w - 1.1, half_w + 1.4)
+ax4.set_ylim(bot_y - 0.95, top_y + 0.4)
 
 ax4.set_xlabel('Transverse X (m)')
 ax4.set_ylabel('Vertical Y (m)')
-ax4.set_title('Cross-Section (Arch-on-Wall)')
+ax4.set_title('Cross-Section — tracker shell, active volume, floor veto')
 ax4.grid(True, alpha=0.3)
-ax4.axis('equal')
-ax4.legend(fontsize=8)
+ax4.set_aspect('equal', adjustable='box')
+ax4.legend(fontsize=7, loc='upper center', bbox_to_anchor=(0.5, -0.18),
+           ncol=2, frameon=True, framealpha=0.95)
 
-fig.suptitle('GRENDEL Tunnel Geometry', fontsize=14, y=1.01)
+fig.suptitle('GRENDEL Tunnel Geometry — active decay volume bounded by '
+             'inner tracker layer (walls/arch) and floor veto',
+             fontsize=13, y=1.01)
 plt.tight_layout()
+fig.savefig('tunnel_4panel.png', dpi=120, bbox_inches='tight')
 
 # ── Print statistics ─────────────────────────────────────────────────
 
 centreline_len = np.sum(np.linalg.norm(np.diff(path, axis=0), axis=1))
+
+# Tunnel envelope (full cross-section) for shell-volume bookkeeping
+import trimesh  # noqa: E402  (local — only used here)
+verts_outer_mesh, faces_outer_mesh = create_profile_mesh(
+    path_3d_fiducial, tunnel_profile_points(inset=0))
+mesh_tunnel = trimesh.Trimesh(vertices=verts_outer_mesh,
+                              faces=faces_outer_mesh)
+mesh_tunnel.fix_normals()  # see grendel_geometry.build_fiducial_mesh
+shell_volume = mesh_tunnel.volume - mesh_fiducial.volume
+
 print("\nTunnel statistics:")
-print(f"  Centreline length: {centreline_len:.1f} m")
-print(f"  Fiducial volume:   {mesh_fiducial.volume:.1f} m^3")
-print(f"  Surface area:      {mesh_fiducial.area:.1f} m^2")
-print(f"  Y offset (height): {Y_POSITION} m")
-print(f"  Cross-section:     {TUNNEL_ALPHA:.2f} x {TUNNEL_BETA:.2f} m "
+print(f"  Centreline length:           {centreline_len:.1f} m")
+print(f"  Active decay volume:         {mesh_fiducial.volume:.1f} m^3 "
+      f"(between inner tracker and floor)")
+print(f"  Tracker shell volume:        {shell_volume:.1f} m^3 "
+      f"(between the two tracker layers, {DETECTOR_THICKNESS*100:.0f} cm)")
+print(f"  Tunnel envelope volume:      {mesh_tunnel.volume:.1f} m^3")
+print(f"  Active-volume surface area:  {mesh_fiducial.area:.1f} m^2")
+print(f"  Y offset (height):           {Y_POSITION} m")
+print(f"  Cross-section:               {TUNNEL_ALPHA:.2f} x {TUNNEL_BETA:.2f} m "
       f"(wall {TUNNEL_WALL_HEIGHT:.2f} m + arch {TUNNEL_DELTA:.2f} m)")
 
 # ── Interactive 3D figure ────────────────────────────────────────────
@@ -253,7 +305,8 @@ ax.text(origin[0], origin[2]+axis_len, origin[1], 'Z (beam)', fontsize=12)
 ax.set_xlabel('X (m)', fontsize=10)
 ax.set_ylabel('Z (beam, m)', fontsize=10)
 ax.set_zlabel('Y (up, m)', fontsize=10)
-ax.set_title('GRENDEL Tunnel — Interactive 3D (rotate with mouse)', fontsize=14)
+ax.set_title('GRENDEL Tunnel — Active Decay Volume (inner tracker layer extrusion)',
+             fontsize=13)
 ax.view_init(elev=20, azim=45)
 ax.set_box_aspect([1, 1, 0.5])
 ax.legend(fontsize=10)

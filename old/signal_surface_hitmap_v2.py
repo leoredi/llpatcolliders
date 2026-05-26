@@ -221,8 +221,8 @@ for x, y in correctedVert:
     correctedVertWithShift.append(
         ((x - 11908.8279764855) / 1000, (y + 13591.106147774964) / 1000))
 
-Z_POSITION = 22
-path_3d = np.array([[x, y, Z_POSITION] for x, y in correctedVertWithShift])
+Y_POSITION = 22
+path_3d = np.array([[x, Y_POSITION,z] for x, z in correctedVertWithShift])
 
 seg_lengths = np.array([np.linalg.norm(path_3d[i+1] - path_3d[i])
                          for i in range(len(path_3d)-1)])
@@ -374,7 +374,7 @@ def classify_exit_point(point, path_3d, cumulative_length):
             best_s = cumulative_length[i] + t
             tangent = seg_hat
             if abs(tangent[2]) < 0.9:
-                world_up = np.array([0., 0., 1.])
+                world_up = np.array([0., 1.,0.])
             else:
                 world_up = np.array([1., 0., 0.])
             right = np.cross(tangent, world_up)
