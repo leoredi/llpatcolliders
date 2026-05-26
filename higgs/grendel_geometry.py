@@ -1,8 +1,8 @@
 """
-GARGOYLE detector geometry module.
+GRENDEL detector geometry module.
 
 Provides the fiducial volume mesh and ray-casting utilities for the
-GARGOYLE tunnel detector above CMS IP5.
+GRENDEL tunnel detector above CMS IP5.
 
 Coordinate convention (CMS standard):
     X = horizontal transverse
@@ -306,7 +306,7 @@ Y_POSITION = 22  # m
 def build_fiducial_mesh(y_position=Y_POSITION,
                         detector_thickness=DETECTOR_THICKNESS):
     """
-    Construct the fiducial-volume trimesh for the GARGOYLE tunnel.
+    Construct the fiducial-volume trimesh for the GRENDEL tunnel.
 
     Parameters
     ----------
@@ -330,8 +330,10 @@ def build_fiducial_mesh(y_position=Y_POSITION,
                                     inset_floor=False)
     verts, faces = create_profile_mesh(path_3d, profile)
     mesh = trimesh.Trimesh(vertices=verts, faces=faces)
-    if mesh.volume < 0:
-        mesh.invert()
+    # The Frenet-frame extrusion in create_profile_mesh produces inconsistent
+    # face winding along curved sections; without fix_normals, mesh.volume
+    # collapses to roughly 1/3 of the true volume (signed integral cancels).
+    mesh.fix_normals()
 
     print(f"Fiducial volume built:")
     print(f"  Volume:    {mesh.volume:.1f} m³")
