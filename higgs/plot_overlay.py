@@ -178,8 +178,10 @@ def build_combined_cutflow(signals, output='overlay_cutflow.csv'):
         sep_min = float(sig.get('sep_min', 0.001))
         sep_max = float(sig.get('sep_max', 10.0))
         dca_cut = float(sig.get('dca_cut', 0.01))
-        theta_parallel = float(sig.get('theta_parallel', 0.050))
-        sep_out_max_parallel = float(sig.get('sep_out_max_parallel', 1.5))
+        theta_parallel = float(sig.get('theta_parallel', 0.100))
+        sep_out_max_parallel = float(sig.get('sep_out_max_parallel', 0.30))
+        collin_min = float(sig.get('collin_min', 0.030))
+        sep_out_collin_gate = float(sig.get('sep_out_collin_gate', 0.30))
 
         if 'open_angle' in sig.files:
             open_angle = sig['open_angle']
@@ -194,14 +196,23 @@ def build_combined_cutflow(signals, output='overlay_cutflow.csv'):
             sep_outer = np.full(len(sig['seps']),
                                 max(sep_min, 1e-3) * 10)
 
+        # Older npz files may lack collinearity — fall back to "always passes"
+        # (set well above the gate-conditional threshold)
+        if 'collinearity' in sig.files:
+            collinearity = sig['collinearity']
+        else:
+            collinearity = np.full(len(sig['seps']), 1.0)
+
         cutflow = build_cutflow(sig['seps'], sig['pointing'], sig['weights'],
                                 sig['momenta'], sig['p_soft'],
                                 sig['dca'], sig['vtx_in'],
-                                open_angle, sep_outer,
+                                open_angle, sep_outer, collinearity,
                                 p_cut=p_cut, sep_min=sep_min, sep_max=sep_max,
                                 dca_cut=dca_cut,
                                 theta_parallel=theta_parallel,
-                                sep_out_max_parallel=sep_out_max_parallel)
+                                sep_out_max_parallel=sep_out_max_parallel,
+                                collin_min=collin_min,
+                                sep_out_collin_gate=sep_out_collin_gate)
         for row in cutflow:
             row['signal'] = label
         rows.extend(cutflow)
