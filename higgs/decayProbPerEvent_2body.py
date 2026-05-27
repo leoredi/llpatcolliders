@@ -16,9 +16,20 @@ P_CUT   = 0.600    # GeV/c — minimum electron momentum
 SEP_MIN = 0.01    # m — minimum separation at detector (1 cm)
 SEP_MAX = 10.0      # m — maximum separation at detector
 DCA_CUT = 0.1  # m (10 cm) — maximum DCA between reconstructed tracks
+# Conditional max-sep_outer cut, motivated by the geometric statement that
+# a real vertex satisfies sep_outer = open_angle × (D + L) with D bounded
+# by the fiducial path length. For near-parallel tracks (open_angle at the
+# angular-resolution noise floor), the largest sep_outer a real vertex can
+# produce is ~θ_noise × max_path ≈ 30 mrad × 50 m ≈ 1.5 m. Above that,
+# we are looking at two physically separated parallel particles
+# (e.g., beam-halo or cosmic coincidences), not a vertex.
+# When open_angle is clearly above the noise floor (diverging tracks),
+# no upper bound on sep_outer is applied.
+THETA_PARALLEL      = 0.100  # rad (100 mrad — covers parallel + moderate-opening regime)
+SEP_OUT_MAX_PARALLEL = 0.30  # m — max sep_outer applied only when open_angle < THETA_PARALLEL
 
-outString = "15GeV"
-sample_csv = "LLPSmall.csv"
+outString = "0p5GeV"
+sample_csv = "LLP0p5GeVSmall.csv"
 
 # Tracking resolution
 HIT_RESOLUTION = 0.003  # m (3 mm per layer)
@@ -286,7 +297,8 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
 
     Returns:
         separations, weights, momenta, pointing_angles, p_soft, dca,
-        vtx_in_fiducial  (all 1-D arrays of the same length)
+        vtx_in_fiducial, open_angles, sep_outers, d_implieds
+        (all 1-D arrays of the same length)
     """
     rng = np.random.default_rng(rng_seed)
 
@@ -300,6 +312,9 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     all_p_soft = []
     all_dca = []
     all_vtx_in = []
+    all_open = []
+    all_sep_out = []
+    all_dimp = []
 
     for idx in hit_idx:
         entry = geo_cache['entry_d'][idx]
@@ -371,8 +386,9 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         dx1 = x1_out - x1_in;  dy1 = y1_out - y1_in   # dz = L
         dx2 = x2_out - x2_in;  dy2 = y2_out - y2_in
 
-        # --- Separation at inner tracking layer ---
-        sep = np.sqrt((x1_in - x2_in)**2 + (y1_in - y2_in)**2)
+        # --- Separation at inner and outer tracking layers ---
+        sep     = np.sqrt((x1_in  - x2_in )**2 + (y1_in  - y2_in )**2)
+        sep_out = np.sqrt((x1_out - x2_out)**2 + (y1_out - y2_out)**2)
 
         # --- Pointing angle (bisector vs ẑ = LLP direction) ---
         mag1 = np.sqrt(dx1**2 + dy1**2 + L**2)
@@ -382,6 +398,16 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         bz = L / mag1 + L / mag2
         bmag = np.sqrt(bx**2 + by**2 + bz**2)
         pointing = np.arccos(np.clip(bz / bmag, -1, 1))
+
+        # --- Opening angle between the two reconstructed tracks ---
+        cos_open = (dx1 * dx2 + dy1 * dy2 + L * L) / (mag1 * mag2)
+        open_angle = np.arccos(np.clip(cos_open, -1, 1))
+
+        # --- Implied vertex distance: d_implied = sep_inner / open_angle ---
+        # Geometric identity for two tracks emerging from a common point:
+        # sep_inner = open_angle × (vertex → inner-layer distance).
+        # Robust against the PCA-degeneracy that hits near-parallel tracks.
+        d_implied = np.where(open_angle > 1e-9, sep / open_angle, np.inf)
 
         # --- DCA between reconstructed tracks ---
         # Lines: P_i + t_i * d_i, with P_i at inner-layer hits (z = D)
@@ -424,10 +450,14 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         all_p_soft.append(p_soft)
         all_dca.append(dca)
         all_vtx_in.append(vtx_in)
+        all_open.append(open_angle)
+        all_sep_out.append(sep_out)
+        all_dimp.append(d_implied)
 
     if not all_seps:
         empty = np.array([])
-        return empty, empty, empty, empty, empty, empty, np.array([], dtype=bool)
+        return (empty, empty, empty, empty, empty, empty,
+                np.array([], dtype=bool), empty, empty, empty)
 
     return (np.concatenate(all_seps),
             np.concatenate(all_weights),
@@ -435,14 +465,20 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
             np.concatenate(all_pointing),
             np.concatenate(all_p_soft),
             np.concatenate(all_dca),
-            np.concatenate(all_vtx_in))
+            np.concatenate(all_vtx_in),
+            np.concatenate(all_open),
+            np.concatenate(all_sep_out),
+            np.concatenate(all_dimp))
 
 
 
 
 def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
+                  open_angle, sep_outer,
                   p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
-                  dca_cut=DCA_CUT, pointing_cut=None):
+                  dca_cut=DCA_CUT, theta_parallel=THETA_PARALLEL,
+                  sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
+                  pointing_cut=None):
     """
     Apply signal selection cuts sequentially and return a cutflow table.
 
@@ -450,6 +486,10 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     ----------
     dca_cut : float
         Maximum DCA between reconstructed tracks (m).
+    theta_parallel, sep_out_max_parallel : float
+        Conditional max-sep_outer cut: when open_angle < theta_parallel,
+        require sep_outer < sep_out_max_parallel. For larger open_angle
+        no upper bound on sep_outer is applied.
     pointing_cut : float or None
         Maximum pointing angle (rad). If None, no pointing cut is applied.
 
@@ -483,20 +523,29 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     add_row(f'p_soft > {p_cut*1000:.0f} MeV/c', mask)
 
     prev_mask = mask.copy()
-    mask = mask & (seps >= sep_min)
-    add_row(f'sep > {sep_min*1000:.0f} mm', mask)
+    mask = mask & (seps >= sep_min) & (sep_outer >= sep_min)
+    add_row(f'sep_in & sep_out > {sep_min*1000:.0f} mm', mask)
 
     prev_mask = mask.copy()
     mask = mask & (seps <= sep_max)
-    add_row(f'sep < {sep_max*100:.0f} cm', mask)
+    add_row(f'sep_in < {sep_max*100:.0f} cm', mask)
 
     prev_mask = mask.copy()
     mask = mask & (dca <= dca_cut)
     add_row(f'DCA < {dca_cut*100:.1f} cm', mask)
 
+    # Conditional max sep_outer: tight bound only when tracks are
+    # nearly parallel (open_angle below the angular-resolution floor)
+    prev_mask = mask.copy()
+    is_parallel = open_angle < theta_parallel
+    parallel_ok = (~is_parallel) | (sep_outer < sep_out_max_parallel)
+    mask = mask & parallel_ok
+    add_row(f'sep_out<{sep_out_max_parallel:.1f}m if θ<{theta_parallel*1000:.0f}mrad',
+            mask)
+
     prev_mask = mask.copy()
     mask = mask & vtx_in
-    add_row('Vertex in fiducial', mask)
+    add_row('Vertex in fiducial (PCA)', mask)
 
     if pointing_cut is not None:
         prev_mask = mask.copy()
@@ -570,11 +619,14 @@ if __name__ == "__main__":
     print("SEPARATION DISTRIBUTION")
     print("="*50)
     
-    seps, weights, momenta, pointing, p_soft, dca, vtx_in = sample_separations(
+    (seps, weights, momenta, pointing, p_soft, dca, vtx_in,
+     open_angle, sep_outer, d_implied) = sample_separations(
         geo_cache, lifetime, n_samples_per_particle=200)
 
     print(f"  Hit resolution: {HIT_RESOLUTION*1000:.1f} mm, "
           f"N layers: {N_LAYERS}, DCA cut: {DCA_CUT*100:.1f} cm")
+    print(f"  Conditional max sep_outer: < {SEP_OUT_MAX_PARALLEL:.1f} m "
+          f"when open_angle < {THETA_PARALLEL*1000:.0f} mrad")
     
     if len(seps) > 0:
         fig_sep, axes_sep = plt.subplots(1, 3, figsize=(18, 5))
@@ -779,6 +831,84 @@ if __name__ == "__main__":
         print(f"  Fraction with vertex in fiducial: {frac_vtx:.4f}")
         print(f"  (fractions above computed after separation cuts)")
 
+    # --- sep_outer distribution, split by open-angle band ---
+    # Motivates the conditional sep_outer<X-when-parallel cut:
+    # nearly-parallel signal stays at small sep_outer; clearly diverging
+    # signal can occupy arbitrary sep_outer (legitimately).
+    if len(sep_outer) > 0:
+        print("\n" + "="*50)
+        print("SEP_OUTER BY OPEN-ANGLE BAND")
+        print("="*50)
+
+        in_window = (seps >= SEP_MIN) & (seps <= SEP_MAX)
+        so   = sep_outer[in_window]
+        op   = open_angle[in_window]
+        ww   = weights[in_window]
+
+        bands = [
+            (f'open_angle < {THETA_PARALLEL*1000:.0f} mrad',
+                 (None, THETA_PARALLEL), 'steelblue'),
+            (f'{THETA_PARALLEL*1000:.0f} ≤ open_angle < 100 mrad',
+                 (THETA_PARALLEL, 0.100), 'darkorange'),
+            ('open_angle ≥ 100 mrad',
+                 (0.100, None), 'crimson'),
+        ]
+
+        fig_so, axes_so = plt.subplots(1, 2, figsize=(14, 5))
+
+        bins_lin = np.linspace(0, max(2.0, SEP_OUT_MAX_PARALLEL * 1.5), 80)
+        positive = so[so > 0]
+        lo = np.log10(positive.min()) if len(positive) else -3
+        hi = np.log10(max(so.max(), 10.0))
+        bins_log = np.logspace(lo, hi, 80)
+
+        for ax, bins, scale in [(axes_so[0], bins_lin, 'linear'),
+                                (axes_so[1], bins_log, 'log')]:
+            for label, (lo_b, hi_b), color in bands:
+                mask = np.ones(len(op), dtype=bool)
+                if lo_b is not None: mask &= (op >= lo_b)
+                if hi_b is not None: mask &= (op <  hi_b)
+                if mask.sum() == 0:
+                    continue
+                w_sum = ww[mask].sum()
+                ax.hist(so[mask], bins=bins, weights=ww[mask],
+                        histtype='step', linewidth=2, color=color,
+                        label=f'{label}  (w={w_sum:.2e})')
+            ax.axvline(SEP_OUT_MAX_PARALLEL, color='gray', linestyle='--',
+                       linewidth=1.5,
+                       label=f'parallel max = {SEP_OUT_MAX_PARALLEL:.1f} m')
+            ax.set_xlabel('sep_outer (m)')
+            ax.set_ylabel('Weighted counts (decay prob.)')
+            ax.set_xscale(scale)
+            if scale == 'log':
+                ax.set_yscale('log')
+            ax.legend(fontsize=8, loc='upper right')
+            ax.grid(True, which='both', alpha=0.3)
+
+        axes_so[0].set_title(f'sep_outer by open-angle band  (τ = {lifetime*1e9:.0f} ns)')
+        axes_so[1].set_title('Log-log view')
+        plt.tight_layout()
+        plt.savefig('sep_outer_bands_' + outString + '.png', dpi=150)
+        plt.show()
+
+        # Numerical summary
+        def wpct(x, w, q):
+            if len(x) == 0: return 0.0
+            idx = np.argsort(x); xs, ws = x[idx], w[idx]
+            c = np.cumsum(ws); return xs[np.searchsorted(c, q*c[-1])]
+        print(f"  {'band':<32} {'med':>10} {'90%':>9} {'frac>parallel_max':>20}")
+        for label, (lo_b, hi_b), _ in bands:
+            mask = np.ones(len(op), dtype=bool)
+            if lo_b is not None: mask &= (op >= lo_b)
+            if hi_b is not None: mask &= (op <  hi_b)
+            if mask.sum() == 0:
+                continue
+            x_, w_ = so[mask], ww[mask]
+            med = wpct(x_, w_, 0.50); p90 = wpct(x_, w_, 0.90)
+            frac = w_[x_ > SEP_OUT_MAX_PARALLEL].sum() / w_.sum()
+            print(f"  {label:<32} {med*100:>8.2f}cm {p90*100:>7.2f}cm "
+                  f"{frac:>20.4f}")
+
     # --- Cutflow table ---
     if len(seps) > 0:
         print("\n" + "="*50)
@@ -786,7 +916,7 @@ if __name__ == "__main__":
         print("="*50)
 
         cutflow = build_cutflow(seps, pointing, weights, momenta, p_soft,
-                                dca, vtx_in)
+                                dca, vtx_in, open_angle, sep_outer)
         cutflow_df = pd.DataFrame(cutflow)
         print(f"\n{'Cut':<25} {'Eff (cumul.)':<15} {'Eff (margin.)':<15}")
         print("-" * 55)
@@ -802,10 +932,13 @@ if __name__ == "__main__":
         np.savez('mc_distributions_' + outString + '.npz',
                  seps=seps, pointing=pointing, weights=weights,
                  momenta=momenta, p_soft=p_soft,
-                 dca=dca, vtx_in=vtx_in,
+                 dca=dca, vtx_in=vtx_in, open_angle=open_angle,
+                 sep_outer=sep_outer, d_implied=d_implied,
                  lifetime=lifetime, label=outString,
                  p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                  dca_cut=DCA_CUT,
+                 theta_parallel=THETA_PARALLEL,
+                 sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
                  hit_resolution=HIT_RESOLUTION, n_layers=N_LAYERS)
         print(f"MC distributions saved to mc_distributions_{outString}.npz")
 

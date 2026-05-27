@@ -178,12 +178,30 @@ def build_combined_cutflow(signals, output='overlay_cutflow.csv'):
         sep_min = float(sig.get('sep_min', 0.001))
         sep_max = float(sig.get('sep_max', 10.0))
         dca_cut = float(sig.get('dca_cut', 0.01))
+        theta_parallel = float(sig.get('theta_parallel', 0.050))
+        sep_out_max_parallel = float(sig.get('sep_out_max_parallel', 1.5))
+
+        if 'open_angle' in sig.files:
+            open_angle = sig['open_angle']
+        else:
+            open_angle = np.full(len(sig['seps']), np.inf)
+
+        # Older npz files may lack sep_outer — fall back to "always passes"
+        # both the lower-sep cut and the conditional max
+        if 'sep_outer' in sig.files:
+            sep_outer = sig['sep_outer']
+        else:
+            sep_outer = np.full(len(sig['seps']),
+                                max(sep_min, 1e-3) * 10)
 
         cutflow = build_cutflow(sig['seps'], sig['pointing'], sig['weights'],
                                 sig['momenta'], sig['p_soft'],
                                 sig['dca'], sig['vtx_in'],
+                                open_angle, sep_outer,
                                 p_cut=p_cut, sep_min=sep_min, sep_max=sep_max,
-                                dca_cut=dca_cut)
+                                dca_cut=dca_cut,
+                                theta_parallel=theta_parallel,
+                                sep_out_max_parallel=sep_out_max_parallel)
         for row in cutflow:
             row['signal'] = label
         rows.extend(cutflow)
