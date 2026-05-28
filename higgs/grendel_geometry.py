@@ -201,6 +201,7 @@ def cache_geometry(csv_file, mesh, origin):
     hits = np.zeros(n, dtype=bool)
     entry_d = np.full(n, np.nan)
     exit_d = np.full(n, np.nan)
+    direction_arr = np.zeros((n, 3))
     momentum = df['momentum'].values
     mass = df['mass'].values
     energy = np.sqrt(momentum**2 + mass**2)
@@ -210,6 +211,7 @@ def cache_geometry(csv_file, mesh, origin):
     print(f"Caching fiducial volume geometry for {n} particles...")
     for idx, row in tqdm(df.iterrows(), total=n, desc="Ray-casting"):
         direction = eta_phi_to_direction(row['eta'], row['phi'])
+        direction_arr[idx] = direction
         locations, _, _ = mesh.ray.intersects_location(
             ray_origins=[origin], ray_directions=[direction])
         if len(locations) >= 2:
@@ -229,6 +231,7 @@ def cache_geometry(csv_file, mesh, origin):
     return {
         'hits': hits, 'entry_d': entry_d, 'exit_d': exit_d,
         'gamma': gamma, 'beta': beta, 'momentum': momentum, 'mass': mass,
+        'direction': direction_arr, 'event': df['event'].values,
     }
 
 
@@ -345,3 +348,165 @@ def build_fiducial_mesh(y_position=Y_POSITION,
 
 # Convenience: build the default mesh on import
 mesh_fiducial, path_3d_fiducial = build_fiducial_mesh()
+
+
+# ============================================================
+# Surface classification (shared with signal_surface_hitmap.py)
+# ============================================================
+# The tunnel wall is divided into four named surfaces. In the GRENDEL
+# design the Floor and Right Wall are instrumented with scintillator
+# (hit/timing only, no tracks) while the Arch/Ceiling and Left Wall carry
+# the tracking layers. A two-body decay is only reconstructable if BOTH
+# daughters land on a tracker surface.
+
+# Centreline arc-length parametrisation
+seg_lengths = np.array(
+    [np.linalg.norm(path_3d_fiducial[i + 1] - path_3d_fiducial[i])
+     for i in range(len(path_3d_fiducial) - 1)])
+cumulative_length = np.concatenate([[0], np.cumsum(seg_lengths)])
+total_length = cumulative_length[-1]
+
+# Profile-angle boundaries between the four surfaces, derived from the
+# actual profile vertices (default n_arch=32, n_wall=4).
+_profile_pts = tunnel_profile_points(inset=0.0)
+_profile_angles = np.arctan2(_profile_pts[:, 1], _profile_pts[:, 0])
+_profile_angles = np.where(_profile_angles < 0,
+                           _profile_angles + 2 * np.pi, _profile_angles)
+
+# Vertex order from tunnel_profile_points:
+#   [floor-left, floor-right, right wall up..., arch..., left wall down...]
+_N_WALL = 4
+_N_ARCH_PTS = 31  # n_arch - 1 interior points for n_arch=32
+theta_floor_left  = _profile_angles[0]
+theta_floor_right = _profile_angles[1]
+theta_rwall_top   = _profile_angles[1 + _N_WALL]
+theta_arch_top    = _profile_angles[1 + _N_WALL + (_N_ARCH_PTS // 2)]
+theta_lwall_top   = _profile_angles[1 + _N_WALL + _N_ARCH_PTS]
+
+TRACKER_SURFACES = ('Arch/Ceiling', 'Left Wall')
+SCINTILLATOR_SURFACES = ('Floor', 'Right Wall')
+
+
+def _in_arc(theta, a, b):
+    """True where theta is in the half-open CCW arc [a, b) (handles wrap)."""
+    theta = np.asarray(theta, dtype=float) % (2 * np.pi)
+    if a <= b:
+        return (theta >= a) & (theta < b)
+    return (theta >= a) | (theta < b)
+
+
+def classify_by_theta(theta):
+    """Map a scalar profile angle to a surface name."""
+    if bool(_in_arc(theta, theta_floor_right, theta_rwall_top)):
+        return 'Right Wall'
+    if bool(_in_arc(theta, theta_rwall_top, theta_lwall_top)):
+        return 'Arch/Ceiling'
+    if bool(_in_arc(theta, theta_lwall_top, theta_floor_left)):
+        return 'Left Wall'
+    return 'Floor'
+
+
+def classify_exit_point(point, path_3d, cumulative_length):
+    """
+    For a 3D point on the tunnel wall, return (s, theta, x_local, y_local):
+    arc-length s along the centreline, profile angle theta, and the local
+    transverse coordinates at the nearest centreline segment.
+    """
+    best_s = 0.0
+    best_dist_sq = np.inf
+    best_x = 0.0
+    best_y = 0.0
+
+    for i in range(len(path_3d) - 1):
+        seg = path_3d[i + 1] - path_3d[i]
+        seg_len = np.linalg.norm(seg)
+        if seg_len == 0:
+            continue
+        seg_hat = seg / seg_len
+        t = np.clip(np.dot(point - path_3d[i], seg_hat), 0, seg_len)
+        closest = path_3d[i] + t * seg_hat
+        diff = point - closest
+        dist_sq = np.dot(diff, diff)
+
+        if dist_sq < best_dist_sq:
+            best_dist_sq = dist_sq
+            best_s = cumulative_length[i] + t
+            tangent = seg_hat
+            if abs(tangent[1]) < 0.9:
+                world_up = np.array([0., 1., 0.])
+            else:
+                world_up = np.array([0., 0., 1.])
+            right = np.cross(tangent, world_up)
+            right /= np.linalg.norm(right)
+            up = np.cross(right, tangent)
+            up /= np.linalg.norm(up)
+            best_x = np.dot(diff, right)
+            best_y = np.dot(diff, up)
+
+    theta = np.arctan2(best_y, best_x)
+    if theta < 0:
+        theta += 2 * np.pi
+
+    return best_s, theta, best_x, best_y
+
+
+def classify_points(points):
+    """
+    Vectorised surface mapping for many wall points at once.
+
+    Parameters
+    ----------
+    points : ndarray, shape (M, 3)
+
+    Returns
+    -------
+    theta : ndarray, shape (M,)  — profile angle of each point
+    s     : ndarray, shape (M,)  — arc-length along the centreline
+    """
+    points = np.asarray(points, dtype=float)
+    m = len(points)
+    best_d2 = np.full(m, np.inf)
+    best_x = np.zeros(m)
+    best_y = np.zeros(m)
+    best_s = np.zeros(m)
+
+    for i in range(len(path_3d_fiducial) - 1):
+        seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+        seg_len = np.linalg.norm(seg)
+        if seg_len == 0:
+            continue
+        seg_hat = seg / seg_len
+        if abs(seg_hat[1]) < 0.9:
+            world_up = np.array([0., 1., 0.])
+        else:
+            world_up = np.array([0., 0., 1.])
+        right = np.cross(seg_hat, world_up)
+        right /= np.linalg.norm(right)
+        up = np.cross(right, seg_hat)
+        up /= np.linalg.norm(up)
+
+        rel = points - path_3d_fiducial[i]
+        t = np.clip(rel @ seg_hat, 0, seg_len)
+        closest = path_3d_fiducial[i] + np.outer(t, seg_hat)
+        diff = points - closest
+        d2 = np.einsum('ij,ij->i', diff, diff)
+        upd = d2 < best_d2
+        best_d2[upd] = d2[upd]
+        best_x[upd] = diff[upd] @ right
+        best_y[upd] = diff[upd] @ up
+        best_s[upd] = cumulative_length[i] + t[upd]
+
+    theta = np.arctan2(best_y, best_x)
+    theta = np.where(theta < 0, theta + 2 * np.pi, theta)
+    return theta, best_s
+
+
+def points_on_tracker(points):
+    """
+    Bool array: True where each (M, 3) wall point lands on a tracker
+    surface (Arch/Ceiling or Left Wall). The tracker spans the single
+    CCW arc [theta_rwall_top, theta_floor_left); the complement
+    (Floor + Right Wall) is scintillator.
+    """
+    theta, _ = classify_points(points)
+    return _in_arc(theta, theta_rwall_top, theta_floor_left)

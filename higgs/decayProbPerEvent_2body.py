@@ -24,6 +24,7 @@ def show_or_close():
 from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
     calculate_decay_length, cache_geometry, mesh_fiducial,
+    points_on_tracker,
 )
 
 M_ELECTRON = 0.000511  # GeV/c²
@@ -306,75 +307,95 @@ def analyze_decay_vs_lifetime(csv_file, geo_cache, lifetime_range,
     return results
 
 
+def _first_forward_hit(mesh, origins, dirs):
+    """
+    Batch ray-cast: for each ray return the nearest forward intersection
+    with *mesh*, or NaN if the ray misses. origins/dirs are (M, 3).
+    """
+    out = np.full((len(origins), 3), np.nan)
+    locs, ray_idx, _ = mesh.ray.intersects_location(
+        ray_origins=origins, ray_directions=dirs)
+    if len(locs) == 0:
+        return out
+    signed = np.einsum('ij,ij->i', locs - origins[ray_idx], dirs[ray_idx])
+    fwd = signed > 1e-6
+    locs, ray_idx, signed = locs[fwd], ray_idx[fwd], signed[fwd]
+    if len(locs) == 0:
+        return out
+    order = np.lexsort((signed, ray_idx))
+    locs, ray_idx = locs[order], ray_idx[order]
+    _, first = np.unique(ray_idx, return_index=True)
+    out[ray_idx[first]] = locs[first]
+    return out
+
+
 def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
                        rng_seed=42, hit_resolution=HIT_RESOLUTION,
                        n_layers=N_LAYERS):
     """
     Monte Carlo sample decay positions and rest-frame angles to build
-    distributions of electron-pair separations, pointing angles, and DCA.
+    distributions of electron-pair separations, pointing angles, DCA, and
+    the landing surface of each daughter.
 
     For each particle that hits the fiducial volume:
-      1. Sample decay position d from (1/λ) exp(-d/λ) within [entry, exit]
-      2. Sample |cosθ*| uniformly in [0, 1]
+      1. Sample decay position d *uniformly* within [entry, exit]
+      2. Sample |cosθ*| uniformly in [0, 1] and the decay-plane azimuth φ
       3. Compute lab-frame electron angles from boost kinematics
       4. Place true hits at inner/outer tracking layers (separated by
-         DETECTOR_THICKNESS), then smear by hit_resolution
+         DETECTOR_THICKNESS), then smear by hit_resolution (local frame)
       5. Reconstruct tracks from smeared hits → separation, pointing, DCA
       6. Check that reconstructed vertex (PCA) is inside the fiducial volume
+      7. Build world-frame daughter directions, ray-cast both to the wall,
+         and flag whether BOTH land on a tracker surface (scintillator veto)
+
+    Decay positions are sampled uniformly (not exponentially) so the same
+    pass can be reweighted to any lifetime by w(d;τ) = (path/N)·(1/λ)e^{-d/λ}.
+    The returned ``weights`` are evaluated at ``lifetime_seconds``.
 
     Set hit_resolution=0 to recover truth-level distributions (DCA=0).
 
-    Returns:
-        separations, weights, momenta, pointing_angles, p_soft, dca,
-        vtx_in_fiducial, open_angles, sep_outers, d_implieds, collinearities
-        (all 1-D arrays of the same length)
+    Returns a dict of aligned 1-D arrays (one entry per sampled decay):
+        sep, sep_outer, momenta, pointing, p_soft, dca, vtx_in, open_angle,
+        d_implied, collin, on_tracker, weights, event, pid, d, path_len,
+        betagamma, plus the scalar n_per (= n_samples_per_particle).
     """
     rng = np.random.default_rng(rng_seed)
 
     hits = geo_cache['hits']
     hit_idx = np.where(hits)[0]
 
-    all_seps = []
-    all_weights = []
-    all_momenta = []
-    all_pointing = []
-    all_p_soft = []
-    all_dca = []
-    all_vtx_in = []
-    all_open = []
-    all_sep_out = []
-    all_dimp = []
-    all_collin = []
+    all_seps, all_weights, all_momenta, all_pointing = [], [], [], []
+    all_p_soft, all_dca, all_vtx_in, all_open = [], [], [], []
+    all_sep_out, all_dimp, all_collin = [], [], []
+    all_event, all_pid, all_d, all_path, all_bg = [], [], [], [], []
+    decay_list, dir1_list, dir2_list = [], [], []
 
-    for idx in hit_idx:
+    N = n_samples_per_particle
+
+    for pid, idx in enumerate(hit_idx):
         entry = geo_cache['entry_d'][idx]
         exit_ = geo_cache['exit_d'][idx]
         gamma = geo_cache['gamma'][idx]
         beta = geo_cache['beta'][idx]
         mass = geo_cache['mass'][idx]
         p_llp = geo_cache['momentum'][idx]
-        N = n_samples_per_particle
+        z_hat = geo_cache['direction'][idx]
+        event = geo_cache['event'][idx]
 
         decay_length = calculate_decay_length(p_llp, mass, lifetime_seconds)
         path_length = exit_ - entry
 
-        # Inverse CDF sampling of decay position within [entry, exit]
-        u = rng.uniform(0, 1, N)
-        exp_entry = np.exp(-entry / decay_length)
-        exp_exit = np.exp(-exit_ / decay_length)
-        denom = exp_entry - exp_exit
-        if denom < 1e-300:
-            continue
-
-        d_samples = -decay_length * np.log(exp_entry - u * denom)
+        # Uniform decay-position sampling (lifetime-independent), with the
+        # decay-probability density folded into the per-sample weight.
+        d_samples = rng.uniform(entry, exit_, N)
         D = exit_ - d_samples  # distance from vertex to inner tracking layer
+        w = (path_length / N) * (1.0 / decay_length) \
+            * np.exp(-d_samples / decay_length)
 
-        p_decay = exp_entry * (1 - np.exp(-path_length / decay_length))
-        w = p_decay / N
-
-        # Sample rest-frame decay angle
+        # Sample rest-frame decay angle and decay-plane azimuth
         cos_theta_star = rng.uniform(0, 1, N)
         sin_theta_star = np.sqrt(1 - cos_theta_star**2)
+        phi = rng.uniform(0, 2 * np.pi, N)
 
         # Softer electron momentum (truth, not affected by resolution)
         p_soft = gamma * mass / 2 * (1 - beta * cos_theta_star)
@@ -486,8 +507,28 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         d_vtx = d_samples + pca_z
         vtx_in = (d_vtx > entry) & (d_vtx < exit_)
 
+        # ---- World-frame daughter directions for surface ray-casting ----
+        # Build a transverse basis (x̂,ŷ) ⟂ the LLP direction ẑ and orient
+        # the decay plane at azimuth φ. The harder/softer lab angles and the
+        # opposite-side convention match the local-frame reconstruction above.
+        ref = np.array([0., 1., 0.]) if abs(z_hat[1]) < 0.9 \
+            else np.array([1., 0., 0.])
+        x_hat = np.cross(z_hat, ref); x_hat /= np.linalg.norm(x_hat)
+        y_hat = np.cross(z_hat, x_hat)
+        u = np.cos(phi)[:, None] * x_hat + np.sin(phi)[:, None] * y_hat
+
+        inv1 = 1.0 / np.sqrt(1.0 + tan_a1**2)
+        inv2 = 1.0 / np.sqrt(1.0 + tan_a2**2)
+        dir1 = inv1[:, None] * z_hat + (tan_a1 * inv1)[:, None] * u
+        dir2 = inv2[:, None] * z_hat - (tan_a2 * inv2)[:, None] * u
+        decay_pos = d_samples[:, None] * z_hat  # IP at the origin
+
+        decay_list.append(decay_pos)
+        dir1_list.append(dir1)
+        dir2_list.append(dir2)
+
         all_seps.append(sep)
-        all_weights.append(np.full(N, w))
+        all_weights.append(w)
         all_momenta.append(np.full(N, p_llp))
         all_pointing.append(pointing)
         all_p_soft.append(p_soft)
@@ -497,29 +538,64 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         all_sep_out.append(sep_out)
         all_dimp.append(d_implied)
         all_collin.append(collin)
+        all_event.append(np.full(N, event))
+        all_pid.append(np.full(N, pid))
+        all_d.append(d_samples)
+        all_path.append(np.full(N, path_length))
+        all_bg.append(np.full(N, gamma * beta))
 
     if not all_seps:
         empty = np.array([])
-        return (empty, empty, empty, empty, empty, empty,
-                np.array([], dtype=bool), empty, empty, empty, empty)
+        return {k: empty for k in (
+            'sep', 'sep_outer', 'momenta', 'pointing', 'p_soft', 'dca',
+            'vtx_in', 'open_angle', 'd_implied', 'collin', 'on_tracker',
+            'weights', 'event', 'pid', 'd', 'path_len', 'betagamma')} \
+            | {'n_per': N}
 
-    return (np.concatenate(all_seps),
-            np.concatenate(all_weights),
-            np.concatenate(all_momenta),
-            np.concatenate(all_pointing),
-            np.concatenate(all_p_soft),
-            np.concatenate(all_dca),
-            np.concatenate(all_vtx_in),
-            np.concatenate(all_open),
-            np.concatenate(all_sep_out),
-            np.concatenate(all_dimp),
-            np.concatenate(all_collin))
+    # ---- Batch ray-cast both daughters and classify landing surface ----
+    decay_all = np.concatenate(decay_list)
+    dir1_all = np.concatenate(dir1_list)
+    dir2_all = np.concatenate(dir2_list)
+    n_tot = len(decay_all)
+
+    origins = np.concatenate([decay_all, decay_all])
+    dirs = np.concatenate([dir1_all, dir2_all])
+    print(f"  Ray-casting {2 * n_tot} daughter rays for surface "
+          f"classification...")
+    exit_pts = _first_forward_hit(mesh_fiducial, origins, dirs)
+
+    on_trk = np.zeros(2 * n_tot, dtype=bool)
+    valid = ~np.isnan(exit_pts[:, 0])
+    if valid.any():
+        on_trk[valid] = points_on_tracker(exit_pts[valid])
+    on_tracker = on_trk[:n_tot] & on_trk[n_tot:]
+
+    return {
+        'sep': np.concatenate(all_seps),
+        'sep_outer': np.concatenate(all_sep_out),
+        'momenta': np.concatenate(all_momenta),
+        'pointing': np.concatenate(all_pointing),
+        'p_soft': np.concatenate(all_p_soft),
+        'dca': np.concatenate(all_dca),
+        'vtx_in': np.concatenate(all_vtx_in),
+        'open_angle': np.concatenate(all_open),
+        'd_implied': np.concatenate(all_dimp),
+        'collin': np.concatenate(all_collin),
+        'on_tracker': on_tracker,
+        'weights': np.concatenate(all_weights),
+        'event': np.concatenate(all_event),
+        'pid': np.concatenate(all_pid),
+        'd': np.concatenate(all_d),
+        'path_len': np.concatenate(all_path),
+        'betagamma': np.concatenate(all_bg),
+        'n_per': N,
+    }
 
 
 
 
 def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
-                  open_angle, sep_outer, collinearity,
+                  open_angle, sep_outer, collinearity, on_tracker=None,
                   p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                   dca_cut=DCA_CUT, theta_parallel=THETA_PARALLEL,
                   sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
@@ -531,6 +607,11 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
 
     Parameters
     ----------
+    on_tracker : array of bool or None
+        Whether both daughters land on a tracker surface (Arch/Ceiling or
+        Left Wall). When provided, a "both daughters on tracker" cut is
+        applied right after the fiducial-decay requirement — pairs landing
+        on scintillator (Floor / Right Wall) cannot be reconstructed.
     dca_cut : float
         Maximum DCA between reconstructed tracks (m).
     theta_parallel, sep_out_max_parallel : float
@@ -570,6 +651,11 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
 
     prev_mask = mask.copy()
     add_row('Decay in fiducial', mask)
+
+    if on_tracker is not None:
+        prev_mask = mask.copy()
+        mask = mask & on_tracker
+        add_row('Both daughters on tracker', mask)
 
     prev_mask = mask.copy()
     mask = mask & (p_soft >= p_cut)
@@ -616,6 +702,99 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
         add_row(f'pointing < {pointing_cut*1000:.1f} mrad', mask)
 
     return rows
+
+
+def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
+                   dca_cut=DCA_CUT, theta_parallel=THETA_PARALLEL,
+                   sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
+                   collin_min=COLLIN_MIN,
+                   sep_out_collin_gate=SEP_OUT_COLLIN_GATE):
+    """
+    Boolean per-sample mask for the full signal selection (everything except
+    the implicit 'decay in fiducial', which holds for all samples by
+    construction). Includes the both-daughters-on-tracker requirement.
+    """
+    sep        = mc['sep']
+    sep_outer  = mc['sep_outer']
+    p_soft     = mc['p_soft']
+    dca        = mc['dca']
+    open_angle = mc['open_angle']
+    collin     = mc['collin']
+    vtx_in     = mc['vtx_in']
+    on_tracker = mc['on_tracker']
+
+    m = (p_soft >= p_cut)
+    m &= (sep >= sep_min) & (sep_outer >= sep_min)
+    m &= (sep <= sep_max)
+    m &= (dca <= dca_cut)
+    is_parallel = open_angle < theta_parallel
+    m &= (~is_parallel) | (sep_outer < sep_out_max_parallel)
+    gated = sep_outer > sep_out_collin_gate
+    m &= (~gated) | (collin > collin_min)
+    m &= vtx_in
+    m &= on_tracker
+    return m
+
+
+def mc_exclusion_vs_lifetime(mc, lifetimes, total_events, **cut_kwargs):
+    """
+    Build the exclusion curve from a single uniform-sampled MC pass.
+
+    The geometry of each sampled decay (separations, surfaces, vertex, …) is
+    lifetime-independent, so the full selection mask is evaluated once. For
+    each lifetime the decay-probability weight of every sample is recomputed
+    as w(d;τ) = (path/N)·(1/λ)·e^{-d/λ} with λ = βγcτ, and summed per particle
+    to give that particle's decay-and-pass probability. Particles are then
+    combined per event into P(≥1 decays & passes), averaged over ALL events
+    (non-hitting events contribute 0), and converted to an excluded BR.
+
+    Returns a dict mirroring analyze_decay_vs_lifetime: 'lifetimes',
+    'mean_at_least_one_decay_prob', 'exclusion', 'mean_single_pass_prob'.
+    """
+    sel = selection_mask(mc, **cut_kwargs)
+    pid = mc['pid']
+    d = mc['d']
+    path_len = mc['path_len']
+    bg = mc['betagamma']
+    N = mc['n_per']
+
+    n_part = int(pid.max()) + 1 if len(pid) else 0
+    # Event id per particle (constant within a particle's samples)
+    pid_event = np.zeros(n_part, dtype=mc['event'].dtype)
+    if n_part:
+        first = np.unique(pid, return_index=True)[1]
+        pid_event[pid[first]] = mc['event'][first]
+
+    mean_p1, exclusion, mean_single = [], [], []
+
+    for tau in lifetimes:
+        decay_length = bg * SPEED_OF_LIGHT * tau
+        w = (path_len / N) * (1.0 / decay_length) * np.exp(-d / decay_length)
+        w_pass = np.where(sel, w, 0.0)
+
+        # Per-particle decay-and-pass probability
+        p_part = np.bincount(pid, weights=w_pass, minlength=n_part)
+
+        # Combine particles into per-event P(≥1) via 1 - Π(1 - p_i)
+        log_surv = np.bincount(pid_event,
+                               weights=np.log1p(-np.clip(p_part, 0, 1 - 1e-15)),
+                               minlength=0) if n_part else np.array([])
+        p_event = 1.0 - np.exp(log_surv) if len(log_surv) else np.array([])
+
+        mean_at_least_one = p_event.sum() / total_events
+        mean_p1.append(mean_at_least_one)
+        mean_single.append(p_part.mean() if n_part else 0.0)
+        if mean_at_least_one > 0:
+            exclusion.append(3 / (mean_at_least_one * 3000 * 52e3))
+        else:
+            exclusion.append(np.inf)
+
+    return {
+        'lifetimes': lifetimes,
+        'mean_at_least_one_decay_prob': np.array(mean_p1),
+        'exclusion': np.array(exclusion),
+        'mean_single_pass_prob': np.array(mean_single),
+    }
 
 
 # ============================================================
@@ -682,9 +861,19 @@ if __name__ == "__main__":
     print("SEPARATION DISTRIBUTION")
     print("="*50)
     
-    (seps, weights, momenta, pointing, p_soft, dca, vtx_in,
-     open_angle, sep_outer, d_implied, collinearity) = sample_separations(
-        geo_cache, lifetime, n_samples_per_particle=200)
+    mc = sample_separations(geo_cache, lifetime, n_samples_per_particle=200)
+    seps         = mc['sep']
+    weights      = mc['weights']
+    momenta      = mc['momenta']
+    pointing     = mc['pointing']
+    p_soft       = mc['p_soft']
+    dca          = mc['dca']
+    vtx_in       = mc['vtx_in']
+    open_angle   = mc['open_angle']
+    sep_outer    = mc['sep_outer']
+    d_implied    = mc['d_implied']
+    collinearity = mc['collin']
+    on_tracker   = mc['on_tracker']
 
     print(f"  Hit resolution: {HIT_RESOLUTION*1000:.1f} mm, "
           f"N layers: {N_LAYERS}, DCA cut: {DCA_CUT*100:.1f} cm")
@@ -692,7 +881,11 @@ if __name__ == "__main__":
           f"when open_angle < {THETA_PARALLEL*1000:.0f} mrad")
     print(f"  IP-muon-transit veto: collinearity > {COLLIN_MIN*1000:.0f} mm "
           f"when sep_outer > {SEP_OUT_COLLIN_GATE*100:.0f} cm")
-    
+    if len(seps) > 0:
+        w_on = weights[on_tracker].sum() / weights.sum() if weights.sum() else 0
+        print(f"  Scintillator veto: both daughters on a tracker surface "
+              f"(Arch/Ceiling + Left Wall) = {w_on*100:.1f}% of decay weight")
+
     if len(seps) > 0:
         fig_sep, axes_sep = plt.subplots(1, 3, figsize=(18, 5))
         
@@ -1088,7 +1281,7 @@ if __name__ == "__main__":
 
         cutflow = build_cutflow(seps, pointing, weights, momenta, p_soft,
                                 dca, vtx_in, open_angle, sep_outer,
-                                collinearity)
+                                collinearity, on_tracker=on_tracker)
         cutflow_df = pd.DataFrame(cutflow)
         print(f"\n{'Cut':<25} {'Eff (cumul.)':<15} {'Eff (margin.)':<15}")
         print("-" * 55)
@@ -1106,7 +1299,7 @@ if __name__ == "__main__":
                  momenta=momenta, p_soft=p_soft,
                  dca=dca, vtx_in=vtx_in, open_angle=open_angle,
                  sep_outer=sep_outer, d_implied=d_implied,
-                 collinearity=collinearity,
+                 collinearity=collinearity, on_tracker=on_tracker,
                  lifetime=lifetime, label=outString,
                  p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                  dca_cut=DCA_CUT,
@@ -1124,7 +1317,20 @@ if __name__ == "__main__":
     
     lifetimes = np.logspace(-10.5, -3.5, 20)
     scan = analyze_decay_vs_lifetime(sample_csv, geo_cache, lifetimes)
-    
+
+    # MC-based exclusion: reweight the single uniform-sampled MC pass to each
+    # lifetime, with the scintillator veto (both daughters on a tracker
+    # surface) applied. This is the headline GRENDEL curve. The analytic
+    # 'scan' assumes full-coverage tracking and serves as the dashed overlay.
+    mc_scan = mc_exclusion_vs_lifetime(mc, lifetimes, scan['total_events'])
+
+    best_mc = np.nanmin(mc_scan['exclusion'])
+    best_an = np.nanmin(scan['exclusion'])
+    print(f"  Best excluded BR  — MC (tracker veto): {best_mc:.3e}")
+    print(f"  Best excluded BR  — analytic (full coverage): {best_an:.3e}")
+    if best_mc > 0 and np.isfinite(best_mc):
+        print(f"  Veto cost at best point: x{best_mc / best_an:.2f} weaker")
+
     # === Plotting ===
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     
@@ -1161,11 +1367,11 @@ if __name__ == "__main__":
     ax3.legend()
     
     ax4 = axes[1, 1]
+    ax4.loglog(lifetimes * SPEED_OF_LIGHT, mc_scan['exclusion'],
+               color='blue', linewidth=2, label="GRENDEL (tracker veto)")
     ax4.loglog(lifetimes * SPEED_OF_LIGHT, scan['exclusion'],
-               color='blue', linewidth=2, label="GRENDEL")
-    # ax4.loglog(lifetimes * SPEED_OF_LIGHT, scan['exclusion_no_cuts'],
-    #            color='blue', linewidth=2, linestyle='--', alpha=0.5,
-    #            label="milliQan (no cuts)")
+               color='blue', linewidth=2, linestyle='--', alpha=0.5,
+               label="GRENDEL (full coverage)")
     ax4.set_xlabel(r'$c\tau$ (m)')
     ax4.set_ylabel('BR')
     ax4.grid(True, which="both", ls="-", alpha=0.2)
