@@ -1,8 +1,25 @@
+import os
+import sys
 import numpy as np
 import pandas as pd
+import matplotlib
+# Batch mode: use the non-interactive Agg backend unless the user has set
+# MPLBACKEND or passes --interactive. Default is batch so the script runs
+# on headless machines without a DISPLAY.
+INTERACTIVE = ('--interactive' in sys.argv)
+if not INTERACTIVE and not os.environ.get('MPLBACKEND'):
+    matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.integrate import quad
+
+
+def show_or_close():
+    """plt.show() in interactive mode, plt.close('all') in batch mode."""
+    if INTERACTIVE:
+        plt.show()
+    else:
+        plt.close('all')
 
 from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
@@ -27,6 +44,18 @@ DCA_CUT = 0.1  # m (10 cm) — maximum DCA between reconstructed tracks
 # no upper bound on sep_outer is applied.
 THETA_PARALLEL      = 0.100  # rad (100 mrad — covers parallel + moderate-opening regime)
 SEP_OUT_MAX_PARALLEL = 0.30  # m — max sep_outer applied only when open_angle < THETA_PARALLEL
+
+# IP-muon-transit veto. A single muon shooting outward from the CMS IP makes
+# four hits that lie on a single straight line. The "collinearity" is the RMS
+# perpendicular residual of all 4 hits to their best-fit line (SVD of the 4×3
+# centered hit matrix; sqrt((S[1]^2 + S[2]^2) / 4)). For a real two-body decay
+# the 4 hits trace a "V", so collinearity ≈ (sep_in + sep_out)/4 — large. For
+# a muon transit it sits at the hit-noise floor (~σ_hit). To protect collimated
+# signal (where the V is narrow and naturally looks like a line), the cut only
+# fires when sep_outer > SEP_OUT_COLLIN_GATE, i.e. the topology is not in the
+# collimated regime where signal and muon are geometrically indistinguishable.
+COLLIN_MIN          = 0.030  # m (30 mm) — min collinearity for events above the gate
+SEP_OUT_COLLIN_GATE = 0.30   # m — collinearity cut applies only when sep_outer > this
 
 outString = "0p5GeV"
 sample_csv = "LLP0p5GeVSmall.csv"
@@ -297,7 +326,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
 
     Returns:
         separations, weights, momenta, pointing_angles, p_soft, dca,
-        vtx_in_fiducial, open_angles, sep_outers, d_implieds
+        vtx_in_fiducial, open_angles, sep_outers, d_implieds, collinearities
         (all 1-D arrays of the same length)
     """
     rng = np.random.default_rng(rng_seed)
@@ -315,6 +344,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     all_open = []
     all_sep_out = []
     all_dimp = []
+    all_collin = []
 
     for idx in hit_idx:
         entry = geo_cache['entry_d'][idx]
@@ -409,6 +439,19 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         # Robust against the PCA-degeneracy that hits near-parallel tracks.
         d_implied = np.where(open_angle > 1e-9, sep / open_angle, np.inf)
 
+        # --- Collinearity: RMS perpendicular residual of the 4 hits to their
+        # best-fit line. ≈ σ_hit for a single-line topology (IP-muon transit),
+        # ≈ (sep_inner + sep_outer)/4 for a true V-shaped decay vertex.
+        pts = np.stack([
+            np.stack([x1_in,  y1_in,  np.zeros(N)],   axis=-1),
+            np.stack([x1_out, y1_out, np.full(N, L)], axis=-1),
+            np.stack([x2_in,  y2_in,  np.zeros(N)],   axis=-1),
+            np.stack([x2_out, y2_out, np.full(N, L)], axis=-1),
+        ], axis=1)  # (N, 4, 3)
+        ctr = pts.mean(axis=1, keepdims=True)
+        _, S_svd, _ = np.linalg.svd(pts - ctr, full_matrices=False)
+        collin = np.sqrt((S_svd[:, 1]**2 + S_svd[:, 2]**2) / 4)
+
         # --- DCA between reconstructed tracks ---
         # Lines: P_i + t_i * d_i, with P_i at inner-layer hits (z = D)
         # Cross product n = d1 × d2
@@ -453,11 +496,12 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         all_open.append(open_angle)
         all_sep_out.append(sep_out)
         all_dimp.append(d_implied)
+        all_collin.append(collin)
 
     if not all_seps:
         empty = np.array([])
         return (empty, empty, empty, empty, empty, empty,
-                np.array([], dtype=bool), empty, empty, empty)
+                np.array([], dtype=bool), empty, empty, empty, empty)
 
     return (np.concatenate(all_seps),
             np.concatenate(all_weights),
@@ -468,16 +512,19 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
             np.concatenate(all_vtx_in),
             np.concatenate(all_open),
             np.concatenate(all_sep_out),
-            np.concatenate(all_dimp))
+            np.concatenate(all_dimp),
+            np.concatenate(all_collin))
 
 
 
 
 def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
-                  open_angle, sep_outer,
+                  open_angle, sep_outer, collinearity,
                   p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                   dca_cut=DCA_CUT, theta_parallel=THETA_PARALLEL,
                   sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
+                  collin_min=COLLIN_MIN,
+                  sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
                   pointing_cut=None):
     """
     Apply signal selection cuts sequentially and return a cutflow table.
@@ -490,6 +537,12 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
         Conditional max-sep_outer cut: when open_angle < theta_parallel,
         require sep_outer < sep_out_max_parallel. For larger open_angle
         no upper bound on sep_outer is applied.
+    collin_min, sep_out_collin_gate : float
+        IP-muon-transit veto. When sep_outer > sep_out_collin_gate, require
+        collinearity > collin_min (rejects events where all 4 hits sit on
+        a single straight line, i.e. an IP-shot muon traversing the tunnel).
+        The gate protects collimated signal (small sep_outer) from a cut
+        that cannot discriminate it from muons at this resolution.
     pointing_cut : float or None
         Maximum pointing angle (rad). If None, no pointing cut is applied.
 
@@ -541,6 +594,16 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     parallel_ok = (~is_parallel) | (sep_outer < sep_out_max_parallel)
     mask = mask & parallel_ok
     add_row(f'sep_out<{sep_out_max_parallel:.1f}m if θ<{theta_parallel*1000:.0f}mrad',
+            mask)
+
+    # Conditional collinearity cut: kills IP-muon transits (4 hits on a
+    # single line). Applied only when sep_outer is above the gate so that
+    # collimated signal is unaffected.
+    prev_mask = mask.copy()
+    gated = sep_outer > sep_out_collin_gate
+    collin_ok = (~gated) | (collinearity > collin_min)
+    mask = mask & collin_ok
+    add_row(f'collin>{collin_min*1000:.0f}mm if sep_out>{sep_out_collin_gate*100:.0f}cm',
             mask)
 
     prev_mask = mask.copy()
@@ -620,13 +683,15 @@ if __name__ == "__main__":
     print("="*50)
     
     (seps, weights, momenta, pointing, p_soft, dca, vtx_in,
-     open_angle, sep_outer, d_implied) = sample_separations(
+     open_angle, sep_outer, d_implied, collinearity) = sample_separations(
         geo_cache, lifetime, n_samples_per_particle=200)
 
     print(f"  Hit resolution: {HIT_RESOLUTION*1000:.1f} mm, "
           f"N layers: {N_LAYERS}, DCA cut: {DCA_CUT*100:.1f} cm")
     print(f"  Conditional max sep_outer: < {SEP_OUT_MAX_PARALLEL:.1f} m "
           f"when open_angle < {THETA_PARALLEL*1000:.0f} mrad")
+    print(f"  IP-muon-transit veto: collinearity > {COLLIN_MIN*1000:.0f} mm "
+          f"when sep_outer > {SEP_OUT_COLLIN_GATE*100:.0f} cm")
     
     if len(seps) > 0:
         fig_sep, axes_sep = plt.subplots(1, 3, figsize=(18, 5))
@@ -680,7 +745,7 @@ if __name__ == "__main__":
         
         plt.tight_layout()
         plt.savefig('separation_histogram'+outString+'.png', dpi=150)
-        plt.show()
+        show_or_close()
         
         in_window = (seps >= SEP_MIN) & (seps <= SEP_MAX)
         frac_accepted = weights[in_window].sum() / weights.sum()
@@ -743,7 +808,7 @@ if __name__ == "__main__":
 
         plt.tight_layout()
         plt.savefig('pointing_angle'+outString+'.png', dpi=150)
-        plt.show()
+        show_or_close()
 
         print(f"  Median pointing angle (accepted): {median_pt:.3f} mrad")
         p90 = np.percentile(pointing_mrad, 90)
@@ -817,7 +882,7 @@ if __name__ == "__main__":
 
         plt.tight_layout()
         plt.savefig('dca_' + outString + '.png', dpi=150)
-        plt.show()
+        show_or_close()
 
         median_dca = np.median(dca_cm)
         w_total = weights_dca.sum()
@@ -889,7 +954,7 @@ if __name__ == "__main__":
         axes_so[1].set_title('Log-log view')
         plt.tight_layout()
         plt.savefig('sep_outer_bands_' + outString + '.png', dpi=150)
-        plt.show()
+        show_or_close()
 
         # Numerical summary
         def wpct(x, w, q):
@@ -909,6 +974,112 @@ if __name__ == "__main__":
             print(f"  {label:<32} {med*100:>8.2f}cm {p90*100:>7.2f}cm "
                   f"{frac:>20.4f}")
 
+    # --- Collinearity distribution (IP-muon-transit veto diagnostic) ---
+    if len(collinearity) > 0:
+        print("\n" + "="*50)
+        print("COLLINEARITY (IP-muon-transit veto)")
+        print("="*50)
+
+        in_window = (seps >= SEP_MIN) & (seps <= SEP_MAX)
+        co = collinearity[in_window]
+        so = sep_outer[in_window]
+        ww = weights[in_window]
+
+        below = so <= SEP_OUT_COLLIN_GATE
+        above = so >  SEP_OUT_COLLIN_GATE
+
+        fig_co, axes_co = plt.subplots(1, 3, figsize=(18, 5))
+
+        co_mm = co * 1000
+        ax = axes_co[0]
+        bins = np.linspace(0, max(np.percentile(co_mm, 99.5), COLLIN_MIN*1000*3), 80)
+        for lbl, m, color in [
+            (f'sep_out ≤ {SEP_OUT_COLLIN_GATE*100:.0f} cm (gate closed)',
+                 below, 'steelblue'),
+            (f'sep_out > {SEP_OUT_COLLIN_GATE*100:.0f} cm (gate open)',
+                 above, 'crimson'),
+        ]:
+            if m.sum() == 0:
+                continue
+            ax.hist(co_mm[m], bins=bins, weights=ww[m],
+                    histtype='step', linewidth=2, color=color,
+                    label=f'{lbl}  (w={ww[m].sum():.2e})')
+        ax.axvline(COLLIN_MIN*1000, color='gray', linestyle='--', linewidth=1.5,
+                   label=f'cut = {COLLIN_MIN*1000:.0f} mm')
+        # IP-muon reference (from realistic ray-cast MC, σ_hit=3mm, L=24cm)
+        ax.axvspan(0, 8.2, color='gray', alpha=0.15,
+                   label='IP-muon transit range (≤ 8 mm)')
+        ax.set_xlabel('collinearity (mm)')
+        ax.set_ylabel('Weighted counts (decay prob.)')
+        ax.set_title(f'Collinearity by sep_outer gate (τ = {lifetime*1e9:.0f} ns)')
+        ax.legend(fontsize=8, loc='upper right')
+        ax.grid(True, alpha=0.3)
+
+        ax2 = axes_co[1]
+        positive = co_mm[co_mm > 0]
+        lo = np.log10(max(positive.min(), 0.1)) if len(positive) else -1
+        hi = np.log10(max(co_mm.max(), 100.0))
+        bins_log = np.logspace(lo, hi, 80)
+        for lbl, m, color in [
+            ('gate closed', below, 'steelblue'),
+            ('gate open',   above, 'crimson'),
+        ]:
+            if m.sum() == 0:
+                continue
+            ax2.hist(co_mm[m], bins=bins_log, weights=ww[m],
+                     histtype='step', linewidth=2, color=color, label=lbl)
+        ax2.axvline(COLLIN_MIN*1000, color='gray', linestyle='--', linewidth=1.5)
+        ax2.axvspan(0.1, 8.2, color='gray', alpha=0.15,
+                    label='IP-muon range')
+        ax2.set_xscale('log'); ax2.set_yscale('log')
+        ax2.set_xlabel('collinearity (mm)')
+        ax2.set_ylabel('Weighted counts')
+        ax2.set_title('Log-log view')
+        ax2.legend(fontsize=8, loc='upper left')
+        ax2.grid(True, which='both', alpha=0.3)
+
+        ax3 = axes_co[2]
+        # 2D heat map: collinearity vs sep_outer with rejection region shaded
+        mask_fin = np.isfinite(co) & np.isfinite(so) & (co > 0) & (so > 0)
+        h = ax3.hist2d(so[mask_fin]*100, co_mm[mask_fin],
+                       bins=[np.logspace(0, 3, 50), np.logspace(-1, 3, 50)],
+                       weights=ww[mask_fin], cmap='viridis', cmin=1e-30)
+        ax3.axvline(SEP_OUT_COLLIN_GATE*100, color='red', linestyle='--',
+                    linewidth=1.5,
+                    label=f'gate = {SEP_OUT_COLLIN_GATE*100:.0f} cm')
+        ax3.axhline(COLLIN_MIN*1000, color='red', linestyle='--', linewidth=1.5,
+                    label=f'cut = {COLLIN_MIN*1000:.0f} mm')
+        # Shade rejection region (sep_out > gate AND collin < cut)
+        ax3.fill_between([SEP_OUT_COLLIN_GATE*100, 1e3], 1e-1, COLLIN_MIN*1000,
+                         color='red', alpha=0.15, label='reject (muon-like)')
+        ax3.set_xscale('log'); ax3.set_yscale('log')
+        ax3.set_xlabel('sep_outer (cm)')
+        ax3.set_ylabel('collinearity (mm)')
+        ax3.set_title('Conditional cut region')
+        ax3.legend(fontsize=8, loc='lower right')
+        plt.colorbar(h[3], ax=ax3, label='Weighted counts')
+
+        plt.tight_layout()
+        plt.savefig('collinearity_' + outString + '.png', dpi=150)
+        show_or_close()
+
+        # Numerical summary
+        gated = above
+        if gated.sum() > 0:
+            x_, w_ = co[gated], ww[gated]
+            def wpct(x, w, q):
+                idx = np.argsort(x); xs, ws = x[idx], w[idx]
+                c = np.cumsum(ws); return xs[np.searchsorted(c, q*c[-1])]
+            med = wpct(x_, w_, 0.50); p1 = wpct(x_, w_, 0.01)
+            frac_fail = w_[x_ < COLLIN_MIN].sum() / w_.sum()
+            print(f"  Above gate (sep_out > {SEP_OUT_COLLIN_GATE*100:.0f} cm): "
+                  f"median = {med*1000:.1f} mm, 1% = {p1*1000:.1f} mm")
+            print(f"  Signal failing collinearity > {COLLIN_MIN*1000:.0f} mm "
+                  f"in this band: {frac_fail*100:.3f}%")
+        else:
+            print(f"  No events above the gate (sep_out > "
+                  f"{SEP_OUT_COLLIN_GATE*100:.0f} cm) for this sample.")
+
     # --- Cutflow table ---
     if len(seps) > 0:
         print("\n" + "="*50)
@@ -916,7 +1087,8 @@ if __name__ == "__main__":
         print("="*50)
 
         cutflow = build_cutflow(seps, pointing, weights, momenta, p_soft,
-                                dca, vtx_in, open_angle, sep_outer)
+                                dca, vtx_in, open_angle, sep_outer,
+                                collinearity)
         cutflow_df = pd.DataFrame(cutflow)
         print(f"\n{'Cut':<25} {'Eff (cumul.)':<15} {'Eff (margin.)':<15}")
         print("-" * 55)
@@ -934,11 +1106,14 @@ if __name__ == "__main__":
                  momenta=momenta, p_soft=p_soft,
                  dca=dca, vtx_in=vtx_in, open_angle=open_angle,
                  sep_outer=sep_outer, d_implied=d_implied,
+                 collinearity=collinearity,
                  lifetime=lifetime, label=outString,
                  p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                  dca_cut=DCA_CUT,
                  theta_parallel=THETA_PARALLEL,
                  sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
+                 collin_min=COLLIN_MIN,
+                 sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
                  hit_resolution=HIT_RESOLUTION, n_layers=N_LAYERS)
         print(f"MC distributions saved to mc_distributions_{outString}.npz")
 
@@ -1024,7 +1199,7 @@ if __name__ == "__main__":
         
     plt.tight_layout()
     plt.savefig('exclusion_2body'+outString+'.png', dpi=150)
-    plt.show()
+    show_or_close()
     
     df_results.to_csv("particle_decay_results_2body.csv", index=False)
     event_df.to_csv("event_decay_statistics_2body.csv", index=False)
