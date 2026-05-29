@@ -1319,17 +1319,21 @@ if __name__ == "__main__":
     scan = analyze_decay_vs_lifetime(sample_csv, geo_cache, lifetimes)
 
     # MC-based exclusion: reweight the single uniform-sampled MC pass to each
-    # lifetime, with the scintillator veto (both daughters on a tracker
-    # surface) applied. This is the headline GRENDEL curve. The analytic
-    # 'scan' assumes full-coverage tracking and serves as the dashed overlay.
+    # lifetime, with the full reconstruction-level selection (DCA, PCA vertex,
+    # collinearity, outer separation, smearing) and the scintillator veto
+    # applied. This is the headline GRENDEL curve. The analytic 'scan' applies
+    # only the acceptance-level cuts (momentum + min/max separation + forward
+    # cap) under full-coverage tracking; it is the dashed overlay. The gap
+    # between the two is dominated by the extra selection cuts, not the veto.
     mc_scan = mc_exclusion_vs_lifetime(mc, lifetimes, scan['total_events'])
 
     best_mc = np.nanmin(mc_scan['exclusion'])
     best_an = np.nanmin(scan['exclusion'])
-    print(f"  Best excluded BR  — MC (tracker veto): {best_mc:.3e}")
-    print(f"  Best excluded BR  — analytic (full coverage): {best_an:.3e}")
+    print(f"  Best excluded BR  — MC (full selection): {best_mc:.3e}")
+    print(f"  Best excluded BR  — analytic (acceptance only): {best_an:.3e}")
     if best_mc > 0 and np.isfinite(best_mc):
-        print(f"  Veto cost at best point: x{best_mc / best_an:.2f} weaker")
+        print(f"  Full selection vs acceptance-only at best point: "
+              f"x{best_mc / best_an:.2f} weaker")
 
     # === Plotting ===
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -1368,10 +1372,10 @@ if __name__ == "__main__":
     
     ax4 = axes[1, 1]
     ax4.loglog(lifetimes * SPEED_OF_LIGHT, mc_scan['exclusion'],
-               color='blue', linewidth=2, label="GRENDEL (tracker veto)")
+               color='blue', linewidth=2, label="GRENDEL (full selection)")
     ax4.loglog(lifetimes * SPEED_OF_LIGHT, scan['exclusion'],
                color='blue', linewidth=2, linestyle='--', alpha=0.5,
-               label="GRENDEL (full coverage)")
+               label="GRENDEL (acceptance only)")
     ax4.set_xlabel(r'$c\tau$ (m)')
     ax4.set_ylabel('BR')
     ax4.grid(True, which="both", ls="-", alpha=0.2)
