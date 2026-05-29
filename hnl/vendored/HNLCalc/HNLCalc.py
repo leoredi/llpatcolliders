@@ -503,12 +503,6 @@ class HNLCalc(Utility):
             f00, MV, MS = .747, self.masses(pidV), self.masses(pidS)      
             fp=str(f00)+"/(1-q**2/"+str(MV)+"**2)"
             f0=str(f00)+"/(1-q**2/"+str(MS)+"**2)"
-        #Ds+ -> K0
-        if pid0 in ["431","-431"] and pid1 in ["311","-311"]:
-            pidV, pidS = "413", "411"
-            f00, MV, MS = .747, self.masses(pidV), self.masses(pidS)     
-            fp=str(f00)+"/(1-q**2/"+str(MV)+"**2)"
-            f0=str(f00)+"/(1-q**2/"+str(MS)+"**2)"
         #B0 -> D+
         if pid0 in ["511","-511"] and pid1 in ["411","-411"]:
             pidV, pidS = "543", "541"

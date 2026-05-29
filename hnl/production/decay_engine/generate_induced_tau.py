@@ -26,6 +26,7 @@ Output: output/llp_4vectors/{Ue,Umu,Utau}/tau/mN_{mass}.csv
 Format: headerless, 5 columns: weight,E,px,py,pz
 """
 
+import random
 import sys
 import numpy as np
 from pathlib import Path
@@ -71,32 +72,30 @@ def _init_hnlcalc(flavor):
 
 def _eval_tau_2body_br(hnl, meson_pdg, m_N):
     """BR(tau -> meson N) at U^2 = 1 via HNLCalc."""
-    try:
-        br_expr = hnl.get_2body_br_tau(15, meson_pdg)
-        mass = m_N        # noqa: F841 - referenced by eval'd HNLCalc expression
-        coupling = 1.0    # noqa: F841
-        br_val = eval(br_expr)
-        if np.isnan(br_val) or br_val < 0:
-            return 0.0
-        return float(br_val)
-    except Exception:
+    # All TAU_2BODY_MESON_PDGS daughters are charged and supported by HNLCalc;
+    # no catch-all guard, so any unexpected error surfaces instead of returning 0.
+    br_expr = hnl.get_2body_br_tau(15, meson_pdg)
+    mass = m_N        # noqa: F841 - referenced by eval'd HNLCalc expression
+    coupling = 1.0    # noqa: F841
+    br_val = eval(br_expr)
+    if np.isnan(br_val) or br_val < 0:
         return 0.0
+    return float(br_val)
 
 
 def _eval_tau_3body_br(hnl, lep_pid, nu_pid, m_N):
     """BR(tau- -> lep- nu N) at U^2 = 1 via HNLCalc, integrated over phase space."""
-    try:
-        dbr = hnl.get_3body_dbr_tau(15, -lep_pid, nu_pid)
-        m_lep = hnl.masses(lep_pid)
-        br_val = hnl.integrate_3body_br(
-            dbr, m_N, M_TAU, m_lep, 0.0,
-            coupling=1.0, nsample=500, integration="dE",
-        )
-        if br_val is None or np.isnan(br_val) or br_val < 0:
-            return 0.0
-        return float(br_val)
-    except Exception:
+    # Leptonic tau channels are fully parameterized in HNLCalc; no catch-all guard,
+    # so any unexpected error surfaces instead of being silently turned into 0.
+    dbr = hnl.get_3body_dbr_tau(15, -lep_pid, nu_pid)
+    m_lep = hnl.masses(lep_pid)
+    br_val = hnl.integrate_3body_br(
+        dbr, m_N, M_TAU, m_lep, 0.0,
+        coupling=1.0, nsample=500, integration="dE",
+    )
+    if br_val is None or np.isnan(br_val) or br_val < 0:
         return 0.0
+    return float(br_val)
 
 
 def compute_tau_production_br_components(hnl, m_N):
@@ -288,6 +287,7 @@ def main():
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
+    random.seed(args.seed)  # HNLCalc's 3-body BR integrator uses stdlib random, not numpy
     masses = args.masses if args.masses else MASS_GRID
     masses = [m for m in masses if m < M_TAU]  # tau decay closes at m_tau
 

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -52,6 +53,7 @@ def _worker_meson(flavor: str, channel: str, masses: list, n_pool: int, seed: in
         generate_pool, generate_bc_pool, process_channel,
     )
     rng = np.random.default_rng(seed)
+    random.seed(seed)  # HNLCalc's 3-body BR integrator uses stdlib random, not numpy
     if channel == "bc":
         pool = generate_bc_pool(n_pool, rng)
         sigma = 0.0
@@ -65,6 +67,7 @@ def _worker_tau(flavor: str, masses: list, n_pool: int, seed: int) -> str:
     """Process induced-tau channel for one flavor across all (sub-mtau) masses."""
     from production.decay_engine.generate_induced_tau import build_tau_pool, process_flavor
     rng = np.random.default_rng(seed)
+    random.seed(seed)  # HNLCalc's 3-body BR integrator uses stdlib random, not numpy
     tau_4v, tau_w = build_tau_pool(n_pool, rng)
     sub_masses = [m for m in masses if m < M_TAU]
     process_flavor(flavor, tau_4v, tau_w, sub_masses, rng)

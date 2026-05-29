@@ -73,8 +73,10 @@ def get_sigma_total(quark):
     path = FONLL_FILES[quark]
     pt_arr, y_arr, dsigma_2d = parse_fonll_file(path)
 
-    # Trapezoidal integration: first over y, then over pT
-    integral_over_y = np.trapz(dsigma_2d, y_arr, axis=1)  # shape (N_pt,)
-    sigma_total = np.trapz(integral_over_y, pt_arr)        # scalar (pb)
+    # Trapezoidal integration: first over y, then over pT.
+    # np.trapz was renamed np.trapezoid in NumPy 2.0; support both.
+    trapezoid = getattr(np, "trapezoid", None) or np.trapz
+    integral_over_y = trapezoid(dsigma_2d, y_arr, axis=1)  # shape (N_pt,)
+    sigma_total = trapezoid(integral_over_y, pt_arr)        # scalar (pb)
 
     return sigma_total

@@ -17,6 +17,7 @@ Output: output/llp_4vectors/{Ue,Umu,Utau}/{Bmeson,Dmeson,Bc}/mN_{mass}.csv
 Format: headerless, 5 columns: weight,E,px,py,pz
 """
 
+import random
 import sys
 import numpy as np
 from pathlib import Path
@@ -47,6 +48,10 @@ CHANNEL_LABELS = {
     "charm": "Dmeson",
     "bc": "Bc",
 }
+
+# Charged pseudoscalar parents that can decay leptonically (P+ -> ℓ+ N).
+# Neutral pseudoscalars (B0=511, D0=421, Bs=531) have no such 2-body mode.
+CHARGED_PSEUDOSCALARS = {211, 321, 411, 431, 521, 541}
 
 # HNLCalc 3-body channels for production (parent_pdg, daughter_pdg, type)
 # type: "pseudo" for pseudoscalar, "vector" for vector meson daughters
@@ -123,19 +128,19 @@ def _init_hnlcalc(flavor):
 
 def _eval_2body_br(hnl, parent_pdg, lepton_pdg, m_N):
     """Evaluate 2-body BR: parent → ℓ N at given HNL mass, U²=1."""
+    # Neutral pseudoscalar -> ℓN is forbidden (HNLCalc.VH() has no entry).
+    if abs(parent_pdg) not in CHARGED_PSEUDOSCALARS:
+        return 0.0
     # Sign convention: parent+ → ℓ+ N → lepton is anti-lepton
     sign = "-" if parent_pdg > 0 else ""
     pid_lep = f"{sign}{abs(lepton_pdg)}"
-    try:
-        br_expr = hnl.get_2body_br(str(parent_pdg), pid_lep)
-        mass = m_N
-        coupling = 1.0
-        br_val = eval(br_expr)
-        if np.isnan(br_val) or br_val < 0:
-            return 0.0
-        return float(br_val)
-    except Exception:
+    br_expr = hnl.get_2body_br(str(parent_pdg), pid_lep)
+    mass = m_N
+    coupling = 1.0
+    br_val = eval(br_expr)
+    if np.isnan(br_val) or br_val < 0:
         return 0.0
+    return float(br_val)
 
 
 def _eval_3body_br(hnl, parent_pdg, daughter_pdg, lepton_pdg, m_N, ch_type):
@@ -166,7 +171,10 @@ def _eval_3body_br(hnl, parent_pdg, daughter_pdg, lepton_pdg, m_N, ch_type):
         if br_val is None or np.isnan(br_val) or br_val < 0:
             return 0.0
         return float(br_val)
-    except Exception:
+    except (TypeError, NameError):
+        # HNLCalc has no CKM/form-factor parameterization for this parent→daughter
+        # channel: VHHp returns None (TypeError) or form-factor symbols are undefined
+        # (NameError). Such channels contribute no production BR. Other errors propagate.
         return 0.0
 
 
@@ -340,7 +348,9 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
                 if n_species == 0:
                     continue
 
-                # Weight: 2 × σ_FONLL × f_species × BR / N_species
+                # Factor 2: FONLL cross sections are the average of quark + antiquark
+                # (q, qbar) production, so ×2 gives the total number of mesons produced
+                # (Curtin MATHUSLA reference baseline convention).
                 w = 2.0 * sigma_fonll * frag * br / n_species
 
                 # Decay meson → HNL using BR-weighted 2-body/3-body kinematics
@@ -439,6 +449,7 @@ def main():
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
+    random.seed(args.seed)  # HNLCalc's 3-body BR integrator uses stdlib random, not numpy
     masses = args.masses if args.masses else MASS_GRID
 
     # Determine which channels to run

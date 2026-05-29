@@ -1,6 +1,6 @@
 # `hnl/` — Heavy Neutral Lepton production from rare meson decays
 
-HNL 4-vector production pipeline for GARGOYLE sensitivity studies at the
+HNL 4-vector production pipeline for GRENDEL sensitivity studies at the
 HL-LHC (pp, sqrt(s) = 14 TeV).
 
 ## Scope of this PR
@@ -236,3 +236,10 @@ if revisited:
 - **W -> tau nu omitted** — moves to the W/Z PR. This is the dominant
   prompt-tau source at LHC and the induced-tau chain alone underestimates
   the tau parent yield.
+- **No kaon (K+ -> lN) production** — MASS_GRID starts at 0.20 GeV, but
+  the two-body kaon decay K+ -> lN is the dominant HNL source below
+  ~0.5 GeV and is not included. Sub-0.5 GeV yields are therefore
+  underestimated.
+- **No Lambda_b / Lambda_c baryon channels** — beauty- and charm-baryon
+  production (Lambda_b ~8 %, Lambda_c ~15 % of the respective heavy-quark
+  yields) is not included; only meson parents are simulated.

@@ -10,8 +10,7 @@ Fragmentation fractions from PDG/HFLAV/ALICE.
 References:
   - FONLL: Cacciari, Greco, Nason (NLO+NLL heavy-quark production)
   - Fragmentation fractions: PDG 2024, ALICE D-meson measurements, HFLAV
-  - Bc: LHCb σ(Bc)/σ(B+) ≈ 2.6e-3 (CMS/LHCb)
-  - K-factor: NLO/LO correction for W/Z → ℓN production
+  - Bc: σ(pp → Bc) from BCVEGPY/FONLL (CMS/LHCb)
 """
 
 from particle import Particle
@@ -31,17 +30,10 @@ M_TAU = Particle.from_pdgid(15).mass * 1e-3       # tau
 M_ELECTRON = Particle.from_pdgid(11).mass * 1e-3  # electron
 M_MUON = Particle.from_pdgid(13).mass * 1e-3      # muon
 M_PION = Particle.from_pdgid(211).mass * 1e-3     # pi+
-M_KAON = Particle.from_pdgid(321).mass * 1e-3     # K+
 
 # ==========================================================================
 # FONLL inclusive cross-sections at 14 TeV (pb)
 # ==========================================================================
-
-# σ(pp → bb̄) ~ 495 μb at 14 TeV (FONLL NLO+NLL, LHCb-validated)
-SIGMA_BBBAR_PB = 495.0e6
-
-# σ(pp → cc̄) ~ 23.6 mb at 14 TeV (FONLL NLO+NLL)
-SIGMA_CCBAR_PB = 23.6e9
 
 # σ(pp → Bc) ~ 0.9 μb at 14 TeV (BCVEGPY/FONLL, CMS/LHCb)
 SIGMA_BC_PB = 0.9e6
@@ -57,8 +49,6 @@ FRAG_B = {
     511: 0.408,   # B0/B0bar
     531: 0.100,   # Bs
 }
-# Bc fraction: σ(Bc)/σ(B+) ≈ 2.6e-3 from LHCb
-F_BC = 2.6e-3
 
 # Charm fragmentation (ALICE/PDG, relative fractions)
 # These are fractions of c-quarks hadronizing into each species.
@@ -69,12 +59,6 @@ FRAG_C = {
     411: 0.225,   # D+/D-
     431: 0.080,   # Ds+/Ds-
 }
-
-# ==========================================================================
-# EW K-factor
-# ==========================================================================
-
-K_FACTOR_EW = 1.3  # NLO/LO correction for W/Z → ℓN production
 
 # ==========================================================================
 # Meson species lookup tables

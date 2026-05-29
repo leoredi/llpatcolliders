@@ -22,7 +22,7 @@ single FONLL fragmentation choice (`meson = D0`) supplies the pT and y
 *shape* only; species fractions are an external input.
 
 PDF choice rationale: matches the Curtin-group MATHUSLA reference files
-(`MATHUSLA_LLPfiles_RHN_U{e,mu,tau}`) so that the resulting GARGOYLE
+(`MATHUSLA_LLPfiles_RHN_U{e,mu,tau}`) so that the resulting GRENDEL
 sensitivity uses the same production baseline as the published MATHUSLA
 curves. An NNPDF4.0 update is intentionally deferred (one-file swap).
 
@@ -42,3 +42,15 @@ Used in `hnl/production/decay_engine/` to evaluate:
 
 All HNLCalc calls are made with unit coupling (`U^2 = 1`); the explicit
 `U^2` scan is the consumer's responsibility (and not part of this PR).
+
+### Local modifications
+
+- Removed a duplicated `Ds+ -> K0` form-factor block in `HNLCalc.py`.
+  Upstream contained two independent `if` statements matching the same
+  condition (`pid0 in ["431","-431"] and pid1 in ["311","-311"]`), each
+  assigning `f00` a different value: the first set `f00 = 0.747` and a
+  later block set `f00 = 0.72`. Because both are plain `if`s, the second
+  always overrode the first, making the `0.747` block dead code. We
+  deleted the dead `0.747` block and kept the effective value
+  (`f00 = 0.72`), so the numerical behavior is unchanged. The
+  `0.747`-vs-`0.72` discrepancy is an upstream bug worth filing upstream.

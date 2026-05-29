@@ -13,7 +13,7 @@ All functions are vectorized over arrays of parent 4-vectors.
 import numpy as np
 
 
-def _boost_to_lab(p4_rest, parent_E, parent_px, parent_py, parent_pz, parent_m):
+def _boost_to_lab(p4_rest, parent_E, parent_px, parent_py, parent_pz):
     """
     Boost 4-vectors from parent rest frame to lab frame.
 
@@ -23,8 +23,6 @@ def _boost_to_lab(p4_rest, parent_E, parent_px, parent_py, parent_pz, parent_m):
         4-vectors (E, px, py, pz) in parent rest frame.
     parent_E, parent_px, parent_py, parent_pz : ndarray, shape (N,)
         Parent 4-momentum in lab frame.
-    parent_m : ndarray, shape (N,)
-        Parent mass.
 
     Returns
     -------
@@ -115,9 +113,8 @@ def decay_2body(parent_E, parent_px, parent_py, parent_pz, m_parent, m1, m2, rng
     d2_rest = np.column_stack([E2_star, -px_star, -py_star, -pz_star])
 
     # Boost to lab
-    m_arr = np.full(N, M)
-    d1_lab = _boost_to_lab(d1_rest, parent_E, parent_px, parent_py, parent_pz, m_arr)
-    d2_lab = _boost_to_lab(d2_rest, parent_E, parent_px, parent_py, parent_pz, m_arr)
+    d1_lab = _boost_to_lab(d1_rest, parent_E, parent_px, parent_py, parent_pz)
+    d2_lab = _boost_to_lab(d2_rest, parent_E, parent_px, parent_py, parent_pz)
 
     return d1_lab, d2_lab
 
@@ -220,12 +217,11 @@ def decay_3body_flat(parent_E, parent_px, parent_py, parent_pz,
     sys23_pz = -d1_pz
 
     # Boost d1 and sys23 from parent rest frame to lab
-    m_arr = np.full(N, M)
     d1_rest = np.column_stack([d1_E, d1_px, d1_py, d1_pz])
-    d1_lab = _boost_to_lab(d1_rest, parent_E, parent_px, parent_py, parent_pz, m_arr)
+    d1_lab = _boost_to_lab(d1_rest, parent_E, parent_px, parent_py, parent_pz)
 
     sys23_rest = np.column_stack([sys23_E, sys23_px, sys23_py, sys23_pz])
-    sys23_lab = _boost_to_lab(sys23_rest, parent_E, parent_px, parent_py, parent_pz, m_arr)
+    sys23_lab = _boost_to_lab(sys23_rest, parent_E, parent_px, parent_py, parent_pz)
 
     # Step 2: decay sys23 → d2 + d3 in sys23 rest frame
     p23_star = np.sqrt(np.maximum(
@@ -249,12 +245,10 @@ def decay_3body_flat(parent_E, parent_px, parent_py, parent_pz,
     d2_lab = _boost_to_lab(
         d2_in_sys23,
         sys23_lab[:, 0], sys23_lab[:, 1], sys23_lab[:, 2], sys23_lab[:, 3],
-        m23
     )
     d3_lab = _boost_to_lab(
         d3_in_sys23,
         sys23_lab[:, 0], sys23_lab[:, 1], sys23_lab[:, 2], sys23_lab[:, 3],
-        m23
     )
 
     return d1_lab, d2_lab, d3_lab

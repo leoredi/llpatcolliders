@@ -37,17 +37,17 @@ def _build_cdf(pt_arr, y_arr, dsigma_2d):
     dpt = np.diff(pt_arr)
     dy = np.diff(y_arr)
 
-    # Use interior bin widths; for bin centers, the weight of bin i is
-    # approximated by the average of neighboring half-widths.
-    # For the edges, use the half-width to the nearest neighbor.
+    # Treat grid nodes as bin centers (midpoint rule): the weight of an
+    # interior bin is the average of its neighboring half-widths, and each
+    # edge bin uses half the spacing to its single nearest neighbor.
     pt_widths = np.zeros(n_pt)
     pt_widths[0] = dpt[0] / 2.0
-    pt_widths[-1] = dpt[-1]
+    pt_widths[-1] = dpt[-1] / 2.0
     pt_widths[1:-1] = (dpt[:-1] + dpt[1:]) / 2.0
 
     y_widths = np.zeros(n_y)
-    y_widths[0] = dy[0]
-    y_widths[-1] = dy[-1]
+    y_widths[0] = dy[0] / 2.0
+    y_widths[-1] = dy[-1] / 2.0
     y_widths[1:-1] = (dy[:-1] + dy[1:]) / 2.0
 
     # 2D bin probabilities (unnormalized)
@@ -117,6 +117,7 @@ def sample_meson_4vectors(n_events, quark, rng=None):
     pt_sampled = pt_arr[i_pt] + rng.uniform(-0.5, 0.5, n_events) * pt_widths[i_pt]
     y_sampled = y_arr[i_y] + rng.uniform(-0.5, 0.5, n_events) * y_widths[i_y]
     pt_sampled = np.maximum(pt_sampled, 0.0)  # pT >= 0
+    y_sampled = np.clip(y_sampled, y_arr.min(), y_arr.max())
 
     # Uniform azimuthal angle
     phi = rng.uniform(0, 2 * np.pi, n_events)
