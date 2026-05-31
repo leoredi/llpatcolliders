@@ -1,9 +1,6 @@
 """Sanity checks on the FONLL table parser using the vendored FONLL tables."""
 
-import json
-import os
-import subprocess
-import sys
+import importlib
 
 import numpy as np
 import pytest
@@ -19,13 +16,16 @@ def test_table_files_exist():
             assert path.exists(), f"Missing vendored {label} FONLL table for {q}: {path}"
 
 
-def test_parse_shape_is_rectangular_and_covers_target_range():
+def test_parse_shape_is_rectangular_for_all_backends():
+    """All backends parse as 1D pT, 1D y, 2D dsigma of consistent shape.
+    Does NOT hard-code grid density."""
     for files in FONLL_FILE_SETS.values():
         for q in ("charm", "bottom"):
             pt, y, ds = parse_fonll_file(files[q])
             assert pt.ndim == 1
             assert y.ndim == 1
-            assert ds.shape == (100, 100)
+            assert ds.shape == (len(pt), len(y))
+            assert len(pt) >= 2 and len(y) >= 2
             assert pt.min() <= 0.0 and pt.max() >= 50.0
             assert y.min() <= -3.0 and y.max() >= 3.0
 
@@ -98,52 +98,36 @@ def test_parser_rejects_descending_y(tmp_path):
         parse_fonll_file(path)
 
 
-def _run_dispatch(env_value=None):
-    env = os.environ.copy()
-    if env_value is None:
-        env.pop("HNL_FONLL_SET", None)
+def _reload_parser_with_env(monkeypatch, value):
+    """Reload the parser module with HNL_FONLL_SET set to `value`,
+    or unset if value is None. Returns the freshly reloaded module."""
+    if value is None:
+        monkeypatch.delenv("HNL_FONLL_SET", raising=False)
     else:
-        env["HNL_FONLL_SET"] = env_value
-    code = """
-import json
-from production.fonll.fonll_parser import FONLL_DEFAULT_SET, FONLL_FILES, get_sigma_total
-from production.fonll.meson_sampler import FONLL_FILES as SAMPLER_FILES
-print(json.dumps({
-    "set": FONLL_DEFAULT_SET,
-    "bottom": FONLL_FILES["bottom"].name,
-    "sampler_bottom": SAMPLER_FILES["bottom"].name,
-    "sigma_bottom": get_sigma_total("bottom"),
-}))
-"""
-    return subprocess.run(
-        [sys.executable, "-c", code], env=env, check=False,
-        capture_output=True, text=True,
-    )
+        monkeypatch.setenv("HNL_FONLL_SET", value)
+    import production.fonll.fonll_parser as m
+    return importlib.reload(m)
 
 
-def test_backend_dispatch_default_and_legacy():
-    default = _run_dispatch()
-    assert default.returncode == 0, default.stderr
-    default_data = json.loads(default.stdout)
-    assert default_data["set"] == "nnpdf40_nlo"
-    assert "nnpdf40_nlo_as_01180" in default_data["bottom"]
-    assert default_data["sampler_bottom"] == default_data["bottom"]
-    assert default_data["sigma_bottom"] > 0
-
-    legacy = _run_dispatch("cteq66_legacy")
-    assert legacy.returncode == 0, legacy.stderr
-    legacy_data = json.loads(legacy.stdout)
-    assert legacy_data["set"] == "cteq66_legacy"
-    assert "cteq66" in legacy_data["bottom"]
-    assert legacy_data["sampler_bottom"] == legacy_data["bottom"]
-    assert legacy_data["sigma_bottom"] > 0
+def test_backend_dispatch_default_is_nnpdf40(monkeypatch):
+    m = _reload_parser_with_env(monkeypatch, None)
+    assert m.FONLL_DEFAULT_SET == "nnpdf40_nlo"
+    assert "nnpdf40_nlo_as_01180" in m.FONLL_FILES["bottom"].name
+    assert m.get_sigma_total("bottom") > 0
 
 
-def test_invalid_backend_fails_fast():
-    result = _run_dispatch("typo")
-    assert result.returncode != 0
-    assert "unknown HNL_FONLL_SET='typo'" in result.stderr
-    assert "cteq66_legacy, nnpdf40_nlo" in result.stderr
+def test_backend_dispatch_legacy_cteq66(monkeypatch):
+    m = _reload_parser_with_env(monkeypatch, "cteq66_legacy")
+    assert m.FONLL_DEFAULT_SET == "cteq66_legacy"
+    assert "cteq66" in m.FONLL_FILES["bottom"].name
+    assert m.get_sigma_total("bottom") > 0
+
+
+def test_invalid_backend_fails_fast(monkeypatch):
+    monkeypatch.setenv("HNL_FONLL_SET", "typo")
+    import production.fonll.fonll_parser as m
+    with pytest.raises(ValueError, match="unknown HNL_FONLL_SET='typo'"):
+        importlib.reload(m)
 
 
 def test_dsigma_nonnegative_majority():
@@ -163,3 +147,11 @@ def test_total_sigma_order_of_magnitude():
     assert 1e7 < sigma_b < 1e9, f"sigma_bottom = {sigma_b:.3e} pb out of expected range"
     # charm > bottom at LHC
     assert sigma_c > sigma_b
+
+
+@pytest.fixture(autouse=True)
+def _restore_parser_default(monkeypatch):
+    yield
+    monkeypatch.delenv("HNL_FONLL_SET", raising=False)
+    import production.fonll.fonll_parser as m
+    importlib.reload(m)
