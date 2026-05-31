@@ -3,21 +3,36 @@ production/fonll/fonll_parser.py
 
 Parse vendored FONLL meson-level differential cross-section tables.
 
-Files: 100×100 grid in (pT, y), 3 columns: pT  y  dσ/dpT/dy [pb/GeV]
-pT: 0–50 GeV (100 bins), y: −3 to +3 (100 bins).
+Files are rectangular grids in (pT, y), 3 columns:
+pT  y  dσ/dpT/dy [pb/GeV].  The current NNPDF4.0 central tables use
+100 pT nodes over 0..50 GeV and 100 y nodes over -3..3.
 pT varies slowly (outer loop), y varies fast (inner loop).
 """
 
 import numpy as np
+import os
 from pathlib import Path
 
 # Vendored FONLL table paths (relative to project root)
 _VENDORED_DIR = Path(__file__).parent.parent.parent / "vendored"
 
-FONLL_FILES = {
-    "bottom": _VENDORED_DIR / "fonll_pp14tev_cteq66_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat",
-    "charm":  _VENDORED_DIR / "fonll_pp14tev_cteq66_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat",
+FONLL_FILE_SETS = {
+    "nnpdf40_nlo": {
+        "bottom": _VENDORED_DIR / "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat",
+        "charm": _VENDORED_DIR / "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat",
+    },
+    "cteq66_legacy": {
+        "bottom": _VENDORED_DIR / "fonll_pp14tev_cteq66_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat",
+        "charm": _VENDORED_DIR / "fonll_pp14tev_cteq66_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat",
+    },
 }
+
+FONLL_DEFAULT_SET = os.environ.get("HNL_FONLL_SET", "nnpdf40_nlo")
+if FONLL_DEFAULT_SET not in FONLL_FILE_SETS:
+    valid = ", ".join(sorted(FONLL_FILE_SETS))
+    raise ValueError(f"unknown HNL_FONLL_SET={FONLL_DEFAULT_SET!r}; valid values: {valid}")
+
+FONLL_FILES = FONLL_FILE_SETS[FONLL_DEFAULT_SET]
 
 
 def parse_fonll_file(path):
@@ -49,6 +64,12 @@ def parse_fonll_file(path):
     n_y = len(y_unique)
 
     # Reshape: pT varies slowly (outer), y varies fast (inner)
+    if len(data) != n_pt * n_y:
+        raise ValueError(f"{path}: expected a rectangular pT-y grid")
+    expected_pt = np.repeat(pt_unique, n_y)
+    expected_y = np.tile(y_unique, n_pt)
+    if not np.array_equal(pt_all, expected_pt) or not np.array_equal(y_all, expected_y):
+        raise ValueError(f"{path}: rows must be ordered with pT outermost and y innermost")
     dsigma_2d = dsigma_all.reshape(n_pt, n_y)
 
     return pt_unique, y_unique, dsigma_2d

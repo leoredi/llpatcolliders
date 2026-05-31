@@ -42,22 +42,59 @@ SIGMA_BC_PB = 0.9e6
 # Fragmentation fractions
 # ==========================================================================
 
-# Beauty fragmentation (PDG/HFLAV)
-# P(b → B-hadron species), particle+antiparticle combined
+# Central pp fragmentation policy for the HL-LHC off-axis study.
+#
+# The FONLL tables are generated with fragmentation fraction 1 and provide the
+# kinematic meson-shape input. Physical species fractions are applied here in
+# the event-weight layer. Species sampling normalizes over the simulated meson
+# subset, but the weights below keep the absolute fragmentation fractions.
+#
+# Charm: ALICE pp, sqrt(s)=13 TeV, |y|<0.5 fragmentation fractions.
+# Bottom: LHCb pp, sqrt(s)=13 TeV, 2<eta<5, 4<pT<25 GeV averages with
+# fs/(fu+fd)=0.122, f_Lambdab/(fu+fd)=0.259, and fu=fd.
+#
+# Baryons are tracked as omitted fractions because the current HNLCalc meson
+# production layer does not simulate Lambda_c/Xi_c/Lambda_b parents.
+
+# Beauty fragmentation, probabilities per b quark.
 FRAG_B = {
-    521: 0.408,   # B+/B-
-    511: 0.408,   # B0/B0bar
-    531: 0.100,   # Bs
+    521: 0.36205648081100655,  # B+/B-
+    511: 0.36205648081100655,  # B0/B0bar
+    531: 0.08834178131788560,  # Bs
 }
 
-# Charm fragmentation (ALICE/PDG, relative fractions)
-# These are fractions of c-quarks hadronizing into each species.
-# The FONLL meson table already includes fragmentation → these fractions
-# tell us how to split the FONLL charm meson cross-section among species.
+# Charm fragmentation, probabilities per c quark.
 FRAG_C = {
-    421: 0.542,   # D0/D0bar (dominant)
-    411: 0.225,   # D+/D-
-    431: 0.080,   # Ds+/Ds-
+    421: 0.382,   # D0/D0bar, includes strong D* feeddown convention
+    411: 0.191,   # D+/D-
+    431: 0.061,   # Ds+/Ds-
+}
+
+OMITTED_FRAG_B = {
+    # Aggregate omitted bottom-baryon remainder inferred from the Lambda_b ratio.
+    "b_baryons": 0.18754525706010140,
+}
+
+OMITTED_FRAG_C = {
+    "Lambda_c+": 0.168,
+    "Xi_c0": 0.099,
+    "Xi_c+": 0.096,
+    "J/psi": 0.0037,
+}
+
+FRAGMENTATION_POLICY = {
+    "bottom": {
+        "source": "LHCb Phys. Rev. D100 (2019) 031102, arXiv:1902.06794",
+        "scope": "pp 13 TeV, 2<eta<5, 4<pT<25 GeV; fu=fd; Lambda_b kept as omitted baryon fraction",
+        "meson_fraction_sum": sum(FRAG_B.values()),
+        "omitted_fraction_sum": sum(OMITTED_FRAG_B.values()),
+    },
+    "charm": {
+        "source": "ALICE charm fragmentation fractions in pp 13 TeV, arXiv:2308.04877",
+        "scope": "pp 13 TeV, |y|<0.5; D* counted as feeddown to D0/D+ rather than as an independent weak parent",
+        "meson_fraction_sum": sum(FRAG_C.values()),
+        "omitted_fraction_sum": sum(OMITTED_FRAG_C.values()),
+    },
 }
 
 # ==========================================================================

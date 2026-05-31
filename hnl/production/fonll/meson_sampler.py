@@ -4,13 +4,30 @@ production/fonll/meson_sampler.py
 Inverse-CDF sampler from 2D FONLL dσ/dpT/dy grids.
 
 Generates meson 4-vectors (E, px, py, pz) drawn from the FONLL
-differential cross-section, with species assigned according to
-fragmentation fractions.
+differential cross-section. Species are assigned over the simulated meson
+subset only; absolute fragmentation fractions are applied later in the event
+weights.
 """
 
 import numpy as np
 from .fonll_parser import parse_fonll_file, FONLL_FILES
 from ..constants import QUARK_MESON_MAP, MESON_MASSES
+
+
+def _node_bin_edges(values):
+    """Return midpoint-rule bin edges bounded by the tabulated node range."""
+    if len(values) < 2:
+        raise ValueError("FONLL sampling requires at least two grid nodes")
+    edges = np.empty(len(values) + 1)
+    edges[0] = values[0]
+    edges[-1] = values[-1]
+    edges[1:-1] = 0.5 * (values[:-1] + values[1:])
+    return edges
+
+
+def _sample_node_intervals(edges, indices, rng):
+    """Uniformly smear selected nodes inside their bounded bin intervals."""
+    return rng.uniform(edges[indices], edges[indices + 1])
 
 
 def _build_cdf(pt_arr, y_arr, dsigma_2d):
@@ -27,28 +44,17 @@ def _build_cdf(pt_arr, y_arr, dsigma_2d):
         Bin edges in pT.
     y_edges : ndarray
         Bin edges in rapidity.
-    flat_idx_to_ij : callable
-        Maps flat index → (i_pt, i_y) tuple.
     """
     n_pt = len(pt_arr)
     n_y = len(y_arr)
 
-    # Compute bin widths (non-uniform spacing)
-    dpt = np.diff(pt_arr)
-    dy = np.diff(y_arr)
-
     # Treat grid nodes as bin centers (midpoint rule): the weight of an
     # interior bin is the average of its neighboring half-widths, and each
     # edge bin uses half the spacing to its single nearest neighbor.
-    pt_widths = np.zeros(n_pt)
-    pt_widths[0] = dpt[0] / 2.0
-    pt_widths[-1] = dpt[-1] / 2.0
-    pt_widths[1:-1] = (dpt[:-1] + dpt[1:]) / 2.0
-
-    y_widths = np.zeros(n_y)
-    y_widths[0] = dy[0] / 2.0
-    y_widths[-1] = dy[-1] / 2.0
-    y_widths[1:-1] = (dy[:-1] + dy[1:]) / 2.0
+    pt_edges = _node_bin_edges(pt_arr)
+    y_edges = _node_bin_edges(y_arr)
+    pt_widths = np.diff(pt_edges)
+    y_widths = np.diff(y_edges)
 
     # 2D bin probabilities (unnormalized)
     prob_2d = dsigma_2d * pt_widths[:, None] * y_widths[None, :]
@@ -58,10 +64,11 @@ def _build_cdf(pt_arr, y_arr, dsigma_2d):
     prob_flat = prob_2d.ravel()
     cdf = np.cumsum(prob_flat)
     norm = cdf[-1]
-    if norm > 0:
-        cdf /= norm
+    if not np.isfinite(norm) or norm <= 0:
+        raise ValueError("FONLL sampling grid has no finite positive weight")
+    cdf /= norm
 
-    return cdf, pt_arr, y_arr, pt_widths, y_widths
+    return cdf, pt_edges, y_edges
 
 
 def sample_meson_4vectors(n_events, quark, rng=None):
@@ -72,7 +79,7 @@ def sample_meson_4vectors(n_events, quark, rng=None):
       1. Draw (pT, y) bin from inverse CDF
       2. Uniform sub-bin smearing within the drawn bin
       3. Uniform φ in [0, 2π)
-      4. Assign meson species from fragmentation fractions
+      4. Assign meson species from relative fractions within simulated mesons
       5. Compute 4-vector (E, px, py, pz) from (pT, y, φ, m)
 
     Parameters
@@ -100,7 +107,7 @@ def sample_meson_4vectors(n_events, quark, rng=None):
     # Parse FONLL grid and build CDF
     path = FONLL_FILES[quark]
     pt_arr, y_arr, dsigma_2d = parse_fonll_file(path)
-    cdf, _, _, pt_widths, y_widths = _build_cdf(pt_arr, y_arr, dsigma_2d)
+    cdf, pt_edges, y_edges = _build_cdf(pt_arr, y_arr, dsigma_2d)
 
     n_pt = len(pt_arr)
     n_y = len(y_arr)
@@ -114,10 +121,8 @@ def sample_meson_4vectors(n_events, quark, rng=None):
     i_y = flat_idx % n_y
 
     # Sub-bin smearing: uniform within the bin
-    pt_sampled = pt_arr[i_pt] + rng.uniform(-0.5, 0.5, n_events) * pt_widths[i_pt]
-    y_sampled = y_arr[i_y] + rng.uniform(-0.5, 0.5, n_events) * y_widths[i_y]
-    pt_sampled = np.maximum(pt_sampled, 0.0)  # pT >= 0
-    y_sampled = np.clip(y_sampled, y_arr.min(), y_arr.max())
+    pt_sampled = _sample_node_intervals(pt_edges, i_pt, rng)
+    y_sampled = _sample_node_intervals(y_edges, i_y, rng)
 
     # Uniform azimuthal angle
     phi = rng.uniform(0, 2 * np.pi, n_events)

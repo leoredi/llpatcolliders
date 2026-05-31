@@ -9,7 +9,7 @@ For each (flavor, mass_point):
   2. For each meson species, check kinematic threshold: m_N < m_meson - m_lepton
   3. Compute BR from HNLCalc (get_2body_br + integrate_3body_br) at U²=1
   4. Decay meson → HNL via 2-body or 3-body kinematics
-  5. Assign weight: w_i = 2 × σ_FONLL × f_species × BR / N_sample
+  5. Assign weight: w_i = 2 × σ_FONLL × f_species × BR / N_species_sampled
 
 Factor of 2: FONLL gives (quark + antiquark)/2 → multiply by 2 for total.
 
@@ -398,11 +398,11 @@ def generate_bc_pool(n_pool, rng):
     and recompute 4-vectors with Bc mass.
     """
     from production.fonll.fonll_parser import parse_fonll_file, FONLL_FILES
-    from production.fonll.meson_sampler import _build_cdf
+    from production.fonll.meson_sampler import _build_cdf, _sample_node_intervals
 
     path = FONLL_FILES["bottom"]
     pt_arr, y_arr, dsigma_2d = parse_fonll_file(path)
-    cdf, _, _, pt_widths, y_widths = _build_cdf(pt_arr, y_arr, dsigma_2d)
+    cdf, pt_edges, y_edges = _build_cdf(pt_arr, y_arr, dsigma_2d)
 
     n_pt = len(pt_arr)
     n_y = len(y_arr)
@@ -414,9 +414,8 @@ def generate_bc_pool(n_pool, rng):
     i_pt = flat_idx // n_y
     i_y = flat_idx % n_y
 
-    pt = pt_arr[i_pt] + rng.uniform(-0.5, 0.5, n_pool) * pt_widths[i_pt]
-    y = y_arr[i_y] + rng.uniform(-0.5, 0.5, n_pool) * y_widths[i_y]
-    pt = np.maximum(pt, 0.0)
+    pt = _sample_node_intervals(pt_edges, i_pt, rng)
+    y = _sample_node_intervals(y_edges, i_y, rng)
     phi = rng.uniform(0, 2 * np.pi, n_pool)
 
     m = MESON_MASSES[541]  # Bc mass

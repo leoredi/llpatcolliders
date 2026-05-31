@@ -43,6 +43,8 @@ HL-LHC (pp, sqrt(s) = 14 TeV).
     |-- vendored/
         |-- PROVENANCE.md                FONLL form params, HNLCalc upstream
         |-- HNLCalc/                     pure-Python HNL BR computation
+        |-- fonll_pp14tev_nnpdf40_nlo_as_01180_..._charm.dat
+        |-- fonll_pp14tev_nnpdf40_nlo_as_01180_..._bottom.dat
         |-- fonll_pp14tev_cteq66_..._charm.dat
         |-- fonll_pp14tev_cteq66_..._bottom.dat
 
@@ -193,15 +195,17 @@ Each driver takes `--flavor`, `--masses`, `--n-pool`, `--seed`.
 
     pytest hnl/tests/
 
-11 tests covering parser shape and total xsec, sampled-pool moments,
+The test suite covers parser shape and total xsec, sampled-pool moments,
 2-body and 3-body energy/momentum conservation, and a single end-to-end
 smoke for `D -> N` at `m_N = 1 GeV`.
 
 ## Methodology references
 
 - FONLL: Cacciari, Greco, Nason (NLO+NLL heavy-quark production)
+- Central production tables: local FONLL+LHAPDF with
+  `NNPDF40_nlo_as_01180`
 - MATHUSLA reference files: davidrcurtin/MATHUSLA_LLPfiles_RHN_U{e,mu,tau}
-  — same FONLL + CTEQ6.6 baseline, same species splitting
+  — legacy FONLL + CTEQ6.6 comparison baseline
 - HNL branching ratios: Bondarenko, Boyarsky, Mikulenko, Naumov et al.
   1805.08567 "Phenomenology of GeV-scale HNLs" (implemented in HNLCalc)
 - Tau-decay HNL channels: standard charged-current + neutral-current,
@@ -212,25 +216,41 @@ HNLCalc upstream commit.
 
 ## Known limitations
 
-These are deliberate trade-offs in this PR. Each is a one-file fix later
+These are deliberate trade-offs in this PR and should be tracked explicitly
 if revisited:
 
-- **PDF set: CTEQ6.6** — chosen to match the Curtin/MATHUSLA reference files
-  so overlay comparisons against the published MATHUSLA curves stay
-  apples-to-apples. NNPDF4.0 shifts the central rate by O(10-15 %) at
-  14 TeV; not yet implemented. Swap = replace the two `.dat` files.
+- **Default FONLL backend: NNPDF4.0 NLO** — the production parser now uses
+  local FONLL+LHAPDF `NNPDF40_nlo_as_01180` tables by default. The old
+  CTEQ6.6 tables remain available as the `cteq66_legacy` backend for
+  reference comparisons by setting `HNL_FONLL_SET=cteq66_legacy` before
+  starting Python.
 - **FONLL grid pT_max = 50 GeV** — high-pT contribution above this is
   dropped. Negligible for forward / off-axis acceptance but matters for
   high-pT analyses; extend by regenerating tables on a wider grid.
 - **Central scale, no PDF or scale uncertainty** — single central
   prediction in the vendored tables. Systematics deferred.
-- **Single FONLL fragmentation choice** (`meson = D0` for charm shape) —
-  D0 and D+ pT shapes are nearly identical for FONLL, so this is a
-  ~few-percent effect masked by species splitting via FRAG_C/B.
+- **Species shapes** — charm uses the public-FONLL `D0` convention with
+  calibrated `D*` feeddown as the central pT-y shape for D0, D+, and Ds.
+  D+ and Ds species fractions are applied in weights, but dedicated D+/Ds
+  pT-y shape variations are still a systematic, not a separate central grid.
+  Reconstructing physical on-shell meson four-vectors from sampled pT and y
+  is intentional; the species-shape approximation is the relevant systematic.
+- **Static bottom fragmentation fractions** — the omitted bottom-baryon
+  remainder is derived from LHCb's pT-averaged Lambda_b ratio over
+  `4 < pT < 25 GeV`, `2 < eta < 5` and applied over the full table. Its
+  measured pT dependence and extrapolation outside that acceptance are not
+  modeled. A detector-level refinement must update sampling and event weights
+  consistently.
 - **No NLO matching for the production decay** — `decay_3body_flat`
   is flat phase space (no matrix-element weighting). Acceptable for
   total BR-weighted yields; biased for differential distributions in
   the decay daughters.
+- **Tau polarization neglected** — Ds -> tau nu and B+ -> tau nu produce
+  longitudinally polarized taus, but `decay_2body` / `decay_3body_flat`
+  decay them isotropically in the tau rest frame. This washes out the
+  parent-N angular correlation and biases the HNL energy spectrum at
+  fixed parent boost by O(20-30 %). Acceptable for total yields; biased
+  for differential angular distributions.
 - **B0 -> tau nu omitted** — helicity-suppressed in SM; only B+ -> tau nu
   retained in the induced-tau chain.
 - **W -> tau nu omitted** — moves to the W/Z PR. This is the dominant
@@ -240,6 +260,6 @@ if revisited:
   the two-body kaon decay K+ -> lN is the dominant HNL source below
   ~0.5 GeV and is not included. Sub-0.5 GeV yields are therefore
   underestimated.
-- **No Lambda_b / Lambda_c baryon channels** — beauty- and charm-baryon
-  production (Lambda_b ~8 %, Lambda_c ~15 % of the respective heavy-quark
-  yields) is not included; only meson parents are simulated.
+- **No Lambda_b / Lambda_c / Xi_c baryon channels** — pp fragmentation
+  fractions now track the omitted baryon component explicitly, but only meson
+  parents are simulated in this production layer.

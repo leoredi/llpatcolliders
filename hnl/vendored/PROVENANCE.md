@@ -2,29 +2,33 @@
 
 ## FONLL meson tables
 
-Two double-differential heavy-meson production cross sections,
-`dsigma/dpT/dy`, generated from the FONLL web interface at LPTHE.
+The default production backend uses two local FONLL+LHAPDF
+double-differential heavy-meson production cross sections, `dsigma/dpT/dy`,
+generated for the HL-LHC pp 14 TeV setup.
 
-- URL: http://www.lpthe.jussieu.fr/~cacciari/fonll/fonllform.html
-- FONLL version: v1.3.2
+- FONLL source: v1.3.3 (`c7086e49141cf6705cf7a4bc5f7d0b3a38673203`)
+- LHAPDF: 6.5.6
 - Process: pp at sqrt(s) = 14 TeV
-- PDF set: CTEQ6.6
-- Output: meson-level (`meson = D0`), fragmentation fraction 1
-- Grid: 100 pT bins in [0, 50] GeV x 100 y bins in [-3, 3]
+- PDF set: `NNPDF40_nlo_as_01180` (LHAPDF ID 331700)
+- Output: meson-level, fragmentation fraction 1
+- Bottom convention: public FONLL B-hadron default, Kartvelishvili
+  `alpha = 24.2`
+- Charm convention: public FONLL `D0`, BCFY `r = 0.1`, with calibrated
+  `D* -> D0` feeddown
+- Grid: 100 pT nodes over 0..50 GeV, 100 y nodes over -3..3
 - Scale: central (mu_R = mu_F = mu_0)
+- Local FONLL capacity patch: `fonllgrid.f` and `fragmfonll.f` rapidity
+  array limits raised to 120 nodes so the dense grid and terminating sentinel
+  are accepted; no physics formulas changed
 - Files:
-  - `fonll_pp14tev_cteq66_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat`
-  - `fonll_pp14tev_cteq66_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat`
+  - `fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat`
+  - `fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat`
 
 Species splitting (D0/D+/Ds for charm; B+/B0/Bs for bottom) is applied
 downstream by `hnl/production/constants.py::FRAG_C` and `FRAG_B`. The
-single FONLL fragmentation choice (`meson = D0`) supplies the pT and y
-*shape* only; species fractions are an external input.
-
-PDF choice rationale: matches the Curtin-group MATHUSLA reference files
-(`MATHUSLA_LLPfiles_RHN_U{e,mu,tau}`) so that the resulting GRENDEL
-sensitivity uses the same production baseline as the published MATHUSLA
-curves. An NNPDF4.0 update is intentionally deferred (one-file swap).
+FONLL tables supply pT-y shape and normalization before physical species
+fractions. CTEQ6.6 web-generated tables remain vendored as `cteq66_legacy`
+comparison inputs in `production/fonll/fonll_parser.py`.
 
 ## HNLCalc
 
@@ -52,5 +56,16 @@ All HNLCalc calls are made with unit coupling (`U^2 = 1`); the explicit
   later block set `f00 = 0.72`. Because both are plain `if`s, the second
   always overrode the first, making the `0.747` block dead code. We
   deleted the dead `0.747` block and kept the effective value
-  (`f00 = 0.72`), so the numerical behavior is unchanged. The
-  `0.747`-vs-`0.72` discrepancy is an upstream bug worth filing upstream.
+  (`f00 = 0.72`), so the numerical behavior is unchanged.
+
+  `Ds+ -> K0` is a c -> d transition (with an anti-strange spectator),
+  distinct from the `D -> K` c -> s transition immediately above it in
+  `HNLCalc.py`. The retained normalization is supported by Melikhov and
+  Stech (hep-ph/0001113, Table XVII), which gives
+  `F_+^{Ds -> K}(0) = F_0^{Ds -> K}(0) = 0.72` in a relativistic
+  dispersion constituent-quark model. For comparison, HPQCD gives
+  `f_+^{D -> K}(0) = 0.747(19)` for `D -> K` (1008.4562), while an
+  independent lattice calculation gives `f_+^{Ds -> K}(0) = 0.68(4)(3)`
+  (0903.1664), compatible with `0.72` within its quoted uncertainties.
+  The deleted `0.747` block appears to have copied the `D -> K` value
+  into the `Ds -> K` channel.
