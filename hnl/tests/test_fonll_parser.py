@@ -53,6 +53,51 @@ def test_parser_rejects_rows_outside_pt_outer_y_inner_order(tmp_path):
         parse_fonll_file(path)
 
 
+def test_parser_accepts_consistent_rounding(tmp_path):
+    """A rectangular table with ~1e-12 float noise must pass the new allclose check.
+
+    Also confirms the previous np.array_equal check would have rejected it,
+    so the regression value of relaxing to np.allclose is explicit.
+    """
+    path = tmp_path / "noisy.dat"
+    pt_nodes = np.array([0.0, 1.0, 2.0])
+    y_nodes = np.array([-1.0, 0.0, 1.0])
+    rows = []
+    for i, pt in enumerate(pt_nodes):
+        for j, y in enumerate(y_nodes):
+            # Add subtle 1e-12 noise to pT; y stays clean.
+            noisy_pt = pt + 1e-12 * ((i + j) % 2)
+            rows.append([noisy_pt, y, 1.0 + 0.1 * i + 0.01 * j])
+    data = np.array(rows)
+    np.savetxt(path, data)
+
+    # Sanity: np.array_equal would NOT have accepted this — the noise is real.
+    pt_all = data[:, 0]
+    pt_unique = np.unique(pt_all)
+    expected_pt = np.repeat(pt_unique, len(y_nodes))
+    assert np.array_equal(pt_all, expected_pt) is False
+
+    # The new allclose-based parser must accept the noisy table.
+    pt_arr, y_arr, ds = parse_fonll_file(path)
+    assert pt_arr.shape == (3,)
+    assert y_arr.shape == (3,)
+    assert ds.shape == (3, 3)
+
+
+def test_parser_rejects_descending_y(tmp_path):
+    """A file with descending y rows must raise a clear ascending-order error."""
+    path = tmp_path / "descending_y.dat"
+    pt_nodes = np.array([0.0, 1.0])
+    y_nodes_desc = np.array([1.0, 0.0, -1.0])  # descending
+    rows = []
+    for pt in pt_nodes:
+        for y in y_nodes_desc:
+            rows.append([pt, y, 1.0])
+    np.savetxt(path, np.array(rows))
+    with pytest.raises(ValueError, match="y column must be in ascending order"):
+        parse_fonll_file(path)
+
+
 def _run_dispatch(env_value=None):
     env = os.environ.copy()
     if env_value is None:
