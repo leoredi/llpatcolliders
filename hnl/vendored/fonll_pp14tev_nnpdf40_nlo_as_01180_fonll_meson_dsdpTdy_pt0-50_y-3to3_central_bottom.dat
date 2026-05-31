@@ -18,7 +18,7 @@
 # fragmentation_alpha: 24.2
 # fragmentation_frame: y=0
 # fragmentation_fraction: 1
-# meson_mass: heavy quark mass
+# meson_mass: not used (ifrframe=1, dsigma/dpT/dy independent of xmh; on-shell mass is applied at sampling time)
 # internal_quark_grid: /Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local/run/nlo_bottom/nl_b_.out
 # output_pT_values_GeV: 0..50 step 0.50505051
 # output_y_values: -3..3 step 0.060606061

@@ -233,8 +233,12 @@ if revisited:
   calibrated `D*` feeddown as the central pT-y shape for D0, D+, and Ds.
   D+ and Ds species fractions are applied in weights, but dedicated D+/Ds
   pT-y shape variations are still a systematic, not a separate central grid.
-  Reconstructing physical on-shell meson four-vectors from sampled pT and y
-  is intentional; the species-shape approximation is the relevant systematic.
+  The FONLL output convention used here is `ifrframe = 1` (y=0-frame
+  fragmentation, the public-FONLL default for `dsigma/dpT/dy`), under which
+  the table is independent of the `xmh` (meson-mass) input passed to
+  `fragmfonll`. The sampler reconstructs each meson four-vector with the
+  physical on-shell PDG mass, which is the kinematically consistent thing
+  to do for this table convention.
 - **Static bottom fragmentation fractions** — the omitted bottom-baryon
   remainder is derived from LHCb's pT-averaged Lambda_b ratio over
   `4 < pT < 25 GeV`, `2 < eta < 5` and applied over the full table. Its

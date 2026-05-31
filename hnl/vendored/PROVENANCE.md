@@ -17,6 +17,13 @@ generated for the HL-LHC pp 14 TeV setup.
   `D* -> D0` feeddown
 - Grid: 100 pT nodes over 0..50 GeV, 100 y nodes over -3..3
 - Scale: central (mu_R = mu_F = mu_0)
+- Fragmentation frame: `ifrframe = 1` (y=0-frame fragmentation, public-FONLL
+  default for `dsigma/dpT/dy`). Under this convention the `xmh` meson-mass
+  input passed to `fragmfonll` does not enter the table — verified
+  empirically by regenerating with `xmh = M_B0 / M_D0` and recovering
+  byte-identical numerics. The sampler at `meson_sampler.py:147`
+  reconstructs the on-shell meson four-vector with the physical PDG mass,
+  which is the kinematically consistent thing to do for this convention.
 - Local FONLL capacity patch: `fonllgrid.f` and `fragmfonll.f` rapidity
   array limits raised to 120 nodes so the dense grid and terminating sentinel
   are accepted; no physics formulas changed
