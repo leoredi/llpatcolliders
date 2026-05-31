@@ -394,42 +394,11 @@ def generate_bc_pool(n_pool, rng):
     """
     Generate a Bc-enriched pool: FONLL bottom meson kinematics forced to Bc mass.
 
-    We sample from the bottom FONLL grid but override the species to Bc
-    and recompute 4-vectors with Bc mass.
+    Delegates to ``sample_meson_4vectors`` with ``force_species=541`` so the
+    Bc sampling path goes through the same inverse-CDF code as ordinary
+    fragmentation sampling.
     """
-    from production.fonll.fonll_parser import parse_fonll_file, FONLL_FILES
-    from production.fonll.meson_sampler import _build_cdf, _sample_node_intervals
-
-    path = FONLL_FILES["bottom"]
-    pt_arr, y_arr, dsigma_2d = parse_fonll_file(path)
-    cdf, pt_edges, y_edges = _build_cdf(pt_arr, y_arr, dsigma_2d)
-
-    n_pt = len(pt_arr)
-    n_y = len(y_arr)
-
-    u = rng.random(n_pool)
-    flat_idx = np.searchsorted(cdf, u)
-    flat_idx = np.clip(flat_idx, 0, n_pt * n_y - 1)
-
-    i_pt = flat_idx // n_y
-    i_y = flat_idx % n_y
-
-    pt = _sample_node_intervals(pt_edges, i_pt, rng)
-    y = _sample_node_intervals(y_edges, i_y, rng)
-    phi = rng.uniform(0, 2 * np.pi, n_pool)
-
-    m = MESON_MASSES[541]  # Bc mass
-    mt = np.sqrt(pt**2 + m**2)
-    pz = mt * np.sinh(y)
-    E = mt * np.cosh(y)
-    px = pt * np.cos(phi)
-    py = pt * np.sin(phi)
-
-    return {
-        'E': E, 'px': px, 'py': py, 'pz': pz,
-        'species_pdg': np.full(n_pool, 541),
-        'pt': pt, 'y': y, 'phi': phi,
-    }
+    return sample_meson_4vectors(n_pool, "bottom", rng=rng, force_species=541)
 
 
 def main():

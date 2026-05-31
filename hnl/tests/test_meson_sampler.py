@@ -69,6 +69,16 @@ def test_bc_pool_respects_bottom_table_bounds():
     assert abs(pool['y']).max() <= 3.0
 
 
+def test_force_species_overrides_fragmentation_sampling():
+    """force_species=541 must override species sampling and use M_BC for mass."""
+    rng = np.random.default_rng(7)
+    pool = sample_meson_4vectors(2000, "bottom", rng=rng, force_species=541)
+    assert (pool['species_pdg'] == 541).all()
+    E, px, py, pz = pool['E'], pool['px'], pool['py'], pool['pz']
+    m_recon = np.sqrt(np.maximum(E**2 - (px**2 + py**2 + pz**2), 0.0))
+    assert np.allclose(m_recon, MESON_MASSES[541], atol=1e-5)
+
+
 def test_fragmentation_fractions_track_omitted_baryons():
     assert sum(FRAG_B.values()) < 1.0
     assert sum(FRAG_C.values()) < 1.0

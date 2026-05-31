@@ -15,7 +15,15 @@ from ..constants import QUARK_MESON_MAP, MESON_MASSES
 
 
 def _node_bin_edges(values):
-    """Return midpoint-rule bin edges bounded by the tabulated node range."""
+    """Build bin edges for the FONLL sampler.
+
+    The convention is intentionally non-uniform at the table edges:
+    interior grid nodes are bin centers (so the bin edges sit at the
+    midpoints of consecutive nodes), but the first and last nodes are
+    bin boundaries themselves. This keeps every sampled (pT, y) value
+    strictly inside the tabulated grid range, with no overflow and no
+    need for a post-hoc clip.
+    """
     if len(values) < 2:
         raise ValueError("FONLL sampling requires at least two grid nodes")
     edges = np.empty(len(values) + 1)
@@ -48,9 +56,11 @@ def _build_cdf(pt_arr, y_arr, dsigma_2d):
     n_pt = len(pt_arr)
     n_y = len(y_arr)
 
-    # Treat grid nodes as bin centers (midpoint rule): the weight of an
-    # interior bin is the average of its neighboring half-widths, and each
-    # edge bin uses half the spacing to its single nearest neighbor.
+    # Bin scheme: interior grid nodes are bin centers, while the first and
+    # last nodes are bin boundaries. Each bin's probability weight is the
+    # bin width (np.diff of the edges) times dsigma at the node — half-width
+    # for edge bins, full width for interior bins — so the sampler never
+    # extends past the tabulated range.
     pt_edges = _node_bin_edges(pt_arr)
     y_edges = _node_bin_edges(y_arr)
     pt_widths = np.diff(pt_edges)
@@ -71,7 +81,7 @@ def _build_cdf(pt_arr, y_arr, dsigma_2d):
     return cdf, pt_edges, y_edges
 
 
-def sample_meson_4vectors(n_events, quark, rng=None):
+def sample_meson_4vectors(n_events, quark, rng=None, force_species=None):
     """
     Sample meson 4-vectors from the FONLL dσ/dpT/dy distribution.
 
@@ -79,7 +89,8 @@ def sample_meson_4vectors(n_events, quark, rng=None):
       1. Draw (pT, y) bin from inverse CDF
       2. Uniform sub-bin smearing within the drawn bin
       3. Uniform φ in [0, 2π)
-      4. Assign meson species from relative fractions within simulated mesons
+      4. Assign meson species (from renormalized fragmentation fractions, or
+         forced to a fixed PDG id via ``force_species``)
       5. Compute 4-vector (E, px, py, pz) from (pT, y, φ, m)
 
     Parameters
@@ -90,6 +101,12 @@ def sample_meson_4vectors(n_events, quark, rng=None):
         "bottom" or "charm"
     rng : numpy.random.Generator, optional
         Random number generator (for reproducibility).
+    force_species : int, optional
+        If set to a PDG id (e.g. 541 for Bc), every sampled event gets that
+        PDG id and the mass used in the 4-vector reconstruction is
+        ``MESON_MASSES[force_species]``. The (pT, y) sampling from the FONLL
+        grid for the requested ``quark`` is unchanged. If ``None`` (default),
+        species are drawn from the renormalized fragmentation cumulative.
 
     Returns
     -------
@@ -127,20 +144,25 @@ def sample_meson_4vectors(n_events, quark, rng=None):
     # Uniform azimuthal angle
     phi = rng.uniform(0, 2 * np.pi, n_events)
 
-    # Assign meson species from fragmentation fractions
-    species_list = QUARK_MESON_MAP[quark]
-    pdg_ids = np.array([s[0] for s in species_list])
-    fractions = np.array([s[1] for s in species_list])
-    frac_cumsum = np.cumsum(fractions)
-    frac_cumsum /= frac_cumsum[-1]  # normalize
+    # Assign meson species: either forced to a fixed PDG id or drawn from
+    # the renormalized fragmentation cumulative.
+    if force_species is not None:
+        species_pdg = np.full(n_events, int(force_species), dtype=int)
+        m = np.full(n_events, MESON_MASSES[int(force_species)], dtype=float)
+    else:
+        species_list = QUARK_MESON_MAP[quark]
+        pdg_ids = np.array([s[0] for s in species_list])
+        fractions = np.array([s[1] for s in species_list])
+        frac_cumsum = np.cumsum(fractions)
+        frac_cumsum /= frac_cumsum[-1]  # normalize
 
-    u_species = rng.random(n_events)
-    species_idx = np.searchsorted(frac_cumsum, u_species)
-    species_idx = np.clip(species_idx, 0, len(pdg_ids) - 1)
-    species_pdg = pdg_ids[species_idx]
+        u_species = rng.random(n_events)
+        species_idx = np.searchsorted(frac_cumsum, u_species)
+        species_idx = np.clip(species_idx, 0, len(pdg_ids) - 1)
+        species_pdg = pdg_ids[species_idx]
 
-    # Meson mass for each event
-    m = np.array([MESON_MASSES[pdg] for pdg in species_pdg])
+        # Meson mass for each event
+        m = np.array([MESON_MASSES[pdg] for pdg in species_pdg])
 
     # 4-vector from (pT, y, φ, m):
     #   mT = sqrt(pT² + m²)
