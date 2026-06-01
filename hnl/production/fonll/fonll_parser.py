@@ -77,15 +77,15 @@ def parse_fonll_file(path):
     # Reshape: pT varies slowly (outer), y varies fast (inner)
     if len(data) != n_pt * n_y:
         raise ValueError(f"{path}: expected a rectangular pT-y grid")
-    # np.unique returns ascending order, so the file's first n_y y-values
-    # must equal y_unique for y to be ascending in the file itself. This
-    # catches descending-y files with a clearer message than the generic
-    # ordering check below.
-    if not np.array_equal(y_all[:n_y], y_unique):
-        raise ValueError(f"{path}: y column must be in ascending order")
     expected_pt = np.repeat(pt_unique, n_y)
     expected_y = np.tile(y_unique, n_pt)
     if not np.array_equal(pt_all, expected_pt) or not np.array_equal(y_all, expected_y):
+        # Distinguish a genuinely descending-y file from a shuffled one: the
+        # first n_y rows match y_unique reversed iff y is strictly descending
+        # in the inner loop. The shuffled case (e.g. y-outer / pT-inner) does
+        # not match either, so it falls through to the generic message.
+        if np.array_equal(y_all[:n_y], y_unique[::-1]):
+            raise ValueError(f"{path}: y column must be in ascending order")
         raise ValueError(f"{path}: rows must be ordered with pT outermost and y innermost")
     dsigma_2d = dsigma_all.reshape(n_pt, n_y)
 
