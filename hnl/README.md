@@ -234,11 +234,15 @@ if revisited:
   D+ and Ds species fractions are applied in weights, but dedicated D+/Ds
   pT-y shape variations are still a systematic, not a separate central grid.
   The FONLL output convention used here is `ifrframe = 1` (y=0-frame
-  fragmentation, the public-FONLL default for `dsigma/dpT/dy`), under which
-  the table is independent of the `xmh` (meson-mass) input passed to
-  `fragmfonll`. The sampler reconstructs each meson four-vector with the
-  physical on-shell PDG mass, which is the kinematically consistent thing
-  to do for this table convention.
+  fragmentation, the public-FONLL default for `dsigma/dpT/dy`). On that
+  branch `xmh` enters only the `szmin` kinematic guard in `fragmfonll.f`,
+  which stays inactive across the (`pT <= 50 GeV`, `|y| <= 3`) grid here,
+  so the table is empirically insensitive to `xmh` in this phase space.
+  The sampler reconstructs each meson four-vector with the physical
+  on-shell PDG mass, which is the kinematically consistent thing to do
+  for this table convention. Extending the grid toward the kinematic
+  edge of `sh/4` would re-activate the guard and require re-verifying
+  this insensitivity.
 - **Static bottom fragmentation fractions** — the omitted bottom-baryon
   remainder is derived from LHCb's pT-averaged Lambda_b ratio over
   `4 < pT < 25 GeV`, `2 < eta < 5` and applied over the full table. Its

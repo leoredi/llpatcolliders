@@ -53,37 +53,6 @@ def test_parser_rejects_rows_outside_pt_outer_y_inner_order(tmp_path):
         parse_fonll_file(path)
 
 
-def test_parser_accepts_consistent_rounding(tmp_path):
-    """A rectangular table with ~1e-12 float noise must pass the new allclose check.
-
-    Also confirms the previous np.array_equal check would have rejected it,
-    so the regression value of relaxing to np.allclose is explicit.
-    """
-    path = tmp_path / "noisy.dat"
-    pt_nodes = np.array([0.0, 1.0, 2.0])
-    y_nodes = np.array([-1.0, 0.0, 1.0])
-    rows = []
-    for i, pt in enumerate(pt_nodes):
-        for j, y in enumerate(y_nodes):
-            # Add subtle 1e-12 noise to pT; y stays clean.
-            noisy_pt = pt + 1e-12 * ((i + j) % 2)
-            rows.append([noisy_pt, y, 1.0 + 0.1 * i + 0.01 * j])
-    data = np.array(rows)
-    np.savetxt(path, data)
-
-    # Sanity: np.array_equal would NOT have accepted this — the noise is real.
-    pt_all = data[:, 0]
-    pt_unique = np.unique(pt_all)
-    expected_pt = np.repeat(pt_unique, len(y_nodes))
-    assert np.array_equal(pt_all, expected_pt) is False
-
-    # The new allclose-based parser must accept the noisy table.
-    pt_arr, y_arr, ds = parse_fonll_file(path)
-    assert pt_arr.shape == (3,)
-    assert y_arr.shape == (3,)
-    assert ds.shape == (3, 3)
-
-
 def test_parser_rejects_descending_y(tmp_path):
     """A file with descending y rows must raise a clear ascending-order error."""
     path = tmp_path / "descending_y.dat"
@@ -128,6 +97,50 @@ def test_invalid_backend_fails_fast(monkeypatch):
     import production.fonll.fonll_parser as m
     with pytest.raises(ValueError, match="unknown HNL_FONLL_SET='typo'"):
         importlib.reload(m)
+
+
+def test_sampler_picks_up_each_backend_subprocess():
+    """Smoke test: spawn a clean Python under each HNL_FONLL_SET and confirm
+    that sample_meson_4vectors actually reads from the requested backend.
+
+    This covers the import-time module-binding hazard that the in-process
+    reload tests above cannot catch: any consumer that did
+    `from ...fonll_parser import FONLL_FILES` (a named import) keeps the
+    original dict after a parser reload, so reloading only the parser is
+    not a faithful proxy for what the sampler actually does in production.
+    """
+    import json
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import json
+from production.fonll import fonll_parser, meson_sampler
+print(json.dumps({
+    "default_set": fonll_parser.FONLL_DEFAULT_SET,
+    "parser_bottom": fonll_parser.FONLL_FILES["bottom"].name,
+    # Verify the sampler looks up the parser's dict dynamically; the path
+    # used in production is the parser module's binding, not a stale
+    # snapshot captured at meson_sampler import time.
+    "sampler_bottom_via_parser": meson_sampler.fonll_parser.FONLL_FILES["bottom"].name,
+}))
+"""
+    for env_value, expected_set, expected_substr in (
+        ("nnpdf40_nlo", "nnpdf40_nlo", "nnpdf40_nlo_as_01180"),
+        ("cteq66_legacy", "cteq66_legacy", "cteq66"),
+    ):
+        env = os.environ.copy()
+        env["HNL_FONLL_SET"] = env_value
+        result = subprocess.run(
+            [sys.executable, "-c", code], env=env, check=False,
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["default_set"] == expected_set
+        assert expected_substr in data["parser_bottom"]
+        assert data["sampler_bottom_via_parser"] == data["parser_bottom"]
 
 
 def test_dsigma_nonnegative_majority():

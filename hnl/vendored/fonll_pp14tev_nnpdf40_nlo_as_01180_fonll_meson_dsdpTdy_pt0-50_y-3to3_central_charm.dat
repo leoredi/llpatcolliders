@@ -23,7 +23,7 @@
 # charm_feeddown_cteq66_fit_max_abs_rel_diff: 1.940977e-03
 # fragmentation_frame: y=0
 # fragmentation_fraction: 1
-# meson_mass: not used (ifrframe=1, dsigma/dpT/dy independent of xmh; on-shell mass is applied at sampling time)
+# meson_mass: irrelevant in this phase space (ifrframe=1; xmh enters only the szmin guard, inactive for pT<=50 GeV, |y|<=3); on-shell mass applied at sampling time
 # internal_quark_grid: /Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local/run/nlo_charm/nl_c_.out
 # output_pT_values_GeV: 0..50 step 0.50505051
 # output_y_values: -3..3 step 0.060606061

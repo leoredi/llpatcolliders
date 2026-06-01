@@ -43,10 +43,12 @@ def parse_fonll_file(path):
     Parse a FONLL meson-level dσ/dpT/dy table.
 
     Tables are required to be ordered with pT outermost (slow-varying) and
-    y innermost (fast-varying), with y in ascending order. Tables are
-    expected to be written with consistent decimal rounding; the parser
-    tolerates 1e-9 absolute / relative floating-point slack but does not
-    silently reorder rows.
+    y innermost (fast-varying), with y in ascending order, and to be written
+    with a single consistent decimal format so that repeated pT and y values
+    round-trip as bit-identical floats through ``np.loadtxt``. The parser
+    relies on exact equality of those coordinates against ``np.unique`` for
+    the rectangularity check; tolerance-aware clustering is intentionally
+    not attempted.
 
     Parameters
     ----------
@@ -76,14 +78,14 @@ def parse_fonll_file(path):
     if len(data) != n_pt * n_y:
         raise ValueError(f"{path}: expected a rectangular pT-y grid")
     # np.unique returns ascending order, so the file's first n_y y-values
-    # must match y_unique exactly (modulo float slack) for y to be ascending
-    # in the file itself. This catches descending-y files with a clearer
-    # message than the generic ordering check below.
-    if not np.allclose(y_all[:n_y], y_unique, atol=1e-9, rtol=1e-9):
+    # must equal y_unique for y to be ascending in the file itself. This
+    # catches descending-y files with a clearer message than the generic
+    # ordering check below.
+    if not np.array_equal(y_all[:n_y], y_unique):
         raise ValueError(f"{path}: y column must be in ascending order")
     expected_pt = np.repeat(pt_unique, n_y)
     expected_y = np.tile(y_unique, n_pt)
-    if not np.allclose(pt_all, expected_pt, atol=1e-9, rtol=1e-9) or not np.allclose(y_all, expected_y, atol=1e-9, rtol=1e-9):
+    if not np.array_equal(pt_all, expected_pt) or not np.array_equal(y_all, expected_y):
         raise ValueError(f"{path}: rows must be ordered with pT outermost and y innermost")
     dsigma_2d = dsigma_all.reshape(n_pt, n_y)
 

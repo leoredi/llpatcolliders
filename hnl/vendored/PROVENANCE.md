@@ -18,12 +18,21 @@ generated for the HL-LHC pp 14 TeV setup.
 - Grid: 100 pT nodes over 0..50 GeV, 100 y nodes over -3..3
 - Scale: central (mu_R = mu_F = mu_0)
 - Fragmentation frame: `ifrframe = 1` (y=0-frame fragmentation, public-FONLL
-  default for `dsigma/dpT/dy`). Under this convention the `xmh` meson-mass
-  input passed to `fragmfonll` does not enter the table — verified
-  empirically by regenerating with `xmh = M_B0 / M_D0` and recovering
-  byte-identical numerics. The sampler at `meson_sampler.py:147`
-  reconstructs the on-shell meson four-vector with the physical PDG mass,
-  which is the kinematically consistent thing to do for this convention.
+  default for `dsigma/dpT/dy`). Under this convention `xsecfrag` itself
+  does not reference `xmh`; the only `xmh` dependence in `fragmfonll.f`
+  on the `ifrframe = 1` branch is the kinematic guard at
+  `szmin` (`fragmfonll.f:648`), `(pT^2 + xmh^2) * cosh(y)^2 > sh/4`.
+  In the phase space of these tables (`pT <= 50 GeV`, `|y| <= 3`,
+  `sh/4 = 4.9e7 GeV^2`) the guard's worst case
+  `(50^2 + 5.28^2) * cosh(3)^2 ~ 2.5e5 GeV^2`
+  is always satisfied, so the table is insensitive to `xmh` here —
+  verified empirically by regenerating with `xmh = M_B0 / M_D0` and
+  recovering byte-identical numerics. The sampler at
+  `meson_sampler.py:147` reconstructs the on-shell meson four-vector
+  with the physical PDG mass, which is the kinematically consistent
+  thing to do for this convention. If the grid is ever extended toward
+  the kinematic edge of `sh/4`, the guard would become active and this
+  insensitivity claim would need to be re-verified.
 - Local FONLL capacity patch: `fonllgrid.f` and `fragmfonll.f` rapidity
   array limits raised to 120 nodes so the dense grid and terminating sentinel
   are accepted; no physics formulas changed

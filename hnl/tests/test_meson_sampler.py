@@ -83,9 +83,12 @@ def test_fragmentation_fractions_track_omitted_baryons():
     assert sum(FRAG_B.values()) < 1.0
     assert sum(FRAG_C.values()) < 1.0
     assert np.isclose(sum(FRAG_B.values()) + sum(OMITTED_FRAG_B.values()), 1.0)
-    # ALICE Table 7 central values are published rounded and sum to 1.0007;
-    # any future ALICE update within their stated ~20% relative systematic
-    # for Xi_c+ must still close to within 5e-3.
+    # ALICE Table 7 central values are published rounded; the meson + omitted
+    # sum is 1.0007. atol=5e-3 absorbs that 7e-4 rounding gap with ~6x
+    # headroom for digit-level updates to any single component. A genuine
+    # ~20% relative shift in e.g. Xi_c+ (0.019 absolute) is deliberately
+    # large enough to fail this test — that scale of change should not be
+    # silently accommodated.
     assert np.isclose(
         sum(FRAG_C.values()) + sum(OMITTED_FRAG_C.values()), 1.0,
         rtol=0.0, atol=5e-3,

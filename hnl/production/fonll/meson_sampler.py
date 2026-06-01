@@ -10,7 +10,8 @@ weights.
 """
 
 import numpy as np
-from .fonll_parser import parse_fonll_file, FONLL_FILES
+from . import fonll_parser
+from .fonll_parser import parse_fonll_file
 from ..constants import QUARK_MESON_MAP, MESON_MASSES
 
 
@@ -122,7 +123,10 @@ def sample_meson_4vectors(n_events, quark, rng=None, force_species=None):
         rng = np.random.default_rng()
 
     # Parse FONLL grid and build CDF
-    path = FONLL_FILES[quark]
+    # Look up FONLL_FILES dynamically through the parser module so that an
+    # in-process reload of fonll_parser (e.g. after monkeypatching
+    # HNL_FONLL_SET in a test) is observed here too.
+    path = fonll_parser.FONLL_FILES[quark]
     pt_arr, y_arr, dsigma_2d = parse_fonll_file(path)
     cdf, pt_edges, y_edges = _build_cdf(pt_arr, y_arr, dsigma_2d)
 
