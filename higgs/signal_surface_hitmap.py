@@ -33,6 +33,10 @@ from grendel_geometry import (
     TUNNEL_WALL_HEIGHT, DETECTOR_THICKNESS,
     tunnel_profile_points, eta_phi_to_direction,
     mesh_fiducial, path_3d_fiducial,
+    cumulative_length, total_length,
+    classify_by_theta, classify_exit_point,
+    theta_floor_right, theta_rwall_top, theta_arch_top,
+    theta_lwall_top, theta_floor_left,
 )
 
 E_CUT = 0.600       # GeV
@@ -93,12 +97,11 @@ def acceptance_at_exit(gamma, beta, mass, d_remaining=0.01,
 # =============================================================================
 # Tunnel path derived quantities
 # =============================================================================
+# Centreline arc-length (cumulative_length, total_length) and the profile
+# boundary angles + classifiers are defined canonically in grendel_geometry
+# and imported above so that this script and decayProbPerEvent_2body.py use
+# one shared surface definition.
 path_3d = path_3d_fiducial
-
-seg_lengths = np.array([np.linalg.norm(path_3d[i+1] - path_3d[i])
-                         for i in range(len(path_3d)-1)])
-cumulative_length = np.concatenate([[0], np.cumsum(seg_lengths)])
-total_length = cumulative_length[-1]
 
 
 # =============================================================================
@@ -107,45 +110,12 @@ total_length = cumulative_length[-1]
 profile_pts = tunnel_profile_points(inset=0.0)
 n_prof = len(profile_pts)
 
-# Compute the angle θ in local frame for each profile vertex
-profile_angles = np.array([np.arctan2(p[1], p[0]) for p in profile_pts])
-profile_angles = np.where(profile_angles < 0,
-                           profile_angles + 2*np.pi, profile_angles)
-
-# Identify key profile vertices and their angles
-# Profile order: [bottom-left, bottom-right, right wall up..., arch..., left wall down...]
-n_wall = 4
-n_arch_pts = 31  # n_arch-1 interior points for n_arch=32
-
-idx_floor_left = 0
-idx_floor_right = 1
-idx_rwall_top = 1 + n_wall
-idx_arch_top = 1 + n_wall + (n_arch_pts // 2)
-idx_lwall_top = 1 + n_wall + n_arch_pts
-idx_lwall_bot = n_prof - 1
-
-theta_floor_right  = profile_angles[idx_floor_right]
-theta_rwall_top    = profile_angles[idx_rwall_top]
-theta_arch_top     = profile_angles[idx_arch_top]
-theta_lwall_top    = profile_angles[idx_lwall_top]
-theta_floor_left   = profile_angles[idx_floor_left]
-
 print(f"\nProfile boundary angles (degrees):")
 print(f"  Floor right corner:    {np.degrees(theta_floor_right):.1f}°")
 print(f"  Right wall top (springline): {np.degrees(theta_rwall_top):.1f}°")
 print(f"  Arch apex:             {np.degrees(theta_arch_top):.1f}°")
 print(f"  Left wall top (springline):  {np.degrees(theta_lwall_top):.1f}°")
 print(f"  Floor left corner:     {np.degrees(theta_floor_left):.1f}°")
-
-# Surface boundaries
-surface_boundaries = [
-    (theta_floor_right, theta_rwall_top, 'Right Wall'),
-    (theta_rwall_top,   theta_lwall_top, 'Arch/Ceiling'),
-    (theta_lwall_top,   theta_floor_left, 'Left Wall'),
-]
-theta_floor_center = (theta_floor_left + theta_floor_right) / 2
-surface_boundaries.append(
-    (theta_floor_left, theta_floor_right, 'Floor'))
 
 # Perimeter
 perimeter = sum(np.linalg.norm(profile_pts[(i+1) % n_prof] - profile_pts[i])
@@ -154,83 +124,6 @@ total_surface_area = perimeter * total_length
 print(f"  Tunnel perimeter: {perimeter:.2f} m")
 print(f"  Tunnel length: {total_length:.0f} m")
 print(f"  Total surface area: {total_surface_area:.0f} m²")
-
-
-# =============================================================================
-# Surface classification using geometry-derived boundaries
-# =============================================================================
-def classify_by_theta(theta):
-    """Classify a profile angle to a surface name using geometry boundaries."""
-    t = theta % (2 * np.pi)
-
-    # Right wall: from floor_right up to springline
-    if theta_floor_right <= theta_rwall_top:
-        if theta_floor_right <= t < theta_rwall_top:
-            return 'Right Wall'
-    else:
-        if t >= theta_floor_right or t < theta_rwall_top:
-            return 'Right Wall'
-
-    # Arch/ceiling
-    if theta_rwall_top <= theta_lwall_top:
-        if theta_rwall_top <= t < theta_lwall_top:
-            return 'Arch/Ceiling'
-    else:
-        if t >= theta_rwall_top or t < theta_lwall_top:
-            return 'Arch/Ceiling'
-
-    # Left wall
-    if theta_lwall_top <= theta_floor_left:
-        if theta_lwall_top <= t < theta_floor_left:
-            return 'Left Wall'
-    else:
-        if t >= theta_lwall_top or t < theta_floor_left:
-            return 'Left Wall'
-
-    return 'Floor'
-
-
-def classify_exit_point(point, path_3d, cumulative_length):
-    """
-    For a 3D point on the tunnel wall, compute (s, theta, x_local, y_local).
-    """
-    best_s = 0.0
-    best_dist_sq = np.inf
-    best_x = 0.0
-    best_y = 0.0
-
-    for i in range(len(path_3d) - 1):
-        seg = path_3d[i+1] - path_3d[i]
-        seg_len = np.linalg.norm(seg)
-        if seg_len == 0:
-            continue
-        seg_hat = seg / seg_len
-        t = np.clip(np.dot(point - path_3d[i], seg_hat), 0, seg_len)
-        closest = path_3d[i] + t * seg_hat
-        diff = point - closest
-        dist_sq = np.dot(diff, diff)
-
-        if dist_sq < best_dist_sq:
-            best_dist_sq = dist_sq
-            best_s = cumulative_length[i] + t
-            tangent = seg_hat
-            # CMS convention: Y is up
-            if abs(tangent[1]) < 0.9:
-                world_up = np.array([0., 1., 0.])
-            else:
-                world_up = np.array([0., 0., 1.])
-            right = np.cross(tangent, world_up)
-            right /= np.linalg.norm(right)
-            up = np.cross(right, tangent)
-            up /= np.linalg.norm(up)
-            best_x = np.dot(diff, right)
-            best_y = np.dot(diff, up)
-
-    theta = np.arctan2(best_y, best_x)
-    if theta < 0:
-        theta += 2 * np.pi
-
-    return best_s, theta, best_x, best_y
 
 
 # =============================================================================
