@@ -12,7 +12,7 @@
   with the local modifications in `patches/`.
 - PDF backend: LHAPDF 6.5.6.
 - Driver: `scripts/generate_meson_grids.py --pdf nlo --quark {bottom,charm}`
-  on commit `<tag at release time>` of this repository.
+  at tag `v0.1.0` of this repository.
 
 ## Bottom grid
 
