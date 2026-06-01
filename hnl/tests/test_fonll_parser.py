@@ -99,6 +99,15 @@ def test_invalid_backend_fails_fast(monkeypatch):
         importlib.reload(m)
 
 
+def test_parser_binding_matches_process_environment():
+    """Fixture teardown must preserve an externally selected backend."""
+    import os
+    import production.fonll.fonll_parser as m
+
+    expected = os.environ.get("HNL_FONLL_SET", "nnpdf40_nlo")
+    assert m.FONLL_DEFAULT_SET == expected
+
+
 def test_sampler_picks_up_each_backend_subprocess():
     """Smoke test: spawn a clean Python under each HNL_FONLL_SET and confirm
     that sample_meson_4vectors actually reads from the requested backend.
@@ -163,8 +172,14 @@ def test_total_sigma_order_of_magnitude():
 
 
 @pytest.fixture(autouse=True)
-def _restore_parser_default(monkeypatch):
+def _restore_parser_backend(monkeypatch):
+    import os
+
+    original = os.environ.get("HNL_FONLL_SET")
     yield
-    monkeypatch.delenv("HNL_FONLL_SET", raising=False)
+    if original is None:
+        os.environ.pop("HNL_FONLL_SET", None)
+    else:
+        os.environ["HNL_FONLL_SET"] = original
     import production.fonll.fonll_parser as m
     importlib.reload(m)
