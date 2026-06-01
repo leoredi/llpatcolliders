@@ -106,6 +106,7 @@ def test_parser_binding_matches_process_environment():
 
     expected = os.environ.get("HNL_FONLL_SET", "nnpdf40_nlo")
     assert m.FONLL_DEFAULT_SET == expected
+    assert m.FONLL_FILES == m.FONLL_FILE_SETS[expected]
 
 
 def test_sampler_picks_up_each_backend_subprocess():
@@ -172,7 +173,7 @@ def test_total_sigma_order_of_magnitude():
 
 
 @pytest.fixture(autouse=True)
-def _restore_parser_backend(monkeypatch):
+def _restore_parser_backend():
     import os
 
     original = os.environ.get("HNL_FONLL_SET")
