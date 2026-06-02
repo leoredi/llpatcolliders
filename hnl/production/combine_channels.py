@@ -23,7 +23,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from config_mass_grid import MASS_GRID, format_mass_for_filename
 
 OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
-CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau"]
+# "WZ" (electroweak W/Z -> l N) and "Kmeson" (K+ -> l N) are optional channels:
+# they are only present when their producers have been run, and combine_for_point
+# silently skips any channel folder/file that is missing or empty.
+CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "Kmeson", "WZ"]
 FLAVORS = ["Ue", "Umu", "Utau"]
 
 

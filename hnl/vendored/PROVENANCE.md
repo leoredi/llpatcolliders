@@ -6,6 +6,14 @@ The default production backend uses two local FONLL+LHAPDF
 double-differential heavy-meson production cross sections, `dsigma/dpT/dy`,
 generated for the HL-LHC pp 14 TeV setup.
 
+- Generator release: [`leoredi/fonll-nnpdf40` v0.1.0](https://github.com/leoredi/fonll-nnpdf40/releases/tag/v0.1.0),
+  commit `34cd8b8`. The vendored `.dat` files here are byte-identical to
+  the v0.1.0 release artifacts except for one header comment line
+  (`# meson_mass: ...`), which is annotated in the PR1 copies to document
+  the `ifrframe = 1` / `xmh` insensitivity argument captured below.
+  Regeneration: clone the upstream tag, apply the two patches against
+  FONLL v1.3.3, run
+  `python scripts/generate_meson_grids.py --pdf nlo --quark {bottom,charm}`.
 - FONLL source: v1.3.3 (`c7086e49141cf6705cf7a4bc5f7d0b3a38673203`)
 - LHAPDF: 6.5.6
 - Process: pp at sqrt(s) = 14 TeV
@@ -45,6 +53,36 @@ downstream by `hnl/production/constants.py::FRAG_C` and `FRAG_B`. The
 FONLL tables supply pT-y shape and normalization before physical species
 fractions. CTEQ6.6 web-generated tables remain vendored as `cteq66_legacy`
 comparison inputs in `production/fonll/fonll_parser.py`.
+
+## MadGraph HeavyN UFO model (W/Z -> ell N production)
+
+`SM_HeavyN_CKM_AllMasses_LO/` is the FeynRules/UFO model used by the
+electroweak production path (`hnl/production/madgraph/run_wz_production.py`).
+
+- Model: HeavyN, CKM / AllMasses LO variant.
+- Reference: Degrande, Mattelaer, Pascoli, Ruiz et al., arXiv:1602.06957
+  (updated by Pascoli et al., arXiv:1812.08750).
+- Provenance: copied verbatim from the upstream `llpatcolliders_FONLL`
+  vendored MadGraph install
+  (`vendored/MG5_aMC_v3_6_6/models/SM_HeavyN_CKM_AllMasses_LO`); only the
+  build artifact `__pycache__/` was stripped.
+- The driver loads it with an absolute `import model <path>` so MadGraph
+  picks up this vendored copy regardless of which MG5 install is used.
+
+### MadGraph binary (not vendored here)
+
+The MadGraph5_aMC@NLO v3.6.6 install (~148 MB) is intentionally **not**
+committed. `run_wz_production.py` resolves the `mg5_aMC` executable at
+runtime in this order:
+
+1. `$HNL_MG5_EXE` (explicit path), else
+2. `hnl/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC` (drop-in vendoring if you want
+   a self-contained checkout), else
+3. the sibling `llpatcolliders_FONLL/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC`.
+
+To make the checkout self-contained, copy the upstream install into
+`hnl/vendored/MG5_aMC_v3_6_6/` (consider git-lfs or a `.gitignore` entry for
+the binary tree given its size).
 
 ## HNLCalc
 

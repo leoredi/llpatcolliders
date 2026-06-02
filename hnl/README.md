@@ -1,18 +1,19 @@
-# `hnl/` — Heavy Neutral Lepton production from rare meson decays
+# `hnl/` — Heavy Neutral Lepton production from meson decays and electroweak (W/Z) processes
 
 HNL 4-vector production pipeline for GRENDEL sensitivity studies at the
 HL-LHC (pp, sqrt(s) = 14 TeV).
 
 ## Scope of this PR
 
-**In scope** — production from rare meson decays:
+**In scope** — production from rare meson decays plus electroweak production:
 
-- Direct: `B -> N + X`, `D -> N + X`, `Bc -> N + X` (2-body and 3-body channels)
+- Direct meson: `B -> N + X`, `D -> N + X`, `Bc -> N + X` (2-body and 3-body)
+- Kaon: `K+ -> ell+ N` (2-body, dominant source below ~0.5 GeV)
 - Induced tau: `Ds -> tau nu -> N + X`, `B+ -> tau nu -> N + X`
+- Electroweak: `W/Z -> ell N` via MadGraph (`production/madgraph/`, opt-in)
 
 **Out of scope** — deferred to follow-up PRs:
 
-- W/Z -> ell N direct production
 - Drell-Yan, `pp -> tau tau`
 - Analysis, sensitivity scan, exclusion plots
 - Geometry, decay-probability, daughter ray-casting
@@ -22,31 +23,36 @@ HL-LHC (pp, sqrt(s) = 14 TeV).
     hnl/
     |-- README.md                this file
     |-- run_all.py               parallel orchestrator (entry point)
-    |-- config_mass_grid.py      MASS_GRID definition (116 points)
+    |-- config_mass_grid.py      MASS_GRID + filename encoder/decoder
     |-- .gitignore               ignores output/
     |
     |-- production/
-    |   |-- constants.py         meson masses, FRAG_B / FRAG_C, sigma_Bc, BRs
-    |   |-- combine_channels.py  vstack {Bmeson,Dmeson,Bc,tau} -> combined/
+    |   |-- constants.py         meson masses, FRAG_B / FRAG_C, sigma_Bc/K, BRs
+    |   |-- combine_channels.py  vstack channels -> combined/
     |   |
     |   |-- fonll/
     |   |   |-- fonll_parser.py   parse 2D dsigma/dpT/dy table, integrate
     |   |   |-- meson_sampler.py  inverse-CDF sample meson 4-vectors + species assign
     |   |
     |   |-- decay_engine/
-    |       |-- kinematics.py            2-body, 3-body flat phase space, boost
-    |       |-- generate_meson_csvs.py   driver: B, D, Bc -> N
-    |       |-- generate_induced_tau.py  driver: Ds, B+ -> tau -> N
+    |   |   |-- kinematics.py            2-body (incl. polarized), 3-body flat, boost
+    |   |   |-- generate_meson_csvs.py   driver: B, D, Bc -> N
+    |   |   |-- generate_induced_tau.py  driver: Ds, B+ -> tau -> N
+    |   |   |-- generate_kaon_csvs.py    driver: K+ -> N + X
+    |   |
+    |   |-- madgraph/                    opt-in: W/Z -> ell N via MG5
+    |       |-- run_wz_production.py
+    |       |-- lhe_to_csv.py
+    |       |-- cards/                   proc/run/param templates
     |
-    |-- tests/                   parser, sampler, kinematics, end-to-end smoke
+    |-- tests/                   parser, sampler, kinematics, smoke, kaon, mass-grid
     |
     |-- vendored/
-        |-- PROVENANCE.md                FONLL form params, HNLCalc upstream
+        |-- PROVENANCE.md                FONLL form params, HNLCalc, HeavyN UFO
         |-- HNLCalc/                     pure-Python HNL BR computation
-        |-- fonll_pp14tev_nnpdf40_nlo_as_01180_..._charm.dat
-        |-- fonll_pp14tev_nnpdf40_nlo_as_01180_..._bottom.dat
-        |-- fonll_pp14tev_cteq66_..._charm.dat
-        |-- fonll_pp14tev_cteq66_..._bottom.dat
+        |-- SM_HeavyN_CKM_AllMasses_LO/  MadGraph UFO model for W/Z driver
+        |-- fonll_pp14tev_nnpdf40_nlo_as_01180_..._{charm,bottom}.dat
+        |-- fonll_pp14tev_cteq66_..._{charm,bottom}.dat   # legacy comparison
 
 ## Pipeline (per (flavor, channel, mass) point)
 
@@ -91,6 +97,25 @@ Per HNL 4-vector i, in pb at `U^2 = 1`:
 
 with `BR(Ds -> tau nu) = 5.35e-2`, `BR(B+ -> tau nu) = 1.09e-4` (PDG 2024).
 
+**Kaon channel (K+ -> ell+ N, K+ -> pi0 ell+ N):**
+
+    w_i = SIGMA_KAON_PB * BR(K -> N+X | U^2=1) / N_pool
+
+`SIGMA_KAON_PB` already bundles both charges (K+ and K-) — no extra factor 2.
+At `U^2 = 1` the HNLCalc "BR" exceeds 1 for K (the partial width is much
+larger than the SM total K width), which is by construction: the per-event
+weight is a rate-equivalent that becomes a physical rate once multiplied by
+the realistic `U^2 << 1` downstream. See `production/constants.py` for the
+approximation status of `SIGMA_KAON_PB`.
+
+**Electroweak channel (W/Z -> ell N, opt-in):**
+
+    w_i = (sigma_LO_MG5 / N) * K_FACTOR_EW
+
+The per-row weight comes from the MG5 unweighted-event weight (`XWGTUP`) read
+out of the LHE, then scaled by `K_FACTOR_EW` so the summed weight is the
+NLO-corrected cross-section.
+
 **Final yield at chosen `U^2` and luminosity:**
 
     N_HNL_per_event = w_i * U_alpha^2 * (epsilon_decay_at_ctau(U^2))
@@ -103,8 +128,8 @@ The `U^2`-dependent decay probability is the consumer's responsibility
 ## Channel inventory
 
 **2-body meson production** (`compute_production_br_components`,
-`_eval_2body_br`): all parents in `MESON_MASSES` with
-`m_N < m_parent - m_lepton` get a direct `meson+ -> ell+ N` channel.
+`_eval_2body_br`): all charged-pseudoscalar parents (K+, D+, Ds+, B+, Bc+)
+with `m_N < m_parent - m_lepton` get a direct `meson+ -> ell+ N` channel.
 
 **3-body meson production** (`THREEBODY_CHANNELS` in
 `generate_meson_csvs.py`): semi-leptonic channels with a pseudoscalar or
@@ -112,6 +137,7 @@ vector hadronic daughter. Inventory:
 
 | Parent | 3-body daughters considered (X in `parent -> X ell N`) |
 |---|---|
+| K+   (321) | pi0                                       |
 | D0   (421) | K-, K*-, pi-, rho-                       |
 | D+   (411) | Kbar0, Kbar*0, pi0, rho0, eta, eta'      |
 | Ds+  (431) | eta, eta', K0, K*0, phi                  |
@@ -119,6 +145,10 @@ vector hadronic daughter. Inventory:
 | B0   (511) | D-, D*-, pi-, rho-                       |
 | Bs   (531) | Ds-, Ds*-, K-, K*-                       |
 | Bc+  (541) | B0, Bs, B*0, Bs*, D0, etac, D*0, J/psi   |
+
+For Bc+ the (B0, Bs, B*0, Bs*) entries are listed for completeness — at every
+`m_N` in `MASS_GRID` they are kinematically closed (`m_Bc - m_B - m_lep < m_N`)
+and contribute nothing in practice.
 
 **Tau decay channels into N** (`generate_induced_tau.py`):
 
@@ -141,12 +171,29 @@ All drivers write headerless CSVs with five columns:
 
 Files end up at:
 
-    hnl/output/llp_4vectors/{Ue,Umu,Utau}/{Bmeson,Dmeson,Bc,tau}/mN_{mass}.csv
+    hnl/output/llp_4vectors/{Ue,Umu,Utau}/{Bmeson,Dmeson,Bc,tau,Kmeson}/mN_{mass}.csv
+    hnl/output/llp_4vectors/{Ue,Umu,Utau}/WZ/mN_{mass}.csv         # opt-in, MadGraph
     hnl/output/llp_4vectors/{Ue,Umu,Utau}/combined/mN_{mass}.csv
 
 `mN_{mass}` uses the encoding from `config_mass_grid.format_mass_for_filename`
-(e.g. `1.025 GeV -> mN_1p03.csv`). Empty file = mass point below all
-production thresholds for that channel.
+(e.g. `1.025 GeV -> mN_1p025.csv`; three decimals so the 15/25-MeV grid
+spacing is encoded without drift). `config_mass_grid.parse_mass_from_filename`
+is the exact inverse — consumers that pair a CSV with a `ctau(m_N)` table
+should use it instead of re-parsing the label by hand.
+
+**Empty (zero-byte) files are intentional sentinels, not job failures.** A
+zero-byte CSV means the mass point is below every production threshold for
+that channel (e.g. `*/tau/mN_*.csv` above `m_tau`, or `Utau/Dmeson` where
+`m_N > m_D - m_tau` everywhere). A glob-based consumer should treat
+`stat().st_size == 0` as "channel closed here" and skip it; this is exactly
+what `combine_channels.py` does.
+
+Near the high-mass edge of a channel a **non-empty** file may contain fewer
+than `n_pool` rows: only meson species with `m_parent - m_lepton > m_N`
+survive the per-species threshold, so as `m_N` rises the surviving subset of
+the pool shrinks (e.g. `Ue,Umu/Dmeson/mN_1p730.csv` keeps only the D0/D+/Ds
+tail above threshold and lands around 40k of 100k rows). This is physics, not
+truncation.
 
 ## Setup
 
@@ -175,11 +222,11 @@ for the vendored deps.
     python run_all.py --n-pool 50000        # smaller per-worker pool (faster, noisier)
     python run_all.py --skip-combine        # skip final combine step
 
-`run_all.py` submits one process per (flavor, channel) pair (12 jobs total:
-3 flavors x 3 meson channels + 3 flavors x 1 tau channel), then runs the
-combine step at the end. The bottleneck is HNLCalc's 3-body BR integration,
-which dominates over meson sampling; pool generation is duplicated per worker
-but cheap.
+`run_all.py` submits one process per (flavor, channel) pair (15 jobs total:
+3 flavors x [3 meson channels + 1 tau + 1 kaon]), then runs the combine step at
+the end. The opt-in `--with-wz` flag adds one MadGraph job per flavor. The
+bottleneck is HNLCalc's 3-body BR integration, which dominates over meson
+sampling; pool generation is duplicated per worker but cheap.
 
 ### Individual drivers (serial, one channel at a time)
 
@@ -187,17 +234,38 @@ but cheap.
         --flavor Ue --channel Dmeson --masses 1.0 --n-pool 100000
     python -m production.decay_engine.generate_induced_tau \
         --flavor Ue --masses 1.0 --n-pool 100000
+    python -m production.decay_engine.generate_kaon_csvs \
+        --flavor Umu --masses 0.30 --n-pool 100000
     python -m production.combine_channels --flavor Ue --masses 1.0
 
 Each driver takes `--flavor`, `--masses`, `--n-pool`, `--seed`.
+
+### Electroweak W/Z -> ell N (opt-in, needs MadGraph)
+
+    # one quick point (Umu, 1.0 GeV, 1000 events)
+    python production/madgraph/run_wz_production.py --test
+    # full grid for one flavor
+    python production/madgraph/run_wz_production.py --flavor Umu
+    # or fold it into the parallel driver
+    python run_all.py --with-wz --wz-nevents 50000
+
+The MadGraph executable is resolved at runtime (see
+`production/madgraph/run_wz_production.py::_resolve_mg5_exe`): `$HNL_MG5_EXE`,
+then a drop-in `vendored/MG5_aMC_v3_6_6/`, then the sibling
+`llpatcolliders_FONLL` install. The 148 MB MG5 tree is not committed; only the
+460 KB HeavyN UFO model (`vendored/SM_HeavyN_CKM_AllMasses_LO/`) is vendored.
+MG5 is invoked as a plain subprocess — no Docker or other container runtime is
+needed. Output lands at `output/llp_4vectors/{flavor}/WZ/mN_*.csv` and is
+picked up automatically by the combine step.
 
 ## Tests
 
     pytest hnl/tests/
 
 The test suite covers parser shape and total xsec, sampled-pool moments,
-2-body and 3-body energy/momentum conservation, and a single end-to-end
-smoke for `D -> N` at `m_N = 1 GeV`.
+2-body and 3-body energy/momentum conservation, a kaon-channel smoke,
+mass-grid encoder round-trip, and an end-to-end smoke for `D -> N` at
+`m_N = 1 GeV`.
 
 ## Methodology references
 
@@ -253,21 +321,28 @@ if revisited:
   is flat phase space (no matrix-element weighting). Acceptable for
   total BR-weighted yields; biased for differential distributions in
   the decay daughters.
-- **Tau polarization neglected** — Ds -> tau nu and B+ -> tau nu produce
-  longitudinally polarized taus, but `decay_2body` / `decay_3body_flat`
-  decay them isotropically in the tau rest frame. This washes out the
-  parent-N angular correlation and biases the HNL energy spectrum at
-  fixed parent boost by O(20-30 %). Acceptable for total yields; biased
-  for differential angular distributions.
+- **Tau polarization (2-body modeled, 3-body flat)** — Ds -> tau nu and
+  B+ -> tau nu produce ~100% longitudinally polarized taus. The 2-body
+  hadronic modes (`tau -> {pi,K,rho,K*} N`) now use
+  `kinematics.decay_2body_polarized`, sampling the N polar angle from
+  `1 + (alpha·P_tau) cosθ` about the tau momentum axis. P_tau = -1 is exact
+  for `P+ -> tau+ nu`; the analyzing power uses the chiral (maximal) limit
+  `|alpha| = 1` (exact as m_N -> 0, an upper bound at finite m_N — see
+  `TAU_2BODY_ANALYZING_POWER` in `generate_induced_tau.py`). The 3-body
+  leptonic modes remain flat phase space (their fully-correct treatment needs
+  the decay matrix element), so a residual differential bias persists there.
 - **B0 -> tau nu omitted** — helicity-suppressed in SM; only B+ -> tau nu
   retained in the induced-tau chain.
 - **W -> tau nu omitted** — moves to the W/Z PR. This is the dominant
   prompt-tau source at LHC and the induced-tau chain alone underestimates
   the tau parent yield.
-- **No kaon (K+ -> lN) production** — MASS_GRID starts at 0.20 GeV, but
-  the two-body kaon decay K+ -> lN is the dominant HNL source below
-  ~0.5 GeV and is not included. Sub-0.5 GeV yields are therefore
-  underestimated.
+- **Approximate kaon (K+ -> lN) flux** — the kaon channel is now included
+  (`generate_kaon_csvs.py`), but FONLL supplies no light-meson spectrum, so
+  the K± production uses a parametrized soft-QCD flux (Tsallis pT + Gaussian
+  rapidity) and an order-of-magnitude inclusive cross-section
+  (`SIGMA_KAON_PB`). The kaon *shape* and especially the *absolute
+  normalization* below ~0.5 GeV are a systematic, not a precision input;
+  regenerate from a measured K± spectrum to remove this caveat.
 - **No Lambda_b / Lambda_c / Xi_c baryon channels** — pp fragmentation
   fractions now track the omitted baryon component explicitly, but only meson
   parents are simulated in this production layer.

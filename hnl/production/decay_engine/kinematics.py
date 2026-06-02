@@ -119,6 +119,101 @@ def decay_2body(parent_E, parent_px, parent_py, parent_pz, m_parent, m1, m2, rng
     return d1_lab, d2_lab
 
 
+def _sample_polar_cos(asym, n, rng):
+    """Sample cosθ from the pdf ∝ (1 + asym·cosθ) on [-1, 1].
+
+    Inverse-CDF: with F(c) = ((c+1) + (asym/2)(c²-1)) / 2 = u, solving the
+    quadratic (asym/4)c² + (1/2)c + (1/2 - asym/4 - u) = 0 for c in [-1, 1].
+    asym=0 reduces to the isotropic c = 2u-1.
+    """
+    u = rng.random(n)
+    asym = float(np.clip(asym, -1.0, 1.0))
+    if abs(asym) < 1e-12:
+        return 2.0 * u - 1.0
+    a = asym / 4.0
+    b = 0.5
+    c = 0.5 - asym / 4.0 - u
+    disc = np.sqrt(np.maximum(b * b - 4.0 * a * c, 0.0))
+    # Root that lands in [-1, 1] (the physical branch for |asym|<=1).
+    cos_theta = (-b + disc) / (2.0 * a)
+    return np.clip(cos_theta, -1.0, 1.0)
+
+
+def decay_2body_polarized(parent_E, parent_px, parent_py, parent_pz,
+                          m_parent, m1, m2, asymmetry=0.0, rng=None):
+    """2-body decay of a longitudinally polarized parent: parent → d1(m1) + d2(m2).
+
+    The *second* daughter (mass ``m2``) is the spin-analyzed particle: its polar
+    angle in the parent rest frame is drawn from ``1 + asymmetry·cosθ`` about the
+    parent's lab-momentum direction (the longitudinal-polarization axis), rather
+    than isotropically. ``asymmetry = analyzing_power × P_parent ∈ [-1, 1]``;
+    ``asymmetry = 0`` is exactly the isotropic :func:`decay_2body`.
+
+    Returns
+    -------
+    d1, d2 : ndarray, shape (N, 4) — lab-frame (E, px, py, pz). d2 is the
+        analyzed daughter (mass m2).
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    N = len(parent_E)
+    M = m_parent
+    p_star = np.sqrt(
+        np.maximum((M**2 - (m1 + m2)**2) * (M**2 - (m1 - m2)**2), 0.0)
+    ) / (2.0 * M)
+
+    # Polarization axis = parent lab-momentum direction (longitudinal pol).
+    p_mag = np.sqrt(parent_px**2 + parent_py**2 + parent_pz**2)
+    safe = np.where(p_mag > 0, p_mag, 1.0)
+    nx, ny, nz = parent_px / safe, parent_py / safe, parent_pz / safe
+    # Parents at rest get an arbitrary fixed axis (asymmetry then irrelevant).
+    at_rest = p_mag == 0
+    nz = np.where(at_rest, 1.0, nz)
+    nx = np.where(at_rest, 0.0, nx)
+    ny = np.where(at_rest, 0.0, ny)
+
+    cos_theta = _sample_polar_cos(asymmetry, N, rng)
+    sin_theta = np.sqrt(np.maximum(1.0 - cos_theta**2, 0.0))
+    phi = rng.uniform(0.0, 2 * np.pi, N)
+
+    # Build an orthonormal basis (n, e1, e2) per event to place d2 at angle θ
+    # from the polarization axis n.
+    # Choose a reference not parallel to n.
+    ref_z = np.abs(nz) < 0.9
+    rx = np.where(ref_z, 0.0, 1.0)
+    ry = np.zeros(N)
+    rz = np.where(ref_z, 1.0, 0.0)
+    # e1 = n × ref, normalized
+    e1x = ny * rz - nz * ry
+    e1y = nz * rx - nx * rz
+    e1z = nx * ry - ny * rx
+    e1n = np.sqrt(e1x**2 + e1y**2 + e1z**2)
+    e1n = np.where(e1n > 0, e1n, 1.0)
+    e1x, e1y, e1z = e1x / e1n, e1y / e1n, e1z / e1n
+    # e2 = n × e1
+    e2x = ny * e1z - nz * e1y
+    e2y = nz * e1x - nx * e1z
+    e2z = nx * e1y - ny * e1x
+
+    dirx = cos_theta * nx + sin_theta * (np.cos(phi) * e1x + np.sin(phi) * e2x)
+    diry = cos_theta * ny + sin_theta * (np.cos(phi) * e1y + np.sin(phi) * e2y)
+    dirz = cos_theta * nz + sin_theta * (np.cos(phi) * e1z + np.sin(phi) * e2z)
+
+    px2 = p_star * dirx
+    py2 = p_star * diry
+    pz2 = p_star * dirz
+    E2_star = np.sqrt(p_star**2 + m2**2)
+    E1_star = np.sqrt(p_star**2 + m1**2)
+
+    d2_rest = np.column_stack([np.full(N, 0.0) + E2_star, px2, py2, pz2])
+    d1_rest = np.column_stack([np.full(N, 0.0) + E1_star, -px2, -py2, -pz2])
+
+    d1_lab = _boost_to_lab(d1_rest, parent_E, parent_px, parent_py, parent_pz)
+    d2_lab = _boost_to_lab(d2_rest, parent_E, parent_px, parent_py, parent_pz)
+    return d1_lab, d2_lab
+
+
 def decay_3body_flat(parent_E, parent_px, parent_py, parent_pz,
                      m_parent, m1, m2, m3, rng=None):
     """

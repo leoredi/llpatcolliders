@@ -49,7 +49,9 @@ def test_generate_meson_csv_one_mass(tmp_path, monkeypatch):
     finally:
         sys.argv = argv_save
 
-    out = tmp_path / "llp_4vectors" / "Ue" / "Dmeson" / "mN_1p00.csv"
+    from config_mass_grid import format_mass_for_filename
+    out = (tmp_path / "llp_4vectors" / "Ue" / "Dmeson"
+           / f"mN_{format_mass_for_filename(1.0)}.csv")
     assert out.exists(), f"Expected CSV not produced at {out}"
     assert out.stat().st_size > 0, "CSV is empty; D -> N production should be open at 1.0 GeV"
 

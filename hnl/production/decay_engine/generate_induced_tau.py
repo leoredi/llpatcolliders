@@ -42,11 +42,31 @@ from production.constants import (
 )
 from production.fonll.fonll_parser import get_sigma_total
 from production.fonll.meson_sampler import sample_meson_4vectors
-from production.decay_engine.kinematics import decay_2body, decay_3body_flat
+from production.decay_engine.kinematics import (
+    decay_2body, decay_2body_polarized, decay_3body_flat,
+)
 
 OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
 
 N_POOL = 100_000
+
+# --- Tau polarization model -------------------------------------------------
+# A pseudoscalar decay P+ -> tau+ nu_tau fixes the tau helicity exactly: with a
+# left-handed nu_tau and a spin-0 parent, the tau+ must be left-handed
+# (helicity -1) in the parent rest frame (the charge-conjugate P- -> tau- gives
+# helicity +1; the tau energy spectrum is identical by CP, so a single sign is
+# used). The tau is therefore ~100% longitudinally polarized along its momentum.
+#
+# The N angular distribution in the tau rest frame then follows
+# 1 + (alpha * P_tau) cos(theta) about the tau momentum axis. P_tau = -1 is
+# exact here; the spin-analyzing power alpha is mass- and channel-dependent and
+# would need the full decay matrix element to pin down. We use the chiral
+# (maximal) limit |alpha| = 1, which is exact as m_N -> 0 and a documented upper
+# bound on the polarization effect at finite m_N. Set TAU_2BODY_ANALYZING_POWER
+# to 0.0 to recover the previous isotropic treatment.
+TAU_POLARIZATION = -1.0
+TAU_2BODY_ANALYZING_POWER = 1.0
+TAU_2BODY_ASYMMETRY = TAU_POLARIZATION * TAU_2BODY_ANALYZING_POWER
 
 # Measured branching ratios for the parent meson -> tau nu_tau (PDG 2024)
 BR_DS_TAU_NU = 5.35e-2
@@ -138,8 +158,14 @@ def compute_tau_production_br_components(hnl, m_N):
 
 
 def _sample_hnl_from_tau(tau_E, tau_px, tau_py, tau_pz, m_N,
-                         br_2body_channels, br_3body_channels, br_total, rng):
-    """Decay each tau to (N + X) with channel selection weighted by BR."""
+                         br_2body_channels, br_3body_channels, br_total, rng,
+                         asymmetry=TAU_2BODY_ASYMMETRY):
+    """Decay each tau to (N + X) with channel selection weighted by BR.
+
+    ``asymmetry`` (= analyzing_power × P_tau) sets the longitudinal-polarization
+    angular weight ``1 + asymmetry·cosθ`` for the N in the tau rest frame of the
+    2-body hadronic modes; 0.0 reproduces isotropic decay.
+    """
     n_events = len(tau_E)
     hnl_4v = np.empty((n_events, 4))
 
@@ -157,9 +183,11 @@ def _sample_hnl_from_tau(tau_E, tau_px, tau_py, tau_pz, m_N,
         for k in np.unique(ch_idx):
             m_meson, _ = br_2body_channels[int(k)]
             sel = evt_idx[ch_idx == k]
-            _, hnl_2b = decay_2body(
+            # N (second daughter) is the spin-analyzed particle; its polar angle
+            # follows the tau longitudinal polarization.
+            _, hnl_2b = decay_2body_polarized(
                 tau_E[sel], tau_px[sel], tau_py[sel], tau_pz[sel],
-                M_TAU, m_meson, m_N, rng=rng,
+                M_TAU, m_meson, m_N, asymmetry=asymmetry, rng=rng,
             )
             hnl_4v[sel] = hnl_2b
 

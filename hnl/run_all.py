@@ -6,13 +6,15 @@ Parallel driver for the complete HNL production pipeline.
 
 Submits one process per (flavor, channel) job:
 
-  (Ue, Bmeson)  (Ue, Dmeson)  (Ue, Bc)  (Ue, tau)
+  (Ue, Bmeson)  (Ue, Dmeson)  (Ue, Bc)  (Ue, tau)  (Ue, kaon)
   (Umu, ...)    ...
   (Utau, ...)   ...
 
-= 12 independent jobs. Each one builds its own meson/tau pool (small cost
-relative to BR computation) and processes all 116 mass points for that
-(flavor, channel). At the end the combine step runs serially.
+= 15 independent jobs (3 flavors x [3 meson + tau + kaon]). Each one builds its
+own meson/tau/kaon pool (small cost relative to BR computation) and processes
+all 116 mass points for that (flavor, channel). The opt-in W/Z channel
+(--with-wz) adds one heavier MadGraph job per flavor. At the end the combine
+step runs serially.
 
 Usage:
     python -m hnl.run_all                       # full grid, all cores
@@ -74,6 +76,33 @@ def _worker_tau(flavor: str, masses: list, n_pool: int, seed: int) -> str:
     return f"tau   {flavor:>5s}"
 
 
+def _worker_kaon(flavor: str, masses: list, n_pool: int, seed: int) -> str:
+    """Process the kaon channel (K+ -> l N) for one flavor across all masses."""
+    from production.decay_engine.generate_kaon_csvs import sample_kaon_4vectors, process_flavor
+    rng = np.random.default_rng(seed)
+    random.seed(seed)  # HNLCalc's 3-body BR integrator uses stdlib random
+    pool = sample_kaon_4vectors(n_pool, rng)
+    process_flavor(flavor, pool, masses, rng)
+    return f"kaon  {flavor:>5s}"
+
+
+def _worker_wz(flavor: str, masses: list, n_events: int, nb_core: int) -> str:
+    """Run the W/Z -> l N MadGraph pipeline for one flavor across all masses.
+
+    Opt-in only (``run_all.py --with-wz``): each mass point spawns a MadGraph
+    generate_events subprocess, which is far heavier than the meson path and
+    requires the vendored MG5 install (and Docker, on setups that wrap MG5 in a
+    container). Failures on individual points are reported but do not abort the
+    whole flavor.
+    """
+    from production.madgraph.run_wz_production import run_single_point
+    n_ok = 0
+    for m in masses:
+        if run_single_point(flavor, m, n_events, nb_core=nb_core):
+            n_ok += 1
+    return f"wz    {flavor:>5s} ({n_ok}/{len(masses)} points)"
+
+
 def main():
     ap = argparse.ArgumentParser(description="Parallel HNL production driver")
     ap.add_argument("--flavor", choices=["Ue", "Umu", "Utau"], nargs="+",
@@ -87,6 +116,14 @@ def main():
                     help="Custom mass list (default: full grid)")
     ap.add_argument("--skip-combine", action="store_true",
                     help="Skip the final combine_channels step")
+    ap.add_argument("--with-wz", action="store_true",
+                    help="Also run the W/Z -> l N MadGraph channel (opt-in; "
+                         "needs the vendored MG5 install, much slower)")
+    ap.add_argument("--wz-nevents", type=int, default=None,
+                    help="Events per (flavor, mass) MadGraph point "
+                         "(default: config N_EVENTS_DEFAULT)")
+    ap.add_argument("--wz-nb-core", type=int, default=1,
+                    help="CPU cores per MadGraph generate_events job")
     args = ap.parse_args()
 
     workers = args.workers or os.cpu_count() or 1
@@ -101,6 +138,14 @@ def main():
             seed += 1
         jobs.append((_worker_tau, (flavor, masses, args.n_pool, seed)))
         seed += 1
+        jobs.append((_worker_kaon, (flavor, masses, args.n_pool, seed)))
+        seed += 1
+
+    if args.with_wz:
+        from config_mass_grid import N_EVENTS_DEFAULT
+        wz_nevents = args.wz_nevents or N_EVENTS_DEFAULT
+        for flavor in args.flavor:
+            jobs.append((_worker_wz, (flavor, masses, wz_nevents, args.wz_nb_core)))
 
     print(f"Submitting {len(jobs)} jobs across {workers} workers "
           f"(flavors={args.flavor}, masses={len(masses)}, n_pool={args.n_pool})")

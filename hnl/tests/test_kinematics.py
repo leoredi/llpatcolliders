@@ -3,7 +3,9 @@
 import numpy as np
 import pytest
 
-from production.decay_engine.kinematics import decay_2body, decay_3body_flat
+from production.decay_engine.kinematics import (
+    decay_2body, decay_2body_polarized, decay_3body_flat, _sample_polar_cos,
+)
 
 
 @pytest.fixture
@@ -40,6 +42,37 @@ def test_2body_conserves_4momentum(rng):
     m2_recon = np.sqrt(np.maximum(d2[:, 0]**2 - (d2[:, 1]**2 + d2[:, 2]**2 + d2[:, 3]**2), 0.0))
     assert np.allclose(m1_recon, m1, atol=1e-7)
     assert np.allclose(m2_recon, m2, atol=1e-7)
+
+
+def test_sample_polar_cos_distribution(rng):
+    # pdf ∝ 1 + a·cosθ  =>  <cosθ> = a/3, and a=0 is flat (<cosθ>=0).
+    for a in (0.0, 0.5, -1.0, 1.0):
+        c = _sample_polar_cos(a, 200000, rng)
+        assert c.min() >= -1.0 and c.max() <= 1.0
+        assert abs(c.mean() - a / 3.0) < 5e-3
+
+
+def test_2body_polarized_conserves_and_reduces_to_isotropic(rng):
+    M, m1, m2 = 1.777, 0.139, 0.5  # tau -> pi N -like
+    E, px, py, pz = _make_parents(5000, M, p_max=30.0, rng=rng)
+
+    d1, d2 = decay_2body_polarized(E, px, py, pz, M, m1, m2, asymmetry=0.0, rng=rng)
+    # 4-momentum conservation and on-shell daughters.
+    assert np.allclose(d1[:, 0] + d2[:, 0], E, rtol=1e-9, atol=1e-9)
+    for col, p in zip(range(1, 4), (px, py, pz)):
+        assert np.allclose(d1[:, col] + d2[:, col], p, rtol=1e-9, atol=1e-9)
+    m2_rec = np.sqrt(np.maximum(d2[:, 0]**2 - d2[:, 1]**2 - d2[:, 2]**2 - d2[:, 3]**2, 0.0))
+    assert np.allclose(m2_rec, m2, atol=1e-7)
+
+
+def test_2body_polarized_shifts_energy_spectrum(rng):
+    # A nonzero asymmetry must measurably change the analyzed-daughter (N) lab
+    # energy spectrum relative to the isotropic case (the whole point of the fix).
+    M, m1, m2 = 1.777, 0.139, 0.5
+    E, px, py, pz = _make_parents(40000, M, p_max=40.0, rng=rng)
+    _, n_iso = decay_2body_polarized(E, px, py, pz, M, m1, m2, asymmetry=0.0, rng=rng)
+    _, n_pol = decay_2body_polarized(E, px, py, pz, M, m1, m2, asymmetry=-1.0, rng=rng)
+    assert abs(n_iso[:, 0].mean() - n_pol[:, 0].mean()) > 1e-2 * n_iso[:, 0].mean()
 
 
 def test_3body_conserves_4momentum(rng):

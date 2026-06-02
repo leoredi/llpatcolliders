@@ -3,3 +3,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+
+# MadGraph transient build/run artifacts (run_wz_production.py).
+# The per-point process dir is regenerated and removed on success; never commit it.
+production/madgraph/work/
+# MG5 also vendors its 148 MB install here if you choose the drop-in option.
+vendored/MG5_aMC_v3_6_6/
+# PLY parser cache MG5 drops into the invocation cwd.
+py.py
+parser.out

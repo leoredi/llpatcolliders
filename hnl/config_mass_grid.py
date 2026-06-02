@@ -16,7 +16,10 @@ The grid matches the one used by the upstream `llpatcolliders_FONLL`
 prototype, so per-mass CSVs from both pipelines can be diffed directly.
 
 `format_mass_for_filename(m)` controls the filename encoding:
-`mN_{m:.2f}.csv` with the decimal replaced by `p` (e.g. 1.025 -> mN_1p03).
+`mN_{m:.3f}.csv` with the decimal replaced by `p` (e.g. 1.025 -> mN_1p025).
+Three decimals are required: the grid has 15-MeV and 25-MeV spacings, so a
+two-decimal encoding aliased neighbouring points and drifted the label up to
+5 MeV from the true `m_N`. `parse_mass_from_filename` is the exact inverse.
 """
 
 MASS_GRID = sorted([
@@ -48,8 +51,29 @@ MAX_SIGNAL_EVENTS = 0
 
 
 def format_mass_for_filename(mass):
-    """Filename encoding: 1.025 -> '1p03' (two decimals, dot as 'p')."""
-    return f"{mass:.2f}".replace('.', 'p')
+    """Filename encoding: 1.025 -> '1p025' (three decimals, dot as 'p')."""
+    return f"{mass:.3f}".replace('.', 'p')
+
+
+def parse_mass_from_filename(label):
+    """Inverse of ``format_mass_for_filename``.
+
+    Accepts either a bare label (``'1p025'``) or a full stem
+    (``'mN_1p025'``) and returns the mass in GeV (``1.025``).
+    """
+    stem = label[3:] if label.startswith("mN_") else label
+    return float(stem.replace('p', '.'))
+
+
+# Fail fast if the grid ever grows a point whose label collides with another:
+# a collision would silently overwrite a CSV. Three decimals (1-MeV resolution)
+# safely separate the 15-MeV/25-MeV grid spacings used here.
+_labels = [format_mass_for_filename(m) for m in MASS_GRID]
+assert len(set(_labels)) == len(MASS_GRID), (
+    "format_mass_for_filename produced colliding labels for MASS_GRID; "
+    "increase the decimal precision before adding the new point(s)."
+)
+del _labels
 
 
 if __name__ == "__main__":

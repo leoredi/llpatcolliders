@@ -56,6 +56,12 @@ CHARGED_PSEUDOSCALARS = {211, 321, 411, 431, 521, 541}
 # HNLCalc 3-body channels for production (parent_pdg, daughter_pdg, type)
 # type: "pseudo" for pseudoscalar, "vector" for vector meson daughters
 THREEBODY_CHANNELS = {
+    # Kaon (light) — semileptonic K+ -> pi0 l N. The dominant kaon mode is the
+    # 2-body K+ -> l+ N (handled by _eval_2body_br); this 3-body mode matters
+    # only at low m_N and is included for completeness.
+    321: [
+        (111, "pseudo"),   # K+ -> pi0 l+ N
+    ],
     # D mesons (charm)
     421: [  # D0
         (-321, "pseudo"),   # D0 → K- ℓ+ N
@@ -156,26 +162,25 @@ def _eval_3body_br(hnl, parent_pdg, daughter_pdg, lepton_pdg, m_N, ch_type):
     sign_lep = "-" if parent_pdg > 0 else ""
     pid_lep_str = f"{sign_lep}{abs(lepton_pdg)}"
 
-    try:
-        if ch_type == "pseudo":
-            dbr = hnl.get_3body_dbr_pseudoscalar(str(parent_pdg), str(daughter_pdg), pid_lep_str)
-        elif ch_type == "vector":
-            dbr = hnl.get_3body_dbr_vector(str(parent_pdg), str(daughter_pdg), pid_lep_str)
-        else:
-            return 0.0
-
-        br_val = hnl.integrate_3body_br(
-            dbr, m_N, m_parent, m_daughter, m_lepton,
-            coupling=1.0, nsample=500
-        )
-        if br_val is None or np.isnan(br_val) or br_val < 0:
-            return 0.0
-        return float(br_val)
-    except (TypeError, NameError):
-        # HNLCalc has no CKM/form-factor parameterization for this parent→daughter
-        # channel: VHHp returns None (TypeError) or form-factor symbols are undefined
-        # (NameError). Such channels contribute no production BR. Other errors propagate.
+    # Every (parent, daughter) pair in THREEBODY_CHANNELS has been verified to be
+    # supported by HNLCalc (no NameError/TypeError raised on the in-grid range,
+    # kinematically-closed combinations are filtered by the threshold check
+    # above). If a future contributor adds a channel HNLCalc cannot evaluate,
+    # let it raise — silent zeros hide whole missing transitions.
+    if ch_type == "pseudo":
+        dbr = hnl.get_3body_dbr_pseudoscalar(str(parent_pdg), str(daughter_pdg), pid_lep_str)
+    elif ch_type == "vector":
+        dbr = hnl.get_3body_dbr_vector(str(parent_pdg), str(daughter_pdg), pid_lep_str)
+    else:
         return 0.0
+
+    br_val = hnl.integrate_3body_br(
+        dbr, m_N, m_parent, m_daughter, m_lepton,
+        coupling=1.0, nsample=500,
+    )
+    if br_val is None or np.isnan(br_val) or br_val < 0:
+        return 0.0
+    return float(br_val)
 
 
 def compute_total_production_br(hnl, parent_pdg, lepton_pdg, m_N):
@@ -325,7 +330,15 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
             all_pz.append(hnl_4v[:, 3])
 
         else:
-            # B or D mesons: loop over species in the pool
+            # B or D mesons: loop over species in the pool.
+            #
+            # Each species contributes only while m_N < m_parent - m_lepton, so
+            # the emitted row count falls below n_pool near the high-mass edge of
+            # the channel: as m_N approaches the lightest surviving parent, the
+            # heavier-threshold species drop out one by one and only their share
+            # of the pool is written. e.g. charm at m_N ~ 1.73 GeV keeps only the
+            # D0/D+/Ds tail (~40k of 100k rows). That is the kinematic window
+            # closing, not a truncated or failed job.
             unique_species = np.unique(pool['species_pdg'])
             for species_pdg in unique_species:
                 m_parent = MESON_MASSES[species_pdg]

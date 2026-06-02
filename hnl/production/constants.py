@@ -30,6 +30,7 @@ M_TAU = Particle.from_pdgid(15).mass * 1e-3       # tau
 M_ELECTRON = Particle.from_pdgid(11).mass * 1e-3  # electron
 M_MUON = Particle.from_pdgid(13).mass * 1e-3      # muon
 M_PION = Particle.from_pdgid(211).mass * 1e-3     # pi+
+M_KAON = Particle.from_pdgid(321).mass * 1e-3     # K+
 
 # ==========================================================================
 # FONLL inclusive cross-sections at 14 TeV (pb)
@@ -37,6 +38,49 @@ M_PION = Particle.from_pdgid(211).mass * 1e-3     # pi+
 
 # σ(pp → Bc) ~ 0.9 μb at 14 TeV (BCVEGPY/FONLL, CMS/LHCb)
 SIGMA_BC_PB = 0.9e6
+
+# ==========================================================================
+# Electroweak K-factor (W/Z → ℓ N production)
+# ==========================================================================
+
+# NLO/LO QCD correction applied to the parton-level MadGraph LO cross-section
+# for the electroweak HNL production channel (pp → W/Z → ℓ N). Matches the
+# value used by the upstream llpatcolliders_FONLL W/Z pipeline.
+K_FACTOR_EW = 1.3
+
+# ==========================================================================
+# Charged-kaon production (K+ -> ℓ+ N, dominant HNL source below ~0.5 GeV)
+# ==========================================================================
+#
+# FONLL is a heavy-quark (charm/bottom) calculation and supplies no light-meson
+# spectrum, so the kaon channel uses a parametrized soft-QCD K± flux instead of
+# a tabulated grid. THESE ARE APPROXIMATE INPUTS — an order-of-magnitude flux
+# and a generic Tsallis pT / Gaussian-rapidity shape, intended to fill in the
+# sub-0.5 GeV region that was previously simply missing. Treat the absolute
+# kaon yield as a systematic, not a precision prediction; override via the
+# constants below or regenerate from a measured K± spectrum when available.
+#
+# Effective inclusive K± production cross-section at 14 TeV:
+#   sigma_K± ≈ sigma_inel × <n_{K±}>
+# with sigma_inel(14 TeV) ≈ 80 mb = 8e10 pb and a mean charged-kaon
+# multiplicity per inelastic event of order a few. The value below bundles both
+# charges (K+ and K-), matching the "particle + antiparticle" convention used
+# for the meson channels (so no extra factor of 2 is applied downstream).
+SIGMA_KAON_PB = 3.0e11  # ~80 mb × ~4 K± per inelastic event (approximate)
+
+# Tsallis/Hagedorn transverse-momentum shape parameters (identified-hadron fits
+# at LHC energies give T ~ 0.15-0.20 GeV, n ~ 6-8 for kaons).
+KAON_TSALLIS_T = 0.17   # GeV
+KAON_TSALLIS_N = 7.0
+KAON_PT_MAX = 5.0       # GeV, sampling ceiling (kaons of interest are soft)
+# Rapidity shape: Gaussian in y approximating the LHC dN/dy plateau + tails.
+KAON_RAPIDITY_SIGMA = 2.5
+# Physical energy ceiling for sampled kaons: a single hadron from a 14 TeV pp
+# collision cannot carry more than the per-beam energy. Without this cap the
+# Gaussian rapidity tail (sigma=2.5) reaches |y| ~ 12 where mT*cosh(y) blows up
+# past 40 TeV, breaking the 2-body decay boost numerics (events with m_HNL^2<0).
+# The sampler accept-rejects on E_K < KAON_E_MAX after the full (pT, y) draw.
+KAON_E_MAX = 7000.0  # GeV, half of sqrt(s) at LHC 14 TeV
 
 # ==========================================================================
 # Fragmentation fractions
