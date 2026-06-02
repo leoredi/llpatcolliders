@@ -1105,17 +1105,18 @@ if __name__ == "__main__":
     # --- Per-track tangential displacement between tracker layer 1 and 2 ---
     # For each daughter, |hit_layer2 - hit_layer1| projected onto the layer
     # plane (radial spacing L = DETECTOR_THICKNESS excluded). Pool both
-    # daughters of every accepted pair (both-on-tracker) to characterise the
-    # in-layer displacement the tracker must resolve.
+    # daughters of every pair passing the full signal selection to
+    # characterise the in-layer displacement the tracker must resolve.
     if len(tang_disp_1) > 0:
         print("\n" + "="*50)
         print("PER-TRACK LAYER-TO-LAYER DISPLACEMENT (tangential)")
         print("="*50)
 
-        tang_pool   = np.concatenate([tang_disp_1[on_tracker],
-                                      tang_disp_2[on_tracker]]) * 100   # cm
-        weight_pool = np.concatenate([weights[on_tracker],
-                                      weights[on_tracker]])
+        sel_mask    = selection_mask(mc)
+        tang_pool   = np.concatenate([tang_disp_1[sel_mask],
+                                      tang_disp_2[sel_mask]]) * 100   # cm
+        weight_pool = np.concatenate([weights[sel_mask],
+                                      weights[sel_mask]])
 
         if len(tang_pool) > 0 and weight_pool.sum() > 0:
             fig_tg, axes_tg = plt.subplots(1, 2, figsize=(12, 5))
@@ -1128,7 +1129,8 @@ if __name__ == "__main__":
                     alpha=0.85)
             ax.set_xlabel('Tangential displacement (cm)')
             ax.set_ylabel('Weighted counts (decay prob.)')
-            ax.set_title(f'Per-track layer1→layer2 displacement\n'
+            ax.set_title(f'Per-track layer1→layer2 displacement '
+                         f'(after full selection)\n'
                          f'(L = {DETECTOR_THICKNESS*100:.0f} cm radial, '
                          f'τ = {lifetime*1e9:.0f} ns)')
 
@@ -1155,7 +1157,7 @@ if __name__ == "__main__":
             cw = np.cumsum(weight_pool[sort_idx]) / w_tot
             median_tang = tang_pool[sort_idx][np.searchsorted(cw, 0.5)]
             print(f"  Pool size: {len(tang_pool)} tracks "
-                  f"(both daughters of both-on-tracker pairs)")
+                  f"(both daughters of pairs passing full selection)")
             print(f"  Weighted mean:    {mean_tang:.3f} cm")
             print(f"  Weighted median:  {median_tang:.3f} cm")
             print(f"  99.5th percentile: {pct99:.3f} cm")
