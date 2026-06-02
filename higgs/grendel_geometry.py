@@ -501,6 +501,67 @@ def classify_points(points):
     return theta, best_s
 
 
+def classify_points_with_basis(points):
+    """
+    Same surface mapping as classify_points, but also returns the local
+    cavern basis at each point: (tangent, right, up) where ``tangent``
+    is the centreline tangent at the nearest segment ("down the tunnel"),
+    and (right, up) span the profile plane. The radial outward normal at
+    profile angle theta is cos(theta)*right + sin(theta)*up; the arc
+    tangent (around the cross-section) is -sin(theta)*right + cos(theta)*up.
+
+    Returns
+    -------
+    theta   : ndarray, shape (M,)
+    s       : ndarray, shape (M,)
+    tangent : ndarray, shape (M, 3)
+    right   : ndarray, shape (M, 3)
+    up      : ndarray, shape (M, 3)
+    """
+    points = np.asarray(points, dtype=float)
+    m = len(points)
+    best_d2 = np.full(m, np.inf)
+    best_x = np.zeros(m)
+    best_y = np.zeros(m)
+    best_s = np.zeros(m)
+    best_tangent = np.zeros((m, 3))
+    best_right = np.zeros((m, 3))
+    best_up = np.zeros((m, 3))
+
+    for i in range(len(path_3d_fiducial) - 1):
+        seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+        seg_len = np.linalg.norm(seg)
+        if seg_len == 0:
+            continue
+        seg_hat = seg / seg_len
+        if abs(seg_hat[1]) < 0.9:
+            world_up = np.array([0., 1., 0.])
+        else:
+            world_up = np.array([0., 0., 1.])
+        right = np.cross(seg_hat, world_up)
+        right /= np.linalg.norm(right)
+        up = np.cross(right, seg_hat)
+        up /= np.linalg.norm(up)
+
+        rel = points - path_3d_fiducial[i]
+        t = np.clip(rel @ seg_hat, 0, seg_len)
+        closest = path_3d_fiducial[i] + np.outer(t, seg_hat)
+        diff = points - closest
+        d2 = np.einsum('ij,ij->i', diff, diff)
+        upd = d2 < best_d2
+        best_d2[upd] = d2[upd]
+        best_x[upd] = diff[upd] @ right
+        best_y[upd] = diff[upd] @ up
+        best_s[upd] = cumulative_length[i] + t[upd]
+        best_tangent[upd] = seg_hat
+        best_right[upd] = right
+        best_up[upd] = up
+
+    theta = np.arctan2(best_y, best_x)
+    theta = np.where(theta < 0, theta + 2 * np.pi, theta)
+    return theta, best_s, best_tangent, best_right, best_up
+
+
 def points_on_tracker(points):
     """
     Bool array: True where each (M, 3) wall point lands on a tracker
