@@ -1165,62 +1165,70 @@ if __name__ == "__main__":
                 frac = weight_pool[tang_pool < thr].sum() / w_tot
                 print(f"  Fraction with tang. disp. < {thr} cm: {frac:.4f}")
 
-    # --- Pointing angle for the "merged" subset (inner sep < SEP_MIN) ---
-    # These are events lost by the inner-separation cut. Apply only the
-    # basic kinematic gates (on_tracker + momentum + outer-sep) so the
-    # plot shows the candidate pool that pointing could potentially rescue.
-    # Overlay the full-selection distribution for shape comparison.
+    # --- Pointing angle split by inner separation (low vs high sep_inner) ---
+    # Compare pointing for tight (sep_inner < SPLIT) and wide (sep_inner >=
+    # SPLIT) decay topologies, with a common kinematic baseline (on_tracker
+    # + momentum + outer-sep window). Surfaces whether pointing discriminates
+    # the two topologies independently of the inner-separation cut.
+    SEP_INNER_SPLIT = 0.10  # m  — split point for the comparison
     if len(pointing) > 0:
         print("\n" + "="*50)
-        print(f"POINTING ANGLE FOR sep < SEP_MIN ({SEP_MIN*1000:.0f} mm)")
+        print(f"POINTING ANGLE: sep_inner < {SEP_INNER_SPLIT*100:.0f} cm "
+              f"vs ≥ {SEP_INNER_SPLIT*100:.0f} cm")
         print("="*50)
 
-        m_fail = on_tracker & (p_soft >= P_CUT) \
-            & (sep_outer >= SEP_MIN) & (seps < SEP_MIN)
-        m_pass = selection_mask(mc)
+        m_base = on_tracker & (p_soft >= P_CUT) \
+            & (sep_outer >= SEP_MIN) & (seps <= SEP_MAX)
+        m_low  = m_base & (seps <  SEP_INNER_SPLIT)
+        m_high = m_base & (seps >= SEP_INNER_SPLIT)
 
-        pt_fail_mrad = pointing[m_fail] * 1000
-        w_fail       = weights[m_fail]
-        pt_pass_mrad = pointing[m_pass] * 1000
-        w_pass       = weights[m_pass]
+        pt_low_mrad  = pointing[m_low]  * 1000
+        w_low        = weights[m_low]
+        pt_high_mrad = pointing[m_high] * 1000
+        w_high       = weights[m_high]
 
-        if len(pt_fail_mrad) > 0 and w_fail.sum() > 0:
+        if (len(pt_low_mrad) > 0 and w_low.sum() > 0
+                and len(pt_high_mrad) > 0 and w_high.sum() > 0):
             fig_pf, axes_pf = plt.subplots(1, 2, figsize=(12, 5))
 
-            pct99 = np.percentile(pt_fail_mrad, 99.5)
+            all_pt = np.concatenate([pt_low_mrad, pt_high_mrad])
+            all_w  = np.concatenate([w_low, w_high])
+            pct99  = np.percentile(all_pt, 99.5)
             bins_lin = np.linspace(0, max(pct99, 50.0), 80)
+
+            label_low  = (f'sep_in < {SEP_INNER_SPLIT*100:.0f} cm  '
+                          f'(yield {w_low.sum():.2e})')
+            label_high = (f'sep_in ≥ {SEP_INNER_SPLIT*100:.0f} cm  '
+                          f'(yield {w_high.sum():.2e})')
+
             ax = axes_pf[0]
-            ax.hist(pt_fail_mrad, bins=bins_lin, weights=w_fail,
+            ax.hist(pt_low_mrad, bins=bins_lin, weights=w_low,
                     color='crimson', edgecolor='black', linewidth=0.3,
-                    alpha=0.75, density=True,
-                    label=f'sep < {SEP_MIN*1000:.0f} mm '
-                          f'(on_trk + p_soft + sep_out only)')
-            if len(pt_pass_mrad) > 0 and w_pass.sum() > 0:
-                ax.hist(pt_pass_mrad, bins=bins_lin, weights=w_pass,
-                        color='steelblue', edgecolor='black', linewidth=0.3,
-                        alpha=0.5, density=True,
-                        label='full selection (reference)')
+                    alpha=0.75, density=True, label=label_low)
+            ax.hist(pt_high_mrad, bins=bins_lin, weights=w_high,
+                    color='steelblue', edgecolor='black', linewidth=0.3,
+                    alpha=0.5, density=True, label=label_high)
             ax.set_xlabel('Pointing angle (mrad)')
             ax.set_ylabel('Density')
-            ax.set_title(f'Pointing for inner-sep failures '
-                         f'(τ = {lifetime*1e9:.0f} ns)')
+            ax.set_title(f'Pointing angle by inner separation '
+                         f'(τ = {lifetime*1e9:.0f} ns)\n'
+                         f'(on_trk + p_soft + sep_out baseline)')
             ax.legend(fontsize=9)
 
             ax2 = axes_pf[1]
-            pt_fail_pos = pt_fail_mrad[pt_fail_mrad > 0]
-            if len(pt_fail_pos) > 0:
-                lo = max(pt_fail_pos.min(), 1e-3)
-                hi = max(pt_fail_pos.max(), 1.0)
+            all_pos = all_pt[all_pt > 0]
+            if len(all_pos) > 0:
+                lo = max(all_pos.min(), 1e-3)
+                hi = max(all_pos.max(), 1.0)
                 bins_log = np.logspace(np.log10(lo), np.log10(hi), 80)
-                ax2.hist(pt_fail_mrad, bins=bins_log, weights=w_fail,
+                ax2.hist(pt_low_mrad, bins=bins_log, weights=w_low,
                          color='crimson', edgecolor='black', linewidth=0.3,
                          alpha=0.75, density=True,
-                         label=f'sep < {SEP_MIN*1000:.0f} mm')
-                if len(pt_pass_mrad) > 0 and w_pass.sum() > 0:
-                    ax2.hist(pt_pass_mrad, bins=bins_log, weights=w_pass,
-                             color='steelblue', edgecolor='black',
-                             linewidth=0.3, alpha=0.5, density=True,
-                             label='full selection')
+                         label=f'sep_in < {SEP_INNER_SPLIT*100:.0f} cm')
+                ax2.hist(pt_high_mrad, bins=bins_log, weights=w_high,
+                         color='steelblue', edgecolor='black',
+                         linewidth=0.3, alpha=0.5, density=True,
+                         label=f'sep_in ≥ {SEP_INNER_SPLIT*100:.0f} cm')
                 ax2.set_xscale('log')
             ax2.set_xlabel('Pointing angle (mrad)')
             ax2.set_ylabel('Density')
@@ -1228,27 +1236,23 @@ if __name__ == "__main__":
             ax2.legend(fontsize=9)
 
             plt.tight_layout()
-            plt.savefig('pointing_inner_sep_fail_' + outString + '.png',
+            plt.savefig('pointing_by_inner_sep_' + outString + '.png',
                         dpi=150)
             show_or_close()
 
-            w_tot_fail = w_fail.sum()
-            mean_pt = np.average(pt_fail_mrad, weights=w_fail)
-            sort_idx = np.argsort(pt_fail_mrad)
-            cw = np.cumsum(w_fail[sort_idx]) / w_tot_fail
-            median_pt = pt_fail_mrad[sort_idx][np.searchsorted(cw, 0.5)]
-            yield_fail = w_tot_fail
-            yield_pass = w_pass.sum()
-            print(f"  Pool (sep < SEP_MIN, on_trk + p_soft + sep_out): "
-                  f"{len(pt_fail_mrad)} samples, "
-                  f"weighted yield = {yield_fail:.4e}")
-            print(f"  Reference (full selection): "
-                  f"weighted yield = {yield_pass:.4e}")
-            print(f"  Relative rescue potential: "
-                  f"{yield_fail / yield_pass * 100:.2f}% of accepted yield")
-            print(f"  Weighted mean pointing:   {mean_pt:.3f} mrad")
-            print(f"  Weighted median pointing: {median_pt:.3f} mrad")
-            print(f"  99.5th percentile:        {pct99:.3f} mrad")
+            def _wmed(x, w):
+                wt = w.sum()
+                if wt <= 0:
+                    return float('nan')
+                idx = np.argsort(x)
+                return x[idx][np.searchsorted(np.cumsum(w[idx]) / wt, 0.5)]
+
+            for label, pt, w in (("sep_in < split", pt_low_mrad, w_low),
+                                  ("sep_in ≥ split", pt_high_mrad, w_high)):
+                print(f"  {label}: samples={len(pt)}, "
+                      f"yield={w.sum():.4e}, "
+                      f"median={_wmed(pt, w):.3f} mrad, "
+                      f"mean={np.average(pt, weights=w):.3f} mrad")
 
     # --- sep_outer distribution, split by open-angle band ---
     # Motivates the conditional sep_outer<X-when-parallel cut:
