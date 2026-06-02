@@ -25,6 +25,7 @@ from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
     calculate_decay_length, cache_geometry, mesh_fiducial,
     points_on_tracker, classify_points_with_basis,
+    classify_points, arc_distance_between_thetas, profile_perimeter,
 )
 
 M_ELECTRON = 0.000511  # GeV/c²
@@ -572,26 +573,39 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     on_tracker = on_trk[:n_tot] & on_trk[n_tot:]
 
     # ---- Per-daughter arc-only displacement between tracker layers ----
-    # On the local cavern basis (tangent / right / up) at each daughter's
-    # wall hit, n_hat = cos(theta)*right + sin(theta)*up is the outward
-    # normal and t_arc = -sin(theta)*right + cos(theta)*up is the arc
-    # tangent (perpendicular to the centreline direction in the profile
-    # plane). For layer 2 sitting L = DETECTOR_THICKNESS radially outward
-    # from layer 1, the daughter's hit-to-hit displacement is
-    # (L / (d.n_hat)) * d, whose arc component is L * |d.t_arc| / |d.n_hat|.
-    arc_disp = np.zeros(2 * n_tot)
+    # Predict the layer-2 hit by extending the daughter through a radial
+    # gap of L = DETECTOR_THICKNESS (parallel-plane approximation), then
+    # measure the displacement as the *cross-section arc-length* along
+    # the profile contour from theta(p1) to theta(p2). This is the
+    # geodesic distance on the profile and is naturally bounded by half
+    # the perimeter — unlike the flat L * |d.t_arc| / |d.n_hat| chord,
+    # which blows up for grazing tracks. Daughters whose predicted
+    # layer-2 hit doesn't land on the tracker are dropped (NaN).
+    arc_disp = np.full(2 * n_tot, np.nan)
     if valid.any():
-        theta_e, _, _, right_e, up_e = classify_points_with_basis(
+        theta_1, _, _, right_e, up_e = classify_points_with_basis(
             exit_pts[valid])
-        cos_th = np.cos(theta_e)[:, None]
-        sin_th = np.sin(theta_e)[:, None]
+        cos_th = np.cos(theta_1)[:, None]
+        sin_th = np.sin(theta_1)[:, None]
         n_hat = cos_th * right_e + sin_th * up_e
-        t_arc = -sin_th * right_e + cos_th * up_e
         d_valid = dirs[valid]
         d_dot_n = np.einsum('ij,ij->i', d_valid, n_hat)
-        d_dot_t = np.einsum('ij,ij->i', d_valid, t_arc)
-        denom = np.where(np.abs(d_dot_n) < 1e-6, np.nan, d_dot_n)
-        arc_disp[valid] = DETECTOR_THICKNESS * np.abs(d_dot_t / denom)
+
+        safe_n = np.where(np.abs(d_dot_n) < 1e-6, np.nan, d_dot_n)
+        lam = DETECTOR_THICKNESS / safe_n
+        p2_pred = exit_pts[valid] + lam[:, None] * d_valid
+        finite_p2 = np.all(np.isfinite(p2_pred), axis=1)
+
+        p2_on_trk = np.zeros(len(p2_pred), dtype=bool)
+        arc_valid = np.full(len(p2_pred), np.nan)
+        if finite_p2.any():
+            p2_on_trk[finite_p2] = points_on_tracker(p2_pred[finite_p2])
+            theta_2, _ = classify_points(p2_pred[finite_p2])
+            arc_valid_finite = arc_distance_between_thetas(
+                theta_1[finite_p2], theta_2)
+            arc_valid[finite_p2] = arc_valid_finite
+        arc_valid = np.where(p2_on_trk, arc_valid, np.nan)
+        arc_disp[valid] = arc_valid
     arc_disp_1 = arc_disp[:n_tot]
     arc_disp_2 = arc_disp[n_tot:]
 

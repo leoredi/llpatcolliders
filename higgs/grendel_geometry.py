@@ -387,6 +387,53 @@ TRACKER_SURFACES = ('Arch/Ceiling', 'Left Wall')
 SCINTILLATOR_SURFACES = ('Floor', 'Right Wall')
 
 
+# ============================================================
+# Profile arc-length parametrization (around the cross-section)
+# ============================================================
+# Cumulative arc-length along the closed polygon walk of the profile
+# vertices. The walk is CCW so the unwrapped angle increases by 2π
+# over one full traversal.
+_seg_lens = np.linalg.norm(
+    np.diff(_profile_pts, axis=0, append=_profile_pts[:1]), axis=1)
+_profile_cum_s = np.concatenate([[0], np.cumsum(_seg_lens)])  # length N+1
+profile_perimeter = float(_profile_cum_s[-1])
+
+# Build a monotonically-increasing (theta, s) lookup by unwrapping the
+# polygon angles. Close the loop by repeating the first vertex at
+# theta + 2π.
+_theta_walk = _profile_angles.copy()
+for i in range(1, len(_theta_walk)):
+    while _theta_walk[i] < _theta_walk[i - 1]:
+        _theta_walk[i] += 2 * np.pi
+_theta_walk = np.concatenate([_theta_walk, [_theta_walk[0] + 2 * np.pi]])
+_s_walk = np.concatenate([_profile_cum_s[:-1], [profile_perimeter]])
+
+
+def arc_length_at_theta(theta):
+    """
+    Cumulative arc-length s(theta) along the cross-section profile (m),
+    measured from the start of the polygon walk (floor-left corner).
+    Accepts scalar or array inputs in [0, 2π).
+    """
+    theta = np.atleast_1d(np.asarray(theta, dtype=float))
+    theta_mod = theta % (2 * np.pi)
+    base = _theta_walk[0]
+    theta_shifted = np.where(theta_mod < base, theta_mod + 2 * np.pi, theta_mod)
+    return np.interp(theta_shifted, _theta_walk, _s_walk)
+
+
+def arc_distance_between_thetas(theta_a, theta_b):
+    """
+    Shortest arc-length distance (m) along the profile contour between
+    two points at profile angles theta_a and theta_b. Naturally bounded
+    by profile_perimeter / 2.
+    """
+    s_a = arc_length_at_theta(theta_a)
+    s_b = arc_length_at_theta(theta_b)
+    diff = np.abs(s_a - s_b)
+    return np.minimum(diff, profile_perimeter - diff)
+
+
 def _in_arc(theta, a, b):
     """True where theta is in the half-open CCW arc [a, b) (handles wrap)."""
     theta = np.asarray(theta, dtype=float) % (2 * np.pi)
