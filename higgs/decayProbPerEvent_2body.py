@@ -58,8 +58,8 @@ SEP_OUT_MAX_PARALLEL = 0.30  # m — max sep_outer applied only when open_angle 
 COLLIN_MIN          = 0.030  # m (30 mm) — min collinearity for events above the gate
 SEP_OUT_COLLIN_GATE = 0.30   # m — collinearity cut applies only when sep_outer > this
 
-outString = "0p5GeV"
-sample_csv = "LLP0p5GeVSmall.csv"
+outString = "15GeV"
+sample_csv = "LLPSmall.csv"
 
 # Tracking resolution
 HIT_RESOLUTION = 0.003  # m (3 mm per layer)
@@ -367,6 +367,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     all_seps, all_weights, all_momenta, all_pointing = [], [], [], []
     all_p_soft, all_dca, all_vtx_in, all_open = [], [], [], []
     all_sep_out, all_dimp, all_collin = [], [], []
+    all_tang1, all_tang2 = [], []
     all_event, all_pid, all_d, all_path, all_bg = [], [], [], [], []
     decay_list, dir1_list, dir2_list = [], [], []
 
@@ -436,6 +437,11 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         # Reconstructed track directions (unnormalised)
         dx1 = x1_out - x1_in;  dy1 = y1_out - y1_in   # dz = L
         dx2 = x2_out - x2_in;  dy2 = y2_out - y2_in
+
+        # Per-track in-layer displacement between layer 1 and layer 2 hits
+        # (radial spacing L excluded — this is the tangential component only).
+        tang1 = np.sqrt(dx1**2 + dy1**2)
+        tang2 = np.sqrt(dx2**2 + dy2**2)
 
         # --- Separation at inner and outer tracking layers ---
         sep     = np.sqrt((x1_in  - x2_in )**2 + (y1_in  - y2_in )**2)
@@ -538,6 +544,8 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         all_sep_out.append(sep_out)
         all_dimp.append(d_implied)
         all_collin.append(collin)
+        all_tang1.append(tang1)
+        all_tang2.append(tang2)
         all_event.append(np.full(N, event))
         all_pid.append(np.full(N, pid))
         all_d.append(d_samples)
@@ -549,6 +557,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         return {k: empty for k in (
             'sep', 'sep_outer', 'momenta', 'pointing', 'p_soft', 'dca',
             'vtx_in', 'open_angle', 'd_implied', 'collin', 'on_tracker',
+            'tang_disp_1', 'tang_disp_2',
             'weights', 'event', 'pid', 'd', 'path_len', 'betagamma')} \
             | {'n_per': N}
 
@@ -581,6 +590,8 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         'open_angle': np.concatenate(all_open),
         'd_implied': np.concatenate(all_dimp),
         'collin': np.concatenate(all_collin),
+        'tang_disp_1': np.concatenate(all_tang1),
+        'tang_disp_2': np.concatenate(all_tang2),
         'on_tracker': on_tracker,
         'weights': np.concatenate(all_weights),
         'event': np.concatenate(all_event),
@@ -873,6 +884,8 @@ if __name__ == "__main__":
     sep_outer    = mc['sep_outer']
     d_implied    = mc['d_implied']
     collinearity = mc['collin']
+    tang_disp_1  = mc['tang_disp_1']
+    tang_disp_2  = mc['tang_disp_2']
     on_tracker   = mc['on_tracker']
 
     print(f"  Hit resolution: {HIT_RESOLUTION*1000:.1f} mm, "
@@ -1088,6 +1101,64 @@ if __name__ == "__main__":
         print(f"  Fraction passing DCA < {DCA_CUT*100:.1f} cm: {frac_dca:.4f}")
         print(f"  Fraction with vertex in fiducial: {frac_vtx:.4f}")
         print(f"  (fractions above computed after separation cuts)")
+
+    # --- Per-track tangential displacement between tracker layer 1 and 2 ---
+    # For each daughter, |hit_layer2 - hit_layer1| projected onto the layer
+    # plane (radial spacing L = DETECTOR_THICKNESS excluded). Pool both
+    # daughters of every accepted pair (both-on-tracker) to characterise the
+    # in-layer displacement the tracker must resolve.
+    if len(tang_disp_1) > 0:
+        print("\n" + "="*50)
+        print("PER-TRACK LAYER-TO-LAYER DISPLACEMENT (tangential)")
+        print("="*50)
+
+        tang_pool   = np.concatenate([tang_disp_1[on_tracker],
+                                      tang_disp_2[on_tracker]]) * 100   # cm
+        weight_pool = np.concatenate([weights[on_tracker],
+                                      weights[on_tracker]])
+
+        if len(tang_pool) > 0 and weight_pool.sum() > 0:
+            fig_tg, axes_tg = plt.subplots(1, 2, figsize=(12, 5))
+
+            pct99 = np.percentile(tang_pool, 99.5)
+            bins_lin = np.linspace(0, max(pct99, 1.0), 80)
+            ax = axes_tg[0]
+            ax.hist(tang_pool, bins=bins_lin, weights=weight_pool,
+                    color='darkorange', edgecolor='black', linewidth=0.3,
+                    alpha=0.85)
+            ax.set_xlabel('Tangential displacement (cm)')
+            ax.set_ylabel('Weighted counts (decay prob.)')
+            ax.set_title(f'Per-track layer1→layer2 displacement\n'
+                         f'(L = {DETECTOR_THICKNESS*100:.0f} cm radial, '
+                         f'τ = {lifetime*1e9:.0f} ns)')
+
+            ax2 = axes_tg[1]
+            t_pos = tang_pool[tang_pool > 0]
+            if len(t_pos) > 0:
+                bins_log = np.logspace(np.log10(max(t_pos.min(), 1e-4)),
+                                       np.log10(max(t_pos.max(), 1.0)), 80)
+                ax2.hist(tang_pool, bins=bins_log, weights=weight_pool,
+                         color='darkorange', edgecolor='black', linewidth=0.3,
+                         alpha=0.85)
+                ax2.set_xscale('log')
+            ax2.set_xlabel('Tangential displacement (cm)')
+            ax2.set_ylabel('Weighted counts (decay prob.)')
+            ax2.set_title('Same, log scale')
+
+            plt.tight_layout()
+            plt.savefig('tang_disp_' + outString + '.png', dpi=150)
+            show_or_close()
+
+            w_tot = weight_pool.sum()
+            mean_tang = np.average(tang_pool, weights=weight_pool)
+            sort_idx = np.argsort(tang_pool)
+            cw = np.cumsum(weight_pool[sort_idx]) / w_tot
+            median_tang = tang_pool[sort_idx][np.searchsorted(cw, 0.5)]
+            print(f"  Pool size: {len(tang_pool)} tracks "
+                  f"(both daughters of both-on-tracker pairs)")
+            print(f"  Weighted mean:    {mean_tang:.3f} cm")
+            print(f"  Weighted median:  {median_tang:.3f} cm")
+            print(f"  99.5th percentile: {pct99:.3f} cm")
 
     # --- sep_outer distribution, split by open-angle band ---
     # Motivates the conditional sep_outer<X-when-parallel cut:
