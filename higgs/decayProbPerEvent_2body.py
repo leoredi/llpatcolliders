@@ -24,8 +24,7 @@ def show_or_close():
 from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
     calculate_decay_length, cache_geometry, mesh_fiducial,
-    points_on_tracker, classify_points_with_basis,
-    classify_points, arc_distance_between_thetas, profile_perimeter,
+    points_on_tracker,
 )
 
 M_ELECTRON = 0.000511  # GeV/c²
@@ -368,6 +367,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     all_seps, all_weights, all_momenta, all_pointing = [], [], [], []
     all_p_soft, all_dca, all_vtx_in, all_open = [], [], [], []
     all_sep_out, all_dimp, all_collin = [], [], []
+    all_xy1, all_xy2 = [], []
     all_event, all_pid, all_d, all_path, all_bg = [], [], [], [], []
     decay_list, dir1_list, dir2_list = [], [], []
 
@@ -437,6 +437,11 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         # Reconstructed track directions (unnormalised)
         dx1 = x1_out - x1_in;  dy1 = y1_out - y1_in   # dz = L
         dx2 = x2_out - x2_in;  dy2 = y2_out - y2_in
+
+        # Per-track in-plane displacement between layer 1 and layer 2 hits
+        # in the local LLP-perpendicular frame (radial spacing L excluded).
+        xy1 = np.sqrt(dx1**2 + dy1**2)
+        xy2 = np.sqrt(dx2**2 + dy2**2)
 
         # --- Separation at inner and outer tracking layers ---
         sep     = np.sqrt((x1_in  - x2_in )**2 + (y1_in  - y2_in )**2)
@@ -539,6 +544,8 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         all_sep_out.append(sep_out)
         all_dimp.append(d_implied)
         all_collin.append(collin)
+        all_xy1.append(xy1)
+        all_xy2.append(xy2)
         all_event.append(np.full(N, event))
         all_pid.append(np.full(N, pid))
         all_d.append(d_samples)
@@ -551,7 +558,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         return {k: empty for k in (
             'sep', 'sep_outer', 'momenta', 'pointing', 'p_soft', 'dca',
             'vtx_in', 'open_angle', 'd_implied', 'collin', 'on_tracker',
-            'arc_disp_1', 'arc_disp_2',
+            'xy_disp_1', 'xy_disp_2',
             'weights', 'event', 'pid', 'd', 'path_len', 'betagamma')} \
             | {k: empty3 for k in ('decay_pos', 'dir1', 'dir2',
                                    'exit_pt_1', 'exit_pt_2')} \
@@ -575,43 +582,6 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         on_trk[valid] = points_on_tracker(exit_pts[valid])
     on_tracker = on_trk[:n_tot] & on_trk[n_tot:]
 
-    # ---- Per-daughter arc-only displacement between tracker layers ----
-    # Predict the layer-2 hit by extending the daughter through a radial
-    # gap of L = DETECTOR_THICKNESS (parallel-plane approximation), then
-    # measure the displacement as the *cross-section arc-length* along
-    # the profile contour from theta(p1) to theta(p2). This is the
-    # geodesic distance on the profile and is naturally bounded by half
-    # the perimeter — unlike the flat L * |d.t_arc| / |d.n_hat| chord,
-    # which blows up for grazing tracks. Daughters whose predicted
-    # layer-2 hit doesn't land on the tracker are dropped (NaN).
-    arc_disp = np.full(2 * n_tot, np.nan)
-    if valid.any():
-        theta_1, _, _, right_e, up_e = classify_points_with_basis(
-            exit_pts[valid])
-        cos_th = np.cos(theta_1)[:, None]
-        sin_th = np.sin(theta_1)[:, None]
-        n_hat = cos_th * right_e + sin_th * up_e
-        d_valid = dirs[valid]
-        d_dot_n = np.einsum('ij,ij->i', d_valid, n_hat)
-
-        safe_n = np.where(np.abs(d_dot_n) < 1e-6, np.nan, d_dot_n)
-        lam = DETECTOR_THICKNESS / safe_n
-        p2_pred = exit_pts[valid] + lam[:, None] * d_valid
-        finite_p2 = np.all(np.isfinite(p2_pred), axis=1)
-
-        p2_on_trk = np.zeros(len(p2_pred), dtype=bool)
-        arc_valid = np.full(len(p2_pred), np.nan)
-        if finite_p2.any():
-            p2_on_trk[finite_p2] = points_on_tracker(p2_pred[finite_p2])
-            theta_2, _ = classify_points(p2_pred[finite_p2])
-            arc_valid_finite = arc_distance_between_thetas(
-                theta_1[finite_p2], theta_2)
-            arc_valid[finite_p2] = arc_valid_finite
-        arc_valid = np.where(p2_on_trk, arc_valid, np.nan)
-        arc_disp[valid] = arc_valid
-    arc_disp_1 = arc_disp[:n_tot]
-    arc_disp_2 = arc_disp[n_tot:]
-
     return {
         'sep': np.concatenate(all_seps),
         'sep_outer': np.concatenate(all_sep_out),
@@ -623,8 +593,8 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         'open_angle': np.concatenate(all_open),
         'd_implied': np.concatenate(all_dimp),
         'collin': np.concatenate(all_collin),
-        'arc_disp_1': arc_disp_1,
-        'arc_disp_2': arc_disp_2,
+        'xy_disp_1': np.concatenate(all_xy1),
+        'xy_disp_2': np.concatenate(all_xy2),
         'on_tracker': on_tracker,
         'weights': np.concatenate(all_weights),
         'event': np.concatenate(all_event),
@@ -922,8 +892,8 @@ if __name__ == "__main__":
     sep_outer    = mc['sep_outer']
     d_implied    = mc['d_implied']
     collinearity = mc['collin']
-    arc_disp_1   = mc['arc_disp_1']
-    arc_disp_2   = mc['arc_disp_2']
+    xy_disp_1    = mc['xy_disp_1']
+    xy_disp_2    = mc['xy_disp_2']
     on_tracker   = mc['on_tracker']
 
     print(f"  Hit resolution: {HIT_RESOLUTION*1000:.1f} mm, "
@@ -1140,73 +1110,68 @@ if __name__ == "__main__":
         print(f"  Fraction with vertex in fiducial: {frac_vtx:.4f}")
         print(f"  (fractions above computed after separation cuts)")
 
-    # --- Per-track arc-only displacement between tracker layer 1 and 2 ---
-    # Component of the layer1->layer2 hit displacement along the local arc
-    # tangent (around the cross-section profile) — perpendicular to both
-    # the radial layer spacing and the down-tunnel direction. Sizes the
-    # strip pitch around the arch. Pool both daughters of pairs passing
-    # the full signal selection.
-    if len(arc_disp_1) > 0:
+    # --- Per-track xy displacement between tracker layer 1 and 2 ---
+    # sqrt(dx^2 + dy^2) in the local LLP-perpendicular frame (radial
+    # spacing L excluded). Pool both daughters of pairs passing the full
+    # signal selection.
+    if len(xy_disp_1) > 0:
         print("\n" + "="*50)
-        print("PER-TRACK LAYER-TO-LAYER ARC DISPLACEMENT")
+        print("PER-TRACK LAYER-TO-LAYER XY DISPLACEMENT")
         print("="*50)
 
         sel_mask    = selection_mask(mc)
-        arc_pool    = np.concatenate([arc_disp_1[sel_mask],
-                                      arc_disp_2[sel_mask]]) * 100   # cm
+        xy_pool     = np.concatenate([xy_disp_1[sel_mask],
+                                      xy_disp_2[sel_mask]]) * 100   # cm
         weight_pool = np.concatenate([weights[sel_mask],
                                       weights[sel_mask]])
 
-        finite = np.isfinite(arc_pool)
-        arc_pool, weight_pool = arc_pool[finite], weight_pool[finite]
-
-        if len(arc_pool) > 0 and weight_pool.sum() > 0:
+        if len(xy_pool) > 0 and weight_pool.sum() > 0:
             fig_tg, axes_tg = plt.subplots(1, 2, figsize=(12, 5))
 
-            pct99 = np.percentile(arc_pool, 99.5)
-            pct_axis = np.percentile(arc_pool, 90.0)
+            pct99 = np.percentile(xy_pool, 99.5)
+            pct_axis = np.percentile(xy_pool, 90.0)
             bins_lin = np.linspace(0, max(pct_axis, 1.0), 80)
             ax = axes_tg[0]
-            ax.hist(arc_pool, bins=bins_lin, weights=weight_pool,
+            ax.hist(xy_pool, bins=bins_lin, weights=weight_pool,
                     color='darkorange', edgecolor='black', linewidth=0.3,
                     alpha=0.85)
-            ax.set_xlabel('Arc displacement (cm)')
+            ax.set_xlabel('xy displacement (cm)')
             ax.set_ylabel('Weighted counts (decay prob.)')
-            ax.set_title(f'Per-track layer1→layer2 arc displacement '
+            ax.set_title(f'Per-track layer1→layer2 xy displacement '
                          f'(after full selection, linear axis to 90%)\n'
                          f'(L = {DETECTOR_THICKNESS*100:.0f} cm radial, '
                          f'τ = {lifetime*1e9:.0f} ns)')
 
             ax2 = axes_tg[1]
-            t_pos = arc_pool[arc_pool > 0]
+            t_pos = xy_pool[xy_pool > 0]
             if len(t_pos) > 0:
                 bins_log = np.logspace(np.log10(max(t_pos.min(), 1e-4)),
                                        np.log10(max(t_pos.max(), 1.0)), 80)
-                ax2.hist(arc_pool, bins=bins_log, weights=weight_pool,
+                ax2.hist(xy_pool, bins=bins_log, weights=weight_pool,
                          color='darkorange', edgecolor='black', linewidth=0.3,
                          alpha=0.85)
                 ax2.set_xscale('log')
-            ax2.set_xlabel('Arc displacement (cm)')
+            ax2.set_xlabel('xy displacement (cm)')
             ax2.set_ylabel('Weighted counts (decay prob.)')
             ax2.set_title('Same, log scale')
 
             plt.tight_layout()
-            plt.savefig('arc_disp_' + outString + '.png', dpi=150)
+            plt.savefig('xy_disp_' + outString + '.png', dpi=150)
             show_or_close()
 
             w_tot = weight_pool.sum()
-            mean_arc = np.average(arc_pool, weights=weight_pool)
-            sort_idx = np.argsort(arc_pool)
+            mean_xy = np.average(xy_pool, weights=weight_pool)
+            sort_idx = np.argsort(xy_pool)
             cw = np.cumsum(weight_pool[sort_idx]) / w_tot
-            median_arc = arc_pool[sort_idx][np.searchsorted(cw, 0.5)]
-            print(f"  Pool size: {len(arc_pool)} tracks "
+            median_xy = xy_pool[sort_idx][np.searchsorted(cw, 0.5)]
+            print(f"  Pool size: {len(xy_pool)} tracks "
                   f"(both daughters of pairs passing full selection)")
-            print(f"  Weighted mean:    {mean_arc:.3f} cm")
-            print(f"  Weighted median:  {median_arc:.3f} cm")
+            print(f"  Weighted mean:    {mean_xy:.3f} cm")
+            print(f"  Weighted median:  {median_xy:.3f} cm")
             print(f"  99.5th percentile: {pct99:.3f} cm")
             for thr in (5, 10, 20, 50):
-                frac = weight_pool[arc_pool < thr].sum() / w_tot
-                print(f"  Fraction with arc disp. < {thr} cm: {frac:.4f}")
+                frac = weight_pool[xy_pool < thr].sum() / w_tot
+                print(f"  Fraction with xy disp. < {thr} cm: {frac:.4f}")
 
     # --- Pointing angle split by inner separation (low vs high sep_inner) ---
     # Compare pointing for tight (sep_inner < SPLIT) and wide (sep_inner >=
