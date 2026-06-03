@@ -29,10 +29,15 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (registers '3d')
 
 from grendel_geometry import (
-    DETECTOR_THICKNESS, path_3d_fiducial,
-    classify_points_with_basis,
+    DETECTOR_THICKNESS, path_3d_fiducial, cumulative_length,
+    classify_points_with_basis, tunnel_profile_points,
     _profile_pts as profile_pts,
 )
+
+# Inner-tracker-surface (= fiducial mesh boundary) and outer
+# (= original tunnel wall) profiles, in the same local frame.
+_profile_layer1 = tunnel_profile_points(inset=DETECTOR_THICKNESS)
+_profile_layer2 = profile_pts
 
 
 _DAUGHTER_COLORS = ('tab:blue', 'tab:green')
@@ -108,6 +113,105 @@ def _draw_cavern(ax3d, ax_xz, ax_yz, n_ribs=8):
     z_centre = np.array(z_centre)
     ax_xz.fill_between(z_centre, x_low, x_high, color='gray', alpha=0.10)
     ax_yz.fill_between(z_centre, y_low, y_high, color='gray', alpha=0.10)
+
+
+def _centerline_at(s):
+    """Centreline point + basis at arc-length s along the fiducial path."""
+    seg_idx = int(np.searchsorted(cumulative_length, s) - 1)
+    seg_idx = max(0, min(seg_idx, len(path_3d_fiducial) - 2))
+    seg = path_3d_fiducial[seg_idx + 1] - path_3d_fiducial[seg_idx]
+    seg_len = np.linalg.norm(seg)
+    seg_hat = seg / seg_len
+    t = max(0.0, min(seg_len, s - cumulative_length[seg_idx]))
+    cl_point = path_3d_fiducial[seg_idx] + t * seg_hat
+    wu = np.array([0., 1., 0.]) if abs(seg_hat[1]) < 0.9 \
+        else np.array([0., 0., 1.])
+    right = np.cross(seg_hat, wu); right /= np.linalg.norm(right)
+    up = np.cross(right, seg_hat); up /= np.linalg.norm(up)
+    return cl_point, seg_hat, right, up
+
+
+def _draw_local_section(mc, idxs, ax_local):
+    """Bottom panel: cavern cross-section + layer 1/2 at the wall hits."""
+    hits3d = []
+    for idx in idxs:
+        for k in (1, 2):
+            p = mc[f'exit_pt_{k}'][idx]
+            if np.all(np.isfinite(p)):
+                hits3d.append(p)
+    if not hits3d:
+        ax_local.set_title('Local cross-section (no wall hits)')
+        return
+    hits3d = np.array(hits3d)
+
+    # Local basis at the average hit position
+    hit_avg = hits3d.mean(axis=0)
+    _, s_arr, _, _, _ = classify_points_with_basis(hit_avg[None, :])
+    s_ref = float(s_arr[0])
+    cl_point, _, right, up = _centerline_at(s_ref)
+
+    def to_local(p3d):
+        rel = p3d - cl_point
+        return np.array([np.dot(rel, right), np.dot(rel, up)])
+
+    # Draw the two profile contours (layer 1 inner = fiducial boundary,
+    # layer 2 outer = tunnel wall at +L radial)
+    ring1 = np.vstack([_profile_layer1, _profile_layer1[0:1]])
+    ring2 = np.vstack([_profile_layer2, _profile_layer2[0:1]])
+    ax_local.plot(ring1[:, 0], ring1[:, 1], color='black', lw=1.5,
+                  label='Layer 1 (fiducial wall)')
+    ax_local.plot(ring2[:, 0], ring2[:, 1], color='gray', lw=1.5,
+                  linestyle='--', label=f'Layer 2 (+{DETECTOR_THICKNESS*100:.0f} cm)')
+
+    # Daughter hits, short incoming stub, and predicted layer-2 segment
+    for idx in idxs:
+        for k, dcolor in ((1, _DAUGHTER_COLORS[0]),
+                          (2, _DAUGHTER_COLORS[1])):
+            p_hit = mc[f'exit_pt_{k}'][idx]
+            d_vec = mc[f'dir{k}'][idx]
+            if not np.all(np.isfinite(p_hit)):
+                continue
+            p_hit_xy = to_local(p_hit)
+            d_xy = np.array([np.dot(d_vec, right), np.dot(d_vec, up)])
+            n_d = np.linalg.norm(d_xy)
+
+            # Short incoming stub (50 cm)
+            if n_d > 1e-6:
+                stub = p_hit_xy - 0.5 * d_xy / n_d
+                ax_local.plot([stub[0], p_hit_xy[0]],
+                              [stub[1], p_hit_xy[1]],
+                              color=dcolor, lw=1.2)
+
+            ax_local.scatter(p_hit_xy[0], p_hit_xy[1],
+                             color=dcolor, marker='s', s=45, zorder=8)
+
+            # Predicted layer-2 hit
+            theta_p = np.arctan2(p_hit_xy[1], p_hit_xy[0])
+            n_hat_2d = np.array([np.cos(theta_p), np.sin(theta_p)])
+            d_dot_n = float(np.dot(d_xy, n_hat_2d))
+            if abs(d_dot_n) > 5e-2:
+                p2_xy = p_hit_xy + (DETECTOR_THICKNESS / d_dot_n) * d_xy
+                ax_local.plot([p_hit_xy[0], p2_xy[0]],
+                              [p_hit_xy[1], p2_xy[1]],
+                              color=dcolor, lw=1.2, linestyle='--')
+                ax_local.scatter(p2_xy[0], p2_xy[1],
+                                 color=dcolor, marker='D', s=30, zorder=8)
+
+    # Zoom around the hits
+    hit_xys = np.array([to_local(p) for p in hits3d])
+    cx, cy = hit_xys.mean(axis=0)
+    spread = max(float(np.ptp(hit_xys[:, 0])), float(np.ptp(hit_xys[:, 1])))
+    span = max(0.6, 0.6 + spread)
+    ax_local.set_xlim(cx - span, cx + span)
+    ax_local.set_ylim(cy - span, cy + span)
+    ax_local.set_aspect('equal')
+    ax_local.set_xlabel('x_local (m)')
+    ax_local.set_ylabel('y_local (m)')
+    ax_local.set_title(
+        f'Local cross-section at s = {s_ref:.1f} m '
+        f'(zoom ±{span:.1f} m)')
+    ax_local.legend(fontsize=8, loc='upper right')
+    ax_local.grid(True, alpha=0.3)
 
 
 def _draw_particle(mc, idx, ax3d, ax_xz, ax_yz, color):
@@ -227,15 +331,18 @@ def make_event_displays(mc, selections, n_per=3,
             if not rep_idxs:
                 continue
 
-            fig = plt.figure(figsize=(18, 6.5))
-            ax3d = fig.add_subplot(1, 3, 1, projection='3d')
-            ax_xz = fig.add_subplot(1, 3, 2)
-            ax_yz = fig.add_subplot(1, 3, 3)
+            fig = plt.figure(figsize=(18, 12))
+            gs = fig.add_gridspec(2, 3, height_ratios=[1.1, 1.0])
+            ax3d = fig.add_subplot(gs[0, 0], projection='3d')
+            ax_xz = fig.add_subplot(gs[0, 1])
+            ax_yz = fig.add_subplot(gs[0, 2])
+            ax_local = fig.add_subplot(gs[1, :])
 
             _draw_cavern(ax3d, ax_xz, ax_yz)
             for j, idx in enumerate(rep_idxs):
                 _draw_particle(mc, idx, ax3d, ax_xz, ax_yz,
                                color=_PARTICLE_COLORS[j % len(_PARTICLE_COLORS)])
+            _draw_local_section(mc, rep_idxs, ax_local)
 
             ax3d.set_xlabel('x (m)')
             ax3d.set_ylabel('z (m)')
