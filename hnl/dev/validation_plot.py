@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-hnl/validation_plot.py
+hnl/dev/validation_plot.py
 
 Overlay our combined HNL production yield (sigma at U^2 = 1, in pb) versus the
 MATHUSLA RHN reference 4-vector files, per flavor. This is the validation plot
 called for in the production-review next-steps: a factor-of-2 disagreement on
-the common channels would flag a quark+antiquark double-count.
+the common channels would flag a quark+antiquark double-count. Dev-only — see
+hnl/dev/README.md.
 
 Our data:   output/llp_4vectors/{flavor}/{channel}/mN_{label}.csv  (weight col 0)
 Reference:  llpatcolliders_FONLL/vendored/MATHUSLA_LLPfiles_RHN_U{e,mu,tau}/
@@ -15,8 +16,8 @@ Only the channels common to both pipelines (Bmeson, Dmeson, tau) are summed for
 the apples-to-apples overlay; our full total (incl. Bc, kaon) is drawn too.
 
 Usage:
-    python validation_plot.py
-    python validation_plot.py --ref /path/to/MATHUSLA_root_dir
+    python dev/validation_plot.py
+    python dev/validation_plot.py --ref /path/to/MATHUSLA_root_dir
 """
 
 import argparse
@@ -29,7 +30,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-HNL_ROOT = Path(__file__).resolve().parent
+HNL_ROOT = Path(__file__).resolve().parent.parent  # hnl/dev/ -> hnl/
 sys.path.insert(0, str(HNL_ROOT))
 
 from config_mass_grid import MASS_GRID, format_mass_for_filename
