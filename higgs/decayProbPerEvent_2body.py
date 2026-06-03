@@ -24,7 +24,7 @@ def show_or_close():
 from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
     calculate_decay_length, cache_geometry, mesh_fiducial,
-    points_on_tracker,
+    points_on_tracker, classify_points_with_basis,
 )
 
 M_ELECTRON = 0.000511  # GeV/c²
@@ -367,7 +367,6 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     all_seps, all_weights, all_momenta, all_pointing = [], [], [], []
     all_p_soft, all_dca, all_vtx_in, all_open = [], [], [], []
     all_sep_out, all_dimp, all_collin = [], [], []
-    all_xy1, all_xy2 = [], []
     all_event, all_pid, all_d, all_path, all_bg = [], [], [], [], []
     decay_list, dir1_list, dir2_list = [], [], []
 
@@ -437,11 +436,6 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         # Reconstructed track directions (unnormalised)
         dx1 = x1_out - x1_in;  dy1 = y1_out - y1_in   # dz = L
         dx2 = x2_out - x2_in;  dy2 = y2_out - y2_in
-
-        # Per-track in-plane displacement between layer 1 and layer 2 hits
-        # in the local LLP-perpendicular frame (radial spacing L excluded).
-        xy1 = np.sqrt(dx1**2 + dy1**2)
-        xy2 = np.sqrt(dx2**2 + dy2**2)
 
         # --- Separation at inner and outer tracking layers ---
         sep     = np.sqrt((x1_in  - x2_in )**2 + (y1_in  - y2_in )**2)
@@ -544,8 +538,6 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         all_sep_out.append(sep_out)
         all_dimp.append(d_implied)
         all_collin.append(collin)
-        all_xy1.append(xy1)
-        all_xy2.append(xy2)
         all_event.append(np.full(N, event))
         all_pid.append(np.full(N, pid))
         all_d.append(d_samples)
@@ -582,6 +574,44 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         on_trk[valid] = points_on_tracker(exit_pts[valid])
     on_tracker = on_trk[:n_tot] & on_trk[n_tot:]
 
+    # ---- Per-daughter on-surface displacement between tracker layers ----
+    # In the local cavern basis at the daughter's wall hit p1, the
+    # layer1->layer2 displacement decomposes into a radial component
+    # (= L, the layer spacing) and two tangential components: one along
+    # the centreline direction ("down the tunnel", Delta_s) and one
+    # around the cross-section profile ("along the arc", Delta_arc).
+    # The experimentally observed lateral separation between the two hits
+    # is sqrt(Delta_s^2 + Delta_arc^2). Daughters whose predicted layer-2
+    # hit lands off the tracker are marked NaN.
+    xy_disp = np.full(2 * n_tot, np.nan)
+    if valid.any():
+        theta_e, _, tangent_e, right_e, up_e = classify_points_with_basis(
+            exit_pts[valid])
+        cos_th = np.cos(theta_e)[:, None]
+        sin_th = np.sin(theta_e)[:, None]
+        n_hat = cos_th * right_e + sin_th * up_e
+        t_arc = -sin_th * right_e + cos_th * up_e
+        d_valid = dirs[valid]
+        d_dot_n   = np.einsum('ij,ij->i', d_valid, n_hat)
+        d_dot_tan = np.einsum('ij,ij->i', d_valid, tangent_e)
+        d_dot_arc = np.einsum('ij,ij->i', d_valid, t_arc)
+
+        safe_n = np.where(np.abs(d_dot_n) < 1e-6, np.nan, d_dot_n)
+        lateral = DETECTOR_THICKNESS \
+            * np.sqrt(d_dot_tan**2 + d_dot_arc**2) / np.abs(safe_n)
+
+        # Filter: predicted layer-2 hit must also land on the tracker
+        lam = DETECTOR_THICKNESS / safe_n
+        p2_pred = exit_pts[valid] + lam[:, None] * d_valid
+        finite_p2 = np.all(np.isfinite(p2_pred), axis=1)
+        p2_on_trk = np.zeros(len(p2_pred), dtype=bool)
+        if finite_p2.any():
+            p2_on_trk[finite_p2] = points_on_tracker(p2_pred[finite_p2])
+        lateral = np.where(p2_on_trk, lateral, np.nan)
+        xy_disp[valid] = lateral
+    xy_disp_1 = xy_disp[:n_tot]
+    xy_disp_2 = xy_disp[n_tot:]
+
     return {
         'sep': np.concatenate(all_seps),
         'sep_outer': np.concatenate(all_sep_out),
@@ -593,8 +623,8 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         'open_angle': np.concatenate(all_open),
         'd_implied': np.concatenate(all_dimp),
         'collin': np.concatenate(all_collin),
-        'xy_disp_1': np.concatenate(all_xy1),
-        'xy_disp_2': np.concatenate(all_xy2),
+        'xy_disp_1': xy_disp_1,
+        'xy_disp_2': xy_disp_2,
         'on_tracker': on_tracker,
         'weights': np.concatenate(all_weights),
         'event': np.concatenate(all_event),
@@ -1110,13 +1140,15 @@ if __name__ == "__main__":
         print(f"  Fraction with vertex in fiducial: {frac_vtx:.4f}")
         print(f"  (fractions above computed after separation cuts)")
 
-    # --- Per-track xy displacement between tracker layer 1 and 2 ---
-    # sqrt(dx^2 + dy^2) in the local LLP-perpendicular frame (radial
-    # spacing L excluded). Pool both daughters of pairs passing the full
-    # signal selection.
+    # --- Per-track on-surface displacement between tracker layer 1 and 2 ---
+    # sqrt(Delta_s^2 + Delta_arc^2): the experimentally observed lateral
+    # separation between layer-1 and layer-2 hits on the tracker surface
+    # (down-tunnel + around-the-arc components). Radial L is excluded.
+    # Daughters whose predicted layer-2 hit falls off the tracker are
+    # dropped (NaN).
     if len(xy_disp_1) > 0:
         print("\n" + "="*50)
-        print("PER-TRACK LAYER-TO-LAYER XY DISPLACEMENT")
+        print("PER-TRACK LAYER-TO-LAYER XY DISPLACEMENT (on tracker surface)")
         print("="*50)
 
         sel_mask    = selection_mask(mc)
@@ -1124,6 +1156,9 @@ if __name__ == "__main__":
                                       xy_disp_2[sel_mask]]) * 100   # cm
         weight_pool = np.concatenate([weights[sel_mask],
                                       weights[sel_mask]])
+
+        finite = np.isfinite(xy_pool)
+        xy_pool, weight_pool = xy_pool[finite], weight_pool[finite]
 
         if len(xy_pool) > 0 and weight_pool.sum() > 0:
             fig_tg, axes_tg = plt.subplots(1, 2, figsize=(12, 5))
@@ -1135,9 +1170,9 @@ if __name__ == "__main__":
             ax.hist(xy_pool, bins=bins_lin, weights=weight_pool,
                     color='darkorange', edgecolor='black', linewidth=0.3,
                     alpha=0.85)
-            ax.set_xlabel('xy displacement (cm)')
+            ax.set_xlabel('xy displacement (cm)  [√(Δs² + Δarc²)]')
             ax.set_ylabel('Weighted counts (decay prob.)')
-            ax.set_title(f'Per-track layer1→layer2 xy displacement '
+            ax.set_title(f'Per-track layer1→layer2 on-surface displacement '
                          f'(after full selection, linear axis to 90%)\n'
                          f'(L = {DETECTOR_THICKNESS*100:.0f} cm radial, '
                          f'τ = {lifetime*1e9:.0f} ns)')
@@ -1502,7 +1537,7 @@ if __name__ == "__main__":
                 & (mc['sep'] >= SEP_MIN) & ~mc['vtx_in'],
         }
         event_display.make_event_displays(
-            mc, display_selections, n_per=3,
+            mc, display_selections, n_per=10,
             out_prefix=f'event_display_{outString}',
         )
 
