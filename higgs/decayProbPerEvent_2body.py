@@ -547,11 +547,14 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
 
     if not all_seps:
         empty = np.array([])
+        empty3 = np.empty((0, 3))
         return {k: empty for k in (
             'sep', 'sep_outer', 'momenta', 'pointing', 'p_soft', 'dca',
             'vtx_in', 'open_angle', 'd_implied', 'collin', 'on_tracker',
             'arc_disp_1', 'arc_disp_2',
             'weights', 'event', 'pid', 'd', 'path_len', 'betagamma')} \
+            | {k: empty3 for k in ('decay_pos', 'dir1', 'dir2',
+                                   'exit_pt_1', 'exit_pt_2')} \
             | {'n_per': N}
 
     # ---- Batch ray-cast both daughters and classify landing surface ----
@@ -629,6 +632,11 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         'd': np.concatenate(all_d),
         'path_len': np.concatenate(all_path),
         'betagamma': np.concatenate(all_bg),
+        'decay_pos': decay_all,
+        'dir1': dir1_all,
+        'dir2': dir2_all,
+        'exit_pt_1': exit_pts[:n_tot],
+        'exit_pt_2': exit_pts[n_tot:],
         'n_per': N,
     }
 
@@ -1509,6 +1517,29 @@ if __name__ == "__main__":
                  sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
                  hit_resolution=HIT_RESOLUTION, n_layers=N_LAYERS)
         print(f"MC distributions saved to mc_distributions_{outString}.npz")
+
+    # --- Event displays (3D + top-down + side, per-selection) ---
+    # Edit ``display_selections`` to control which event populations get
+    # rendered. Each entry is a per-sample boolean mask; the first
+    # ``n_per`` events with at least one passing sample are drawn.
+    if len(mc.get('decay_pos', [])) > 0:
+        import event_display
+        sel_full = selection_mask(mc)
+        base_kin = (mc['p_soft'] >= P_CUT) \
+            & (mc['sep_outer'] >= SEP_MIN) & (mc['sep'] <= SEP_MAX)
+        display_selections = {
+            'accepted':      sel_full,
+            'off_tracker':   (~mc['on_tracker']) & base_kin,
+            'fail_sep_in':   mc['on_tracker'] & base_kin & (mc['sep'] < SEP_MIN),
+            'fail_dca':      mc['on_tracker'] & base_kin
+                & (mc['sep'] >= SEP_MIN) & (mc['dca'] > DCA_CUT),
+            'fail_vtx':      mc['on_tracker'] & base_kin
+                & (mc['sep'] >= SEP_MIN) & ~mc['vtx_in'],
+        }
+        event_display.make_event_displays(
+            mc, display_selections, n_per=3,
+            out_prefix=f'event_display_{outString}',
+        )
 
     # Lifetime scan
     print("\n" + "="*50)
