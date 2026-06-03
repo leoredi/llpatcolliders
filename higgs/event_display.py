@@ -305,10 +305,11 @@ def _draw_particle(mc, idx, ax3d, ax_xz, ax_yz, color):
 
 
 def make_event_displays(mc, selections, n_per=3,
-                        out_prefix='event_display', out_dir='.'):
+                        out_prefix='event_display', out_dir='.',
+                        rng_seed=42):
     """
-    Save 3-panel event displays for the first ``n_per`` events satisfying
-    each named selection.
+    Save 3-panel event displays for ``n_per`` events randomly drawn
+    (without replacement) from each named selection.
 
     Parameters
     ----------
@@ -321,11 +322,13 @@ def make_event_displays(mc, selections, n_per=3,
         and are used to label each figure. Edit this dict in the caller
         to control which event populations get displayed.
     n_per : int
-        First N events per selection.
+        Number of events to sample per selection.
     out_prefix : str
         Output filename prefix.
     out_dir : str
         Output directory.
+    rng_seed : int
+        Seed for the random event picker — change to get a different draw.
     """
     if len(mc.get('decay_pos', [])) == 0:
         print("[event_display] empty MC; nothing to draw")
@@ -334,6 +337,7 @@ def make_event_displays(mc, selections, n_per=3,
     pid = mc['pid']
     event = mc['event']
     weights = mc['weights']
+    rng = np.random.default_rng(rng_seed)
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -345,10 +349,11 @@ def make_event_displays(mc, selections, n_per=3,
             continue
 
         ev_pass = np.unique(event[sel_mask])
-        ev_pass.sort()
-        ev_show = ev_pass[:n_per]
+        n_draw = min(n_per, len(ev_pass))
+        ev_show = rng.choice(ev_pass, size=n_draw, replace=False)
+        ev_show.sort()
         print(f"[event_display] '{sel_name}': drawing {len(ev_show)} "
-              f"events (of {len(ev_pass)} candidates)")
+              f"random events (of {len(ev_pass)} candidates)")
 
         for k, ev in enumerate(ev_show):
             ev_mask = (event == ev)
