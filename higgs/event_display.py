@@ -69,31 +69,39 @@ def _scatter_3d(ax3d, p, **kwargs):
     ax3d.scatter([p[0]], [p[2]], [p[1]], **kwargs)
 
 
-def _draw_cavern(ax3d, ax_xz, ax_yz, n_ribs=8):
-    """Centreline + cross-section ribs + cavern outline (no IP — out of zoom)."""
+def _draw_cavern(ax3d, ax_xz, ax_yz, bounds, n_ribs=6):
+    """Centreline + cross-section ribs + outline within ``bounds`` only."""
     p = path_3d_fiducial
+    xlim, ylim, zlim = bounds
+
+    in_box = ((p[:, 0] >= xlim[0]) & (p[:, 0] <= xlim[1]) &
+              (p[:, 2] >= zlim[0]) & (p[:, 2] <= zlim[1]))
+    idx = np.where(in_box)[0]
+    if len(idx) == 0:
+        return
+    lo = max(0, int(idx[0]) - 1)
+    hi = min(len(p), int(idx[-1]) + 2)
+    p_local = p[lo:hi]
 
     # Centrelines
-    _project_3d(ax3d, p, color='gray', alpha=0.5, lw=1.2)
-    ax_xz.plot(p[:, 2], p[:, 0], color='gray', alpha=0.5, lw=1.2)
-    ax_yz.plot(p[:, 2], p[:, 1], color='gray', alpha=0.5, lw=1.2)
+    _project_3d(ax3d, p_local, color='gray', alpha=0.5, lw=1.2)
+    ax_xz.plot(p_local[:, 2], p_local[:, 0], color='gray', alpha=0.5, lw=1.2)
+    ax_yz.plot(p_local[:, 2], p_local[:, 1], color='gray', alpha=0.5, lw=1.2)
 
-    # 3D cross-section ribs
-    idxs = np.linspace(0, len(p) - 1, n_ribs).astype(int)
-    for i in idxs:
-        _, right, up = _local_basis(i, p)
-        ring = p[i] + np.outer(profile_pts[:, 0], right) \
+    # 3D ribs at evenly-spaced indices in the local subset
+    rib_ix = np.linspace(0, len(p_local) - 1,
+                          min(n_ribs, len(p_local))).astype(int)
+    for j in rib_ix:
+        gi = lo + int(j)
+        _, right, up = _local_basis(gi, p)
+        ring = p[gi] + np.outer(profile_pts[:, 0], right) \
             + np.outer(profile_pts[:, 1], up)
         ring = np.vstack([ring, ring[0:1]])
         _project_3d(ax3d, ring, color='gray', alpha=0.3, lw=0.5)
 
-    # 2D envelopes — for each centreline point, project the profile
-    # outline. Build a polygon trace per view by collecting min/max in
-    # the projected coordinate at each centreline point.
-    x_low, x_high = [], []
-    y_low, y_high = [], []
-    z_centre = []
-    for i in range(len(p)):
+    # 2D envelopes over the local subset only
+    x_low, x_high, y_low, y_high, z_centre = [], [], [], [], []
+    for i in range(lo, hi):
         _, right, up = _local_basis(i, p)
         ring = p[i] + np.outer(profile_pts[:, 0], right) \
             + np.outer(profile_pts[:, 1], up)
@@ -107,16 +115,20 @@ def _draw_cavern(ax3d, ax_xz, ax_yz, n_ribs=8):
     ax_yz.fill_between(z_centre, y_low, y_high, color='gray', alpha=0.10)
 
 
-def _cavern_view_limits(margin_xz=1.5, margin_y=0.5):
-    """Bounding box of the cavern in world coords, with small margins."""
-    p = path_3d_fiducial
-    profile_y_lo = profile_pts[:, 1].min()
-    profile_y_hi = profile_pts[:, 1].max()
+def _zoom_bounds(mc, idxs, padding=3.0):
+    """3D bounding box (xlim, ylim, zlim) around an event's key points."""
+    pts = []
+    for idx in idxs:
+        pts.append(mc['decay_pos'][idx])
+        for k in (1, 2):
+            p = mc[f'exit_pt_{k}'][idx]
+            if np.all(np.isfinite(p)):
+                pts.append(p)
+    pts = np.array(pts)
     return (
-        (p[:, 0].min() - margin_xz, p[:, 0].max() + margin_xz),
-        (p[:, 1].min() + profile_y_lo - margin_y,
-         p[:, 1].max() + profile_y_hi + margin_y),
-        (p[:, 2].min() - margin_xz, p[:, 2].max() + margin_xz),
+        (float(pts[:, 0].min() - padding), float(pts[:, 0].max() + padding)),
+        (float(pts[:, 1].min() - padding), float(pts[:, 1].max() + padding)),
+        (float(pts[:, 2].min() - padding), float(pts[:, 2].max() + padding)),
     )
 
 
@@ -377,25 +389,34 @@ def make_event_displays(mc, selections, n_per=3,
             ax_yz = fig.add_subplot(gs[0, 2])
             ax_local = fig.add_subplot(gs[1, :])
 
-            _draw_cavern(ax3d, ax_xz, ax_yz)
+            bounds = _zoom_bounds(mc, rep_idxs, padding=3.0)
+            xlim, ylim, zlim = bounds
+
+            _draw_cavern(ax3d, ax_xz, ax_yz, bounds)
             for j, idx in enumerate(rep_idxs):
                 _draw_particle(mc, idx, ax3d, ax_xz, ax_yz,
                                color=_PARTICLE_COLORS[j % len(_PARTICLE_COLORS)])
             _draw_local_section(mc, rep_idxs, ax_local)
 
-            xlim, ylim, zlim = _cavern_view_limits()
+            ax3d.set_xlim(*xlim)
+            ax3d.set_ylim(*zlim)
+            ax3d.set_zlim(*ylim)
             ax3d.set_xlabel('x (m)')
             ax3d.set_ylabel('z (m)')
             ax3d.set_zlabel('y (m)')
-            ax3d.set_title('3D (cavern)')
+            ax3d.set_title('3D (zoom)')
 
             ax_xz.set_aspect('auto')
+            ax_xz.set_xlim(*zlim)
+            ax_xz.set_ylim(*xlim)
             ax_xz.set_xlabel('z (m)')
             ax_xz.set_ylabel('x (m)')
             ax_xz.grid(True, alpha=0.3)
             ax_xz.set_title('Top-down (x vs z)')
 
             ax_yz.set_aspect('auto')
+            ax_yz.set_xlim(*zlim)
+            ax_yz.set_ylim(*ylim)
             ax_yz.set_xlabel('z (m)')
             ax_yz.set_ylabel('y (m)')
             ax_yz.grid(True, alpha=0.3)
