@@ -70,21 +70,13 @@ def _scatter_3d(ax3d, p, **kwargs):
 
 
 def _draw_cavern(ax3d, ax_xz, ax_yz, n_ribs=8):
-    """Centreline in all three views + cross-section ribs in 3D + IP."""
+    """Centreline + cross-section ribs + cavern outline (no IP — out of zoom)."""
     p = path_3d_fiducial
 
     # Centrelines
     _project_3d(ax3d, p, color='gray', alpha=0.5, lw=1.2)
     ax_xz.plot(p[:, 2], p[:, 0], color='gray', alpha=0.5, lw=1.2)
     ax_yz.plot(p[:, 2], p[:, 1], color='gray', alpha=0.5, lw=1.2)
-
-    # IP origin
-    ax3d.scatter([0], [0], [0], color='crimson', marker='*', s=70,
-                 label='IP', zorder=10)
-    ax_xz.scatter([0], [0], color='crimson', marker='*', s=70,
-                  zorder=10, label='IP')
-    ax_yz.scatter([0], [0], color='crimson', marker='*', s=70,
-                  zorder=10, label='IP')
 
     # 3D cross-section ribs
     idxs = np.linspace(0, len(p) - 1, n_ribs).astype(int)
@@ -113,6 +105,19 @@ def _draw_cavern(ax3d, ax_xz, ax_yz, n_ribs=8):
     z_centre = np.array(z_centre)
     ax_xz.fill_between(z_centre, x_low, x_high, color='gray', alpha=0.10)
     ax_yz.fill_between(z_centre, y_low, y_high, color='gray', alpha=0.10)
+
+
+def _cavern_view_limits(margin_xz=1.5, margin_y=0.5):
+    """Bounding box of the cavern in world coords, with small margins."""
+    p = path_3d_fiducial
+    profile_y_lo = profile_pts[:, 1].min()
+    profile_y_hi = profile_pts[:, 1].max()
+    return (
+        (p[:, 0].min() - margin_xz, p[:, 0].max() + margin_xz),
+        (p[:, 1].min() + profile_y_lo - margin_y,
+         p[:, 1].max() + profile_y_hi + margin_y),
+        (p[:, 2].min() - margin_xz, p[:, 2].max() + margin_xz),
+    )
 
 
 def _centerline_at(s):
@@ -163,8 +168,34 @@ def _draw_local_section(mc, idxs, ax_local):
     ax_local.plot(ring2[:, 0], ring2[:, 1], color='gray', lw=1.5,
                   linestyle='--', label=f'Layer 2 (+{DETECTOR_THICKNESS*100:.0f} cm)')
 
-    # Daughter hits, short incoming stub, and predicted layer-2 segment
-    for idx in idxs:
+    # Per-particle: decay vertex (star), LLP back-trace, both daughter
+    # rays from the vertex out through layer-1 then on to layer-2.
+    extra_xys = []
+    for j, idx in enumerate(idxs):
+        decay_pos = mc['decay_pos'][idx]
+        decay_xy = to_local(decay_pos)
+        pcolor = _PARTICLE_COLORS[j % len(_PARTICLE_COLORS)]
+
+        # LLP back-trace: line from a point 3 m behind the vertex along
+        # -LLP direction up to the vertex.
+        llp_norm = np.linalg.norm(decay_pos)
+        if llp_norm > 1e-6:
+            llp_dir3d = decay_pos / llp_norm
+            llp_dir2d = np.array([np.dot(llp_dir3d, right),
+                                   np.dot(llp_dir3d, up)])
+            llp_back = decay_xy - 3.0 * llp_dir2d
+            ax_local.plot([llp_back[0], decay_xy[0]],
+                          [llp_back[1], decay_xy[1]],
+                          color=pcolor, lw=1.0, alpha=0.7,
+                          linestyle=':')
+            extra_xys.append(llp_back)
+
+        # Decay vertex marker
+        ax_local.scatter(decay_xy[0], decay_xy[1],
+                         color=pcolor, marker='*', s=90, zorder=10,
+                         edgecolors='black', linewidths=0.5)
+        extra_xys.append(decay_xy)
+
         for k, dcolor in ((1, _DAUGHTER_COLORS[0]),
                           (2, _DAUGHTER_COLORS[1])):
             p_hit = mc[f'exit_pt_{k}'][idx]
@@ -173,15 +204,11 @@ def _draw_local_section(mc, idxs, ax_local):
                 continue
             p_hit_xy = to_local(p_hit)
             d_xy = np.array([np.dot(d_vec, right), np.dot(d_vec, up)])
-            n_d = np.linalg.norm(d_xy)
 
-            # Short incoming stub (50 cm)
-            if n_d > 1e-6:
-                stub = p_hit_xy - 0.5 * d_xy / n_d
-                ax_local.plot([stub[0], p_hit_xy[0]],
-                              [stub[1], p_hit_xy[1]],
-                              color=dcolor, lw=1.2)
-
+            # Daughter trajectory from vertex to layer-1 hit
+            ax_local.plot([decay_xy[0], p_hit_xy[0]],
+                          [decay_xy[1], p_hit_xy[1]],
+                          color=dcolor, lw=1.2)
             ax_local.scatter(p_hit_xy[0], p_hit_xy[1],
                              color=dcolor, marker='s', s=45, zorder=8)
 
@@ -197,11 +224,13 @@ def _draw_local_section(mc, idxs, ax_local):
                 ax_local.scatter(p2_xy[0], p2_xy[1],
                                  color=dcolor, marker='D', s=30, zorder=8)
 
-    # Zoom around the hits
-    hit_xys = np.array([to_local(p) for p in hits3d])
-    cx, cy = hit_xys.mean(axis=0)
-    spread = max(float(np.ptp(hit_xys[:, 0])), float(np.ptp(hit_xys[:, 1])))
-    span = max(0.6, 0.6 + spread)
+    # Zoom to include hits, decay vertex, and LLP back-trace start
+    all_xys = np.vstack([np.array([to_local(p) for p in hits3d]),
+                          np.array(extra_xys)])
+    cx, cy = all_xys.mean(axis=0)
+    spread = max(float(np.ptp(all_xys[:, 0])),
+                 float(np.ptp(all_xys[:, 1])))
+    span = max(0.6, 0.6 + spread / 2)
     ax_local.set_xlim(cx - span, cx + span)
     ax_local.set_ylim(cy - span, cy + span)
     ax_local.set_aspect('equal')
@@ -222,11 +251,16 @@ def _draw_particle(mc, idx, ax3d, ax_xz, ax_yz, color):
     p1_1 = mc['exit_pt_1'][idx]
     p1_2 = mc['exit_pt_2'][idx]
 
-    # LLP trajectory: IP -> decay vertex
-    llp = np.vstack([np.zeros(3), decay_pos])
-    _project_3d(ax3d, llp, color=color, lw=1.0, alpha=0.7)
-    ax_xz.plot(llp[:, 2], llp[:, 0], color=color, lw=1.0, alpha=0.7)
-    ax_yz.plot(llp[:, 2], llp[:, 1], color=color, lw=1.0, alpha=0.7)
+    # LLP trajectory (last 3 m before the decay vertex — the IP itself
+    # is outside the cavern-zoomed view).
+    llp_norm = np.linalg.norm(decay_pos)
+    if llp_norm > 1e-6:
+        llp_dir = decay_pos / llp_norm
+        llp_back = decay_pos - 3.0 * llp_dir
+        llp = np.vstack([llp_back, decay_pos])
+        _project_3d(ax3d, llp, color=color, lw=1.0, alpha=0.7)
+        ax_xz.plot(llp[:, 2], llp[:, 0], color=color, lw=1.0, alpha=0.7)
+        ax_yz.plot(llp[:, 2], llp[:, 1], color=color, lw=1.0, alpha=0.7)
 
     # Decay vertex
     _scatter_3d(ax3d, decay_pos, color=color, marker='o', s=35, zorder=8)
@@ -344,20 +378,21 @@ def make_event_displays(mc, selections, n_per=3,
                                color=_PARTICLE_COLORS[j % len(_PARTICLE_COLORS)])
             _draw_local_section(mc, rep_idxs, ax_local)
 
+            xlim, ylim, zlim = _cavern_view_limits()
             ax3d.set_xlabel('x (m)')
             ax3d.set_ylabel('z (m)')
             ax3d.set_zlabel('y (m)')
-            ax3d.set_title('3D')
+            ax3d.set_title('3D (cavern)')
 
+            ax_xz.set_aspect('auto')
             ax_xz.set_xlabel('z (m)')
             ax_xz.set_ylabel('x (m)')
-            ax_xz.set_aspect('equal')
             ax_xz.grid(True, alpha=0.3)
             ax_xz.set_title('Top-down (x vs z)')
 
+            ax_yz.set_aspect('auto')
             ax_yz.set_xlabel('z (m)')
             ax_yz.set_ylabel('y (m)')
-            ax_yz.set_aspect('equal')
             ax_yz.grid(True, alpha=0.3)
             ax_yz.set_title('Side (y vs z)')
 
