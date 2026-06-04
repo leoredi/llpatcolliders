@@ -23,8 +23,9 @@ python dev/debug_plots.py --channel-fraction all
 ### `validation_plot.py`
 Overlays our `combined` curve against the **MATHUSLA RHN reference 4-vector
 files** for each flavor. The factor-of-2 disagreement check on shared channels
-(B, D, tau) is exactly this overlay — a clean apples-to-apples on B+D+tau
-means we are not double-counting `q + qbar`.
+(`Bmeson`, `Dmeson`, `induced_tau` — the MATHUSLA "Tau" reference is
+induced-only) is exactly this overlay — a clean apples-to-apples on
+B+D+induced_tau means we are not double-counting `q + qbar`.
 
 ```bash
 python dev/validation_plot.py

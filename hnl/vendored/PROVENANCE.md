@@ -72,13 +72,15 @@ electroweak production path (`hnl/production/madgraph/run_wz_production.py`).
 ### MadGraph binary (not vendored here)
 
 The MadGraph5_aMC@NLO v3.6.6 install (~148 MB) is intentionally **not**
-committed. `run_wz_production.py` resolves the `mg5_aMC` executable at
-runtime in this order:
+committed. `production/madgraph/_mg5_common.py::_resolve_mg5_exe` resolves
+the `mg5_aMC` executable at runtime in this order:
 
 1. `$HNL_MG5_EXE` (explicit path), else
 2. `hnl/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC` (drop-in vendoring if you want
    a self-contained checkout), else
-3. the sibling `llpatcolliders_FONLL/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC`.
+3. the projects-root shared `vendored/MG5_aMC_v3_6_6/bin/mg5_aMC` (two
+   levels above `hnl/`, shared across sibling `llpatcolliders_*` checkouts), else
+4. the sibling `llpatcolliders_FONLL/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC`.
 
 To make the checkout self-contained, copy the upstream install into
 `hnl/vendored/MG5_aMC_v3_6_6/` (consider git-lfs or a `.gitignore` entry for
@@ -135,7 +137,7 @@ many times.
 
 ### What it is
 
-- Single MG5 5.3.6.6 run of the proc card
+- Single MG5 v3.6.6 run of the proc card
   `production/madgraph/cards/proc_card_tau_production.dat`:
     - `pp -> W+ -> tau+ nu_tau`
     - `pp -> W- -> tau- nu_tau_bar`
@@ -168,8 +170,9 @@ many times.
 cd hnl
 rm vendored/tau_pool.csv
 python -m production.madgraph.run_tau_production \
-    --skip-mg5=false --nevents 100000 --nb-core 4
+    --nevents 100000 --nb-core 4
 ```
 
-(or simply delete the file and re-run `python run_all.py`; the pipeline
-will rebuild Stage 1 automatically.)
+(`--skip-mg5` is a `store_true` flag — omit it to regenerate, pass it to
+reuse the cached pool. Or simply delete the file and re-run
+`python run_all.py`; the pipeline will rebuild Stage 1 automatically.)

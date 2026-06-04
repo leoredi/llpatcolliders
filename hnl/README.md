@@ -10,11 +10,14 @@ HL-LHC (pp, sqrt(s) = 14 TeV).
 - Direct meson: `B -> N + X`, `D -> N + X`, `Bc -> N + X` (2-body and 3-body)
 - Kaon: `K+ -> ell+ N` (2-body, dominant source below ~0.5 GeV)
 - Induced tau: `Ds -> tau nu -> N + X`, `B+ -> tau nu -> N + X`
-- Electroweak: `W/Z -> ell N` via MadGraph (`production/madgraph/`, opt-in)
+- Electroweak: `W/Z -> ell N` via MadGraph (`production/madgraph/`, default-on; opt out with `--no-wz`)
+- Prompt tau: `pp -> W -> tau nu` + Drell-Yan `pp -> tau tau` -> `tau -> N + X`
+  via MadGraph (`production/madgraph/run_tau_production.py`, default-on; opt out
+  with `--no-prompt-tau`)
 
 **Out of scope** — deferred to follow-up PRs:
 
-- Drell-Yan, `pp -> tau tau`
+- Direct Drell-Yan production `pp -> N ell` (without the tau intermediary)
 - Analysis, sensitivity scan, exclusion plots
 - Geometry, decay-probability, daughter ray-casting
 
@@ -125,7 +128,7 @@ weight is a rate-equivalent that becomes a physical rate once multiplied by
 the realistic `U^2 << 1` downstream. See `production/constants.py` for the
 approximation status of `SIGMA_KAON_PB`.
 
-**Electroweak channel (W/Z -> ell N, opt-in):**
+**Electroweak channel (W/Z -> ell N, default-on):**
 
     w_i = (sigma_LO_MG5 / N) * K_FACTOR_EW
 
@@ -209,8 +212,8 @@ All drivers write headerless CSVs with five columns:
 
 Files end up at:
 
-    hnl/output/llp_4vectors/{Ue,Umu,Utau}/{Bmeson,Dmeson,Bc,tau,Kmeson}/mN_{mass}.csv
-    hnl/output/llp_4vectors/{Ue,Umu,Utau}/WZ/mN_{mass}.csv         # opt-in, MadGraph
+    hnl/output/llp_4vectors/{Ue,Umu,Utau}/{Bmeson,Dmeson,Bc,Kmeson,induced_tau,tau}/mN_{mass}.csv
+    hnl/output/llp_4vectors/{Ue,Umu,Utau}/WZ/mN_{mass}.csv         # MadGraph (default-on)
     hnl/output/llp_4vectors/{Ue,Umu,Utau}/combined/mN_{mass}.csv
 
 `mN_{mass}` uses the encoding from `config_mass_grid.format_mass_for_filename`

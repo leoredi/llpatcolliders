@@ -12,8 +12,10 @@ Our data:   output/llp_4vectors/{flavor}/{channel}/mN_{label}.csv  (weight col 0
 Reference:  llpatcolliders_FONLL/vendored/MATHUSLA_LLPfiles_RHN_U{e,mu,tau}/
             All_RHN_*/RHN_*_LLPweight4vector{Bmeson,Dmeson,Tau,WZ}list_mN_*.csv
 
-Only the channels common to both pipelines (Bmeson, Dmeson, tau) are summed for
-the apples-to-apples overlay; our full total (incl. Bc, kaon) is drawn too.
+Only the channels common to both pipelines (Bmeson, Dmeson, induced_tau —
+matched against the MATHUSLA "Tau" reference, which is induced-only) are
+summed for the apples-to-apples overlay; our full total (incl. Bc, Kmeson,
+prompt-tau, WZ) is drawn too.
 
 Usage:
     python dev/validation_plot.py
