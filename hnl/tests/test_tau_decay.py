@@ -46,13 +46,19 @@ def test_init_hnlcalc_flavors_are_distinct():
 
 
 def test_br_components_nonnegative_and_finite(hnl_utau):
-    """BR sums add up to a finite non-negative total below m_tau."""
+    """BR sums add up to a finite non-negative total below m_tau.
+
+    After the matrix-element-weighted sampler landed, br3 tuples carry the
+    HNLCalc dBR expression alongside the rate:
+      br2 entries: (meson_mass, br)
+      br3 entries: (lep_mass, dbr_expr, br)
+    """
     br2, br3, br_total = compute_tau_production_br_components(hnl_utau, 0.5)
     assert br_total > 0
     assert all(br >= 0 for _, br in br2)
-    assert all(br >= 0 for _, br in br3)
+    assert all(br >= 0 for _, _, br in br3)
     # Total should match the sum of pieces.
-    expected = sum(br for _, br in br2) + sum(br for _, br in br3)
+    expected = sum(br for _, br in br2) + sum(br for _, _, br in br3)
     assert br_total == pytest.approx(expected, rel=1e-12)
 
 

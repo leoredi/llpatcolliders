@@ -34,7 +34,9 @@ from production.constants import (
 )
 from production.fonll.fonll_parser import get_sigma_total
 from production.fonll.meson_sampler import sample_meson_4vectors
-from production.decay_engine.kinematics import decay_2body, decay_3body_flat
+from production.decay_engine.kinematics import (
+    decay_2body, decay_3body_weighted_dq2dE,
+)
 
 # Output base directory
 OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
@@ -150,13 +152,19 @@ def _eval_2body_br(hnl, parent_pdg, lepton_pdg, m_N):
 
 
 def _eval_3body_br(hnl, parent_pdg, daughter_pdg, lepton_pdg, m_N, ch_type):
-    """Evaluate 3-body BR by numerical integration at U²=1."""
+    """Evaluate 3-body BR by numerical integration at U²=1.
+
+    Returns (br, dbr_expr). dbr_expr is the HNLCalc differential string used
+    by decay_3body_weighted_dq2dE to sample kinematics with the same matrix
+    element that determined the rate (form factors + V-A), instead of flat
+    phase space. Closed channels return (0.0, None).
+    """
     m_parent = MESON_MASSES.get(abs(parent_pdg), hnl.masses(parent_pdg))
     m_daughter = hnl.masses(daughter_pdg)
     m_lepton = hnl.masses(lepton_pdg)
 
     if m_N >= m_parent - m_daughter - m_lepton:
-        return 0.0
+        return 0.0, None
 
     # Get differential BR expression
     sign_lep = "-" if parent_pdg > 0 else ""
@@ -172,15 +180,15 @@ def _eval_3body_br(hnl, parent_pdg, daughter_pdg, lepton_pdg, m_N, ch_type):
     elif ch_type == "vector":
         dbr = hnl.get_3body_dbr_vector(str(parent_pdg), str(daughter_pdg), pid_lep_str)
     else:
-        return 0.0
+        return 0.0, None
 
     br_val = hnl.integrate_3body_br(
         dbr, m_N, m_parent, m_daughter, m_lepton,
         coupling=1.0, nsample=500,
     )
     if br_val is None or np.isnan(br_val) or br_val < 0:
-        return 0.0
-    return float(br_val)
+        return 0.0, None
+    return float(br_val), dbr
 
 
 def compute_total_production_br(hnl, parent_pdg, lepton_pdg, m_N):
@@ -197,7 +205,14 @@ def compute_total_production_br(hnl, parent_pdg, lepton_pdg, m_N):
 
 
 def compute_production_br_components(hnl, parent_pdg, lepton_pdg, m_N):
-    """Return BR components: 2-body BR, 3-body channel list, and total BR."""
+    """Return BR components: 2-body BR, 3-body channel list, and total BR.
+
+    The 3-body channel list now carries the HNLCalc differential expression
+    used to compute the rate, so the kinematic sampler can reproduce the same
+    matrix-element shape:
+
+        br_3body_channels : list of (daughter_pdg, dbr_expr, br)
+    """
     m_parent = MESON_MASSES.get(abs(parent_pdg), hnl.masses(parent_pdg))
     m_lepton = hnl.masses(lepton_pdg)
 
@@ -210,22 +225,29 @@ def compute_production_br_components(hnl, parent_pdg, lepton_pdg, m_N):
     if abs_pdg in THREEBODY_CHANNELS:
         for daughter_pdg, ch_type in THREEBODY_CHANNELS[abs_pdg]:
             d_pdg = -daughter_pdg if parent_pdg < 0 else daughter_pdg
-            br_3b = _eval_3body_br(hnl, parent_pdg, d_pdg, lepton_pdg, m_N, ch_type)
-            if br_3b > 0:
-                br_3body_channels.append((d_pdg, br_3b))
+            br_3b, dbr = _eval_3body_br(hnl, parent_pdg, d_pdg, lepton_pdg, m_N, ch_type)
+            if br_3b > 0 and dbr is not None:
+                br_3body_channels.append((d_pdg, dbr, br_3b))
 
-    br_3body_total = sum(br for _, br in br_3body_channels)
+    br_3body_total = sum(ch[2] for ch in br_3body_channels)
     br_total = br_2body + br_3body_total
     return br_2body, br_3body_channels, br_total
 
 
 def _sample_hnl_from_mesons(parent_E, parent_px, parent_py, parent_pz, m_parent, m_lepton, m_N,
                             br_3body_channels, br_total, hnl, rng):
-    """Sample HNL 4-vectors from 2-body/3-body decays with BR-weighted channel selection."""
+    """Sample HNL 4-vectors from 2-body/3-body decays with BR-weighted channel selection.
+
+    The 3-body kinematics are drawn from decay_3body_weighted_dq2dE using the
+    HNLCalc differential string carried in each channel tuple. The integrated
+    rate (already in br_total / per-channel br) and the differential shape
+    therefore come from the same matrix element; flat-LIPS sampling is no
+    longer used for meson semileptonic production.
+    """
     n_events = len(parent_E)
     hnl_4v = np.empty((n_events, 4))
 
-    br_3body_total = sum(br for _, br in br_3body_channels)
+    br_3body_total = sum(ch[2] for ch in br_3body_channels)
     use_3body = np.zeros(n_events, dtype=bool)
     if br_3body_total > 0:
         p_3body = br_3body_total / br_total
@@ -240,17 +262,18 @@ def _sample_hnl_from_mesons(parent_E, parent_px, parent_py, parent_pz, m_parent,
         hnl_4v[use_2body] = hnl_2b
 
     if use_3body.any():
-        br_arr = np.array([br for _, br in br_3body_channels], dtype=float)
+        br_arr = np.array([ch[2] for ch in br_3body_channels], dtype=float)
         prob_arr = br_arr / br_arr.sum()
         channel_idx = rng.choice(len(br_3body_channels), size=use_3body.sum(), p=prob_arr)
         evt_idx = np.where(use_3body)[0]
         for idx_ch in np.unique(channel_idx):
-            daughter_pdg, _ = br_3body_channels[int(idx_ch)]
+            daughter_pdg, dbr_expr, _ = br_3body_channels[int(idx_ch)]
             sel = evt_idx[channel_idx == idx_ch]
             m_daughter = hnl.masses(daughter_pdg)
-            _, _, hnl_3b = decay_3body_flat(
+            _, _, hnl_3b = decay_3body_weighted_dq2dE(
                 parent_E[sel], parent_px[sel], parent_py[sel], parent_pz[sel],
-                m_parent, m_daughter, m_lepton, m_N, rng=rng,
+                m_parent, m_daughter, m_lepton, m_N,
+                dbr_expr=dbr_expr, coupling=1.0, rng=rng,
             )
             hnl_4v[sel] = hnl_3b
 
@@ -410,6 +433,14 @@ def generate_bc_pool(n_pool, rng):
     Delegates to ``sample_meson_4vectors`` with ``force_species=541`` so the
     Bc sampling path goes through the same inverse-CDF code as ordinary
     fragmentation sampling.
+
+    XXX scope: Bc production is cc-bar + bb-bar (BCVEGPY), not single-quark
+    fragmentation. The pT spectrum is harder and the rapidity narrower than
+    the FONLL b-hadron grid. Reusing the bottom (pT, y) shape with only the
+    mass forced biases GRENDEL acceptance for Bc-sourced HNLs. Tracked as a
+    data/scope item; needs a dedicated Bc (pT, y) grid (or BCVEGPY LHE) to
+    replace this stand-in. The integrated rate is fine because it uses
+    SIGMA_BC_PB directly, but the per-event kinematics are not.
     """
     return sample_meson_4vectors(n_pool, "bottom", rng=rng, force_species=541)
 

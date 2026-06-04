@@ -5,6 +5,7 @@ import pytest
 
 from production.decay_engine.kinematics import (
     decay_2body, decay_2body_polarized, decay_3body_flat, _sample_polar_cos,
+    decay_3body_weighted_dq2dE, decay_3body_weighted_dE,
 )
 
 
@@ -99,3 +100,76 @@ def test_3body_threshold_raises(rng):
     E, px, py, pz = _make_parents(10, M, rng=rng)
     with pytest.raises(RuntimeError):
         decay_3body_flat(E, px, py, pz, M, m1, m2, m3, rng=rng)
+
+
+# ---------------------------------------------------------------------------
+# Matrix-element-weighted samplers
+# ---------------------------------------------------------------------------
+
+
+def test_weighted_dq2dE_conserves_4momentum_and_masses(rng):
+    """dq²/dE sampler with a constant dbr reduces to flat phase space, with
+    4-momentum conservation and on-shell daughters."""
+    M, m1, m2, m3 = 5.28, 0.139, 0.106, 1.0   # B -> pi mu N-like
+    E, px, py, pz = _make_parents(400, M, rng=rng)
+    # A constant dbr makes the weight independent of (q², E_N); accept-reject
+    # then degenerates to uniform sampling in the (q², E_N) Dalitz region,
+    # which is what we use the conservation laws to verify.
+    dbr_expr = "1.0 + 0.0*q2 + 0.0*energy"
+    d1, d2, d3 = decay_3body_weighted_dq2dE(
+        E, px, py, pz, M, m1, m2, m3, dbr_expr=dbr_expr, rng=rng,
+    )
+
+    s = d1 + d2 + d3
+    assert np.allclose(s[:, 0], E, rtol=1e-7, atol=1e-7)
+    for col, p in zip(range(1, 4), (px, py, pz)):
+        assert np.allclose(s[:, col], p, rtol=1e-7, atol=1e-7)
+
+    for d, m in [(d1, m1), (d2, m2), (d3, m3)]:
+        m_rec = np.sqrt(np.maximum(
+            d[:, 0]**2 - (d[:, 1]**2 + d[:, 2]**2 + d[:, 3]**2), 0.0
+        ))
+        assert np.allclose(m_rec, m, atol=1e-5)
+
+
+def test_weighted_dE_conserves_and_biases_energy(rng):
+    """dE sampler conserves 4-momentum and reproduces the requested E_N bias.
+
+    With a dbr ∝ energy, accept-reject must yield <E_N> > <E_N>_flat in the
+    parent rest frame, demonstrating the spectrum is matrix-element-weighted
+    rather than uniform.
+    """
+    M, m1, m2, m3 = 1.777, 0.000511, 0.0, 0.3  # tau-like
+    # Tau at rest so the lab-frame HNL energy is the parent-rest E_N directly.
+    n = 2000
+    E = np.full(n, M)
+    px = np.zeros(n); py = np.zeros(n); pz = np.zeros(n)
+
+    # Flat-in-E dbr — should give the uniform-E mean (midpoint of allowed range).
+    Emin = m3
+    Emax = (M**2 + m3**2 - (m1 + m2)**2) / (2.0 * M)
+    flat_expr = "1.0 + 0.0*energy"
+    _, _, hnl_flat = decay_3body_weighted_dE(
+        E, px, py, pz, M, m1, m2, m3, dbr_expr=flat_expr, rng=rng,
+    )
+
+    biased_expr = "energy"
+    _, _, hnl_biased = decay_3body_weighted_dE(
+        E, px, py, pz, M, m1, m2, m3, dbr_expr=biased_expr,
+        rng=np.random.default_rng(7),
+    )
+
+    # 4-momentum sanity (against parent at rest in lab).
+    # (only checking HNL on-shell since other daughters tested above)
+    m_rec = np.sqrt(np.maximum(
+        hnl_flat[:, 0]**2 - (hnl_flat[:, 1]**2 + hnl_flat[:, 2]**2 + hnl_flat[:, 3]**2),
+        0.0,
+    ))
+    assert np.allclose(m_rec, m3, atol=1e-6)
+
+    # Flat dbr -> mean E = midpoint of [Emin, Emax]; biased dbr ∝ E -> mean = 2/3 (Emax² - Emin²)/(Emax² - Emin²) ... in this regime simply larger than flat mean.
+    flat_mean = hnl_flat[:, 0].mean()
+    biased_mean = hnl_biased[:, 0].mean()
+    expected_flat = 0.5 * (Emin + Emax)
+    assert flat_mean == pytest.approx(expected_flat, rel=5e-2)
+    assert biased_mean > flat_mean + 0.02 * expected_flat

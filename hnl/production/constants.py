@@ -36,7 +36,11 @@ M_KAON = Particle.from_pdgid(321).mass * 1e-3     # K+
 # FONLL inclusive cross-sections at 14 TeV (pb)
 # ==========================================================================
 
-# σ(pp → Bc) ~ 0.9 μb at 14 TeV (BCVEGPY/FONLL, CMS/LHCb)
+# Inclusive σ(pp → Bc+ + Bc-) ≈ 0.9 μb at 14 TeV (BCVEGPY/FONLL, CMS/LHCb).
+# The value already covers both charges, so the Bc weight formula in
+# generate_meson_csvs.process_channel deliberately omits the (q + q-bar)
+# factor of 2 that the B/D mesons apply (those use FONLL grids quoted as
+# (q + q-bar)/2 — see NNPDF40/fonll-nnpdf40/PROVENANCE.md).
 SIGMA_BC_PB = 0.9e6
 
 # ==========================================================================
@@ -59,6 +63,9 @@ K_FACTOR_EW = 1.3
 # sub-0.5 GeV region that was previously simply missing. Treat the absolute
 # kaon yield as a systematic, not a precision prediction; override via the
 # constants below or regenerate from a measured K± spectrum when available.
+# XXX scope: replace with a measured K± (pT, y) spectrum (e.g. ALICE/CMS LHC
+# pp identified-hadron data) and drop the parametric Tsallis/Gaussian path.
+# Tracked as a data/scope item.
 #
 # Effective inclusive K± production cross-section at 14 TeV:
 #   sigma_K± ≈ sigma_inel × <n_{K±}>
@@ -99,6 +106,10 @@ KAON_E_MAX = 7000.0  # GeV, half of sqrt(s) at LHC 14 TeV
 #
 # Baryons are tracked as omitted fractions because the current HNLCalc meson
 # production layer does not simulate Lambda_c/Xi_c/Lambda_b parents.
+# XXX scope: aggregate omitted fraction is ~18.8% of bottom and ~36.7% of
+# charm fragmentation. Adding baryon parents requires HNLCalc to expose
+# get_3body_dbr_baryon for the relevant Λ_b/Λ_c semileptonic transitions and a
+# baryon meson_sampler path; tracked as a data/scope item, not a code bug.
 
 # Beauty fragmentation, probabilities per b quark.
 FRAG_B = {

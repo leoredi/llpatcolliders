@@ -22,7 +22,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "vendored" / "HNLCalc"))
 
 from production.constants import M_TAU
 from production.decay_engine.kinematics import (
-    decay_2body_polarized, decay_3body_flat,
+    decay_2body_polarized, decay_3body_weighted_dE,
 )
 
 
@@ -79,7 +79,12 @@ def _eval_tau_2body_br(hnl, meson_pdg, m_N):
 
 
 def _eval_tau_3body_br(hnl, lep_pid, nu_pid, m_N):
-    """BR(tau- -> lep- nu N) at U^2 = 1 via HNLCalc, integrated over phase space."""
+    """BR(tau- -> lep- nu N) at U^2 = 1 via HNLCalc, integrated over phase space.
+
+    Returns (br, dbr_expr). dbr_expr is the HNLCalc dBR/dE string used by
+    decay_3body_weighted_dE to sample the HNL energy spectrum with the same
+    V-A matrix element that determined the rate.
+    """
     # Leptonic tau channels are fully parameterized in HNLCalc; no catch-all guard,
     # so any unexpected error surfaces instead of being silently turned into 0.
     dbr = hnl.get_3body_dbr_tau(15, -lep_pid, nu_pid)
@@ -89,8 +94,8 @@ def _eval_tau_3body_br(hnl, lep_pid, nu_pid, m_N):
         coupling=1.0, nsample=500, integration="dE",
     )
     if br_val is None or np.isnan(br_val) or br_val < 0:
-        return 0.0
-    return float(br_val)
+        return 0.0, None
+    return float(br_val), dbr
 
 
 def compute_tau_production_br_components(hnl, m_N):
@@ -100,9 +105,12 @@ def compute_tau_production_br_components(hnl, m_N):
     Returns
     -------
     br_2body_channels : list of (meson_mass, br_value)
-        2-body hadronic channels with non-zero BR.
-    br_3body_channels : list of (lep_mass, br_value)
+        2-body hadronic channels with non-zero BR. (No dbr expression: the
+        2-body kinematics are exact under decay_2body_polarized.)
+    br_3body_channels : list of (lep_mass, dbr_expr, br_value)
         3-body leptonic channels (tau- -> lep- nu N) with non-zero BR.
+        ``dbr_expr`` is the HNLCalc dBR/dE string used by
+        decay_3body_weighted_dE to sample E_N with V-A matrix-element weight.
     br_total : float
         Sum of all BRs.
     """
@@ -120,15 +128,18 @@ def compute_tau_production_br_components(hnl, m_N):
         if m_N >= M_TAU - m_lep:
             continue
         # tau- -> lep- nu_tau N   (neutrino is nu_tau, pdg=16)
-        br_nt = _eval_tau_3body_br(hnl, lep_pid, 16, m_N)
-        if br_nt > 0:
-            br_3body_channels.append((m_lep, br_nt))
+        br_nt, dbr_nt = _eval_tau_3body_br(hnl, lep_pid, 16, m_N)
+        if br_nt > 0 and dbr_nt is not None:
+            br_3body_channels.append((m_lep, dbr_nt, br_nt))
         # tau- -> lep- nu_lep_bar N   (neutrino is anti-nu_lep, pdg = lep_pid+1)
-        br_nl = _eval_tau_3body_br(hnl, lep_pid, lep_pid + 1, m_N)
-        if br_nl > 0:
-            br_3body_channels.append((m_lep, br_nl))
+        br_nl, dbr_nl = _eval_tau_3body_br(hnl, lep_pid, lep_pid + 1, m_N)
+        if br_nl > 0 and dbr_nl is not None:
+            br_3body_channels.append((m_lep, dbr_nl, br_nl))
 
-    br_total = sum(br for _, br in br_2body_channels) + sum(br for _, br in br_3body_channels)
+    br_total = (
+        sum(br for _, br in br_2body_channels)
+        + sum(ch[2] for ch in br_3body_channels)
+    )
     return br_2body_channels, br_3body_channels, br_total
 
 
@@ -168,18 +179,22 @@ def sample_hnl_from_tau(tau_E, tau_px, tau_py, tau_pz, m_N,
             )
             hnl_4v[sel] = hnl_2b
 
-    # 3-body: tau -> lep + nu + N. Flat phase space.
+    # 3-body: tau -> lep + nu + N. HNL energy spectrum drawn from HNLCalc
+    # dBR/dE (V-A matrix element); the lepton/neutrino subsystem is filled
+    # isotropically in its own rest frame since dBR/dE has already been
+    # integrated over the angular content.
     if use_3body.any() and br_3body_channels:
-        br_arr = np.array([br for _, br in br_3body_channels], dtype=float)
+        br_arr = np.array([ch[2] for ch in br_3body_channels], dtype=float)
         prob = br_arr / br_arr.sum()
         ch_idx = rng.choice(len(br_3body_channels), size=use_3body.sum(), p=prob)
         evt_idx = np.where(use_3body)[0]
         for k in np.unique(ch_idx):
-            m_lep, _ = br_3body_channels[int(k)]
+            m_lep, dbr_expr, _ = br_3body_channels[int(k)]
             sel = evt_idx[ch_idx == k]
-            _, _, hnl_3b = decay_3body_flat(
+            _, _, hnl_3b = decay_3body_weighted_dE(
                 tau_E[sel], tau_px[sel], tau_py[sel], tau_pz[sel],
-                M_TAU, m_lep, 0.0, m_N, rng=rng,
+                M_TAU, m_lep, 0.0, m_N,
+                dbr_expr=dbr_expr, coupling=1.0, rng=rng,
             )
             hnl_4v[sel] = hnl_3b
 
