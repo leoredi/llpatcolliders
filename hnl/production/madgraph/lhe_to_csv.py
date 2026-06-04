@@ -49,12 +49,16 @@ class LHEParser:
 
         Yields
         ------
-        dict with 'weight', 'E', 'px', 'py', 'pz', 'pdgid' for each match.
+        dict with 'weight', 'E', 'px', 'py', 'pz', 'pdgid', 'origin' for each
+        match. ``origin`` is the PDG of the target particle's mother (LHE
+        MOTHUP1, 1-based index resolved against the same event), or 0 if the
+        mother slot is empty / the index is out of range.
         """
         in_event = False
         header_parsed = False
         event_weight = 1.0
-        event_particles = []
+        all_event_pdgs = []     # PDG of every particle in the current event, in order
+        candidate_records = []  # tuples (target_dict, mother_idx_1based)
 
         with self._open() as f:
             for line in f:
@@ -64,18 +68,24 @@ class LHEParser:
                     in_event = True
                     header_parsed = False
                     event_weight = 1.0
-                    event_particles = []
+                    all_event_pdgs = []
+                    candidate_records = []
                     continue
 
                 if stripped.startswith('</event>'):
-                    if event_particles:
+                    if candidate_records:
                         if split_event_weight:
-                            particle_weight = event_weight / len(event_particles)
+                            particle_weight = event_weight / len(candidate_records)
                         else:
                             particle_weight = event_weight
-                        for p in event_particles:
-                            p['weight'] = particle_weight
-                            yield p
+                        for record, mother_idx in candidate_records:
+                            record['weight'] = particle_weight
+                            # MOTHUP is 1-based; 0 means no mother. Resolve.
+                            origin = 0
+                            if 1 <= mother_idx <= len(all_event_pdgs):
+                                origin = all_event_pdgs[mother_idx - 1]
+                            record['origin'] = origin
+                            yield record
                     in_event = False
                     continue
 
@@ -94,17 +104,29 @@ class LHEParser:
                     if len(parts) >= 11:
                         try:
                             pdgid = int(parts[0])
-                            if pdgid in target_pdg_ids:
-                                event_particles.append({
-                                    'weight': event_weight,
-                                    'pdgid': pdgid,
-                                    'E': float(parts[9]),
-                                    'px': float(parts[6]),
-                                    'py': float(parts[7]),
-                                    'pz': float(parts[8]),
-                                })
                         except (ValueError, IndexError):
-                            pass
+                            pdgid = 0  # malformed; keep ordering via placeholder
+                        all_event_pdgs.append(pdgid)
+                        if pdgid in target_pdg_ids:
+                            # LHE columns (0-indexed): 0=IDUP 1=ISTUP
+                            # 2=MOTHUP1 3=MOTHUP2 4=COL1 5=COL2
+                            # 6=PUP1(px) 7=PUP2(py) 8=PUP3(pz) 9=PUP4(E)
+                            # 10=PUP5(m) ...
+                            try:
+                                mother_idx = int(parts[2])
+                                candidate_records.append((
+                                    {
+                                        'weight': event_weight,
+                                        'pdgid': pdgid,
+                                        'E': float(parts[9]),
+                                        'px': float(parts[6]),
+                                        'py': float(parts[7]),
+                                        'pz': float(parts[8]),
+                                    },
+                                    mother_idx,
+                                ))
+                            except (ValueError, IndexError):
+                                pass
 
     def write_hnl_csv(self, output_path):
         """Extract HNL 4-vectors and write headerless CSV."""
@@ -124,7 +146,13 @@ class LHEParser:
         return len(rows)
 
     def write_tau_csv(self, output_path):
-        """Extract tau 4-vectors and write headerless CSV."""
+        """Extract tau 4-vectors and write headerless CSV.
+
+        Schema: ``weight, E, px, py, pz, origin`` (6 columns).
+        ``origin`` is the mother PDG (24=W+, -24=W-, 23=Z, ...) so a
+        downstream consumer can apply per-process polarisation when
+        decaying tau -> N + X.
+        """
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -133,7 +161,7 @@ class LHEParser:
             {self.PDG_TAU_MINUS, self.PDG_TAU_PLUS},
             split_event_weight=True
         ):
-            rows.append([p['weight'], p['E'], p['px'], p['py'], p['pz']])
+            rows.append([p['weight'], p['E'], p['px'], p['py'], p['pz'], p['origin']])
 
         if rows:
             data = np.array(rows)

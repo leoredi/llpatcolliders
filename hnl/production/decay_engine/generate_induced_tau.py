@@ -13,8 +13,10 @@ Driver for induced-tau HNL production:
     tau -> N + X
 
 Note: B0 -> tau nu is helicity-suppressed in SM and excluded.
-W -> tau nu is the dominant tau source at LHC but is W-mediated, deferred
-to the W/Z production PR.
+At the LHC, charm-induced tau (Ds -> tau nu) dominates the tau yield by
+rate; prompt W -> tau nu is sub-dominant but handled separately by
+`production/madgraph/run_tau_production.py` (output/.../tau/). This driver
+writes the induced contribution only (output/.../induced_tau/).
 
 Weight chain per HNL 4-vector i (from Ds, similar for B+):
 
@@ -22,7 +24,7 @@ Weight chain per HNL 4-vector i (from Ds, similar for B+):
 
 The factor 2 is the particle + antiparticle FONLL convention.
 
-Output: output/llp_4vectors/{Ue,Umu,Utau}/tau/mN_{mass}.csv
+Output: output/llp_4vectors/{Ue,Umu,Utau}/induced_tau/mN_{mass}.csv
 Format: headerless, 5 columns: weight,E,px,py,pz
 """
 
@@ -42,172 +44,19 @@ from production.constants import (
 )
 from production.fonll.fonll_parser import get_sigma_total
 from production.fonll.meson_sampler import sample_meson_4vectors
-from production.decay_engine.kinematics import (
-    decay_2body, decay_2body_polarized, decay_3body_flat,
+from production.decay_engine.kinematics import decay_2body
+from production.decay_engine.tau_decay import (
+    init_hnlcalc, compute_tau_production_br_components, sample_hnl_from_tau,
+    TAU_2BODY_ASYMMETRY,
 )
 
 OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
 
 N_POOL = 100_000
 
-# --- Tau polarization model -------------------------------------------------
-# A pseudoscalar decay P+ -> tau+ nu_tau fixes the tau helicity exactly: with a
-# left-handed nu_tau and a spin-0 parent, the tau+ must be left-handed
-# (helicity -1) in the parent rest frame (the charge-conjugate P- -> tau- gives
-# helicity +1; the tau energy spectrum is identical by CP, so a single sign is
-# used). The tau is therefore ~100% longitudinally polarized along its momentum.
-#
-# The N angular distribution in the tau rest frame then follows
-# 1 + (alpha * P_tau) cos(theta) about the tau momentum axis. P_tau = -1 is
-# exact here; the spin-analyzing power alpha is mass- and channel-dependent and
-# would need the full decay matrix element to pin down. We use the chiral
-# (maximal) limit |alpha| = 1, which is exact as m_N -> 0 and a documented upper
-# bound on the polarization effect at finite m_N. Set TAU_2BODY_ANALYZING_POWER
-# to 0.0 to recover the previous isotropic treatment.
-TAU_POLARIZATION = -1.0
-TAU_2BODY_ANALYZING_POWER = 1.0
-TAU_2BODY_ASYMMETRY = TAU_POLARIZATION * TAU_2BODY_ANALYZING_POWER
-
 # Measured branching ratios for the parent meson -> tau nu_tau (PDG 2024)
 BR_DS_TAU_NU = 5.35e-2
 BR_BPLUS_TAU_NU = 1.09e-4
-
-# Tau 2-body hadronic channels into N (parent_pdg = 15 (tau-))
-# daughter is meson (anti-meson for tau- decay)
-TAU_2BODY_MESON_PDGS = [211, 321, 213, 323]   # pi+, K+, rho+, K*+ (HNLCalc convention)
-
-
-def _init_hnlcalc(flavor):
-    """Initialize HNLCalc with unit coupling for the given flavor."""
-    from HNLCalc import HNLCalc
-    if flavor == "Ue":
-        return HNLCalc(ve=1, vmu=0, vtau=0)
-    elif flavor == "Umu":
-        return HNLCalc(ve=0, vmu=1, vtau=0)
-    elif flavor == "Utau":
-        return HNLCalc(ve=0, vmu=0, vtau=1)
-    else:
-        raise ValueError(f"Unknown flavor: {flavor}")
-
-
-def _eval_tau_2body_br(hnl, meson_pdg, m_N):
-    """BR(tau -> meson N) at U^2 = 1 via HNLCalc."""
-    # All TAU_2BODY_MESON_PDGS daughters are charged and supported by HNLCalc;
-    # no catch-all guard, so any unexpected error surfaces instead of returning 0.
-    br_expr = hnl.get_2body_br_tau(15, meson_pdg)
-    mass = m_N        # noqa: F841 - referenced by eval'd HNLCalc expression
-    coupling = 1.0    # noqa: F841
-    br_val = eval(br_expr)
-    if np.isnan(br_val) or br_val < 0:
-        return 0.0
-    return float(br_val)
-
-
-def _eval_tau_3body_br(hnl, lep_pid, nu_pid, m_N):
-    """BR(tau- -> lep- nu N) at U^2 = 1 via HNLCalc, integrated over phase space."""
-    # Leptonic tau channels are fully parameterized in HNLCalc; no catch-all guard,
-    # so any unexpected error surfaces instead of being silently turned into 0.
-    dbr = hnl.get_3body_dbr_tau(15, -lep_pid, nu_pid)
-    m_lep = hnl.masses(lep_pid)
-    br_val = hnl.integrate_3body_br(
-        dbr, m_N, M_TAU, m_lep, 0.0,
-        coupling=1.0, nsample=500, integration="dE",
-    )
-    if br_val is None or np.isnan(br_val) or br_val < 0:
-        return 0.0
-    return float(br_val)
-
-
-def compute_tau_production_br_components(hnl, m_N):
-    """
-    Total BR(tau -> N + X) at U^2 = 1, plus per-channel breakdown for sampling.
-
-    Returns
-    -------
-    br_2body_channels : list of (meson_mass, br_value)
-        2-body hadronic channels with non-zero BR.
-    br_3body_channels : list of (lep_mass, br_value)
-        3-body leptonic channels (tau- -> lep- nu N) with non-zero BR.
-    br_total : float
-        Sum of all BRs.
-    """
-    br_2body_channels = []
-    for meson_pdg in TAU_2BODY_MESON_PDGS:
-        if m_N >= M_TAU - hnl.masses(meson_pdg):
-            continue
-        br = _eval_tau_2body_br(hnl, meson_pdg, m_N)
-        if br > 0:
-            br_2body_channels.append((hnl.masses(meson_pdg), br))
-
-    br_3body_channels = []
-    for lep_pid in [11, 13]:
-        m_lep = hnl.masses(lep_pid)
-        if m_N >= M_TAU - m_lep:
-            continue
-        # tau- -> lep- nu_tau N   (neutrino is nu_tau, pdg=16)
-        br_nt = _eval_tau_3body_br(hnl, lep_pid, 16, m_N)
-        if br_nt > 0:
-            br_3body_channels.append((m_lep, br_nt))
-        # tau- -> lep- nu_lep_bar N   (neutrino is anti-nu_lep, pdg = lep_pid+1)
-        br_nl = _eval_tau_3body_br(hnl, lep_pid, lep_pid + 1, m_N)
-        if br_nl > 0:
-            br_3body_channels.append((m_lep, br_nl))
-
-    br_total = sum(br for _, br in br_2body_channels) + sum(br for _, br in br_3body_channels)
-    return br_2body_channels, br_3body_channels, br_total
-
-
-def _sample_hnl_from_tau(tau_E, tau_px, tau_py, tau_pz, m_N,
-                         br_2body_channels, br_3body_channels, br_total, rng,
-                         asymmetry=TAU_2BODY_ASYMMETRY):
-    """Decay each tau to (N + X) with channel selection weighted by BR.
-
-    ``asymmetry`` (= analyzing_power × P_tau) sets the longitudinal-polarization
-    angular weight ``1 + asymmetry·cosθ`` for the N in the tau rest frame of the
-    2-body hadronic modes; 0.0 reproduces isotropic decay.
-    """
-    n_events = len(tau_E)
-    hnl_4v = np.empty((n_events, 4))
-
-    br_2body_total = sum(br for _, br in br_2body_channels)
-    p_2body = br_2body_total / br_total if br_total > 0 else 0.0
-    use_2body = rng.random(n_events) < p_2body
-    use_3body = ~use_2body
-
-    # 2-body: tau -> meson + N. Pick channel weighted by per-channel BR.
-    if use_2body.any() and br_2body_channels:
-        br_arr = np.array([br for _, br in br_2body_channels], dtype=float)
-        prob = br_arr / br_arr.sum()
-        ch_idx = rng.choice(len(br_2body_channels), size=use_2body.sum(), p=prob)
-        evt_idx = np.where(use_2body)[0]
-        for k in np.unique(ch_idx):
-            m_meson, _ = br_2body_channels[int(k)]
-            sel = evt_idx[ch_idx == k]
-            # N (second daughter) is the spin-analyzed particle; its polar angle
-            # follows the tau longitudinal polarization.
-            _, hnl_2b = decay_2body_polarized(
-                tau_E[sel], tau_px[sel], tau_py[sel], tau_pz[sel],
-                M_TAU, m_meson, m_N, asymmetry=asymmetry, rng=rng,
-            )
-            hnl_4v[sel] = hnl_2b
-
-    # 3-body: tau -> lep + nu + N. Flat phase space.
-    if use_3body.any() and br_3body_channels:
-        br_arr = np.array([br for _, br in br_3body_channels], dtype=float)
-        prob = br_arr / br_arr.sum()
-        ch_idx = rng.choice(len(br_3body_channels), size=use_3body.sum(), p=prob)
-        evt_idx = np.where(use_3body)[0]
-        for k in np.unique(ch_idx):
-            m_lep, _ = br_3body_channels[int(k)]
-            sel = evt_idx[ch_idx == k]
-            # tau -> lep (m_lep), nu (0), N (m_N)
-            _, _, hnl_3b = decay_3body_flat(
-                tau_E[sel], tau_px[sel], tau_py[sel], tau_pz[sel],
-                M_TAU, m_lep, 0.0, m_N, rng=rng,
-            )
-            hnl_4v[sel] = hnl_3b
-
-    return hnl_4v, use_2body, use_3body
 
 
 def build_tau_pool(n_pool, rng):
@@ -266,8 +115,8 @@ def build_tau_pool(n_pool, rng):
 
 def process_flavor(flavor, tau_4v, tau_w, masses, rng):
     """Decay tau pool into N+X for one flavor across all mass points."""
-    hnl = _init_hnlcalc(flavor)
-    out_dir = OUTPUT_BASE / flavor / "tau"
+    hnl = init_hnlcalc(flavor)
+    out_dir = OUTPUT_BASE / flavor / "induced_tau"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     if len(tau_w) == 0:
@@ -292,7 +141,7 @@ def process_flavor(flavor, tau_4v, tau_w, masses, rng):
             csv_path.write_text("")
             continue
 
-        hnl_4v, _, _ = _sample_hnl_from_tau(
+        hnl_4v, _, _ = sample_hnl_from_tau(
             tau_E, tau_px, tau_py, tau_pz, m_N,
             br_2body, br_3body, br_total, rng,
         )

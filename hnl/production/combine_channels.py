@@ -5,7 +5,8 @@ production/combine_channels.py
 Concatenate all available channel CSVs for each (flavor, mass) into combined files.
 
 Input directories:
-  output/llp_4vectors/{flavor}/{Bmeson,Dmeson,Bc,tau}/mN_{mass}.csv
+  output/llp_4vectors/{flavor}/{Bmeson,Dmeson,Bc,Kmeson,
+                                tau,induced_tau,WZ}/mN_{mass}.csv
 
 Output:
   output/llp_4vectors/{flavor}/combined/mN_{mass}.csv
@@ -23,10 +24,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from config_mass_grid import MASS_GRID, format_mass_for_filename
 
 OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
-# "WZ" (electroweak W/Z -> l N) and "Kmeson" (K+ -> l N) are optional channels:
-# they are only present when their producers have been run, and combine_for_point
-# silently skips any channel folder/file that is missing or empty.
-CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "Kmeson", "WZ"]
+# All seven channel directories are read for every flavor. Any missing or
+# empty CSV is silently skipped by combine_for_point (kinematic closure or
+# a not-yet-run channel just contributes zero rows). Tau is split into two
+# physical sources written to different folders by their respective drivers:
+#   tau/         — prompt: pp -> W -> tau nu  /  pp -> Z -> tau tau (MG5)
+#   induced_tau/ — cascade: Ds, B+ -> tau nu -> tau -> N (FONLL meson source)
+CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "induced_tau", "Kmeson", "WZ"]
 FLAVORS = ["Ue", "Umu", "Utau"]
 
 

@@ -24,7 +24,6 @@ Usage:
     python run_wz_production.py --masses 1.0 2.0 5.0
 """
 
-import os
 import sys
 import subprocess
 import shutil
@@ -36,14 +35,16 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from config_mass_grid import MASS_GRID, N_EVENTS_DEFAULT, format_mass_for_filename
 from production.constants import K_FACTOR_EW, FLAVOR_TO_MG5
-
-PYTHON_EXE = Path(sys.executable)
+from production.madgraph._mg5_common import (
+    MG5_EXE, LHAPDF_CONFIG, PYTHON_EXE,
+    mg5_subprocess_env, patch_me5_configuration,
+    patch_rpath_for_lhapdf, force_compile_subprocesses,
+)
 
 # Vendored HeavyN UFO model (loaded by absolute path so MG5 picks up this copy
 # regardless of which MG5 install resolves below).
 MODEL_DIR = PROJECT_ROOT / "vendored" / "SM_HeavyN_CKM_AllMasses_LO"
 
-# Directories
 CARDS_DIR = Path(__file__).parent / "cards"
 WORK_DIR = Path(__file__).parent / "work"
 OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
@@ -56,60 +57,27 @@ MIXING_CONFIGS = {
 }
 
 
-def _resolve_mg5_exe():
-    """Resolve the mg5_aMC executable.
+def get_or_create_process_dir(flavor):
+    """Build the MG5 process directory for a flavor if missing; return it.
 
-    Resolution order:
-      1. $HNL_MG5_EXE (explicit path)
-      2. hnl/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC (drop-in vendoring)
-      3. sibling llpatcolliders_FONLL/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC
+    The matrix element only depends on the flavor-specific proc_card
+    (process topology + final-state lepton). m_N and mixings live in
+    Cards/param_card.dat and are re-read by MadEvent on every
+    generate_events run, so one process build amortises across the full
+    mass scan and saves the ~30s-2min Fortran-compile per point.
 
-    The 148 MB MG5 install is intentionally not committed; see
-    hnl/vendored/PROVENANCE.md.
+    Cached at WORK_DIR/hnl_{mg5_flavor}/. If the directory exists with a
+    working bin/generate_events we reuse it; if it exists but is partial
+    (e.g. a prior aborted build) it is removed and rebuilt.
     """
-    env_path = os.environ.get("HNL_MG5_EXE")
-    if env_path:
-        return Path(env_path)
-
-    vendored = PROJECT_ROOT / "vendored" / "MG5_aMC_v3_6_6" / "bin" / "mg5_aMC"
-    if vendored.exists():
-        return vendored
-
-    # Sibling llpatcolliders_FONLL checkout. PROJECT_ROOT is the hnl/ dir, so
-    # its parent is the repo root and its grandparent is the projects dir that
-    # also holds llpatcolliders_FONLL.
-    rel = Path("llpatcolliders_FONLL") / "vendored" / "MG5_aMC_v3_6_6" / "bin" / "mg5_aMC"
-    for base in (PROJECT_ROOT.parent, PROJECT_ROOT.parent.parent):
-        candidate = base / rel
-        if candidate.exists():
-            return candidate
-    return PROJECT_ROOT.parent.parent / rel
-
-
-MG5_EXE = _resolve_mg5_exe()
-
-
-def _disable_mg5_html_opening(cards_dir):
-    """Disable MG5 browser auto-open for this process directory."""
-    cfg = cards_dir / "me5_configuration.txt"
-    if not cfg.exists():
-        return
-    text = cfg.read_text()
-    new_text = text.replace("# automatic_html_opening = True", "automatic_html_opening = False")
-    new_text = new_text.replace("# automatic_html_opening = False", "automatic_html_opening = False")
-    new_text = new_text.replace("automatic_html_opening = True", "automatic_html_opening = False")
-    new_text = new_text.replace("# web_browser = None", "web_browser = None")
-    if "automatic_html_opening" not in new_text:
-        new_text += "\nautomatic_html_opening = False\n"
-    if new_text != text:
-        cfg.write_text(new_text)
-
-
-def generate_process(flavor, mass):
-    """Generate MadGraph process directory from proc_card template."""
     mg5_flavor = FLAVOR_TO_MG5[flavor]
-    mass_label = format_mass_for_filename(mass)
-    work_subdir = WORK_DIR / f"hnl_{mg5_flavor}_{mass_label}GeV"
+    work_subdir = WORK_DIR / f"hnl_{mg5_flavor}"
+
+    if (work_subdir / "bin" / "generate_events").exists():
+        return work_subdir
+
+    if work_subdir.exists():
+        shutil.rmtree(work_subdir, ignore_errors=True)
 
     proc_card = CARDS_DIR / f"proc_card_{mg5_flavor}.dat"
     if not proc_card.exists():
@@ -117,13 +85,11 @@ def generate_process(flavor, mass):
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Build MG5 command file
-    cmd_file = WORK_DIR / f"mg5_gen_{mg5_flavor}_{mass_label}.txt"
+    cmd_file = WORK_DIR / f"mg5_gen_{mg5_flavor}.txt"
     with open(proc_card) as f:
         proc_lines = f.readlines()
 
     with open(cmd_file, 'w') as f:
-        # Load the vendored UFO model by absolute path.
         f.write(f"import model {MODEL_DIR}\n\n")
         f.write("set automatic_html_opening False\n")
         for line in proc_lines:
@@ -132,17 +98,23 @@ def generate_process(flavor, mass):
         f.write(f"\noutput {work_subdir} -nojpeg\n")
         f.write("quit\n")
 
-    log_file = WORK_DIR / f"mg5_gen_{mg5_flavor}_{mass_label}.log"
+    log_file = WORK_DIR / f"mg5_gen_{mg5_flavor}.log"
     with open(log_file, 'w') as log:
         result = subprocess.run(
             [str(PYTHON_EXE), str(MG5_EXE), str(cmd_file)],
             stdout=log, stderr=subprocess.STDOUT, timeout=300,
+            env=mg5_subprocess_env(),
         )
 
     if result.returncode != 0 or not (work_subdir / 'bin' / 'generate_events').exists():
         print(f"    FAILED: process generation (see {log_file})")
         return None
 
+    if not force_compile_subprocesses(work_subdir, WORK_DIR / f"mg5_compile_{mg5_flavor}.log"):
+        print(f"    FAILED: SubProcess pre-compile (see "
+              f"{WORK_DIR / f'mg5_compile_{mg5_flavor}.log'})")
+        return None
+    patch_rpath_for_lhapdf(work_subdir)
     cmd_file.unlink(missing_ok=True)
     return work_subdir
 
@@ -156,7 +128,7 @@ def write_cards(work_subdir, flavor, mass, n_events):
     run_content = (CARDS_DIR / "run_card_template.dat").read_text()
     run_content = run_content.replace("N_EVENTS_PLACEHOLDER", str(n_events))
     (cards_dir / "run_card.dat").write_text(run_content)
-    _disable_mg5_html_opening(cards_dir)
+    patch_me5_configuration(cards_dir)
 
     # Param card
     param_content = (CARDS_DIR / "param_card_template.dat").read_text()
@@ -168,11 +140,22 @@ def write_cards(work_subdir, flavor, mass, n_events):
     (cards_dir / "param_card.dat").write_text(param_content)
 
 
-def run_events(work_subdir, nb_core=1):
-    """Run MadGraph generate_events → return LHE file path or None."""
-    log_file = work_subdir / "generate_events.log"
+def run_events(work_subdir, run_name, nb_core=1):
+    """Run MadGraph generate_events with an explicit run name.
+
+    Because the same process directory is reused across mass points, we
+    pass ``--name run_name`` so each mass writes to a deterministic
+    Events/{run_name}/ subdir rather than auto-incrementing run_01,
+    run_02, ... — which would make it ambiguous which LHE belongs to
+    which mass.
+    """
+    log_file = work_subdir / f"generate_events_{run_name}.log"
+    # MG5's bin/generate_events takes the run name as a *positional* first
+    # argument; --name=... is not recognised and gets mis-parsed as the run
+    # name itself. Pass run_name positionally.
     cmd = [
         str(PYTHON_EXE), "bin/generate_events",
+        run_name,
         "-f", "--laststep=parton",
     ]
     if nb_core > 1:
@@ -184,19 +167,18 @@ def run_events(work_subdir, nb_core=1):
         result = subprocess.run(
             cmd, stdout=log, stderr=subprocess.STDOUT,
             cwd=work_subdir, timeout=3600,
+            env=mg5_subprocess_env(),
         )
 
     if result.returncode != 0:
         print(f"    FAILED: event generation (see {log_file})")
         return None
 
-    events_dir = work_subdir / "Events"
-    if events_dir.exists():
-        for run_dir in sorted(events_dir.glob("run_*")):
-            for lhe in [run_dir / "unweighted_events.lhe.gz",
-                        run_dir / "unweighted_events.lhe"]:
-                if lhe.exists():
-                    return lhe
+    run_dir = work_subdir / "Events" / run_name
+    for lhe in [run_dir / "unweighted_events.lhe.gz",
+                run_dir / "unweighted_events.lhe"]:
+        if lhe.exists():
+            return lhe
     return None
 
 
@@ -208,7 +190,13 @@ def convert_lhe(lhe_path, csv_path):
 
 
 def run_single_point(flavor, mass, n_events, nb_core=1):
-    """Full pipeline for one (flavor, mass) point."""
+    """Full pipeline for one (flavor, mass) point.
+
+    Reuses the per-flavor process directory built by
+    get_or_create_process_dir; only Cards/ and the generate_events run
+    change between mass points. The Events/run_mass/ subdir is removed
+    after CSV extraction to keep disk usage bounded across the scan.
+    """
     mass_label = format_mass_for_filename(mass)
     csv_dir = OUTPUT_BASE / flavor / "WZ"
     csv_dir.mkdir(parents=True, exist_ok=True)
@@ -216,16 +204,17 @@ def run_single_point(flavor, mass, n_events, nb_core=1):
 
     print(f"\n  [{flavor}] m_N = {mass} GeV")
 
-    # Step 1: Generate process
-    work_subdir = generate_process(flavor, mass)
+    # Step 1: ensure the per-flavor process dir exists (built once, cached)
+    work_subdir = get_or_create_process_dir(flavor)
     if work_subdir is None:
         return False
 
-    # Step 2: Write cards
+    # Step 2: rewrite param_card.dat (m_N + mixings) and run_card.dat (N events)
     write_cards(work_subdir, flavor, mass, n_events)
 
-    # Step 3: Generate events
-    lhe_path = run_events(work_subdir, nb_core=nb_core)
+    # Step 3: generate events into Events/run_{mass_label}/
+    run_name = f"run_{mass_label}"
+    lhe_path = run_events(work_subdir, run_name, nb_core=nb_core)
     if lhe_path is None:
         return False
 
@@ -252,8 +241,9 @@ def run_single_point(flavor, mass, n_events, nb_core=1):
         data[:, 0] *= K_FACTOR_EW
         np.savetxt(csv_path, data, delimiter=",", fmt="%.8e")
 
-    # Cleanup
-    shutil.rmtree(work_subdir, ignore_errors=True)
+    # Per-mass run cleanup. The process directory itself is preserved for
+    # reuse on the next mass point in this flavor scan.
+    shutil.rmtree(work_subdir / "Events" / run_name, ignore_errors=True)
     return True
 
 
@@ -296,10 +286,16 @@ def main():
     if not MODEL_DIR.exists():
         print(f"ERROR: HeavyN UFO model not found at {MODEL_DIR}")
         return 1
+    if not LHAPDF_CONFIG.exists():
+        print(f"ERROR: lhapdf-config not found at {LHAPDF_CONFIG}")
+        print("Set $HNL_LHAPDF_CONFIG to a working lhapdf-config binary "
+              "(the LHAPDF install must carry NNPDF40_nlo_as_01180).")
+        return 1
 
     print(f"W/Z → ℓ N Production")
     print(f"  MG5: {MG5_EXE}")
     print(f"  Model: {MODEL_DIR}")
+    print(f"  LHAPDF: {LHAPDF_CONFIG}")
     print(f"  Flavors: {flavors}")
     print(f"  Masses: {len(masses)} points")
     print(f"  Events/point: {n_events}")

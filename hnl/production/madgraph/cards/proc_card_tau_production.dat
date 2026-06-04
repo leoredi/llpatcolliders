@@ -11,8 +11,8 @@
 import model sm
 
 # Define the multiparticle sets
-define p = g u c d s u~ c~ d~ s~
-define j = g u c d s u~ c~ d~ s~
+define p = g u c d s b u~ c~ d~ s~ b~
+define j = g u c d s b u~ c~ d~ s~ b~
 
 # W → τ ν production
 generate p p > w+, w+ > ta+ vt
@@ -21,5 +21,4 @@ add process p p > w-, w- > ta- vt~
 # Drell-Yan τ pair production
 add process p p > ta+ ta-
 
-# Output directory (will be set by driver script)
 output work/tau_pool -nojpeg

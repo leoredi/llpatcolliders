@@ -25,8 +25,8 @@
 #*********************************************************************
 # PDF choice: this automatically fixes also alpha_s and its evol.   *
 #*********************************************************************
-     nn23lo1   = pdlabel     ! Built-in MG5 LO PDF (avoids LHAPDF runtime downloads)
-     230000    = lhaid       ! Ignored when pdlabel != lhapdf
+     lhapdf    = pdlabel     ! NNPDF4.0 NLO via LHAPDF (matches the FONLL meson side; see hnl/vendored/PROVENANCE.md)
+     331700    = lhaid       ! NNPDF40_nlo_as_01180 central member
 
 #*********************************************************************
 # Renormalization and factorization scales                          *

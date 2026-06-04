@@ -11,8 +11,8 @@
 import model SM_HeavyN_CKM_AllMasses_LO
 
 # Define the multiparticle sets
-define p = g u c d s u~ c~ d~ s~
-define j = g u c d s u~ c~ d~ s~
+define p = g u c d s b u~ c~ d~ s~ b~
+define j = g u c d s b u~ c~ d~ s~ b~
 
 # Generate EW HNL production processes (MATHUSLA syntax)
 # Explicit W/Z decay ensures bosons appear in LHE (even if off-shell)
@@ -27,6 +27,3 @@ add process p p > z, z > vm n1
 
 # Neutral current: pp → Z → ν̄μ N1
 add process p p > z, z > vm~ n1
-
-# Output directory (will be set by driver script)
-output work/hnl_muon_MASS_PLACEHOLDER -nojpeg

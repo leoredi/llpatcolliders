@@ -30,12 +30,13 @@ from validation_plot import OUTPUT_BASE, PLOT_DIR, _sum_weights
 
 FLAVORS = ["Ue", "Umu", "Utau"]
 # Same channel folders as combine_channels.py / run_all.py.
-FRACTION_CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "Kmeson", "WZ"]
+FRACTION_CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "induced_tau", "Kmeson", "WZ"]
 CHAN_COLORS = {
     "Bmeson": "C0",
     "Dmeson": "C1",
     "Bc": "C2",
     "tau": "C3",
+    "induced_tau": "C6",
     "Kmeson": "C4",
     "WZ": "C5",
 }
@@ -43,7 +44,8 @@ CHAN_LABELS = {
     "Bmeson": "Bmeson",
     "Dmeson": "Dmeson",
     "Bc": "Bc",
-    "tau": r"$\tau$",
+    "tau": r"prompt $\tau$",
+    "induced_tau": r"induced $\tau$",
     "Kmeson": r"$K^\pm$",
     "WZ": r"$W/Z$",
 }

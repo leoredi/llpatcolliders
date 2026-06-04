@@ -123,3 +123,53 @@ All HNLCalc calls are made with unit coupling (`U^2 = 1`); the explicit
   (0903.1664), compatible with `0.72` within its quoted uncertainties.
   The deleted `0.747` block appears to have copied the `D -> K` value
   into the `Ds -> K` channel.
+
+## Prompt-tau pool (`tau_pool.csv`)
+
+`vendored/tau_pool.csv` is the LHE-extracted tau four-vector pool used by
+the prompt-tau driver (`production/madgraph/run_tau_production.py`,
+Stage 1). It is a *vendored data product* rather than a recomputed-each-run
+artefact, on the same convention as the FONLL `.dat` tables: a
+flavor- and m_N-independent input that downstream loops consume
+many times.
+
+### What it is
+
+- Single MG5 5.3.6.6 run of the proc card
+  `production/madgraph/cards/proc_card_tau_production.dat`:
+    - `pp -> W+ -> tau+ nu_tau`
+    - `pp -> W- -> tau- nu_tau_bar`
+    - `pp -> tau+ tau-`   (direct Drell-Yan; covers gamma*/Z exchange and
+                           gamma*/Z interference)
+- LHE parsed by `production/madgraph/lhe_to_csv.py::write_tau_csv`, which
+  emits a 6-column headerless CSV: `w, E, px, py, pz, origin`.
+- `origin` is the mother PDG resolved via MOTHUP1 in the LHE event block:
+  `+/-24` for W-mediated, `23` for explicit Z propagator, anything else
+  (gluon, light quarks) for direct-DY events.
+- The per-row `w` already encodes `sigma_LO / N_pool_events` (with
+  split-event-weight handling for the `tau+ tau-` branch -- each tau in a
+  ttbar event gets half the event weight) **and** has been pre-multiplied by
+  `K_FACTOR_EW = 1.3` (see `production/constants.py`) so the summed weight
+  approximates `sigma_NLO`.
+
+### MG5 / PDF settings
+
+- MG5_aMC v3.6.6, SM model (`import model sm`); no HeavyN at this stage.
+- `define p = g u c d s b u~ c~ d~ s~ b~` (5-flavor proton, see proc card).
+- PDF: `pdlabel = lhapdf`, `lhaid = 331700`
+  (`NNPDF40_nlo_as_01180`, same set the FONLL meson tables use).
+- LHAPDF discovered at runtime via the shared install at
+  `/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local/env/`; see
+  `production/madgraph/_mg5_common.py` for the dyld plumbing.
+
+### Regenerate
+
+```
+cd hnl
+rm vendored/tau_pool.csv
+python -m production.madgraph.run_tau_production \
+    --skip-mg5=false --nevents 100000 --nb-core 4
+```
+
+(or simply delete the file and re-run `python run_all.py`; the pipeline
+will rebuild Stage 1 automatically.)

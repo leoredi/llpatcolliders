@@ -36,21 +36,25 @@ HL-LHC (pp, sqrt(s) = 14 TeV).
     |   |
     |   |-- decay_engine/
     |   |   |-- kinematics.py            2-body (incl. polarized), 3-body flat, boost
+    |   |   |-- tau_decay.py             shared tau -> N + X sampler (HNLCalc-driven)
     |   |   |-- generate_meson_csvs.py   driver: B, D, Bc -> N
-    |   |   |-- generate_induced_tau.py  driver: Ds, B+ -> tau -> N
+    |   |   |-- generate_induced_tau.py  driver: Ds, B+ -> tau -> N   (induced_tau/)
     |   |   |-- generate_kaon_csvs.py    driver: K+ -> N + X
     |   |
-    |   |-- madgraph/                    opt-in: W/Z -> ell N via MG5
-    |       |-- run_wz_production.py
+    |   |-- madgraph/                    MG5-driven pipelines (default-on)
+    |       |-- _mg5_common.py           shared LHAPDF/dyld plumbing
+    |       |-- run_wz_production.py     W/Z -> l N                    (WZ/)
+    |       |-- run_tau_production.py    prompt tau (W,Z -> tau)       (tau/)
     |       |-- lhe_to_csv.py
     |       |-- cards/                   proc/run/param templates
     |
     |-- tests/                   parser, sampler, kinematics, smoke, kaon, mass-grid
     |
     |-- vendored/
-        |-- PROVENANCE.md                FONLL form params, HNLCalc, HeavyN UFO
+        |-- PROVENANCE.md                FONLL form params, HNLCalc, HeavyN UFO, tau pool
         |-- HNLCalc/                     pure-Python HNL BR computation
         |-- SM_HeavyN_CKM_AllMasses_LO/  MadGraph UFO model for W/Z driver
+        |-- tau_pool.csv                 prompt-tau LHE pool (Stage 1 product)
         |-- fonll_pp14tev_nnpdf40_nlo_as_01180_..._{charm,bottom}.dat
         |-- fonll_pp14tev_cteq66_..._{charm,bottom}.dat   # legacy comparison
 
@@ -90,12 +94,25 @@ Per HNL 4-vector i, in pb at `U^2 = 1`:
 - For Bc: `sigma_FONLL(bottom) * f_Bc` is replaced by `SIGMA_BC_PB` (separate
   measured input, ~0.9 ub)
 
-**Induced tau channel (Ds, B+ -> tau -> N):**
+**Induced tau channel (Ds, B+ -> tau -> N, output: `induced_tau/`):**
 
     w_i = 2 * sigma_FONLL(quark) * f_parent * BR(parent -> tau nu)
             * BR(tau -> N+X | U^2=1) / N_tau_sampled
 
 with `BR(Ds -> tau nu) = 5.35e-2`, `BR(B+ -> tau nu) = 1.09e-4` (PDG 2024).
+
+**Prompt tau channel (W -> tau nu, gamma*/Z -> tau tau -> tau -> N, output: `tau/`):**
+
+    w_i = (sigma_LO_MG5_taupool / N_pool) * K_FACTOR_EW
+            * BR(tau -> N+X | U^2=1)
+
+The first factor is the per-event LHE weight from a single shared MG5 tau
+pool (Stage 1, vendored at `vendored/tau_pool.csv`); Stage 2 multiplies by
+`BR(tau -> N+X)` per (flavor, m_N) point. The tau pool stores the mother
+PDG so per-event polarisation can be applied: `W+/- mothers -> fully
+polarised` (asymmetry = TAU_2BODY_ASYMMETRY = -1, same as Ds -> tau nu by
+the V-A + CP argument in `tau_decay.py`); any other mother (Z, gamma*,
+direct-DY initial-state quarks) -> `unpolarised` (asymmetry = 0).
 
 **Kaon channel (K+ -> ell+ N, K+ -> pi0 ell+ N):**
 
@@ -115,6 +132,27 @@ approximation status of `SIGMA_KAON_PB`.
 The per-row weight comes from the MG5 unweighted-event weight (`XWGTUP`) read
 out of the LHE, then scaled by `K_FACTOR_EW` so the summed weight is the
 NLO-corrected cross-section.
+
+The W/Z driver follows three explicit conventions worth flagging because they
+affect how the per-row weight should be interpreted:
+
+- **PDF set** — `pdlabel = lhapdf`, `lhaid = 331700` (NNPDF40_nlo_as_01180,
+  same set the FONLL meson tables use). The LO matrix element paired with an
+  NLO PDF is the standard practice in the HNL literature; the residual
+  ME-side correction is absorbed into `K_FACTOR_EW`.
+- **W width left at the SM value** in `param_card_template.dat`
+  (`DECAY 24 = 2.085 GeV`), even though the driver writes `U_alpha = 1`
+  for the active flavor. Pascoli-Ruiz convention: keep Gamma_W fixed at
+  SM so the MG5 cross-section factorises cleanly as
+  `sigma = sigma_SM_prod * BR(W -> ell N | U^2 = 1)`, and downstream
+  scaling `sigma -> sigma * U_alpha^2` recovers the physical rate at the
+  consumer's chosen mixing.
+- **K-factor is a flat 1.3 multiplier** (`K_FACTOR_EW` in
+  `production/constants.py`), applied per event after LHE parsing. The
+  true NLO/LO QCD K-factor for W/Z -> ell N drifts mildly with m_N
+  (~1.30 in the resonant region, ~1.15 at the high-m_N tail); the flat
+  value is the same approximation the upstream llpatcolliders_FONLL
+  pipeline uses.
 
 **Final yield at chosen `U^2` and luminosity:**
 
@@ -150,7 +188,7 @@ For Bc+ the (B0, Bs, B*0, Bs*) entries are listed for completeness — at every
 `m_N` in `MASS_GRID` they are kinematically closed (`m_Bc - m_B - m_lep < m_N`)
 and contribute nothing in practice.
 
-**Tau decay channels into N** (`generate_induced_tau.py`):
+**Tau decay channels into N** (shared sampler: `production/decay_engine/tau_decay.py`):
 
 - 2-body hadronic: `tau- -> {pi-, K-, rho-, K*-} + N`
 - 3-body leptonic: `tau- -> ell- nu_tau N` and `tau- -> ell- nubar_ell N`
@@ -222,11 +260,16 @@ for the vendored deps.
     python run_all.py --n-pool 50000        # smaller per-worker pool (faster, noisier)
     python run_all.py --skip-combine        # skip final combine step
 
-`run_all.py` submits one process per (flavor, channel) pair (15 jobs total:
-3 flavors x [3 meson channels + 1 tau + 1 kaon]), then runs the combine step at
-the end. The opt-in `--with-wz` flag adds one MadGraph job per flavor. The
+`run_all.py` submits one process per (flavor, channel) pair. Default channel
+set per flavor: 3 meson channels (Bmeson, Dmeson, Bc) + Kmeson + induced_tau
++ prompt-tau (Stage 2) + W/Z = 7 jobs/flavor, so 21 jobs in the parallel
+pool by default. Before the pool, prompt-tau Stage 1 runs once as a
+serialised MG5 step that produces `vendored/tau_pool.csv` (gated on file
+presence and row-count threshold), and after the pool the combine step runs
+serially. Heavy paths opt-out with `--no-wz` and `--no-prompt-tau`. The
 bottleneck is HNLCalc's 3-body BR integration, which dominates over meson
-sampling; pool generation is duplicated per worker but cheap.
+sampling; pool generation is duplicated per meson/kaon/induced-tau worker
+but cheap.
 
 ### Individual drivers (serial, one channel at a time)
 
@@ -240,17 +283,35 @@ sampling; pool generation is duplicated per worker but cheap.
 
 Each driver takes `--flavor`, `--masses`, `--n-pool`, `--seed`.
 
-### Electroweak W/Z -> ell N (opt-in, needs MadGraph)
+### Electroweak W/Z -> ell N (default-on, needs MadGraph)
 
     # one quick point (Umu, 1.0 GeV, 1000 events)
     python production/madgraph/run_wz_production.py --test
     # full grid for one flavor
     python production/madgraph/run_wz_production.py --flavor Umu
-    # or fold it into the parallel driver
-    python run_all.py --with-wz --wz-nevents 50000
+    # default pipeline; opt out with --no-wz if you don't have MG5
+    python run_all.py
+
+### Prompt tau (default-on, needs MadGraph)
+
+    # smoke: builds vendored/tau_pool.csv (1k events) + 1 mass × 1 flavor
+    python production/madgraph/run_tau_production.py --test
+    # reuse cached pool, decay across all (flavor, mass)
+    python production/madgraph/run_tau_production.py --skip-mg5
+    # opt out of the prompt-tau Stage 1 + Stage 2 entirely
+    python run_all.py --no-prompt-tau
+
+### Migration note (induced tau)
+
+Old runs wrote the induced-τ output to `output/.../tau/`. That folder is now
+reserved for *prompt* τ. Before re-running `combine_channels` on a pre-
+existing checkout: either delete the old `tau/` CSVs or move them to
+`induced_tau/`, otherwise you will double-count between the two paths once
+the new prompt-τ job repopulates `tau/`. A fresh `run_all.py` regenerates
+everything in the correct folders and is the safest path.
 
 The MadGraph executable is resolved at runtime (see
-`production/madgraph/run_wz_production.py::_resolve_mg5_exe`): `$HNL_MG5_EXE`,
+`production/madgraph/_mg5_common.py::_resolve_mg5_exe`): `$HNL_MG5_EXE`,
 then a drop-in `vendored/MG5_aMC_v3_6_6/`, then the sibling
 `llpatcolliders_FONLL` install. The 148 MB MG5 tree is not committed; only the
 460 KB HeavyN UFO model (`vendored/SM_HeavyN_CKM_AllMasses_LO/`) is vendored.
@@ -328,14 +389,19 @@ if revisited:
   `1 + (alpha·P_tau) cosθ` about the tau momentum axis. P_tau = -1 is exact
   for `P+ -> tau+ nu`; the analyzing power uses the chiral (maximal) limit
   `|alpha| = 1` (exact as m_N -> 0, an upper bound at finite m_N — see
-  `TAU_2BODY_ANALYZING_POWER` in `generate_induced_tau.py`). The 3-body
+  `TAU_2BODY_ANALYZING_POWER` in `production/decay_engine/tau_decay.py`). The 3-body
   leptonic modes remain flat phase space (their fully-correct treatment needs
   the decay matrix element), so a residual differential bias persists there.
 - **B0 -> tau nu omitted** — helicity-suppressed in SM; only B+ -> tau nu
   retained in the induced-tau chain.
-- **W -> tau nu omitted** — moves to the W/Z PR. This is the dominant
-  prompt-tau source at LHC and the induced-tau chain alone underestimates
-  the tau parent yield.
+- **Prompt tau channel** (W -> tau nu, gamma*/Z -> tau tau) is now produced
+  by `production/madgraph/run_tau_production.py` and lands in `tau/`; the
+  earlier "dominant prompt-tau missing" caveat is retired. Its absolute
+  rate is sub-dominant to induced tau at LHC -- charm production
+  (sigma_ccbar ~ 2.7 mb) makes Ds -> tau nu the leading tau source by
+  ~2 orders of magnitude over W -> tau nu (sigma_W ~ 0.1 mb x BR). Prompt
+  tau still matters for completeness and for forward-rapidity / high-pT
+  signatures.
 - **Approximate kaon (K+ -> lN) flux** — the kaon channel is now included
   (`generate_kaon_csvs.py`), but FONLL supplies no light-meson spectrum, so
   the K± production uses a parametrized soft-QCD flux (Tsallis pT + Gaussian

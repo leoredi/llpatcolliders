@@ -39,11 +39,18 @@ OUTPUT_BASE = HNL_ROOT / "output" / "llp_4vectors"
 PLOT_DIR = HNL_ROOT / "output" / "debug_plots"
 
 FLAVORS = ["Ue", "Umu", "Utau"]
-OUR_CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "Kmeson", "WZ"]
-COMMON_CHANNELS = ["Bmeson", "Dmeson", "tau"]  # present in both pipelines
+OUR_CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "induced_tau", "Kmeson", "WZ"]
+# COMMON_CHANNELS are those present in the MATHUSLA reference. The MATHUSLA
+# 'Tau' files are induced-only (no prompt-tau), so we match against
+# induced_tau on our side; comparing against our 'tau' would mix in
+# prompt-tau contributions the reference doesn't have.
+COMMON_CHANNELS = ["Bmeson", "Dmeson", "induced_tau"]
 
 # Map our channel folder -> reference channel token in the filename.
-REF_TOKEN = {"Bmeson": "Bmeson", "Dmeson": "Dmeson", "tau": "Tau", "WZ": "WZ"}
+REF_TOKEN = {
+    "Bmeson": "Bmeson", "Dmeson": "Dmeson",
+    "induced_tau": "Tau", "WZ": "WZ",
+}
 FLAVOR_SUFFIX = {"Ue": "Ue", "Umu": "Umu", "Utau": "Utau"}
 
 
