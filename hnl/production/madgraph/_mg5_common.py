@@ -151,6 +151,53 @@ def force_compile_subprocesses(work_subdir, log_path, timeout=900):
     return False
 
 
+def write_process_block(out_file, proc_lines):
+    """Copy MG5 process commands while preserving multiparticle definitions.
+
+    The earlier loop in each driver kept only `generate` and `add process`
+    lines, which silently dropped the `define p = g u c d s b ...` line that
+    promotes the proton from MG5's default 4-flavor proton to a 5-flavor one.
+    Without it, b-initiated subprocesses (CKM-suppressed for W/Z + lN but
+    non-zero for DY -> tau pair) are excluded from generation. This helper
+    keeps any line that starts with `define`, `generate`, or `add process`,
+    so the 5-flavor proton in the cards survives into the MG5 command file.
+    """
+    for line in proc_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if (
+            stripped.startswith("define ")
+            or stripped.startswith("generate ")
+            or stripped.startswith("add process ")
+        ):
+            out_file.write(line)
+
+
+def has_five_flavor_proton(work_subdir):
+    """Return True iff the cached MG5 process dir was built with `b` in `p`.
+
+    MG5 writes the resolved process card to Cards/proc_card_mg5.dat after
+    parsing; reading it back tells us whether the cached build used the
+    5-flavor proton. We invalidate cached process dirs from older runs (built
+    before write_process_block landed) by checking the recorded `define p`
+    line and returning False if `b` is missing — the caller will then rebuild.
+    """
+    card = work_subdir / "Cards" / "proc_card_mg5.dat"
+    if not card.exists():
+        return False
+    for line in card.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("define p"):
+            continue
+        # `define p = g u c d s b u~ c~ d~ s~ b~` -> tokens on the RHS of `=`.
+        if "=" not in stripped:
+            continue
+        tokens = stripped.split("=", 1)[1].split()
+        return "b" in tokens
+    return False
+
+
 def patch_rpath_for_lhapdf(work_subdir):
     """macOS-only: symlink libLHAPDF.dylib next to every compiled MG5 binary.
 

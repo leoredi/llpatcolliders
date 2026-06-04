@@ -39,6 +39,7 @@ from production.madgraph._mg5_common import (
     MG5_EXE, LHAPDF_CONFIG, PYTHON_EXE,
     mg5_subprocess_env, patch_me5_configuration,
     patch_rpath_for_lhapdf, force_compile_subprocesses,
+    write_process_block, has_five_flavor_proton,
 )
 
 # Vendored HeavyN UFO model (loaded by absolute path so MG5 picks up this copy
@@ -73,7 +74,10 @@ def get_or_create_process_dir(flavor):
     mg5_flavor = FLAVOR_TO_MG5[flavor]
     work_subdir = WORK_DIR / f"hnl_{mg5_flavor}"
 
-    if (work_subdir / "bin" / "generate_events").exists():
+    if (
+        (work_subdir / "bin" / "generate_events").exists()
+        and has_five_flavor_proton(work_subdir)
+    ):
         return work_subdir
 
     if work_subdir.exists():
@@ -92,9 +96,7 @@ def get_or_create_process_dir(flavor):
     with open(cmd_file, 'w') as f:
         f.write(f"import model {MODEL_DIR}\n\n")
         f.write("set automatic_html_opening False\n")
-        for line in proc_lines:
-            if ('generate' in line or 'add process' in line) and not line.strip().startswith('#'):
-                f.write(line)
+        write_process_block(f, proc_lines)
         f.write(f"\noutput {work_subdir} -nojpeg\n")
         f.write("quit\n")
 
@@ -201,6 +203,9 @@ def run_single_point(flavor, mass, n_events, nb_core=1):
     csv_dir = OUTPUT_BASE / flavor / "WZ"
     csv_dir.mkdir(parents=True, exist_ok=True)
     csv_path = csv_dir / f"mN_{mass_label}.csv"
+    # Remove any previous CSV so a mid-pipeline MG5 failure cannot leave a
+    # stale file in place that combine_channels would silently consume.
+    csv_path.unlink(missing_ok=True)
 
     print(f"\n  [{flavor}] m_N = {mass} GeV")
 

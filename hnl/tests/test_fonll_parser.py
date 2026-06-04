@@ -136,15 +136,24 @@ print(json.dumps({
     "sampler_bottom_via_parser": meson_sampler.fonll_parser.FONLL_FILES["bottom"].name,
 }))
 """
+    # The subprocess imports `production` as a top-level package, which only
+    # resolves when its parent (hnl/) is on PYTHONPATH and cwd points at hnl/.
+    # The test runner doesn't guarantee either of those, so prep both here.
+    from pathlib import Path
+    hnl_root = Path(__file__).resolve().parent.parent
     for env_value, expected_set, expected_substr in (
         ("nnpdf40_nlo", "nnpdf40_nlo", "nnpdf40_nlo_as_01180"),
         ("cteq66_legacy", "cteq66_legacy", "cteq66"),
     ):
         env = os.environ.copy()
         env["HNL_FONLL_SET"] = env_value
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            f"{hnl_root}:{existing_pp}" if existing_pp else str(hnl_root)
+        )
         result = subprocess.run(
             [sys.executable, "-c", code], env=env, check=False,
-            capture_output=True, text=True,
+            capture_output=True, text=True, cwd=str(hnl_root),
         )
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)

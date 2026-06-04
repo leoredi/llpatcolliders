@@ -66,6 +66,7 @@ from production.madgraph._mg5_common import (
     MG5_EXE, LHAPDF_CONFIG, PYTHON_EXE,
     mg5_subprocess_env, patch_me5_configuration,
     patch_rpath_for_lhapdf, force_compile_subprocesses,
+    write_process_block, has_five_flavor_proton,
 )
 from production.madgraph.lhe_to_csv import LHEParser
 
@@ -88,7 +89,10 @@ def _build_process_dir():
     """Build the SM tau-pool MG5 process directory (cached at work/tau_pool/)."""
     work_subdir = WORK_DIR / "tau_pool"
 
-    if (work_subdir / "bin" / "generate_events").exists():
+    if (
+        (work_subdir / "bin" / "generate_events").exists()
+        and has_five_flavor_proton(work_subdir)
+    ):
         return work_subdir
 
     if work_subdir.exists():
@@ -109,9 +113,7 @@ def _build_process_dir():
         # the MG5 stage; HNLCalc handles tau -> N analytically downstream.
         f.write("import model sm\n\n")
         f.write("set automatic_html_opening False\n")
-        for line in proc_lines:
-            if ("generate" in line or "add process" in line) and not line.strip().startswith("#"):
-                f.write(line)
+        write_process_block(f, proc_lines)
         f.write(f"\noutput {work_subdir} -nojpeg\n")
         f.write("quit\n")
 

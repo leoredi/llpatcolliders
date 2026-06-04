@@ -48,7 +48,6 @@ sys.path.insert(0, str(HNL_ROOT))
 sys.path.insert(0, str(HNL_ROOT / "vendored" / "HNLCalc"))
 
 from config_mass_grid import MASS_GRID
-from production.constants import M_TAU
 
 
 # Module-level worker functions (must be picklable for ProcessPoolExecutor).
@@ -75,8 +74,11 @@ def _worker_induced_tau(flavor: str, masses: list, n_pool: int, seed: int) -> st
     rng = np.random.default_rng(seed)
     random.seed(seed)
     tau_4v, tau_w = build_tau_pool(n_pool, rng)
-    sub_masses = [m for m in masses if m < M_TAU]
-    process_flavor(flavor, tau_4v, tau_w, sub_masses, rng)
+    # Pass the full mass list, not a pre-filtered subset. process_flavor writes
+    # an empty sentinel CSV for m_N >= m_tau so combine_channels sees a fresh
+    # "channel closed" marker every run instead of inheriting stale rows from
+    # a previous run on a wider grid.
+    process_flavor(flavor, tau_4v, tau_w, masses, rng)
     return f"itau  {flavor:>5s}"
 
 
@@ -100,9 +102,10 @@ def _worker_prompt_tau_stage2(flavor: str, masses: list, seed: int) -> str:
     rng = np.random.default_rng(seed)
     random.seed(seed)
     pool_w, pool_E, pool_px, pool_py, pool_pz, pool_origin = _load_pool()
-    sub_masses = [m for m in masses if m < M_TAU]
+    # Pass the full mass list; process_flavor writes the empty sentinel for
+    # m_N >= m_tau (see _worker_induced_tau for the rationale).
     process_flavor(flavor, pool_w, pool_E, pool_px, pool_py, pool_pz, pool_origin,
-                   sub_masses, rng)
+                   masses, rng)
     return f"ptau  {flavor:>5s}"
 
 
@@ -111,14 +114,20 @@ def _worker_wz(flavor: str, masses: list, n_events: int, nb_core: int) -> str:
 
     Default-on since the December refactor. Each mass spawns a MadGraph
     generate_events run (process dir cached per flavor inside the worker).
-    Failures on individual points are reported but do not abort.
+    We iterate through every mass so the failure report lists *all* bad
+    points, then raise once at the end. Raising surfaces the failure to the
+    parallel driver's ``failures`` list (the previous "count successes
+    silently" path let combine_channels happily skip absent WZ CSVs and the
+    driver still exited 0).
     """
     from production.madgraph.run_wz_production import run_single_point
-    n_ok = 0
+    failed = []
     for m in masses:
-        if run_single_point(flavor, m, n_events, nb_core=nb_core):
-            n_ok += 1
-    return f"wz    {flavor:>5s} ({n_ok}/{len(masses)} points)"
+        if not run_single_point(flavor, m, n_events, nb_core=nb_core):
+            failed.append(m)
+    if failed:
+        raise RuntimeError(f"W/Z failed for {flavor} masses: {failed}")
+    return f"wz    {flavor:>5s} ({len(masses)}/{len(masses)} points)"
 
 
 def main():
@@ -184,8 +193,12 @@ def main():
                   f"building pool ({pt_nevents} events) ...")
             ok = generate_tau_pool(pt_nevents, nb_core=args.prompt_tau_nb_core)
             if not ok:
-                print("Prompt-tau Stage 1 failed; skipping prompt-tau Stage 2 fan-out.")
-                args.no_prompt_tau = True
+                # Stage 1 is the gating step for the entire prompt-tau channel.
+                # Continuing here would let combine_channels silently treat the
+                # missing tau/ folder as zero and the driver exit 0; abort
+                # instead so the failure is visible.
+                print("Prompt-tau Stage 1 failed; aborting.")
+                return 1
 
     jobs = []   # list of (fn, args_tuple) used by submit loop
     seed = args.seed
@@ -229,10 +242,19 @@ def main():
     if not args.skip_combine:
         print("\nCombining channels...")
         from production.combine_channels import combine_for_point
+        # active_channels reflects what this invocation actually scheduled, so
+        # combine's strict mode does not flag --no-wz / --no-prompt-tau output
+        # trees as missing the WZ/tau directories.
+        active_channels = ["Bmeson", "Dmeson", "Bc", "induced_tau", "Kmeson"]
+        if not args.no_prompt_tau:
+            active_channels.append("tau")
+        if not args.no_wz:
+            active_channels.append("WZ")
         n_combined = 0
         for flavor in args.flavor:
             for m in masses:
-                if combine_for_point(flavor, m) > 0:
+                if combine_for_point(flavor, m, channels=active_channels,
+                                     strict=True) > 0:
                     n_combined += 1
         print(f"  combined files written for {n_combined} (flavor, mass) points")
 

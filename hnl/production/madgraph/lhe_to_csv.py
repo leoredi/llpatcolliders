@@ -152,6 +152,13 @@ class LHEParser:
         ``origin`` is the mother PDG (24=W+, -24=W-, 23=Z, ...) so a
         downstream consumer can apply per-process polarisation when
         decaying tau -> N + X.
+
+        Each tau row carries the *full* event weight. For HNL production every
+        tau in the event is an independent potential parent, so a Z/gamma* ->
+        tau+ tau- event contributes one expected N decay per tau (weight x BR
+        per row), not half. Splitting the event weight across the two taus
+        would underweight the Drell-Yan contribution by 2x. The W -> tau nu
+        branch is unaffected (one tau per event, so split-vs-not is identical).
         """
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -159,7 +166,7 @@ class LHEParser:
         rows = []
         for p in self.extract_particles(
             {self.PDG_TAU_MINUS, self.PDG_TAU_PLUS},
-            split_event_weight=True
+            split_event_weight=False,
         ):
             rows.append([p['weight'], p['E'], p['px'], p['py'], p['pz'], p['origin']])
 

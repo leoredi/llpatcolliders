@@ -24,19 +24,37 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from config_mass_grid import MASS_GRID, format_mass_for_filename
 
 OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
-# All seven channel directories are read for every flavor. Any missing or
-# empty CSV is silently skipped by combine_for_point (kinematic closure or
-# a not-yet-run channel just contributes zero rows). Tau is split into two
-# physical sources written to different folders by their respective drivers:
+# Channel inventory semantics:
+#   - existing file, zero bytes  -> channel closed at this m_N (kinematics).
+#   - existing file, >0 bytes    -> real contribution, read and concatenate.
+#   - file missing               -> channel never ran for this point.
+# combine_for_point distinguishes the latter two when strict=True (used by
+# run_all so a silent driver failure cannot pass off an incomplete combined
+# file as success). Tau is split into two physical sources written to
+# different folders by their respective drivers:
 #   tau/         — prompt: pp -> W -> tau nu  /  pp -> Z -> tau tau (MG5)
 #   induced_tau/ — cascade: Ds, B+ -> tau nu -> tau -> N (FONLL meson source)
 CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "induced_tau", "Kmeson", "WZ"]
 FLAVORS = ["Ue", "Umu", "Utau"]
 
 
-def combine_for_point(flavor, mass):
+def combine_for_point(flavor, mass, channels=None, strict=False):
     """
     Combine all channel CSVs for a single (flavor, mass) point.
+
+    Parameters
+    ----------
+    flavor, mass
+        Flavor label and HNL mass.
+    channels : list of str, optional
+        Per-call channel inventory (default: the module-level CHANNELS).
+        Callers that intentionally skip a channel (``--no-wz``,
+        ``--no-prompt-tau``) should pass the reduced list so a legitimately
+        absent channel is not flagged as missing in strict mode.
+    strict : bool
+        If True, raise RuntimeError when any requested channel CSV is missing
+        or unreadable. ``empty`` (zero-byte) files are always treated as
+        "channel closed" and never trigger strict failure.
 
     Returns
     -------
@@ -48,18 +66,32 @@ def combine_for_point(flavor, mass):
     combined_dir.mkdir(parents=True, exist_ok=True)
     combined_path = combined_dir / f"mN_{mass_label}.csv"
 
-    all_data = []
-    for ch in CHANNELS:
+    channels = CHANNELS if channels is None else channels
+    all_data, missing, bad = [], [], []
+    for ch in channels:
         csv_path = OUTPUT_BASE / flavor / ch / f"mN_{mass_label}.csv"
-        if csv_path.exists() and csv_path.stat().st_size > 0:
-            try:
-                data = np.loadtxt(csv_path, delimiter=",")
-                if data.ndim == 1:
-                    data = data.reshape(1, -1)
-                if data.shape[1] >= 5:
-                    all_data.append(data[:, :5])  # take first 5 columns only
-            except Exception as e:
-                print(f"  Warning: could not read {csv_path}: {e}")
+        if not csv_path.exists():
+            missing.append(ch)
+            continue
+        if csv_path.stat().st_size == 0:
+            # Empty sentinel: channel closed at this m_N. Legitimate zero.
+            continue
+        try:
+            data = np.loadtxt(csv_path, delimiter=",")
+            if data.ndim == 1:
+                data = data.reshape(1, -1)
+            if data.shape[1] >= 5:
+                all_data.append(data[:, :5])
+            else:
+                bad.append(f"{ch}: only {data.shape[1]} columns")
+        except Exception as e:
+            bad.append(f"{ch}: {e}")
+
+    if strict and (missing or bad):
+        raise RuntimeError(
+            f"incomplete combine for {flavor} mN={mass_label}: "
+            f"missing={missing}, bad={bad}"
+        )
 
     if all_data:
         combined = np.vstack(all_data)
