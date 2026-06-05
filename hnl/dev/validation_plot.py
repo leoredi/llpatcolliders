@@ -8,7 +8,8 @@ called for in the production-review next-steps: a factor-of-2 disagreement on
 the common channels would flag a quark+antiquark double-count. Dev-only — see
 hnl/dev/README.md.
 
-Our data:   output/llp_4vectors/{flavor}/{channel}/mN_{label}.csv  (weight col 0)
+Our data:   tmp/runs/<tag>/llp_4vectors/{flavor}/{channel}/mN_{label}.csv
+            (weight col 0)
 Reference:  llpatcolliders_FONLL/vendored/MATHUSLA_LLPfiles_RHN_U{e,mu,tau}/
             All_RHN_*/RHN_*_LLPweight4vector{Bmeson,Dmeson,Tau,WZ}list_mN_*.csv
 
@@ -36,9 +37,10 @@ HNL_ROOT = Path(__file__).resolve().parent.parent  # hnl/dev/ -> hnl/
 sys.path.insert(0, str(HNL_ROOT))
 
 from config_mass_grid import MASS_GRID, format_mass_for_filename
+from production.paths import LLP_VECTORS_DIR, ANALYSIS_DIR
 
-OUTPUT_BASE = HNL_ROOT / "output" / "llp_4vectors"
-PLOT_DIR = HNL_ROOT / "output" / "debug_plots"
+OUTPUT_BASE = LLP_VECTORS_DIR
+PLOT_DIR = ANALYSIS_DIR / "debug_plots"
 
 FLAVORS = ["Ue", "Umu", "Utau"]
 OUR_CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "induced_tau", "Kmeson", "WZ"]

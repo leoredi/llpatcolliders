@@ -110,7 +110,7 @@ with `BR(Ds -> tau nu) = 5.35e-2`, `BR(B+ -> tau nu) = 1.09e-4` (PDG 2024).
             * BR(tau -> N+X | U^2=1)
 
 The first factor is the per-event LHE weight from a single shared MG5 tau
-pool (Stage 1, vendored at `vendored/tau_pool.csv`); Stage 2 multiplies by
+pool (Stage 1, cached at `tmp/cache/tau_pool.csv` by default); Stage 2 multiplies by
 `BR(tau -> N+X)` per (flavor, m_N) point. The tau pool stores the mother
 PDG so per-event polarisation can be applied: `W+/- mothers -> fully
 polarised` (asymmetry = TAU_2BODY_ASYMMETRY = -1, same as Ds -> tau nu by
@@ -212,9 +212,17 @@ All drivers write headerless CSVs with five columns:
 
 Files end up at:
 
-    hnl/output/llp_4vectors/{Ue,Umu,Utau}/{Bmeson,Dmeson,Bc,Kmeson,induced_tau,tau}/mN_{mass}.csv
-    hnl/output/llp_4vectors/{Ue,Umu,Utau}/WZ/mN_{mass}.csv         # MadGraph (default-on)
-    hnl/output/llp_4vectors/{Ue,Umu,Utau}/combined/mN_{mass}.csv
+    hnl/tmp/runs/default/llp_4vectors/{Ue,Umu,Utau}/{Bmeson,Dmeson,Bc,Kmeson,induced_tau,tau}/mN_{mass}.csv
+    hnl/tmp/runs/default/llp_4vectors/{Ue,Umu,Utau}/WZ/mN_{mass}.csv         # MadGraph (default-on)
+    hnl/tmp/runs/default/llp_4vectors/{Ue,Umu,Utau}/combined/mN_{mass}.csv
+
+Path defaults are centralised in `production/paths.py`. Useful overrides:
+
+    HNL_RUN_TAG=my_scan          # hnl/tmp/runs/my_scan/...
+    HNL_RUN_DIR=/path/to/run     # direct run directory override
+    HNL_TMP_DIR=/path/to/tmp     # relocate all local artifacts
+    HNL_MG5_WORK_DIR=/path/to/cache/madgraph
+    HNL_TAU_POOL_CSV=/path/to/tau_pool.csv
 
 `mN_{mass}` uses the encoding from `config_mass_grid.format_mass_for_filename`
 (e.g. `1.025 GeV -> mN_1p025.csv`; three decimals so the 15/25-MeV grid
@@ -238,15 +246,24 @@ truncation.
 
 ## Setup
 
-Requires Python 3.10+ with: `numpy`, `pandas`, `scipy`, `sympy`, `mpmath`,
-`particle`, `numba`, `pytest` (tests only). Recommended via conda
-(matching the existing repo convention):
+Recommended: create the project's own conda env from the committed spec:
 
-    conda env list  # check if you already have it
-    # or set up a new env with the project packages
+    conda env create -f hnl/environment.yml
+    conda activate hnl
 
-For development the maintainer uses `conda env llpatcolliders_FONLL`;
-substitute your own env name in the run commands below.
+Direct Python deps are `numpy`, `particle`, `matplotlib`, `pytest` (tests
+only). LHAPDF (binary + library) ships with the env. The PDF data
+(`NNPDF40_nlo_as_01180`, ~340 MB) is **not** re-downloaded: it is reused
+from the sibling `NNPDF40/fonll-local/env/share/LHAPDF/` install via
+`LHAPDF_DATA_PATH`, injected automatically by
+`production/madgraph/_mg5_common.mg5_subprocess_env`. Override the data
+path with `$HNL_LHAPDF_DATA` if you ever relocate the PDF set.
+
+Once the `hnl` env is active, `_resolve_lhapdf_config` discovers
+`$CONDA_PREFIX/bin/lhapdf-config` automatically; no
+`HNL_LHAPDF_CONFIG` override is needed. If you don't activate this env,
+both resolvers fall back to the sibling `NNPDF40/fonll-local/env`
+install.
 
 The vendored `HNLCalc` package is bundled in `hnl/vendored/HNLCalc/` and
 imported via a `sys.path.insert` from each driver. No pip install needed
@@ -267,8 +284,9 @@ for the vendored deps.
 set per flavor: 3 meson channels (Bmeson, Dmeson, Bc) + Kmeson + induced_tau
 + prompt-tau (Stage 2) + W/Z = 7 jobs/flavor, so 21 jobs in the parallel
 pool by default. Before the pool, prompt-tau Stage 1 runs once as a
-serialised MG5 step that produces `vendored/tau_pool.csv` (gated on file
-presence and row-count threshold), and after the pool the combine step runs
+serialised MG5 step that produces `tmp/cache/tau_pool.csv` (gated on file
+presence and row-count threshold; legacy `vendored/tau_pool.csv` is still
+readable as a fallback), and after the pool the combine step runs
 serially. Heavy paths opt-out with `--no-wz` and `--no-prompt-tau`. The
 bottleneck is HNLCalc's 3-body BR integration, which dominates over meson
 sampling; pool generation is duplicated per meson/kaon/induced-tau worker
@@ -297,7 +315,7 @@ Each driver takes `--flavor`, `--masses`, `--n-pool`, `--seed`.
 
 ### Prompt tau (default-on, needs MadGraph)
 
-    # smoke: builds vendored/tau_pool.csv (1k events) + 1 mass × 1 flavor
+    # smoke: builds tmp/cache/madgraph/tau_pool_test.csv (1k events) + 1 mass × 1 flavor
     python production/madgraph/run_tau_production.py --test
     # reuse cached pool, decay across all (flavor, mass)
     python production/madgraph/run_tau_production.py --skip-mg5
@@ -319,7 +337,7 @@ then a drop-in `vendored/MG5_aMC_v3_6_6/`, then the sibling
 `llpatcolliders_FONLL` install. The 148 MB MG5 tree is not committed; only the
 460 KB HeavyN UFO model (`vendored/SM_HeavyN_CKM_AllMasses_LO/`) is vendored.
 MG5 is invoked as a plain subprocess — no Docker or other container runtime is
-needed. Output lands at `output/llp_4vectors/{flavor}/WZ/mN_*.csv` and is
+needed. Output lands at `tmp/runs/<tag>/llp_4vectors/{flavor}/WZ/mN_*.csv` and is
 picked up automatically by the combine step.
 
 ## Tests

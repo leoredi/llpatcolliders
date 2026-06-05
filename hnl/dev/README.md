@@ -11,8 +11,8 @@ helps us keep working, but is **never** part of an upstream PR
 
 ### `debug_plots.py`
 Yield-vs-mass per channel, channel-fraction stacks, and HNL spectra at a fixed
-mass. Reads `hnl/output/llp_4vectors/`, writes PNGs to
-`hnl/output/debug_plots/`. Run it after `run_all.py` to see whether the
+mass. Reads `hnl/tmp/runs/<tag>/llp_4vectors/`, writes PNGs to
+`hnl/tmp/runs/<tag>/analysis/debug_plots/`. Run it after `run_all.py` to see whether the
 production curves moved.
 
 ```bash

@@ -2,7 +2,7 @@
 """
 hnl/dev/debug_plots.py
 
-Internal production diagnostics from output/llp_4vectors CSVs.
+Internal production diagnostics from tmp/runs/<tag>/llp_4vectors CSVs.
 Dev-only — see hnl/dev/README.md.
 
   python dev/debug_plots.py --channel-fraction Ue
