@@ -128,12 +128,12 @@ All HNLCalc calls are made with unit coupling (`U^2 = 1`); the explicit
 
 ## Prompt-tau pool (`tau_pool.csv`)
 
-`vendored/tau_pool.csv` is the LHE-extracted tau four-vector pool used by
-the prompt-tau driver (`production/madgraph/run_tau_production.py`,
-Stage 1). It is a *vendored data product* rather than a recomputed-each-run
-artefact, on the same convention as the FONLL `.dat` tables: a
-flavor- and m_N-independent input that downstream loops consume
-many times.
+`tmp/cache/tau_pool.csv` is the default LHE-extracted tau four-vector pool
+used by the prompt-tau driver (`production/madgraph/run_tau_production.py`,
+Stage 1). The older `vendored/tau_pool.csv` remains readable as a
+compatibility fallback, but new Stage-1 generation writes to `hnl/tmp`.
+The pool is a generated data product: a flavor- and m_N-independent input
+that downstream loops consume many times.
 
 ### What it is
 
@@ -148,9 +148,9 @@ many times.
 - `origin` is the mother PDG resolved via MOTHUP1 in the LHE event block:
   `+/-24` for W-mediated, `23` for explicit Z propagator, anything else
   (gluon, light quarks) for direct-DY events.
-- The per-row `w` already encodes `sigma_LO / N_pool_events` (with
-  split-event-weight handling for the `tau+ tau-` branch -- each tau in a
-  ttbar event gets half the event weight) **and** has been pre-multiplied by
+- The per-row `w` already encodes `sigma_LO / N_pool_events`. For
+  `tau+ tau-`, each tau row keeps the full event weight because either tau is
+  an independent potential HNL parent. The pool is pre-multiplied by
   `K_FACTOR_EW = 1.3` (see `production/constants.py`) so the summed weight
   approximates `sigma_NLO`.
 
@@ -168,7 +168,7 @@ many times.
 
 ```
 cd hnl
-rm vendored/tau_pool.csv
+rm -f tmp/cache/tau_pool.csv
 python -m production.madgraph.run_tau_production \
     --nevents 100000 --nb-core 4
 ```
