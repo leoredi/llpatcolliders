@@ -1,23 +1,6 @@
-"""
-production/constants.py
-
-Physical constants for HNL production at LHC 14 TeV.
-
-Masses via the `particle` package (PDG 2024).
-Cross-sections from FONLL NLO+NLL.
-Fragmentation fractions from PDG/HFLAV/ALICE.
-
-References:
-  - FONLL: Cacciari, Greco, Nason (NLO+NLL heavy-quark production)
-  - Fragmentation fractions: PDG 2024, ALICE D-meson measurements, HFLAV
-  - Bc: σ(pp → Bc) from BCVEGPY/FONLL (CMS/LHCb)
-"""
+"""Physical constants for HNL production at LHC 14 TeV."""
 
 from particle import Particle
-
-# ==========================================================================
-# Particle masses (GeV) from PDG via `particle` package
-# ==========================================================================
 
 M_B0 = Particle.from_pdgid(511).mass * 1e-3      # B0
 M_BPLUS = Particle.from_pdgid(521).mass * 1e-3    # B+
@@ -32,93 +15,27 @@ M_MUON = Particle.from_pdgid(13).mass * 1e-3      # muon
 M_PION = Particle.from_pdgid(211).mass * 1e-3     # pi+
 M_KAON = Particle.from_pdgid(321).mass * 1e-3     # K+
 
-# ==========================================================================
-# FONLL inclusive cross-sections at 14 TeV (pb)
-# ==========================================================================
-
-# Inclusive σ(pp → Bc+ + Bc-) ≈ 0.9 μb at 14 TeV (BCVEGPY/FONLL, CMS/LHCb).
-# The value already covers both charges, so the Bc weight formula in
-# generate_meson_csvs.process_channel deliberately omits the (q + q-bar)
-# factor of 2 that the B/D mesons apply (those use FONLL grids quoted as
-# (q + q-bar)/2 — see NNPDF40/fonll-nnpdf40/PROVENANCE.md).
+# Inclusive pp -> Bc+ + Bc-; already both charges, so no downstream factor 2.
 SIGMA_BC_PB = 0.9e6
 
-# ==========================================================================
-# Electroweak K-factor (W/Z → ℓ N production)
-# ==========================================================================
-
-# NLO/LO QCD correction applied to the parton-level MadGraph LO cross-section
-# for the electroweak HNL production channel (pp → W/Z → ℓ N). Matches the
-# value used by the upstream llpatcolliders_FONLL W/Z pipeline.
 K_FACTOR_EW = 1.3
 
-# ==========================================================================
-# Charged-kaon production (K+ -> ℓ+ N, dominant HNL source below ~0.5 GeV)
-# ==========================================================================
-#
-# FONLL is a heavy-quark (charm/bottom) calculation and supplies no light-meson
-# spectrum, so the kaon channel uses a parametrized soft-QCD K± flux instead of
-# a tabulated grid. THESE ARE APPROXIMATE INPUTS — an order-of-magnitude flux
-# and a generic Tsallis pT / Gaussian-rapidity shape, intended to fill in the
-# sub-0.5 GeV region that was previously simply missing. Treat the absolute
-# kaon yield as a systematic, not a precision prediction; override via the
-# constants below or regenerate from a measured K± spectrum when available.
-# XXX scope: replace with a measured K± (pT, y) spectrum (e.g. ALICE/CMS LHC
-# pp identified-hadron data) and drop the parametric Tsallis/Gaussian path.
-# Tracked as a data/scope item.
-#
-# Effective inclusive K± production cross-section at 14 TeV:
-#   sigma_K± ≈ sigma_inel × <n_{K±}>
-# with sigma_inel(14 TeV) ≈ 80 mb = 8e10 pb and a mean charged-kaon
-# multiplicity per inelastic event of order a few. The value below bundles both
-# charges (K+ and K-), matching the "particle + antiparticle" convention used
-# for the meson channels (so no extra factor of 2 is applied downstream).
+# Approximate K+ + K- flux: replace with measured K+- (pT,y) when available.
 SIGMA_KAON_PB = 3.0e11  # ~80 mb × ~4 K± per inelastic event (approximate)
 
-# Tsallis/Hagedorn transverse-momentum shape parameters (identified-hadron fits
-# at LHC energies give T ~ 0.15-0.20 GeV, n ~ 6-8 for kaons).
 KAON_TSALLIS_T = 0.17   # GeV
 KAON_TSALLIS_N = 7.0
 KAON_PT_MAX = 5.0       # GeV, sampling ceiling (kaons of interest are soft)
-# Rapidity shape: Gaussian in y approximating the LHC dN/dy plateau + tails.
 KAON_RAPIDITY_SIGMA = 2.5
-# Physical energy ceiling for sampled kaons: a single hadron from a 14 TeV pp
-# collision cannot carry more than the per-beam energy. Without this cap the
-# Gaussian rapidity tail (sigma=2.5) reaches |y| ~ 12 where mT*cosh(y) blows up
-# past 40 TeV, breaking the 2-body decay boost numerics (events with m_HNL^2<0).
-# The sampler accept-rejects on E_K < KAON_E_MAX after the full (pT, y) draw.
 KAON_E_MAX = 7000.0  # GeV, half of sqrt(s) at LHC 14 TeV
 
-# ==========================================================================
-# Fragmentation fractions
-# ==========================================================================
-
-# Central pp fragmentation policy for the HL-LHC off-axis study.
-#
-# The FONLL tables are generated with fragmentation fraction 1 and provide the
-# kinematic meson-shape input. Physical species fractions are applied here in
-# the event-weight layer. Species sampling normalizes over the simulated meson
-# subset, but the weights below keep the absolute fragmentation fractions.
-#
-# Charm: ALICE pp, sqrt(s)=13 TeV, |y|<0.5 fragmentation fractions.
-# Bottom: LHCb pp, sqrt(s)=13 TeV, 2<eta<5, 4<pT<25 GeV averages with
-# fs/(fu+fd)=0.122, f_Lambdab/(fu+fd)=0.259, and fu=fd.
-#
-# Baryons are tracked as omitted fractions because the current HNLCalc meson
-# production layer does not simulate Lambda_c/Xi_c/Lambda_b parents.
-# XXX scope: aggregate omitted fraction is ~18.8% of bottom and ~36.7% of
-# charm fragmentation. Adding baryon parents requires HNLCalc to expose
-# get_3body_dbr_baryon for the relevant Λ_b/Λ_c semileptonic transitions and a
-# baryon meson_sampler path; tracked as a data/scope item, not a code bug.
-
-# Beauty fragmentation, probabilities per b quark.
+# Meson fractions are absolute weights; baryon fractions are tracked as omitted.
 FRAG_B = {
     521: 0.36205648081100655,  # B+/B-
     511: 0.36205648081100655,  # B0/B0bar
     531: 0.08834178131788560,  # Bs
 }
 
-# Charm fragmentation, probabilities per c quark.
 FRAG_C = {
     421: 0.382,   # D0/D0bar, includes strong D* feeddown convention
     411: 0.191,   # D+/D-
@@ -126,7 +43,6 @@ FRAG_C = {
 }
 
 OMITTED_FRAG_B = {
-    # Aggregate omitted bottom-baryon remainder inferred from the Lambda_b ratio.
     "b_baryons": 0.18754525706010140,
 }
 
@@ -152,38 +68,29 @@ FRAGMENTATION_POLICY = {
     },
 }
 
-# ==========================================================================
-# Meson species lookup tables
-# ==========================================================================
-
-# PDG ID → mass (GeV)
 MESON_MASSES = {
     521: M_BPLUS, 511: M_B0, 531: M_BS, 541: M_BC,
     421: M_D0, 411: M_DPLUS, 431: M_DS,
 }
 
-# Lepton PDG ID → mass (GeV), keyed by flavor label
 LEPTON_MASSES = {
     'Ue': M_ELECTRON,
     'Umu': M_MUON,
     'Utau': M_TAU,
 }
 
-# Flavor label → lepton PDG ID
 FLAVOR_TO_LEPTON_PDG = {
     'Ue': 11,
     'Umu': 13,
     'Utau': 15,
 }
 
-# Flavor label → MadGraph flavor name
 FLAVOR_TO_MG5 = {
     'Ue': 'electron',
     'Umu': 'muon',
     'Utau': 'tau',
 }
 
-# Quark type → list of (pdg_id, frag_fraction) for meson species
 QUARK_MESON_MAP = {
     'bottom': [(521, FRAG_B[521]), (511, FRAG_B[511]), (531, FRAG_B[531])],
     'charm':  [(421, FRAG_C[421]), (411, FRAG_C[411]), (431, FRAG_C[431])],

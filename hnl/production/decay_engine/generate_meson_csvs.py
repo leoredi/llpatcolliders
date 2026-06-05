@@ -1,33 +1,15 @@
 #!/usr/bin/env python3
-"""
-production/decay_engine/generate_meson_csvs.py
-
-Driver for B/D/Bc → HNL CSV generation.
-
-For each (flavor, mass_point):
-  1. Load meson 4-vector pool (generated once per quark type)
-  2. For each meson species, check kinematic threshold: m_N < m_meson - m_lepton
-  3. Compute BR from HNLCalc (get_2body_br + integrate_3body_br) at U²=1
-  4. Decay meson → HNL via 2-body or 3-body kinematics
-  5. Assign weight: w_i = 2 × σ_FONLL × f_species × BR / N_species_sampled
-
-Factor of 2: FONLL gives (quark + antiquark)/2 → multiply by 2 for total.
-
-Output: output/llp_4vectors/{Ue,Umu,Utau}/{Bmeson,Dmeson,Bc}/mN_{mass}.csv
-Format: headerless, 5 columns: weight,E,px,py,pz
-"""
+"""B/D/Bc -> HNL production CSV generation."""
 
 import random
 import sys
 import numpy as np
 from pathlib import Path
 
-# Project root
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "vendored" / "HNLCalc"))
 
-from config_mass_grid import MASS_GRID, format_mass_for_filename
+from config_mass_grid import MASS_GRID
 from production.constants import (
     MESON_MASSES, LEPTON_MASSES, FLAVOR_TO_LEPTON_PDG,
     FRAG_B, FRAG_C, SIGMA_BC_PB,
@@ -37,34 +19,26 @@ from production.fonll.meson_sampler import sample_meson_4vectors
 from production.decay_engine.kinematics import (
     decay_2body, decay_3body_weighted_dq2dE,
 )
+from production.hnlcalc import init_hnlcalc
+from production.io import llp_csv_path, write_empty_csv, write_llp_csv
+from production.paths import LLP_VECTORS_DIR
 
-# Output base directory
-OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
+OUTPUT_BASE = LLP_VECTORS_DIR
 
-# Number of meson 4-vectors per pool
 N_POOL = 100_000
 
-# Channel labels for output directory
 CHANNEL_LABELS = {
     "bottom": "Bmeson",
     "charm": "Dmeson",
     "bc": "Bc",
 }
 
-# Charged pseudoscalar parents that can decay leptonically (P+ -> ℓ+ N).
-# Neutral pseudoscalars (B0=511, D0=421, Bs=531) have no such 2-body mode.
 CHARGED_PSEUDOSCALARS = {211, 321, 411, 431, 521, 541}
 
-# HNLCalc 3-body channels for production (parent_pdg, daughter_pdg, type)
-# type: "pseudo" for pseudoscalar, "vector" for vector meson daughters
 THREEBODY_CHANNELS = {
-    # Kaon (light) — semileptonic K+ -> pi0 l N. The dominant kaon mode is the
-    # 2-body K+ -> l+ N (handled by _eval_2body_br); this 3-body mode matters
-    # only at low m_N and is included for completeness.
     321: [
         (111, "pseudo"),   # K+ -> pi0 l+ N
     ],
-    # D mesons (charm)
     421: [  # D0
         (-321, "pseudo"),   # D0 → K- ℓ+ N
         (-323, "vector"),   # D0 → K*- ℓ+ N
@@ -86,7 +60,6 @@ THREEBODY_CHANNELS = {
         (313, "vector"),    # Ds → K*0 ℓ+ N
         (333, "vector"),    # Ds → φ ℓ+ N
     ],
-    # B mesons (bottom)
     521: [  # B+
         (-421, "pseudo"),   # B+ → D̄0 ℓ+ N
         (-423, "vector"),   # B+ → D̄*0 ℓ+ N
@@ -121,25 +94,9 @@ THREEBODY_CHANNELS = {
 }
 
 
-def _init_hnlcalc(flavor):
-    """Initialize HNLCalc with unit coupling for the given flavor."""
-    from HNLCalc import HNLCalc
-    if flavor == "Ue":
-        return HNLCalc(ve=1, vmu=0, vtau=0)
-    elif flavor == "Umu":
-        return HNLCalc(ve=0, vmu=1, vtau=0)
-    elif flavor == "Utau":
-        return HNLCalc(ve=0, vmu=0, vtau=1)
-    else:
-        raise ValueError(f"Unknown flavor: {flavor}")
-
-
 def _eval_2body_br(hnl, parent_pdg, lepton_pdg, m_N):
-    """Evaluate 2-body BR: parent → ℓ N at given HNL mass, U²=1."""
-    # Neutral pseudoscalar -> ℓN is forbidden (HNLCalc.VH() has no entry).
     if abs(parent_pdg) not in CHARGED_PSEUDOSCALARS:
         return 0.0
-    # Sign convention: parent+ → ℓ+ N → lepton is anti-lepton
     sign = "-" if parent_pdg > 0 else ""
     pid_lep = f"{sign}{abs(lepton_pdg)}"
     br_expr = hnl.get_2body_br(str(parent_pdg), pid_lep)
@@ -152,13 +109,6 @@ def _eval_2body_br(hnl, parent_pdg, lepton_pdg, m_N):
 
 
 def _eval_3body_br(hnl, parent_pdg, daughter_pdg, lepton_pdg, m_N, ch_type):
-    """Evaluate 3-body BR by numerical integration at U²=1.
-
-    Returns (br, dbr_expr). dbr_expr is the HNLCalc differential string used
-    by decay_3body_weighted_dq2dE to sample kinematics with the same matrix
-    element that determined the rate (form factors + V-A), instead of flat
-    phase space. Closed channels return (0.0, None).
-    """
     m_parent = MESON_MASSES.get(abs(parent_pdg), hnl.masses(parent_pdg))
     m_daughter = hnl.masses(daughter_pdg)
     m_lepton = hnl.masses(lepton_pdg)
@@ -166,15 +116,9 @@ def _eval_3body_br(hnl, parent_pdg, daughter_pdg, lepton_pdg, m_N, ch_type):
     if m_N >= m_parent - m_daughter - m_lepton:
         return 0.0, None
 
-    # Get differential BR expression
     sign_lep = "-" if parent_pdg > 0 else ""
     pid_lep_str = f"{sign_lep}{abs(lepton_pdg)}"
 
-    # Every (parent, daughter) pair in THREEBODY_CHANNELS has been verified to be
-    # supported by HNLCalc (no NameError/TypeError raised on the in-grid range,
-    # kinematically-closed combinations are filtered by the threshold check
-    # above). If a future contributor adds a channel HNLCalc cannot evaluate,
-    # let it raise — silent zeros hide whole missing transitions.
     if ch_type == "pseudo":
         dbr = hnl.get_3body_dbr_pseudoscalar(str(parent_pdg), str(daughter_pdg), pid_lep_str)
     elif ch_type == "vector":
@@ -192,27 +136,11 @@ def _eval_3body_br(hnl, parent_pdg, daughter_pdg, lepton_pdg, m_N, ch_type):
 
 
 def compute_total_production_br(hnl, parent_pdg, lepton_pdg, m_N):
-    """
-    Compute total BR(parent → N + anything) summing 2-body and 3-body channels.
-
-    Returns
-    -------
-    float
-        Total branching ratio at U²=1.
-    """
     _, _, br_total = compute_production_br_components(hnl, parent_pdg, lepton_pdg, m_N)
     return br_total
 
 
 def compute_production_br_components(hnl, parent_pdg, lepton_pdg, m_N):
-    """Return BR components: 2-body BR, 3-body channel list, and total BR.
-
-    The 3-body channel list now carries the HNLCalc differential expression
-    used to compute the rate, so the kinematic sampler can reproduce the same
-    matrix-element shape:
-
-        br_3body_channels : list of (daughter_pdg, dbr_expr, br)
-    """
     m_parent = MESON_MASSES.get(abs(parent_pdg), hnl.masses(parent_pdg))
     m_lepton = hnl.masses(lepton_pdg)
 
@@ -236,14 +164,6 @@ def compute_production_br_components(hnl, parent_pdg, lepton_pdg, m_N):
 
 def _sample_hnl_from_mesons(parent_E, parent_px, parent_py, parent_pz, m_parent, m_lepton, m_N,
                             br_3body_channels, br_total, hnl, rng):
-    """Sample HNL 4-vectors from 2-body/3-body decays with BR-weighted channel selection.
-
-    The 3-body kinematics are drawn from decay_3body_weighted_dq2dE using the
-    HNLCalc differential string carried in each channel tuple. The integrated
-    rate (already in br_total / per-channel br) and the differential shape
-    therefore come from the same matrix element; flat-LIPS sampling is no
-    longer used for meson semileptonic production.
-    """
     n_events = len(parent_E)
     hnl_4v = np.empty((n_events, 4))
 
@@ -281,7 +201,6 @@ def _sample_hnl_from_mesons(parent_E, parent_px, parent_py, parent_pz, m_parent,
 
 
 def generate_pool(quark, n_pool, rng):
-    """Generate a reusable meson 4-vector pool for a given quark type."""
     print(f"  Generating {quark} meson pool ({n_pool} events)...")
     pool = sample_meson_4vectors(n_pool, quark, rng=rng)
     sigma = get_sigma_total(quark)
@@ -290,17 +209,10 @@ def generate_pool(quark, n_pool, rng):
 
 
 def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
-    """
-    Process all mass points for a (flavor, quark) channel.
-
-    For B/D mesons, uses fragmentation fractions from the pool species assignment.
-    """
-    hnl = _init_hnlcalc(flavor)
+    hnl = init_hnlcalc(flavor)
     lepton_pdg = FLAVOR_TO_LEPTON_PDG[flavor]
     m_lepton = LEPTON_MASSES[flavor]
     channel_label = CHANNEL_LABELS[quark]
-    out_dir = OUTPUT_BASE / flavor / channel_label
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     if quark in ("bottom", "charm"):
         frag_map = FRAG_B if quark == "bottom" else FRAG_C
@@ -310,8 +222,7 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
     n_pool = len(pool['E'])
 
     for m_N in masses:
-        mass_label = format_mass_for_filename(m_N)
-        csv_path = out_dir / f"mN_{mass_label}.csv"
+        csv_path = llp_csv_path(flavor, channel_label, m_N, base=OUTPUT_BASE)
 
         all_weights = []
         all_E = []
@@ -320,26 +231,21 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
         all_pz = []
 
         if quark == "bc":
-            # Bc enriched channel: all events are Bc
             parent_pdg = 541
             m_parent = MESON_MASSES[541]
             if m_N >= m_parent - m_lepton:
-                _write_empty_csv(csv_path)
+                write_empty_csv(csv_path)
                 continue
 
             _, br_3body_channels, br = compute_production_br_components(
                 hnl, parent_pdg, lepton_pdg, m_N
             )
             if br <= 0:
-                _write_empty_csv(csv_path)
+                write_empty_csv(csv_path)
                 continue
 
-            # Weight: 2 × σ_FONLL(b) × f_Bc × BR / N_pool
-            # σ_Bc is derived from σ_bb × ratio, but plan says use FONLL(b) × f_Bc
-            # Actually for Bc, σ_Bc is independent. We use SIGMA_BC_PB directly.
             w = SIGMA_BC_PB * br / n_pool
 
-            # Decay each Bc → HNL with BR-weighted 2-body/3-body kinematics
             mask = np.ones(n_pool, dtype=bool)
             hnl_4v = _sample_hnl_from_mesons(
                 pool['E'][mask], pool['px'][mask], pool['py'][mask], pool['pz'][mask],
@@ -353,15 +259,6 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
             all_pz.append(hnl_4v[:, 3])
 
         else:
-            # B or D mesons: loop over species in the pool.
-            #
-            # Each species contributes only while m_N < m_parent - m_lepton, so
-            # the emitted row count falls below n_pool near the high-mass edge of
-            # the channel: as m_N approaches the lightest surviving parent, the
-            # heavier-threshold species drop out one by one and only their share
-            # of the pool is written. e.g. charm at m_N ~ 1.73 GeV keeps only the
-            # D0/D+/Ds tail (~40k of 100k rows). That is the kinematic window
-            # closing, not a truncated or failed job.
             unique_species = np.unique(pool['species_pdg'])
             for species_pdg in unique_species:
                 m_parent = MESON_MASSES[species_pdg]
@@ -378,18 +275,13 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
                 if frag <= 0:
                     continue
 
-                # Select events of this species
                 mask = pool['species_pdg'] == species_pdg
                 n_species = mask.sum()
                 if n_species == 0:
                     continue
 
-                # Factor 2: FONLL cross sections are the average of quark + antiquark
-                # (q, qbar) production, so ×2 gives the total number of mesons produced
-                # (Curtin MATHUSLA reference baseline convention).
                 w = 2.0 * sigma_fonll * frag * br / n_species
 
-                # Decay meson → HNL using BR-weighted 2-body/3-body kinematics
                 hnl_4v = _sample_hnl_from_mesons(
                     pool['E'][mask], pool['px'][mask], pool['py'][mask], pool['pz'][mask],
                     m_parent, m_lepton, m_N,
@@ -408,45 +300,18 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
             px = np.concatenate(all_px)
             py = np.concatenate(all_py)
             pz = np.concatenate(all_pz)
-            _write_csv(csv_path, weights, E, px, py, pz)
+            write_llp_csv(csv_path, weights, E, px, py, pz)
             print(f"    {csv_path.name}: {len(weights)} events, w_sum={weights.sum():.3e}")
         else:
-            _write_empty_csv(csv_path)
+            write_empty_csv(csv_path)
             print(f"    {csv_path.name}: 0 events (below threshold)")
 
 
-def _write_csv(path, weights, E, px, py, pz):
-    """Write headerless CSV: weight,E,px,py,pz"""
-    data = np.column_stack([weights, E, px, py, pz])
-    np.savetxt(path, data, delimiter=",", fmt="%.8e")
-
-
-def _write_empty_csv(path):
-    """Write an empty file for mass points below threshold."""
-    path.write_text("")
-
-
 def generate_bc_pool(n_pool, rng):
-    """
-    Generate a Bc-enriched pool: FONLL bottom meson kinematics forced to Bc mass.
-
-    Delegates to ``sample_meson_4vectors`` with ``force_species=541`` so the
-    Bc sampling path goes through the same inverse-CDF code as ordinary
-    fragmentation sampling.
-
-    XXX scope: Bc production is cc-bar + bb-bar (BCVEGPY), not single-quark
-    fragmentation. The pT spectrum is harder and the rapidity narrower than
-    the FONLL b-hadron grid. Reusing the bottom (pT, y) shape with only the
-    mass forced biases GRENDEL acceptance for Bc-sourced HNLs. Tracked as a
-    data/scope item; needs a dedicated Bc (pT, y) grid (or BCVEGPY LHE) to
-    replace this stand-in. The integrated rate is fine because it uses
-    SIGMA_BC_PB directly, but the per-event kinematics are not.
-    """
     return sample_meson_4vectors(n_pool, "bottom", rng=rng, force_species=541)
 
 
 def main():
-    """Main entry point: generate meson → HNL CSVs for all channels."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Generate meson → HNL 4-vector CSVs")
@@ -461,27 +326,24 @@ def main():
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
-    random.seed(args.seed)  # HNLCalc's 3-body BR integrator uses stdlib random, not numpy
+    random.seed(args.seed)
     masses = args.masses if args.masses else MASS_GRID
 
-    # Determine which channels to run
     if args.channel == "all":
         channels = ["bottom", "charm", "bc"]
     else:
         label_to_quark = {"Bmeson": "bottom", "Dmeson": "charm", "Bc": "bc"}
         channels = [label_to_quark[args.channel]]
 
-    # Generate pools (reused across flavors)
     pools = {}
     sigmas = {}
     for ch in channels:
         if ch == "bc":
             pools["bc"] = generate_bc_pool(args.n_pool, rng)
-            sigmas["bc"] = 0.0  # Not used; Bc uses SIGMA_BC_PB directly
+            sigmas["bc"] = 0.0
         else:
             pools[ch], sigmas[ch] = generate_pool(ch, args.n_pool, rng)
 
-    # Process each (flavor, channel) combination
     for flavor in args.flavor:
         print(f"\n{'='*60}")
         print(f"Flavor: {flavor}")

@@ -1,32 +1,5 @@
 #!/usr/bin/env python3
-"""
-production/decay_engine/generate_induced_tau.py
-
-Driver for induced-tau HNL production:
-
-    pp -> Ds + X         (FONLL charm)
-    Ds -> tau nu_tau     (BR = 5.35e-2, 2-body)
-    tau -> N + X         (HNLCalc 2-body and 3-body)
-
-    pp -> B+ + X         (FONLL bottom)
-    B+ -> tau nu_tau     (BR = 1.09e-4, 2-body)
-    tau -> N + X
-
-Note: B0 -> tau nu is helicity-suppressed in SM and excluded.
-At the LHC, charm-induced tau (Ds -> tau nu) dominates the tau yield by
-rate; prompt W -> tau nu is sub-dominant but handled separately by
-`production/madgraph/run_tau_production.py` (output/.../tau/). This driver
-writes the induced contribution only (output/.../induced_tau/).
-
-Weight chain per HNL 4-vector i (from Ds, similar for B+):
-
-    w_i = 2 * sigma_FONLL_charm * f_Ds * BR(Ds->tau nu) * BR(tau->N+X) / N_tau_sampled
-
-The factor 2 is the particle + antiparticle FONLL convention.
-
-Output: output/llp_4vectors/{Ue,Umu,Utau}/induced_tau/mN_{mass}.csv
-Format: headerless, 5 columns: weight,E,px,py,pz
-"""
+"""Ds/B+ -> tau -> HNL production CSV generation."""
 
 import random
 import sys
@@ -35,9 +8,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "vendored" / "HNLCalc"))
 
-from config_mass_grid import MASS_GRID, format_mass_for_filename
+from config_mass_grid import MASS_GRID
 from production.constants import (
     M_TAU, M_DS, M_BPLUS,
     FRAG_B, FRAG_C,
@@ -49,26 +21,18 @@ from production.decay_engine.tau_decay import (
     init_hnlcalc, compute_tau_production_br_components, sample_hnl_from_tau,
     TAU_2BODY_ASYMMETRY,
 )
+from production.io import llp_csv_path, write_empty_csv, write_llp_csv
+from production.paths import LLP_VECTORS_DIR
 
-OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
+OUTPUT_BASE = LLP_VECTORS_DIR
 
 N_POOL = 100_000
 
-# Measured branching ratios for the parent meson -> tau nu_tau (PDG 2024)
 BR_DS_TAU_NU = 5.35e-2
 BR_BPLUS_TAU_NU = 1.09e-4
 
 
 def build_tau_pool(n_pool, rng):
-    """
-    Build the tau pool by chaining Ds->tau nu and B+ -> tau nu off FONLL mesons.
-
-    Returns
-    -------
-    tau_4v : ndarray, shape (M, 4)
-    tau_w  : ndarray, shape (M,)   per-event weight in pb (sigma * BR / N_per_source)
-    """
-    # --- Ds source ---
     charm_pool = sample_meson_4vectors(n_pool, "charm", rng=rng)
     sigma_charm = get_sigma_total("charm")
     ds_mask = charm_pool['species_pdg'] == 431
@@ -86,7 +50,6 @@ def build_tau_pool(n_pool, rng):
         tau_4v_ds = np.empty((0, 4))
         tau_w_ds = np.empty(0)
 
-    # --- B+ source ---
     bottom_pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
     sigma_bottom = get_sigma_total("bottom")
     bp_mask = bottom_pool['species_pdg'] == 521
@@ -114,14 +77,11 @@ def build_tau_pool(n_pool, rng):
 
 
 def process_flavor(flavor, tau_4v, tau_w, masses, rng):
-    """Decay tau pool into N+X for one flavor across all mass points."""
     hnl = init_hnlcalc(flavor)
-    out_dir = OUTPUT_BASE / flavor / "induced_tau"
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     if len(tau_w) == 0:
         for m_N in masses:
-            (out_dir / f"mN_{format_mass_for_filename(m_N)}.csv").write_text("")
+            write_empty_csv(llp_csv_path(flavor, "induced_tau", m_N, base=OUTPUT_BASE))
         return
 
     tau_E = tau_4v[:, 0]
@@ -130,15 +90,14 @@ def process_flavor(flavor, tau_4v, tau_w, masses, rng):
     tau_pz = tau_4v[:, 3]
 
     for m_N in masses:
-        mass_label = format_mass_for_filename(m_N)
-        csv_path = out_dir / f"mN_{mass_label}.csv"
+        csv_path = llp_csv_path(flavor, "induced_tau", m_N, base=OUTPUT_BASE)
         if m_N >= M_TAU:
-            csv_path.write_text("")
+            write_empty_csv(csv_path)
             continue
 
         br_2body, br_3body, br_total = compute_tau_production_br_components(hnl, m_N)
         if br_total <= 0:
-            csv_path.write_text("")
+            write_empty_csv(csv_path)
             continue
 
         hnl_4v, _, _ = sample_hnl_from_tau(
@@ -146,8 +105,7 @@ def process_flavor(flavor, tau_4v, tau_w, masses, rng):
             br_2body, br_3body, br_total, rng,
         )
         weights = tau_w * br_total
-        data = np.column_stack([weights, hnl_4v[:, 0], hnl_4v[:, 1], hnl_4v[:, 2], hnl_4v[:, 3]])
-        np.savetxt(csv_path, data, delimiter=",", fmt="%.8e")
+        write_llp_csv(csv_path, weights, hnl_4v[:, 0], hnl_4v[:, 1], hnl_4v[:, 2], hnl_4v[:, 3])
         print(f"    {csv_path.name}: {len(weights)} events, "
               f"BR_total={br_total:.3e}, w_sum={weights.sum():.3e}")
 
@@ -164,9 +122,8 @@ def main():
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
-    random.seed(args.seed)  # HNLCalc's 3-body BR integrator uses stdlib random, not numpy
+    random.seed(args.seed)
     masses = args.masses if args.masses else MASS_GRID
-    masses = [m for m in masses if m < M_TAU]  # tau decay closes at m_tau
 
     print("Building tau pool from Ds and B+ ...")
     tau_4v, tau_w = build_tau_pool(args.n_pool, rng)
