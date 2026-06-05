@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
-"""
-production/madgraph/lhe_to_csv.py
-
-Convert MadGraph LHE files to CSV for HNL or tau 4-vectors.
-
-Two modes:
-  - HNL mode: Extract HNL (PDG 9900012) 4-vectors from W/Z → ℓ N events.
-    Output: weight,E,px,py,pz (headerless)
-  - Tau mode: Extract tau (PDG ±15) 4-vectors from W/Z → τ ν or τ+τ- events.
-    Output: weight,E,px,py,pz (headerless)
-
-Adapted from the upstream llpatcolliders_FONLL lhe_to_csv.py.
-"""
+"""Convert MadGraph LHE files to HNL or tau CSV rows."""
 
 import gzip
-import numpy as np
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from production.io import write_csv_matrix
 
 
 class LHEParser:
-    """Parse LHE files and extract particle 4-vectors."""
-
     PDG_HNL = 9900012
     PDG_TAU_PLUS = -15
     PDG_TAU_MINUS = 15
@@ -36,29 +27,11 @@ class LHEParser:
         return open(self.lhe_path, 'r', encoding='utf-8')
 
     def extract_particles(self, target_pdg_ids, split_event_weight=False):
-        """
-        Parse LHE and extract 4-vectors for target PDG IDs.
-
-        Parameters
-        ----------
-        target_pdg_ids : set of int
-            PDG IDs to extract (e.g., {9900012} for HNL, {15, -15} for tau).
-        split_event_weight : bool
-            If True, split each event weight evenly across all extracted particles
-            in that event.
-
-        Yields
-        ------
-        dict with 'weight', 'E', 'px', 'py', 'pz', 'pdgid', 'origin' for each
-        match. ``origin`` is the PDG of the target particle's mother (LHE
-        MOTHUP1, 1-based index resolved against the same event), or 0 if the
-        mother slot is empty / the index is out of range.
-        """
         in_event = False
         header_parsed = False
         event_weight = 1.0
-        all_event_pdgs = []     # PDG of every particle in the current event, in order
-        candidate_records = []  # tuples (target_dict, mother_idx_1based)
+        all_event_pdgs = []
+        candidate_records = []
 
         with self._open() as f:
             for line in f:
@@ -80,7 +53,6 @@ class LHEParser:
                             particle_weight = event_weight
                         for record, mother_idx in candidate_records:
                             record['weight'] = particle_weight
-                            # MOTHUP is 1-based; 0 means no mother. Resolve.
                             origin = 0
                             if 1 <= mother_idx <= len(all_event_pdgs):
                                 origin = all_event_pdgs[mother_idx - 1]
@@ -105,13 +77,9 @@ class LHEParser:
                         try:
                             pdgid = int(parts[0])
                         except (ValueError, IndexError):
-                            pdgid = 0  # malformed; keep ordering via placeholder
+                            pdgid = 0
                         all_event_pdgs.append(pdgid)
                         if pdgid in target_pdg_ids:
-                            # LHE columns (0-indexed): 0=IDUP 1=ISTUP
-                            # 2=MOTHUP1 3=MOTHUP2 4=COL1 5=COL2
-                            # 6=PUP1(px) 7=PUP2(py) 8=PUP3(pz) 9=PUP4(E)
-                            # 10=PUP5(m) ...
                             try:
                                 mother_idx = int(parts[2])
                                 candidate_records.append((
@@ -129,58 +97,24 @@ class LHEParser:
                                 pass
 
     def write_hnl_csv(self, output_path):
-        """Extract HNL 4-vectors and write headerless CSV."""
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         rows = []
         for p in self.extract_particles({self.PDG_HNL}):
             rows.append([p['weight'], p['E'], p['px'], p['py'], p['pz']])
-
-        if rows:
-            data = np.array(rows)
-            np.savetxt(output_path, data, delimiter=",", fmt="%.8e")
-        else:
-            output_path.write_text("")
-
+        write_csv_matrix(output_path, rows)
         return len(rows)
 
     def write_tau_csv(self, output_path):
-        """Extract tau 4-vectors and write headerless CSV.
-
-        Schema: ``weight, E, px, py, pz, origin`` (6 columns).
-        ``origin`` is the mother PDG (24=W+, -24=W-, 23=Z, ...) so a
-        downstream consumer can apply per-process polarisation when
-        decaying tau -> N + X.
-
-        Each tau row carries the *full* event weight. For HNL production every
-        tau in the event is an independent potential parent, so a Z/gamma* ->
-        tau+ tau- event contributes one expected N decay per tau (weight x BR
-        per row), not half. Splitting the event weight across the two taus
-        would underweight the Drell-Yan contribution by 2x. The W -> tau nu
-        branch is unaffected (one tau per event, so split-vs-not is identical).
-        """
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
         rows = []
         for p in self.extract_particles(
             {self.PDG_TAU_MINUS, self.PDG_TAU_PLUS},
             split_event_weight=False,
         ):
             rows.append([p['weight'], p['E'], p['px'], p['py'], p['pz'], p['origin']])
-
-        if rows:
-            data = np.array(rows)
-            np.savetxt(output_path, data, delimiter=",", fmt="%.8e")
-        else:
-            output_path.write_text("")
-
+        write_csv_matrix(output_path, rows)
         return len(rows)
 
 
 def main():
-    """Command-line interface."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Convert LHE to CSV")

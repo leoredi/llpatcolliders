@@ -4,10 +4,8 @@ Skipped automatically if MG5 or LHAPDF aren't available in this environment
 (matches the existing test_smoke.py pattern for the meson side). Runs a tiny
 1k-event Stage 1 + single mass Stage 2, asserts the output schemas.
 
-Note: this test mutates the on-disk Stage 1 pool at vendored/tau_pool.csv
-(re-generates if not present). The pool is small (~1k events ~ 150 KB) and
-deterministic from MG5's internal seeding, so subsequent normal runs are
-unaffected.
+Note: --test writes its smoke-sized Stage 1 pool under hnl/tmp/cache/madgraph,
+not to the production tau-pool cache.
 """
 
 import os
@@ -19,7 +17,7 @@ import numpy as np
 import pytest
 
 from production.madgraph._mg5_common import MG5_EXE, LHAPDF_CONFIG
-from production.madgraph.run_tau_production import POOL_CSV
+from production.paths import LLP_VECTORS_DIR, MG5_WORK_DIR
 
 needs_mg5 = pytest.mark.skipif(
     not MG5_EXE.exists() or not LHAPDF_CONFIG.exists(),
@@ -32,7 +30,8 @@ HNL_ROOT = Path(__file__).resolve().parent.parent
 @needs_mg5
 def test_prompt_tau_smoke_e2e(tmp_path):
     """Drive run_tau_production --test; assert pool + per-flavor CSV."""
-    out_csv = HNL_ROOT / "output" / "llp_4vectors" / "Umu" / "tau" / "mN_1p000.csv"
+    out_csv = LLP_VECTORS_DIR / "Umu" / "tau" / "mN_1p000.csv"
+    pool_csv = MG5_WORK_DIR / "tau_pool_test.csv"
     # Snapshot what's there so we can avoid polluting the actual production
     # output dir with a 1000-event smoke if something else cares.
     pre_existed = out_csv.exists()
@@ -50,8 +49,8 @@ def test_prompt_tau_smoke_e2e(tmp_path):
     )
 
     # Stage 1 product: 6-column CSV with origin column.
-    assert POOL_CSV.exists() and POOL_CSV.stat().st_size > 0
-    pool = np.loadtxt(POOL_CSV, delimiter=",")
+    assert pool_csv.exists() and pool_csv.stat().st_size > 0
+    pool = np.loadtxt(pool_csv, delimiter=",")
     if pool.ndim == 1:
         pool = pool.reshape(1, -1)
     assert pool.shape[1] == 6, f"pool schema is {pool.shape[1]} cols; expected 6"

@@ -1,31 +1,7 @@
 #!/usr/bin/env python3
-"""
-production/madgraph/run_wz_production.py
-
-Generate HNL events via electroweak production (W/Z → ℓ N) at LHC 14 TeV.
-
-Ported from the upstream llpatcolliders_FONLL run_wz_production.py:
-  - Uses a configurable vendored MG5 (see _resolve_mg5_exe)
-  - No Docker assumptions
-  - Uses config_mass_grid.py mass loop
-  - Parton level (no shower)
-  - Output: weight,E,px,py,pz headerless CSV at
-    output/llp_4vectors/{flavor}/WZ/mN_{mass}.csv
-
-Weight: the MG5 unweighted-event weight (XWGTUP, = σ_LO / N per event) is read
-directly from the LHE and then scaled by K_FACTOR_EW so the summed weight is
-σ_NLO. The per-row weight is therefore σ_NLO / N in pb at U²=1, matching the
-meson-channel convention.
-
-Usage:
-    python run_wz_production.py                          # full scan
-    python run_wz_production.py --flavor Umu             # single flavor
-    python run_wz_production.py --test                   # quick test
-    python run_wz_production.py --masses 1.0 2.0 5.0
-"""
+"""MadGraph W/Z -> l N production for HNL CSVs."""
 
 import sys
-import subprocess
 import shutil
 import argparse
 from pathlib import Path
@@ -33,24 +9,20 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from config_mass_grid import MASS_GRID, N_EVENTS_DEFAULT, format_mass_for_filename
+from config_mass_grid import MASS_GRID, N_EVENTS_DEFAULT
 from production.constants import K_FACTOR_EW, FLAVOR_TO_MG5
-from production.madgraph._mg5_common import (
-    MG5_EXE, LHAPDF_CONFIG, PYTHON_EXE,
-    mg5_subprocess_env, patch_me5_configuration,
-    patch_rpath_for_lhapdf, force_compile_subprocesses,
-    write_process_block, has_five_flavor_proton,
+from production.madgraph._mg5_common import MG5_EXE, LHAPDF_CONFIG
+from production.madgraph.runner import (
+    ensure_process_dir, run_events as mg5_run_events, write_run_card,
 )
+from production.io import llp_csv_path, scale_weight_column
+from production.paths import MG5_WORK_DIR
 
-# Vendored HeavyN UFO model (loaded by absolute path so MG5 picks up this copy
-# regardless of which MG5 install resolves below).
 MODEL_DIR = PROJECT_ROOT / "vendored" / "SM_HeavyN_CKM_AllMasses_LO"
 
 CARDS_DIR = Path(__file__).parent / "cards"
-WORK_DIR = Path(__file__).parent / "work"
-OUTPUT_BASE = PROJECT_ROOT / "output" / "llp_4vectors"
+WORK_DIR = MG5_WORK_DIR
 
-# Mixing configurations (U²=1 for the active flavor)
 MIXING_CONFIGS = {
     "Ue":   {"ve1": 1.0, "vmu1": 0.0, "vtau1": 0.0},
     "Umu":  {"ve1": 0.0, "vmu1": 1.0, "vtau1": 0.0},
@@ -59,80 +31,24 @@ MIXING_CONFIGS = {
 
 
 def get_or_create_process_dir(flavor):
-    """Build the MG5 process directory for a flavor if missing; return it.
-
-    The matrix element only depends on the flavor-specific proc_card
-    (process topology + final-state lepton). m_N and mixings live in
-    Cards/param_card.dat and are re-read by MadEvent on every
-    generate_events run, so one process build amortises across the full
-    mass scan and saves the ~30s-2min Fortran-compile per point.
-
-    Cached at WORK_DIR/hnl_{mg5_flavor}/. If the directory exists with a
-    working bin/generate_events we reuse it; if it exists but is partial
-    (e.g. a prior aborted build) it is removed and rebuilt.
-    """
     mg5_flavor = FLAVOR_TO_MG5[flavor]
-    work_subdir = WORK_DIR / f"hnl_{mg5_flavor}"
-
-    if (
-        (work_subdir / "bin" / "generate_events").exists()
-        and has_five_flavor_proton(work_subdir)
-    ):
-        return work_subdir
-
-    if work_subdir.exists():
-        shutil.rmtree(work_subdir, ignore_errors=True)
-
     proc_card = CARDS_DIR / f"proc_card_{mg5_flavor}.dat"
-    if not proc_card.exists():
-        raise FileNotFoundError(f"Process card not found: {proc_card}")
-
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
-
-    cmd_file = WORK_DIR / f"mg5_gen_{mg5_flavor}.txt"
-    with open(proc_card) as f:
-        proc_lines = f.readlines()
-
-    with open(cmd_file, 'w') as f:
-        f.write(f"import model {MODEL_DIR}\n\n")
-        f.write("set automatic_html_opening False\n")
-        write_process_block(f, proc_lines)
-        f.write(f"\noutput {work_subdir} -nojpeg\n")
-        f.write("quit\n")
-
-    log_file = WORK_DIR / f"mg5_gen_{mg5_flavor}.log"
-    with open(log_file, 'w') as log:
-        result = subprocess.run(
-            [str(PYTHON_EXE), str(MG5_EXE), str(cmd_file)],
-            stdout=log, stderr=subprocess.STDOUT, timeout=300,
-            env=mg5_subprocess_env(),
-        )
-
-    if result.returncode != 0 or not (work_subdir / 'bin' / 'generate_events').exists():
-        print(f"    FAILED: process generation (see {log_file})")
-        return None
-
-    if not force_compile_subprocesses(work_subdir, WORK_DIR / f"mg5_compile_{mg5_flavor}.log"):
-        print(f"    FAILED: SubProcess pre-compile (see "
-              f"{WORK_DIR / f'mg5_compile_{mg5_flavor}.log'})")
-        return None
-    patch_rpath_for_lhapdf(work_subdir)
-    cmd_file.unlink(missing_ok=True)
-    return work_subdir
+    return ensure_process_dir(
+        label=mg5_flavor,
+        model_import=f"import model {MODEL_DIR}",
+        proc_card=proc_card,
+        work_dir=WORK_DIR,
+        process_dir=WORK_DIR / f"hnl_{mg5_flavor}",
+        generation_timeout=300,
+    )
 
 
 def write_cards(work_subdir, flavor, mass, n_events):
-    """Write run_card.dat and param_card.dat into process Cards/ directory."""
     cards_dir = work_subdir / "Cards"
     cards_dir.mkdir(exist_ok=True)
 
-    # Run card
-    run_content = (CARDS_DIR / "run_card_template.dat").read_text()
-    run_content = run_content.replace("N_EVENTS_PLACEHOLDER", str(n_events))
-    (cards_dir / "run_card.dat").write_text(run_content)
-    patch_me5_configuration(cards_dir)
+    write_run_card(work_subdir, CARDS_DIR, n_events)
 
-    # Param card
     param_content = (CARDS_DIR / "param_card_template.dat").read_text()
     mixing = MIXING_CONFIGS[flavor]
     param_content = param_content.replace("MASS_N1_PLACEHOLDER", f"{mass:.6e}")
@@ -142,88 +58,29 @@ def write_cards(work_subdir, flavor, mass, n_events):
     (cards_dir / "param_card.dat").write_text(param_content)
 
 
-def run_events(work_subdir, run_name, nb_core=1):
-    """Run MadGraph generate_events with an explicit run name.
-
-    Because the same process directory is reused across mass points, we
-    pass ``--name run_name`` so each mass writes to a deterministic
-    Events/{run_name}/ subdir rather than auto-incrementing run_01,
-    run_02, ... — which would make it ambiguous which LHE belongs to
-    which mass.
-    """
-    log_file = work_subdir / f"generate_events_{run_name}.log"
-    # MG5's bin/generate_events takes the run name as a *positional* first
-    # argument; --name=... is not recognised and gets mis-parsed as the run
-    # name itself. Pass run_name positionally.
-    cmd = [
-        str(PYTHON_EXE), "bin/generate_events",
-        run_name,
-        "-f", "--laststep=parton",
-    ]
-    if nb_core > 1:
-        cmd += ["--multicore", f"--nb_core={nb_core}"]
-    else:
-        cmd += ["--nb_core=1"]
-
-    with open(log_file, 'w') as log:
-        result = subprocess.run(
-            cmd, stdout=log, stderr=subprocess.STDOUT,
-            cwd=work_subdir, timeout=3600,
-            env=mg5_subprocess_env(),
-        )
-
-    if result.returncode != 0:
-        print(f"    FAILED: event generation (see {log_file})")
-        return None
-
-    run_dir = work_subdir / "Events" / run_name
-    for lhe in [run_dir / "unweighted_events.lhe.gz",
-                run_dir / "unweighted_events.lhe"]:
-        if lhe.exists():
-            return lhe
-    return None
-
-
 def convert_lhe(lhe_path, csv_path):
-    """Convert LHE → CSV using our simplified parser."""
     from production.madgraph.lhe_to_csv import LHEParser
     parser = LHEParser(lhe_path)
     return parser.write_hnl_csv(csv_path)
 
 
 def run_single_point(flavor, mass, n_events, nb_core=1):
-    """Full pipeline for one (flavor, mass) point.
-
-    Reuses the per-flavor process directory built by
-    get_or_create_process_dir; only Cards/ and the generate_events run
-    change between mass points. The Events/run_mass/ subdir is removed
-    after CSV extraction to keep disk usage bounded across the scan.
-    """
-    mass_label = format_mass_for_filename(mass)
-    csv_dir = OUTPUT_BASE / flavor / "WZ"
-    csv_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = csv_dir / f"mN_{mass_label}.csv"
-    # Remove any previous CSV so a mid-pipeline MG5 failure cannot leave a
-    # stale file in place that combine_channels would silently consume.
+    csv_path = llp_csv_path(flavor, "WZ", mass)
     csv_path.unlink(missing_ok=True)
 
     print(f"\n  [{flavor}] m_N = {mass} GeV")
 
-    # Step 1: ensure the per-flavor process dir exists (built once, cached)
     work_subdir = get_or_create_process_dir(flavor)
     if work_subdir is None:
         return False
 
-    # Step 2: rewrite param_card.dat (m_N + mixings) and run_card.dat (N events)
     write_cards(work_subdir, flavor, mass, n_events)
 
-    # Step 3: generate events into Events/run_{mass_label}/
-    run_name = f"run_{mass_label}"
-    lhe_path = run_events(work_subdir, run_name, nb_core=nb_core)
+    run_name = f"run_{csv_path.stem.removeprefix('mN_')}"
+    lhe_path = mg5_run_events(work_subdir, run_name, nb_core=nb_core)
     if lhe_path is None:
         return False
 
-    # Step 4: Convert LHE → CSV
     n_ev = convert_lhe(lhe_path, csv_path)
     if n_ev is None or n_ev == 0:
         print(f"    FAILED: no HNL events extracted")
@@ -231,23 +88,8 @@ def run_single_point(flavor, mass, n_events, nb_core=1):
 
     print(f"    OK: {n_ev} events → {csv_path}")
 
-    # Step 5: Apply the EW K-factor by rescaling weights.
-    # The parser writes the LHE per-event weight (XWGTUP = σ_LO / N) into
-    # column 0; multiplying by K_FACTOR_EW promotes the summed weight from
-    # σ_LO to σ_NLO without changing the kinematics.
-    import numpy as np
-    try:
-        data = np.loadtxt(csv_path, delimiter=",")
-    except ValueError:
-        data = np.empty((0, 5))
-    if data.ndim == 1 and data.size > 0:
-        data = data.reshape(1, -1)
-    if data.ndim == 2 and len(data) > 0:
-        data[:, 0] *= K_FACTOR_EW
-        np.savetxt(csv_path, data, delimiter=",", fmt="%.8e")
+    scale_weight_column(csv_path, K_FACTOR_EW)
 
-    # Per-mass run cleanup. The process directory itself is preserved for
-    # reuse on the next mass point in this flavor scan.
     shutil.rmtree(work_subdir / "Events" / run_name, ignore_errors=True)
     return True
 
@@ -282,7 +124,6 @@ def main():
     if args.min_mass is not None:
         masses = [m for m in masses if m >= args.min_mass]
 
-    # Verify MG5 exists
     if not MG5_EXE.exists():
         print(f"ERROR: MadGraph not found at {MG5_EXE}")
         print("Set $HNL_MG5_EXE or vendor MG5 under hnl/vendored/ "

@@ -1,23 +1,4 @@
-"""
-production/madgraph/_mg5_common.py
-
-Shared plumbing for MG5-driven production pipelines (W/Z, prompt-tau).
-
-Centralises the macOS LHAPDF / Mach-O dyld fix worked out in the W/Z driver
-session so both drivers carry it. Three things this module provides:
-
-1. MG5 executable resolution with a four-step fallback chain.
-2. LHAPDF wiring: the resolver for lhapdf-config + the runtime libdir, an
-   env-builder that injects DYLD_LIBRARY_PATH / LD_LIBRARY_PATH for any MG5
-   subprocess, and a per-job patcher for me5_configuration.txt.
-3. Mach-O rpath workaround: symlink libLHAPDF.dylib into every
-   SubProcesses/P*_*/ directory so the compiled madevent/gensym binaries
-   resolve @rpath/libLHAPDF.dylib via @loader_path.
-
-The forced bin/madevent compile pre-build (also from the W/Z session) is
-exposed as force_compile_subprocesses, so the rpath patch can run on real
-binaries rather than empty source trees.
-"""
+"""Shared MG5 executable, LHAPDF, and macOS rpath helpers."""
 
 import os
 import subprocess
@@ -29,19 +10,7 @@ PYTHON_EXE = Path(sys.executable)
 
 
 def _resolve_mg5_exe():
-    """Resolve the mg5_aMC executable.
-
-    Resolution order:
-      1. $HNL_MG5_EXE (explicit path)
-      2. hnl/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC (drop-in vendoring)
-      3. projects-root shared vendored/MG5_aMC_v3_6_6/bin/mg5_aMC
-         (siblings llpatcolliders_FONLL / llpatcolliders_MATT / ...
-         share this install)
-      4. sibling llpatcolliders_FONLL/vendored/MG5_aMC_v3_6_6/bin/mg5_aMC
-
-    The 148 MB MG5 install is intentionally not committed; see
-    hnl/vendored/PROVENANCE.md.
-    """
+    """Resolve mg5_aMC from env, vendored, shared, or sibling installs."""
     env_path = os.environ.get("HNL_MG5_EXE")
     if env_path:
         return Path(env_path)
@@ -65,40 +34,47 @@ def _resolve_mg5_exe():
 MG5_EXE = _resolve_mg5_exe()
 
 
-# LHAPDF install used for NNPDF4.0 NLO. MG5 run_cards use `pdlabel = lhapdf`,
-# so MadEvent needs lhapdf-config on its path; we point it at the shared
-# install under projects-root NNPDF40/fonll-local/env/, which already carries
-# NNPDF40_nlo_as_01180 (the same set the FONLL meson tables were generated
-# with). Overridable via $HNL_LHAPDF_CONFIG.
-LHAPDF_CONFIG = Path(os.environ.get(
-    "HNL_LHAPDF_CONFIG",
-    PROJECT_ROOT.parent.parent / "NNPDF40" / "fonll-local" / "env" / "bin" / "lhapdf-config",
-))
+def _resolve_lhapdf_config():
+    """Resolve lhapdf-config from $HNL_LHAPDF_CONFIG, active conda env, or
+    the legacy NNPDF40/fonll-local install."""
+    env_path = os.environ.get("HNL_LHAPDF_CONFIG")
+    if env_path:
+        return Path(env_path)
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        candidate = Path(conda_prefix) / "bin" / "lhapdf-config"
+        if candidate.exists():
+            return candidate
+    return PROJECT_ROOT.parent.parent / "NNPDF40" / "fonll-local" / "env" / "bin" / "lhapdf-config"
+
+
+LHAPDF_CONFIG = _resolve_lhapdf_config()
 LHAPDF_LIBDIR = LHAPDF_CONFIG.parent.parent / "lib"
+
+# Existing PDF data set (NNPDF40_nlo_as_01180 etc.) bundled with the
+# sibling FONLL install. Pointed at via LHAPDF_DATA_PATH so the active
+# conda env reuses it instead of re-downloading ~340 MB.
+LHAPDF_DATA_DIR = Path(os.environ.get(
+    "HNL_LHAPDF_DATA",
+    PROJECT_ROOT.parent.parent / "NNPDF40" / "fonll-local" / "env" / "share" / "LHAPDF",
+))
 
 
 def mg5_subprocess_env():
-    """Process env for MG5 subprocesses: inject LHAPDF lib path on the loader.
-
-    On macOS DYLD_LIBRARY_PATH is stripped by SIP across some shells but
-    survives a direct subprocess.run(env=...) hand-off, which is how we
-    call MG5. We set both DYLD_* and LD_* so the same wiring works on
-    Linux without branching.
-    """
+    """Inject LHAPDF libdir + PDF data path for MG5 subprocesses."""
     env = os.environ.copy()
     for key in ("DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"):
         existing = env.get(key, "")
         env[key] = f"{LHAPDF_LIBDIR}:{existing}" if existing else str(LHAPDF_LIBDIR)
+    existing_data = env.get("LHAPDF_DATA_PATH", "")
+    env["LHAPDF_DATA_PATH"] = (
+        f"{LHAPDF_DATA_DIR}:{existing_data}" if existing_data else str(LHAPDF_DATA_DIR)
+    )
     return env
 
 
 def patch_me5_configuration(cards_dir):
-    """Per-job MG5 config: disable browser auto-open and wire LHAPDF.
-
-    Writing `lhapdf_py3 = <path-to-lhapdf-config>` makes MadEvent discover
-    the shared LHAPDF install (and therefore the NNPDF40 PDF grids) without
-    touching the global mg5_configuration.txt under the shared MG5 install.
-    """
+    """Disable browser auto-open and point MadEvent at LHAPDF."""
     cfg = cards_dir / "me5_configuration.txt"
     if not cfg.exists():
         return
@@ -121,47 +97,58 @@ def patch_me5_configuration(cards_dir):
 
 
 def force_compile_subprocesses(work_subdir, log_path, timeout=900):
-    """Force Fortran compilation of every SubProcess up-front.
+    """Compile MG5 subprocesses before event generation via direct make.
 
-    MG5's `output` step emits source only; the gensym/madevent binaries
-    are compiled lazily on the first `generate_events`. We must drive a
-    pre-compile so patch_rpath_for_lhapdf has real binaries to symlink
-    next to. The interactive `madevent` shell accepts a `compile`
-    command; we drive it via stdin and route output to log_path.
+    Bypasses the interactive bin/madevent shell (which in MG5 3.6.6 routes
+    `compile` through the launch flow's switches/cards dialogs and chokes
+    on piped stdin). We build the Source/ libs once, then `make madevent`
+    in every SubProcesses/P*_*/ directly.
 
-    Returns True if compilation succeeded (process exited 0 *and* at
-    least one P*_*/madevent binary exists), False otherwise. Callers
-    should refuse to continue on False because the dyld-rpath symlink
-    step has nothing to patch and the subsequent generate_events will
-    fail with a useless 'compile directory' error.
+    A fresh MG5 output tree ships only matrix*_orig.f; the *_optim.f files
+    are generated lazily by the helicity-recycling step inside the launch
+    flow. We skip that optimization and pass MATRIX=matrix*_orig.o
+    explicitly so the link picks up the original matrix elements (the
+    speed cost is negligible for our event counts).
     """
+    env = mg5_subprocess_env()
     with open(log_path, "w") as log:
+        log.write("=== make -C Source ===\n")
+        log.flush()
         result = subprocess.run(
-            [str(PYTHON_EXE), "bin/madevent"],
-            input="compile\nquit\n", text=True,
-            cwd=work_subdir, env=mg5_subprocess_env(),
+            ["make"],
+            cwd=work_subdir / "Source",
+            env=env,
             stdout=log, stderr=subprocess.STDOUT, timeout=timeout,
         )
-    if result.returncode != 0:
-        return False
-    # Sanity check: at least one madevent binary must exist.
-    for sub in (work_subdir / "SubProcesses").glob("P*_*"):
-        if (sub / "madevent").exists():
-            return True
-    return False
+        if result.returncode != 0:
+            return False
+
+        any_built = False
+        for sub in sorted((work_subdir / "SubProcesses").glob("P*_*")):
+            if not sub.is_dir() or not (sub / "Makefile").exists():
+                continue
+            orig_objs = " ".join(sorted(
+                p.with_suffix(".o").name for p in sub.glob("matrix*_orig.f")
+            ))
+            if not orig_objs:
+                log.write(f"\n=== skip {sub.name}: no matrix*_orig.f ===\n")
+                continue
+            log.write(f"\n=== make -C {sub.name} madevent MATRIX={orig_objs} ===\n")
+            log.flush()
+            result = subprocess.run(
+                ["make", "madevent", f"MATRIX={orig_objs}"],
+                cwd=sub,
+                env=env,
+                stdout=log, stderr=subprocess.STDOUT, timeout=timeout,
+            )
+            if result.returncode != 0 or not (sub / "madevent").exists():
+                return False
+            any_built = True
+    return any_built
 
 
 def write_process_block(out_file, proc_lines):
-    """Copy MG5 process commands while preserving multiparticle definitions.
-
-    The earlier loop in each driver kept only `generate` and `add process`
-    lines, which silently dropped the `define p = g u c d s b ...` line that
-    promotes the proton from MG5's default 4-flavor proton to a 5-flavor one.
-    Without it, b-initiated subprocesses (CKM-suppressed for W/Z + lN but
-    non-zero for DY -> tau pair) are excluded from generation. This helper
-    keeps any line that starts with `define`, `generate`, or `add process`,
-    so the 5-flavor proton in the cards survives into the MG5 command file.
-    """
+    """Copy MG5 define/generate/add-process lines from a process card."""
     for line in proc_lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -175,14 +162,7 @@ def write_process_block(out_file, proc_lines):
 
 
 def has_five_flavor_proton(work_subdir):
-    """Return True iff the cached MG5 process dir was built with `b` in `p`.
-
-    MG5 writes the resolved process card to Cards/proc_card_mg5.dat after
-    parsing; reading it back tells us whether the cached build used the
-    5-flavor proton. We invalidate cached process dirs from older runs (built
-    before write_process_block landed) by checking the recorded `define p`
-    line and returning False if `b` is missing — the caller will then rebuild.
-    """
+    """Return True iff the cached MG5 process dir was built with b in p."""
     card = work_subdir / "Cards" / "proc_card_mg5.dat"
     if not card.exists():
         return False
@@ -190,7 +170,6 @@ def has_five_flavor_proton(work_subdir):
         stripped = line.strip()
         if not stripped.startswith("define p"):
             continue
-        # `define p = g u c d s b u~ c~ d~ s~ b~` -> tokens on the RHS of `=`.
         if "=" not in stripped:
             continue
         tokens = stripped.split("=", 1)[1].split()
@@ -199,36 +178,27 @@ def has_five_flavor_proton(work_subdir):
 
 
 def patch_rpath_for_lhapdf(work_subdir):
-    """macOS-only: symlink libLHAPDF.dylib next to every compiled MG5 binary.
+    """macOS dyld workaround: symlink LHAPDF + OpenMP next to MG5 binaries.
 
-    Background: on macOS DYLD_LIBRARY_PATH is not reliably forwarded to
-    MG5's grandchild Fortran subprocesses (MadEvent launches them through
-    its own multiprocess machinery; SIP also rewrites the env for any
-    binary loaded from a protected path). The compiled `madevent` /
-    `gensym` binaries reference `@rpath/libLHAPDF.dylib` and their
-    embedded rpath set is gcc's homebrew install dir.
-
-    `install_name_tool -add_rpath` cannot extend the rpath in place
-    because MG5's link step did not reserve header padding (the tool
-    errors with "larger updated load commands do not fit"). Re-linking
-    each subprocess would require modifying MG5's makefiles.
-
-    The portable workaround: dyld searches `@loader_path` (the binary's
-    own directory) when resolving `@rpath/...`. We drop a symlink to
-    libLHAPDF.dylib into every SubProcesses/P*_*/ directory next to its
-    madevent/gensym binary, and dyld picks it up.
-
-    Idempotent; safe to re-run.
+    The MG5 madevent binary references @rpath/libLHAPDF.dylib and
+    @rpath/libomp.dylib (when LHAPDF was installed via conda-forge, which
+    ships libomp alongside libLHAPDF and the linker picks it up over GCC's
+    libgomp). DYLD_LIBRARY_PATH is unreliable across MG5's grandchild
+    Fortran subprocesses on macOS SIP, so we symlink each required dylib
+    into the binary's own directory — dyld resolves @rpath through
+    @loader_path and picks them up.
     """
     if sys.platform != "darwin":
         return
-    src = LHAPDF_LIBDIR / "libLHAPDF.dylib"
-    if not src.exists():
+    sources = [LHAPDF_LIBDIR / name for name in ("libLHAPDF.dylib", "libomp.dylib")]
+    sources = [s for s in sources if s.exists()]
+    if not sources:
         return
     for sub in (work_subdir / "SubProcesses").glob("P*_*"):
         if not sub.is_dir():
             continue
-        link = sub / "libLHAPDF.dylib"
-        if link.exists() or link.is_symlink():
-            continue
-        link.symlink_to(src)
+        for src in sources:
+            link = sub / src.name
+            if link.exists() or link.is_symlink():
+                continue
+            link.symlink_to(src)
