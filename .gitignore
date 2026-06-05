@@ -20,3 +20,8 @@ env/
 
 # OS / editor cruft
 .DS_Store
+
+# MadGraph/PLY transient files that may be emitted from the invocation cwd.
+py.py
+parser.out
+MG5_debug

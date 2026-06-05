@@ -1,0 +1,37 @@
+# Conda env for the HNL production pipeline.
+#
+# Create:
+#     conda env create -f hnl/environment.yml
+#     conda activate hnl
+#
+# The pipeline also needs MadGraph (vendored separately, see
+# hnl/vendored/PROVENANCE.md) and HNLCalc (vendored under
+# hnl/vendored/HNLCalc/). Both are loaded by path, not via this env.
+#
+# LHAPDF runtime: once activated, _mg5_common._resolve_lhapdf_config()
+# picks up $CONDA_PREFIX/bin/lhapdf-config automatically. The PDF data
+# (NNPDF40_nlo_as_01180, ~340 MB) is reused from the sibling
+# NNPDF40/fonll-local/env/share/LHAPDF install via LHAPDF_DATA_PATH;
+# override with $HNL_LHAPDF_DATA if you relocate the PDF set.
+name: hnl
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  # Direct HNL pipeline deps
+  - numpy
+  - particle
+  - matplotlib
+  - pytest
+  # Vendored HNLCalc deps (sympy/scipy/mpmath/pandas/numba/cycler are imported
+  # by HNLCalc internally; see hnl/vendored/HNLCalc/)
+  - sympy
+  - scipy
+  - mpmath
+  - pandas
+  - numba
+  - cycler
+  # MadGraph PDF backend (binary + library; PDF data reused from
+  # NNPDF40/fonll-local/env via LHAPDF_DATA_PATH, see README)
+  - lhapdf=6.5.*
+  - pip
