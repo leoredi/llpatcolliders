@@ -1,8 +1,8 @@
 """
-GARGOYLE detector geometry module.
+GRENDEL detector geometry module.
 
 Provides the fiducial volume mesh and ray-casting utilities for the
-GARGOYLE tunnel detector above CMS IP5.
+GRENDEL tunnel detector above CMS IP5.
 
 Coordinate convention (CMS standard):
     X = horizontal transverse
@@ -312,7 +312,7 @@ Y_POSITION = 22  # m
 def build_fiducial_mesh(y_position=Y_POSITION,
                         detector_thickness=DETECTOR_THICKNESS):
     """
-    Construct the fiducial-volume trimesh for the GARGOYLE tunnel.
+    Construct the fiducial-volume trimesh for the GRENDEL tunnel.
 
     Parameters
     ----------

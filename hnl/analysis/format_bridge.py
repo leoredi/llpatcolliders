@@ -1,8 +1,8 @@
 """
 analysis/format_bridge.py
 
-Convert FONLL 4-vector CSVs (weight, E, px, py, pz) to geometry-ready arrays
-(eta, phi, p, mass, beta, gamma, beta_gamma) for use with the GARGOYLE
+Convert HNL 4-vector CSVs (weight, E, px, py, pz) to geometry-ready arrays
+(eta, phi, p, mass, beta, gamma, beta_gamma) for use with the GRENDEL
 ray-casting code.
 """
 

@@ -23,10 +23,12 @@ import numpy as np
 
 HNL_ROOT = Path(__file__).resolve().parent.parent  # hnl/dev/ -> hnl/
 sys.path.insert(0, str(HNL_ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for sibling validation_plot
 
 from config_mass_grid import MASS_GRID, format_mass_for_filename
-from validation_plot import OUTPUT_BASE, PLOT_DIR, _sum_weights
+from production.paths import ANALYSIS_DIR, LLP_VECTORS_DIR
+
+OUTPUT_BASE = LLP_VECTORS_DIR
+PLOT_DIR = ANALYSIS_DIR / "debug_plots"
 
 FLAVORS = ["Ue", "Umu", "Utau"]
 # Same channel folders as combine_channels.py / run_all.py.
@@ -49,6 +51,18 @@ CHAN_LABELS = {
     "Kmeson": r"$K^\pm$",
     "WZ": r"$W/Z$",
 }
+
+
+def _sum_weights(csv_path: Path) -> float:
+    if not csv_path.exists() or csv_path.stat().st_size == 0:
+        return 0.0
+    try:
+        data = np.loadtxt(csv_path, delimiter=",")
+    except ValueError:
+        return 0.0
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+    return float(data[:, 0].sum()) if data.size else 0.0
 
 
 def channel_weight_table(flavor: str, channels: list[str] | None = None):

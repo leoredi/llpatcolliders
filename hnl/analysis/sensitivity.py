@@ -1,7 +1,7 @@
 """
 analysis/sensitivity.py
 
-Core HNL sensitivity calculation for GARGOYLE with full 2-body acceptance.
+Core HNL sensitivity calculation for GRENDEL with full 2-body acceptance.
 
 Replicates the cos θ* acceptance bounds from decayProbPerEvent_2body.py
 (track separation and momentum cuts) and integrates over decay position

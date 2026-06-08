@@ -1,14 +1,4 @@
-"""
-hnl/analysis/plot_exclusion.py
-
-Publication-quality (m_N, U^2) "money plot" for HNL sensitivity.
-
-Adapted from llpatcolliders_FONLL/analysis/plot_exclusion.py:
-- Panels are built only for flavors present in the results CSV (so a
-  Umu-only scan produces a single-panel figure instead of 1x3 with two
-  empty panels).
-- Output filename is "hnl_exclusion" (project-neutral name).
-"""
+"""Publication-quality (m_N, U^2) sensitivity plot for GRENDEL."""
 
 import matplotlib
 matplotlib.use("Agg")
@@ -16,16 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from scipy.signal import savgol_filter
 
-from analysis.reference_curves import load_all_references
-
-_REF_STYLE = {
-    "MATHUSLA":  {"color": "#2166ac", "ls": "--",  "lw": 1.5},
-    "ANUBIS":    {"color": "#4dac26", "ls": "-.",  "lw": 1.5},
-    "CODEX-b":   {"color": "#e08214", "ls": ":",   "lw": 1.8},
-    "SHiP":      {"color": "#7b3294", "ls": "--",  "lw": 1.2},
-}
+PLOT_U2_MIN = 1e-12
+PLOT_U2_MAX = 1e-1
 
 _FLAVOR_LABEL = {
     "Ue":   r"$|U_e|^2$",
@@ -49,16 +32,13 @@ def plot_exclusion(results_csv, output_dir=None, basename="hnl_exclusion"):
         print("No flavors in results CSV; nothing to plot.")
         return
 
-    ref_curves = load_all_references(flavors=flavors_present)
-
     n = len(flavors_present)
     fig, axes = plt.subplots(1, n, figsize=(6 * n, 6), sharey=True,
                              squeeze=False)
     axes = axes[0]
 
     for idx, flavor in enumerate(flavors_present):
-        _plot_single_panel(axes[idx], df, flavor, ref_curves,
-                           is_leftmost=(idx == 0))
+        _plot_single_panel(axes[idx], df, flavor, is_leftmost=(idx == 0))
 
     fig.tight_layout(w_pad=2.0)
     out_pdf = output_dir / f"{basename}.pdf"
@@ -70,109 +50,58 @@ def plot_exclusion(results_csv, output_dir=None, basename="hnl_exclusion"):
     print(f"Saved: {out_png}")
 
 
-def _smooth_log(values, window=7):
-    if len(values) < window:
-        return values
-    if window % 2 == 0:
-        window += 1
-    log_vals = np.log10(values)
-    smoothed = savgol_filter(log_vals, window, polyorder=3)
-    return 10.0 ** smoothed
+def _open_flags(valid, column, boundary_column, scan_limit):
+    """Read open-edge flags, inferring them for pre-flag result CSVs."""
+    if column in valid:
+        return valid[column].fillna(False).astype(bool).to_numpy()
+    boundary = valid[boundary_column].to_numpy(dtype=float)
+    return np.isclose(boundary, scan_limit, rtol=1e-10, atol=0.0)
 
 
-def _build_island_polygon(sel):
-    """Build a closed polygon for the GRENDEL exclusion island."""
-    valid = sel[sel["has_sensitivity"] == True].copy()
-    if len(valid) == 0:
-        return None
-
-    mass = valid["mass_GeV"].values
-    u2_lo = _smooth_log(valid["u2_min"].values)
-    u2_hi = _smooth_log(valid["u2_max"].values)
-
-    all_sorted = sel.sort_values("mass_GeV")
-    last_sens_mass = mass[-1]
-    after = all_sorted[
-        (all_sorted["mass_GeV"] > last_sens_mass) &
-        (all_sorted["has_sensitivity"] == False)
-    ]
-
-    m_upper = list(mass)
-    u2_upper = list(u2_hi)
-    m_lower = list(mass)
-    u2_lower = list(u2_lo)
-
-    if len(after) > 0:
-        row = after.iloc[0]
-        peak_N_last = valid.iloc[-1]["peak_N"]
-        peak_N_next = row["peak_N"]
-        if peak_N_next < peak_N_last and peak_N_last > 0:
-            frac = (3.0 - peak_N_last) / (peak_N_next - peak_N_last)
-            frac = np.clip(frac, 0.01, 0.99)
-            m_tip = last_sens_mass + frac * (row["mass_GeV"] - last_sens_mass)
-        else:
-            m_tip = last_sens_mass
-        u2_tip = row["peak_u2"]
-        m_upper.append(m_tip)
-        u2_upper.append(u2_tip)
-        m_lower.append(m_tip)
-        u2_lower.append(u2_tip)
-    else:
-        m_upper.append(mass[-1])
-        u2_upper.append(np.sqrt(u2_lo[-1] * u2_hi[-1]))
-        m_lower.append(mass[-1])
-        u2_lower.append(np.sqrt(u2_lo[-1] * u2_hi[-1]))
-
-    first_sens_mass = mass[0]
-    before = all_sorted[
-        (all_sorted["mass_GeV"] < first_sens_mass) &
-        (all_sorted["has_sensitivity"] == False)
-    ]
-    if len(before) > 0:
-        row = before.iloc[-1]
-        peak_N_first = valid.iloc[0]["peak_N"]
-        peak_N_prev = row["peak_N"]
-        if peak_N_prev < peak_N_first and peak_N_first > 0:
-            frac = (3.0 - peak_N_first) / (peak_N_prev - peak_N_first)
-            frac = np.clip(frac, 0.01, 0.99)
-            m_tip = first_sens_mass + frac * (row["mass_GeV"] - first_sens_mass)
-        else:
-            m_tip = first_sens_mass
-        u2_tip = row["peak_u2"]
-        m_upper.insert(0, m_tip)
-        u2_upper.insert(0, u2_tip)
-        m_lower.insert(0, m_tip)
-        u2_lower.insert(0, u2_tip)
-
-    m_poly = np.array(m_upper + m_lower[::-1])
-    u2_poly = np.array(u2_upper + u2_lower[::-1])
-    return m_poly, u2_poly
+def _sensitive_segments(sel):
+    """Yield contiguous sensitive rows without bridging insensitive masses."""
+    is_sensitive = sel["has_sensitivity"].fillna(False).astype(bool)
+    group = is_sensitive.ne(is_sensitive.shift(fill_value=False)).cumsum()
+    for _, segment in sel[is_sensitive].groupby(group[is_sensitive]):
+        yield segment
 
 
-def _plot_single_panel(ax, df, flavor, ref_curves, is_leftmost=True):
+def _plot_single_panel(ax, df, flavor, is_leftmost=True):
     sel = df[df["flavor"] == flavor].sort_values("mass_GeV")
-    valid = sel[sel["has_sensitivity"] == True]
+    plotted = False
 
-    if len(valid) > 0:
-        poly = _build_island_polygon(sel)
-        if poly is not None:
-            m_poly, u2_poly = poly
-            ax.fill(m_poly, u2_poly, alpha=0.25, color="red",
-                    label="GRENDEL", zorder=5)
-            ax.plot(m_poly, u2_poly, "r-", linewidth=1.8, zorder=6)
+    for valid in _sensitive_segments(sel):
+        mass = valid["mass_GeV"].to_numpy(dtype=float)
+        u2_min = valid["u2_min"].to_numpy(dtype=float)
+        u2_max = valid["u2_max"].to_numpy(dtype=float)
+        min_open = _open_flags(
+            valid, "u2_min_open", "u2_min", PLOT_U2_MIN)
+        max_open = _open_flags(
+            valid, "u2_max_open", "u2_max", PLOT_U2_MAX)
 
-    for exp, curves in ref_curves.items():
-        if flavor not in curves:
-            continue
-        c = curves[flavor]
-        style = _REF_STYLE.get(exp, {"color": "gray", "ls": "-", "lw": 1.0})
-        ax.fill_between(c["mass"], c["u2_min"], c["u2_max"],
-                        alpha=0.08, color=style["color"])
-        ax.plot(c["mass"], c["u2_min"],
-                color=style["color"], ls=style["ls"], lw=style["lw"],
-                label=exp)
-        ax.plot(c["mass"], c["u2_max"],
-                color=style["color"], ls=style["ls"], lw=style["lw"])
+        lower_fill = np.where(min_open, PLOT_U2_MIN, u2_min)
+        upper_fill = np.where(max_open, PLOT_U2_MAX, u2_max)
+        ax.fill_between(
+            mass, lower_fill, upper_fill,
+            alpha=0.25, color="red",
+            label="GRENDEL" if not plotted else None, zorder=5)
+        plotted = True
+
+        lower_line = np.where(min_open, np.nan, u2_min)
+        upper_line = np.where(max_open, np.nan, u2_max)
+        ax.plot(mass, lower_line, "r-", linewidth=1.8, zorder=6)
+        ax.plot(mass, upper_line, "r-", linewidth=1.8, zorder=6)
+
+        if np.any(min_open):
+            ax.scatter(
+                mass[min_open], np.full(min_open.sum(), PLOT_U2_MIN),
+                marker="v", s=18, facecolors="none", edgecolors="red",
+                linewidths=0.8, clip_on=False, zorder=7)
+        if np.any(max_open):
+            ax.scatter(
+                mass[max_open], np.full(max_open.sum(), PLOT_U2_MAX),
+                marker="^", s=18, facecolors="none", edgecolors="red",
+                linewidths=0.8, clip_on=False, zorder=7)
 
     ax.set_xlabel(r"$m_N$ [GeV]", fontsize=14)
     if is_leftmost:
@@ -180,9 +109,10 @@ def _plot_single_panel(ax, df, flavor, ref_curves, is_leftmost=True):
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlim([0.15, 10.0])
-    ax.set_ylim([1e-12, 1e-1])
+    ax.set_ylim([PLOT_U2_MIN, PLOT_U2_MAX])
     ax.grid(True, which="both", alpha=0.2, linewidth=0.5)
-    ax.legend(fontsize=10, loc="upper right")
+    if plotted:
+        ax.legend(fontsize=10, loc="upper right")
     ax.set_title(f"HNL {_FLAVOR_LABEL.get(flavor, flavor)}", fontsize=14)
 
 

@@ -1,13 +1,10 @@
 """
 hnl/analysis/constants.py
 
-Analysis-level constants for the GRENDEL/GARGOYLE HNL sensitivity scan.
+Analysis-level constants for the GRENDEL HNL sensitivity scan.
 
-Inherited (with small adjustments) from llpatcolliders_FONLL/analysis/constants.py:
-  - DEFAULT_FLAVORS defaults to Umu only (current production focus: muon-mixing
-    money plot).
-  - FONLL_MASS_MAX raised to 10 GeV so the W/Z-only high-mass region is
-    included in the scan (matches the upstream "MATT" hnl_alaship default).
+DEFAULT_FLAVORS is the muon-mixing scenario. ANALYSIS_MASS_MAX is 10 GeV so
+the committed electroweak production tail is included.
 """
 
 # HL-LHC integrated luminosity
@@ -33,11 +30,10 @@ P_CUT = 0.600      # GeV/c -- minimum daughter momentum
 # Electron mass for 2-body acceptance kinematics
 M_ELECTRON = 0.000511  # GeV/c^2
 
-# Full HNL scan range. FONLL meson channels close around 5 GeV but W/Z
-# production reaches ~80 GeV, so we keep the full grid.
-FONLL_MASS_MAX = 10.0  # GeV
+# Full analysis range represented by the committed mass grid.
+ANALYSIS_MASS_MAX = 10.0  # GeV
 
-# Flavors known to the analysis (used by reference-curve loader, plot panels).
+# Flavors known to the analysis and plotting code.
 FLAVORS = ["Ue", "Umu", "Utau"]
 
 # Production focus: muon-only scenario (HNL pattern 010).

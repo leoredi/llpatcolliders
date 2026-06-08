@@ -12,7 +12,7 @@ Usage examples:
     python -m analysis.run_sensitivity                       # Umu, full grid
     python -m analysis.run_sensitivity --flavor Ue Umu       # multi-flavor
     python -m analysis.run_sensitivity --mass 1.0 2.0        # custom masses
-    python -m analysis.run_sensitivity --workers 8           # parallel workers
+    python -m analysis.run_sensitivity --workers 3           # parallel workers
     python -m analysis.run_sensitivity --plot-only           # re-plot only
 
 Inputs (read via ``production.paths``):
@@ -20,7 +20,7 @@ Inputs (read via ``production.paths``):
     {LLP_VECTORS_DIR}/{flavor}/combined/mN_{mass}.csv    -- 4-vectors per point
     {HNL_ROOT}/data/ctau/ctau_{flavor}.dat               -- ctau(m_N) at U^2=1
     {HNL_ROOT}/data/ctau/br_vis_{flavor}.dat             -- BR_vis(m_N), optional
-    {HNL_ROOT}/geometry/gargoyle_geometry.py             -- detector mesh
+    {HNL_ROOT}/geometry/grendel_geometry.py              -- detector mesh
 
 Outputs:
 
@@ -54,7 +54,7 @@ from analysis.constants import (
     CMS_ORIGIN,
     DEFAULT_FLAVORS,
     FLAVORS,
-    FONLL_MASS_MAX,
+    ANALYSIS_MASS_MAX,
     L_INT_PB,
     LOG_U2_MAX,
     LOG_U2_MIN,
@@ -73,19 +73,19 @@ GEOM_CACHE_DIR = ANALYSIS_DIR / "geometry_cache"
 
 
 # =========================================================================
-# Geometry: ray-cast through the GARGOYLE mesh (lazy import)
+# Geometry: ray-cast through the GRENDEL mesh (lazy import)
 # =========================================================================
 
 def _get_mesh():
-    """Lazy-import the GARGOYLE mesh from ``hnl/geometry/``."""
+    """Lazy-import the GRENDEL mesh from ``hnl/geometry/``."""
     if not GEOMETRY_DIR.exists():
         raise FileNotFoundError(
             f"geometry/ directory not found at {GEOMETRY_DIR}.\n"
-            "Copy gargoyle_geometry.py into hnl/geometry/."
+            "The checkout is incomplete; hnl/geometry/grendel_geometry.py is required."
         )
     if str(GEOMETRY_DIR) not in sys.path:
         sys.path.insert(0, str(GEOMETRY_DIR))
-    from gargoyle_geometry import mesh_fiducial
+    from grendel_geometry import mesh_fiducial
     return mesh_fiducial
 
 
@@ -99,7 +99,7 @@ def _eta_phi_to_directions_batch(eta, phi):
 
 
 def compute_geometry(eta, phi, mesh, origin=CMS_ORIGIN, batch_label=""):
-    """Batch ray-cast (eta, phi) directions against the GARGOYLE mesh."""
+    """Batch ray-cast (eta, phi) directions against the GRENDEL mesh."""
     n = len(eta)
     origin_arr = np.array(origin, dtype=np.float64)
     hits = np.zeros(n, dtype=bool)
@@ -193,8 +193,8 @@ def load_ctau_table(flavor):
     path = CTAU_DIR / f"ctau_{flavor}.dat"
     if not path.exists():
         raise FileNotFoundError(
-            f"ctau table not found at {path}. Vendor it from "
-            "llpatcolliders_FONLL/output/ctau/ or regenerate via HNLCalc."
+            f"ctau table not found at {path}. "
+            "The checkout is incomplete; hnl/data/ctau is required."
         )
     return _load_two_column_table(path)
 
@@ -246,6 +246,7 @@ def process_mass_point(flavor, mass, ctau_table, mesh,
         return {
             "mass_GeV": mass, "flavor": flavor,
             "u2_min": np.nan, "u2_max": np.nan,
+            "u2_min_open": False, "u2_max_open": False,
             "peak_N": 0.0, "peak_u2": np.nan,
             "has_sensitivity": False, "n_events": n_events, "n_hits": 0,
         }
@@ -425,7 +426,7 @@ def main(argv=None):
         help=f"Flavors to process (default: {DEFAULT_FLAVORS})")
     parser.add_argument(
         "--mass", nargs="+", type=float, default=None,
-        help=f"Specific masses in GeV (default: full grid <= {FONLL_MASS_MAX} GeV)")
+        help=f"Specific masses in GeV (default: full grid <= {ANALYSIS_MASS_MAX} GeV)")
     parser.add_argument(
         "--plot-only", action="store_true",
         help="Re-plot from existing results CSV")
@@ -449,7 +450,7 @@ def main(argv=None):
         return 0
 
     flavors = args.flavor or DEFAULT_FLAVORS
-    masses = args.mass or [m for m in MASS_GRID if m <= FONLL_MASS_MAX]
+    masses = args.mass or [m for m in MASS_GRID if m <= ANALYSIS_MASS_MAX]
 
     print("HNL Sensitivity Analysis")
     print(f"  Flavors: {flavors}")
