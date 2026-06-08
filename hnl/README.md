@@ -292,6 +292,25 @@ bottleneck is HNLCalc's 3-body BR integration, which dominates over meson
 sampling; pool generation is duplicated per meson/kaon/induced-tau worker
 but cheap.
 
+### Sensitivity analysis
+
+Run the sensitivity scan after all channels have been combined:
+
+    python run_analysis.py --flavor Ue Umu Utau --workers 3
+
+The analysis workers are memory-heavy because each process independently loads
+a combined mass-point CSV and constructs the arrays used for detector
+ray-casting. Do not set the worker count from the CPU-core count alone.
+
+On the 18 GB Apple-silicon development machine, a 12-worker, three-flavor scan
+on the 100k-event production sample exhausted memory: the macOS stackshot
+reported 3.15-4.02 GiB resident per worker, 41.4 GiB summed worker RSS, only
+0.37 GiB free, and 7.77 GiB in the compressor. WindowServer then became
+unresponsive and was terminated by the userspace watchdog. Thermal pressure
+was nominal, so this was memory pressure rather than CPU overheating or a
+kernel panic. Use `--workers 3` on this machine; increase it only after checking
+memory pressure with the actual event sample.
+
 ### Individual drivers (serial, one channel at a time)
 
     python -m production.decay_engine.generate_meson_csvs \
