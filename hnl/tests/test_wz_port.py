@@ -15,6 +15,7 @@ in CI without the 148 MB MG5 install or Docker.
 import numpy as np
 import pytest
 
+from production.madgraph import runner
 from production.madgraph.lhe_to_csv import LHEParser
 from production.constants import K_FACTOR_EW
 
@@ -80,3 +81,32 @@ def test_wz_empty_lhe_yields_empty_csv(tmp_path):
     n = LHEParser(lhe).write_hnl_csv(csv_path)
     assert n == 0
     assert csv_path.exists() and csv_path.stat().st_size == 0
+
+
+def test_mg5_process_generation_uses_cache_workdir(tmp_path, monkeypatch):
+    work_dir = tmp_path / "cache"
+    process_dir = work_dir / "process"
+    proc_card = tmp_path / "proc_card.dat"
+    proc_card.write_text("generate p p > w+\n")
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured["cwd"] = kwargs["cwd"]
+        (process_dir / "bin").mkdir(parents=True)
+        (process_dir / "bin" / "generate_events").touch()
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(runner, "force_compile_subprocesses", lambda *a, **k: True)
+    monkeypatch.setattr(runner, "patch_rpath_for_lhapdf", lambda *a, **k: None)
+
+    result = runner.ensure_process_dir(
+        label="test",
+        model_import="import model sm",
+        proc_card=proc_card,
+        work_dir=work_dir,
+        process_dir=process_dir,
+    )
+
+    assert result == process_dir
+    assert captured["cwd"] == work_dir

@@ -59,6 +59,7 @@ def ensure_process_dir(
             [str(PYTHON_EXE), str(MG5_EXE), str(cmd_file)],
             stdout=log,
             stderr=subprocess.STDOUT,
+            cwd=work_dir,
             timeout=generation_timeout,
             env=mg5_subprocess_env(),
         )
