@@ -79,12 +79,22 @@ def patch_me5_configuration(cards_dir):
     if not cfg.exists():
         return
     text = cfg.read_text()
-    new_text = text.replace("# automatic_html_opening = True", "automatic_html_opening = False")
-    new_text = new_text.replace("# automatic_html_opening = False", "automatic_html_opening = False")
-    new_text = new_text.replace("automatic_html_opening = True", "automatic_html_opening = False")
-    new_text = new_text.replace("# web_browser = None", "web_browser = None")
-    if "automatic_html_opening" not in new_text:
-        new_text += "\nautomatic_html_opening = False\n"
+    new_text = text.replace("# web_browser = None", "web_browser = None")
+
+    def set_option(config_text, key, value):
+        lines = config_text.splitlines()
+        updated = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith(f"{key} =") or stripped.startswith(f"# {key} ="):
+                lines[i] = f"{key} = {value}"
+                updated = True
+        if not updated:
+            lines.append(f"{key} = {value}")
+        return "\n".join(lines) + "\n"
+
+    new_text = set_option(new_text, "automatic_html_opening", "False")
+    new_text = set_option(new_text, "notification_center", "False")
 
     lhapdf_line = f"lhapdf_py3 = {LHAPDF_CONFIG}"
     if "# lhapdf_py3 = lhapdf-config" in new_text:
