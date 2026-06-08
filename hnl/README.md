@@ -294,8 +294,7 @@ compatibility module.
 
 ## Physics Inputs and Limitations
 
-- The default heavy-meson backend is the committed NNPDF4.0 NLO FONLL grid.
-  `HNL_FONLL_SET=cteq66_legacy` selects the older alternate backend.
+- The heavy-meson backend is the committed NNPDF4.0 NLO FONLL grid.
 - The FONLL tables stop at `pT = 50 GeV` and contain one central scale choice.
   PDF and scale uncertainties are not propagated.
 - Charm and bottom species share one heavy-flavor shape per table; species

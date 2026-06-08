@@ -1,38 +1,34 @@
 """Sanity checks on the FONLL table parser using the vendored FONLL tables."""
 
-import importlib
-
 import numpy as np
 import pytest
 
 from production.fonll.fonll_parser import (
-    FONLL_FILES, FONLL_FILE_SETS, parse_fonll_file, get_sigma_total,
+    FONLL_FILES, parse_fonll_file, get_sigma_total,
 )
 
 
 def test_table_files_exist():
-    for label, files in FONLL_FILE_SETS.items():
-        for q, path in files.items():
-            assert path.exists(), f"Missing vendored {label} FONLL table for {q}: {path}"
+    for q, path in FONLL_FILES.items():
+        assert path.exists(), f"Missing vendored FONLL table for {q}: {path}"
 
 
-def test_parse_shape_is_rectangular_for_all_backends():
-    """All backends parse as 1D pT, 1D y, 2D dsigma of consistent shape.
+def test_parse_shape_is_rectangular():
+    """Tables parse as 1D pT, 1D y, 2D dsigma of consistent shape.
     Does NOT hard-code grid density."""
-    for files in FONLL_FILE_SETS.values():
-        for q in ("charm", "bottom"):
-            pt, y, ds = parse_fonll_file(files[q])
-            assert pt.ndim == 1
-            assert y.ndim == 1
-            assert ds.shape == (len(pt), len(y))
-            assert len(pt) >= 2 and len(y) >= 2
-            assert pt.min() <= 0.0 and pt.max() >= 50.0
-            assert y.min() <= -3.0 and y.max() >= 3.0
+    for q in ("charm", "bottom"):
+        pt, y, ds = parse_fonll_file(FONLL_FILES[q])
+        assert pt.ndim == 1
+        assert y.ndim == 1
+        assert ds.shape == (len(pt), len(y))
+        assert len(pt) >= 2 and len(y) >= 2
+        assert pt.min() <= 0.0 and pt.max() >= 50.0
+        assert y.min() <= -3.0 and y.max() >= 3.0
 
 
 def test_nnpdf40_grid_matches_dense_production_contract():
     for q in ("charm", "bottom"):
-        pt, y, ds = parse_fonll_file(FONLL_FILE_SETS["nnpdf40_nlo"][q])
+        pt, y, ds = parse_fonll_file(FONLL_FILES[q])
         assert pt.ndim == 1
         assert y.ndim == 1
         assert ds.shape == (100, 100)
@@ -67,101 +63,6 @@ def test_parser_rejects_descending_y(tmp_path):
         parse_fonll_file(path)
 
 
-def _reload_parser_with_env(monkeypatch, value):
-    """Reload the parser module with HNL_FONLL_SET set to `value`,
-    or unset if value is None. Returns the freshly reloaded module."""
-    if value is None:
-        monkeypatch.delenv("HNL_FONLL_SET", raising=False)
-    else:
-        monkeypatch.setenv("HNL_FONLL_SET", value)
-    import production.fonll.fonll_parser as m
-    return importlib.reload(m)
-
-
-def test_backend_dispatch_default_is_nnpdf40(monkeypatch):
-    m = _reload_parser_with_env(monkeypatch, None)
-    assert m.FONLL_DEFAULT_SET == "nnpdf40_nlo"
-    assert "nnpdf40_nlo_as_01180" in m.FONLL_FILES["bottom"].name
-    assert m.get_sigma_total("bottom") > 0
-
-
-def test_backend_dispatch_legacy_cteq66(monkeypatch):
-    m = _reload_parser_with_env(monkeypatch, "cteq66_legacy")
-    assert m.FONLL_DEFAULT_SET == "cteq66_legacy"
-    assert "cteq66" in m.FONLL_FILES["bottom"].name
-    assert m.get_sigma_total("bottom") > 0
-
-
-def test_invalid_backend_fails_fast(monkeypatch):
-    monkeypatch.setenv("HNL_FONLL_SET", "typo")
-    import production.fonll.fonll_parser as m
-    with pytest.raises(ValueError, match="unknown HNL_FONLL_SET='typo'"):
-        importlib.reload(m)
-
-
-def test_parser_binding_matches_process_environment():
-    """Fixture teardown must preserve an externally selected backend."""
-    import os
-    import production.fonll.fonll_parser as m
-
-    expected = os.environ.get("HNL_FONLL_SET", "nnpdf40_nlo")
-    assert m.FONLL_DEFAULT_SET == expected
-    assert m.FONLL_FILES == m.FONLL_FILE_SETS[expected]
-
-
-def test_sampler_picks_up_each_backend_subprocess():
-    """Smoke test: spawn a clean Python under each HNL_FONLL_SET and confirm
-    that sample_meson_4vectors actually reads from the requested backend.
-
-    This covers the import-time module-binding hazard that the in-process
-    reload tests above cannot catch: any consumer that did
-    `from ...fonll_parser import FONLL_FILES` (a named import) keeps the
-    original dict after a parser reload, so reloading only the parser is
-    not a faithful proxy for what the sampler actually does in production.
-    """
-    import json
-    import os
-    import subprocess
-    import sys
-
-    code = """
-import json
-from production.fonll import fonll_parser, meson_sampler
-print(json.dumps({
-    "default_set": fonll_parser.FONLL_DEFAULT_SET,
-    "parser_bottom": fonll_parser.FONLL_FILES["bottom"].name,
-    # Verify the sampler looks up the parser's dict dynamically; the path
-    # used in production is the parser module's binding, not a stale
-    # snapshot captured at meson_sampler import time.
-    "sampler_bottom_via_parser": meson_sampler.fonll_parser.FONLL_FILES["bottom"].name,
-}))
-"""
-    # The subprocess imports `production` as a top-level package, which only
-    # resolves when its parent (hnl/) is on PYTHONPATH and cwd points at hnl/.
-    # The test runner doesn't guarantee either of those, so prep both here.
-    from pathlib import Path
-    hnl_root = Path(__file__).resolve().parent.parent
-    for env_value, expected_set, expected_substr in (
-        ("nnpdf40_nlo", "nnpdf40_nlo", "nnpdf40_nlo_as_01180"),
-        ("cteq66_legacy", "cteq66_legacy", "cteq66"),
-    ):
-        env = os.environ.copy()
-        env["HNL_FONLL_SET"] = env_value
-        existing_pp = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = (
-            f"{hnl_root}:{existing_pp}" if existing_pp else str(hnl_root)
-        )
-        result = subprocess.run(
-            [sys.executable, "-c", code], env=env, check=False,
-            capture_output=True, text=True, cwd=str(hnl_root),
-        )
-        assert result.returncode == 0, result.stderr
-        data = json.loads(result.stdout)
-        assert data["default_set"] == expected_set
-        assert expected_substr in data["parser_bottom"]
-        assert data["sampler_bottom_via_parser"] == data["parser_bottom"]
-
-
 def test_dsigma_nonnegative_majority():
     """At least 95% of bins should be non-negative (small numerical negatives allowed near edges)."""
     for q in ("charm", "bottom"):
@@ -179,17 +80,3 @@ def test_total_sigma_order_of_magnitude():
     assert 1e7 < sigma_b < 1e9, f"sigma_bottom = {sigma_b:.3e} pb out of expected range"
     # charm > bottom at LHC
     assert sigma_c > sigma_b
-
-
-@pytest.fixture(autouse=True)
-def _restore_parser_backend():
-    import os
-
-    original = os.environ.get("HNL_FONLL_SET")
-    yield
-    if original is None:
-        os.environ.pop("HNL_FONLL_SET", None)
-    else:
-        os.environ["HNL_FONLL_SET"] = original
-    import production.fonll.fonll_parser as m
-    importlib.reload(m)

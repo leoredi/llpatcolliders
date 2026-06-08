@@ -51,8 +51,7 @@ generated for the HL-LHC pp 14 TeV setup.
 Species splitting (D0/D+/Ds for charm; B+/B0/Bs for bottom) is applied
 downstream by `hnl/production/constants.py::FRAG_C` and `FRAG_B`. The
 FONLL tables supply pT-y shape and normalization before physical species
-fractions. CTEQ6.6 web-generated tables remain vendored as the optional
-`cteq66_legacy` backend in `production/fonll/fonll_parser.py`.
+fractions.
 
 ## MadGraph HeavyN UFO model (W/Z -> ell N production)
 

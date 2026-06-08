@@ -1,28 +1,14 @@
 """Parse vendored FONLL meson-level differential cross-section tables."""
 
 import numpy as np
-import os
 from pathlib import Path
 
 _VENDORED_DIR = Path(__file__).parent.parent.parent / "vendored"
 
-FONLL_FILE_SETS = {
-    "nnpdf40_nlo": {
-        "bottom": _VENDORED_DIR / "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat",
-        "charm": _VENDORED_DIR / "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat",
-    },
-    "cteq66_legacy": {
-        "bottom": _VENDORED_DIR / "fonll_pp14tev_cteq66_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat",
-        "charm": _VENDORED_DIR / "fonll_pp14tev_cteq66_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat",
-    },
+FONLL_FILES = {
+    "bottom": _VENDORED_DIR / "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat",
+    "charm": _VENDORED_DIR / "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat",
 }
-
-FONLL_DEFAULT_SET = os.environ.get("HNL_FONLL_SET", "nnpdf40_nlo")
-if FONLL_DEFAULT_SET not in FONLL_FILE_SETS:
-    valid = ", ".join(sorted(FONLL_FILE_SETS))
-    raise ValueError(f"unknown HNL_FONLL_SET={FONLL_DEFAULT_SET!r}; valid values: {valid}")
-
-FONLL_FILES = FONLL_FILE_SETS[FONLL_DEFAULT_SET]
 
 
 def parse_fonll_file(path):
