@@ -22,6 +22,9 @@ dependencies:
   - numpy
   - particle
   - matplotlib
+  - tqdm
+  - trimesh
+  - rtree
   - pytest
   # Vendored HNLCalc deps (sympy/scipy/mpmath/pandas/numba/cycler are imported
   # by HNLCalc internally; see hnl/vendored/HNLCalc/)
