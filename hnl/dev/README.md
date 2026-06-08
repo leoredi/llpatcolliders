@@ -1,114 +1,87 @@
-# `hnl/dev/` — internal scratch, plots, validation scripts
+# `hnl/dev/` - internal development utilities
 
-Material that travels with our fork (`myfork = leoredi/llpatcolliders`) and
-helps us keep working, but is **never** part of an upstream PR
-(`origin = exoticdarksectors/llpatcolliders`).
+This directory contains exploratory or diagnostic tools that are useful while
+developing the package but are not required to reproduce the production and
+analysis chain.
 
-> If you are reading this in an upstream PR, something went wrong in PR prep —
-> flag it. `hnl/dev/` should not be on a PR branch.
+## `debug_plots.py`
 
-## What's here
-
-### `debug_plots.py`
-Yield-vs-mass per channel, channel-fraction stacks, and HNL spectra at a fixed
-mass. Reads `hnl/tmp/runs/<tag>/llp_4vectors/`, writes PNGs to
-`hnl/tmp/runs/<tag>/analysis/debug_plots/`. Run it after `run_all.py` to see whether the
-production curves moved.
+This script plots yield versus mass, channel fractions, and HNL spectra from a
+completed run:
 
 ```bash
+conda activate hnl
+cd hnl
 python dev/debug_plots.py --channel-fraction Ue
 python dev/debug_plots.py --channel-fraction all
 ```
 
-### `validation_plot.py`
-Overlays our `combined` curve against the **MATHUSLA RHN reference 4-vector
-files** for each flavor. The factor-of-2 disagreement check on shared channels
-(`Bmeson`, `Dmeson`, `induced_tau` — the MATHUSLA "Tau" reference is
-induced-only) is exactly this overlay — a clean apples-to-apples on
-B+D+induced_tau means we are not double-counting `q + qbar`.
+It reads `tmp/runs/<tag>/llp_4vectors/` and writes below
+`tmp/runs/<tag>/analysis/debug_plots/`.
 
-```bash
-python dev/validation_plot.py
-python dev/validation_plot.py --ref /custom/path/to/MATHUSLA_root
-```
-
-It auto-discovers the reference data at
-`llpatcolliders_FONLL/vendored/MATHUSLA_LLPfiles_RHN_U{e,mu,tau}/` one or two
-levels above `hnl/`; pass `--ref` only if your checkout layout differs. The
-expected per-flavor sub-tree is
-`All_RHN_*/RHN_*_LLPweight4vector{Bmeson,Dmeson,Tau,WZ}list_mN_*.csv`.
-
-## The one rule
-
-Production code never imports from `hnl/dev/`. Imports the other direction
-(dev → production) are fine and expected.
-
-Anything diagnostic, exploratory, or one-off goes here. Don't delete scripts
-just because you stopped using them — they cost nothing on disk and may
-save you a re-derivation later.
+Production and analysis code must not import from `hnl/dev/`.
 
 ## Environment
 
-Everything in `hnl/` (production and dev alike) runs in the
-`llpatcolliders_FONLL` conda env, which has `numpy`, `scipy`, `sympy`,
-`mpmath`, `particle`, `numba`, `matplotlib`, and `pytest`:
+Use the committed package environment:
 
 ```bash
-conda activate llpatcolliders_FONLL
-# or, for one-shot calls:
-/Volumes/sandbox/conda/envs/llpatcolliders_FONLL/bin/python dev/<script>.py
+conda env create -f hnl/environment.yml
+conda activate hnl
+python hnl/dev/debug_plots.py --help
 ```
 
-The base conda env does **not** have the FONLL dependencies and silently
-skips the e2e smoke test — always use the env above.
+For a one-shot invocation without activation:
 
-## Workflow — fork vs upstream PR
+```bash
+conda run -n hnl python hnl/dev/debug_plots.py --help
+```
 
-The fork branch (`hnl-production-mesons-ew`) holds the full state: production
-code, tests, `dev/`, scratch — push to it freely. The PR branch is built
-fresh from `origin/main` at PR time and only contains the publishable subset.
-The two never merge.
+## PR Preparation
 
-### PR-prep recipe
+The publishable package includes production, analysis, geometry, static HNL
+inputs, tests, and top-level entry points. A branch assembled from another
+development branch must include all of them:
 
 ```bash
 git fetch origin
 git checkout -b pr/<topic> origin/main
 
-# Copy across only the publishable subset (note: hnl/dev/ is absent on purpose)
 git checkout hnl-production-mesons-ew -- \
     hnl/README.md \
     hnl/.gitignore \
+    hnl/environment.yml \
     hnl/config_mass_grid.py \
     hnl/run_all.py \
+    hnl/run_analysis.py \
+    hnl/run_full_all.sh \
+    hnl/analysis/ \
+    hnl/geometry/ \
+    hnl/data/ctau/ \
+    hnl/data/README.md \
     hnl/production/ \
     hnl/tests/ \
     hnl/vendored/
 
-# Safety: hnl/dev/ must NOT be staged
-git status hnl/dev   # should print: pathspec did not match any file
-
-# Tests must pass against the same env that produced our current results
-/Volumes/sandbox/conda/envs/llpatcolliders_FONLL/bin/python -m pytest hnl/tests/ -q
-
-git commit -m "hnl: <topic>"
-git push myfork pr/<topic>
-
-gh pr create \
-    --repo exoticdarksectors/llpatcolliders \
-    --base main --head leoredi:pr/<topic> \
-    --title "hnl: <topic>" --body "<see commit body / link to internal notes>"
+git status --short
+conda activate hnl
+python -P -m pytest hnl/tests/ -q
 ```
 
-The `git checkout <branch> -- <paths>` step is what enforces the "minimum
-publishable" rule: nothing outside the named paths can leak onto the PR
-branch, no matter how messy the dev branch gets.
+Do not include `hnl/tmp/`, generated plots, caches, logs, or local MadGraph
+work trees.
 
-## Rule of thumb for adding new things
+## Placement Rule
 
-> "Does this file need to exist for an outside reader to reproduce the
-> published result?"
->
-> - **Yes** → it goes under `hnl/production/`, `hnl/tests/`, or
->   `hnl/vendored/`. It will be in the next PR.
-> - **No** → it goes here. It stays on the fork.
+Files needed by another user to reproduce the result belong in one of:
+
+- `hnl/production/`
+- `hnl/analysis/`
+- `hnl/geometry/`
+- `hnl/data/`
+- `hnl/tests/`
+- `hnl/vendored/`
+- a documented top-level entry point
+
+Exploratory utilities that are not part of the reproducible chain belong in
+`hnl/dev/`.

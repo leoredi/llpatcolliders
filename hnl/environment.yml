@@ -1,4 +1,4 @@
-# Conda env for the HNL production pipeline.
+# Conda env for the HNL production and sensitivity pipeline.
 #
 # Create:
 #     conda env create -f hnl/environment.yml
@@ -18,20 +18,19 @@ channels:
   - conda-forge
 dependencies:
   - python=3.11
-  # Direct HNL pipeline deps
+  # Direct production and analysis dependencies
   - numpy
   - particle
   - matplotlib
   - tqdm
   - trimesh
   - rtree
-  - pytest
-  # Vendored HNLCalc deps (sympy/scipy/mpmath/pandas/numba/cycler are imported
-  # by HNLCalc internally; see hnl/vendored/HNLCalc/)
-  - sympy
   - scipy
-  - mpmath
   - pandas
+  - pytest
+  # Vendored HNLCalc dependencies
+  - sympy
+  - mpmath
   - numba
   - cycler
   # MadGraph PDF backend (binary + library; PDF data reused from

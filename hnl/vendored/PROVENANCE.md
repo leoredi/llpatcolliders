@@ -51,8 +51,8 @@ generated for the HL-LHC pp 14 TeV setup.
 Species splitting (D0/D+/Ds for charm; B+/B0/Bs for bottom) is applied
 downstream by `hnl/production/constants.py::FRAG_C` and `FRAG_B`. The
 FONLL tables supply pT-y shape and normalization before physical species
-fractions. CTEQ6.6 web-generated tables remain vendored as `cteq66_legacy`
-comparison inputs in `production/fonll/fonll_parser.py`.
+fractions. CTEQ6.6 web-generated tables remain vendored as the optional
+`cteq66_legacy` backend in `production/fonll/fonll_parser.py`.
 
 ## MadGraph HeavyN UFO model (W/Z -> ell N production)
 
@@ -100,8 +100,9 @@ Used in `hnl/production/decay_engine/` to evaluate:
 - `get_2body_br_tau` and `get_3body_dbr_tau` for tau -> HNL channels
 - `integrate_3body_br` for numerical phase-space integration
 
-All HNLCalc calls are made with unit coupling (`U^2 = 1`); the explicit
-`U^2` scan is the consumer's responsibility (and not part of this PR).
+Production calls HNLCalc with unit coupling (`U^2 = 1`) so the active mixing
+factors cleanly from each stored row. `analysis/run_sensitivity.py` performs
+the explicit `U^2` scan using the committed lifetime and visible-BR tables.
 
 ### Local modifications
 
@@ -160,9 +161,8 @@ that downstream loops consume many times.
 - `define p = g u c d s b u~ c~ d~ s~ b~` (5-flavor proton, see proc card).
 - PDF: `pdlabel = lhapdf`, `lhaid = 331700`
   (`NNPDF40_nlo_as_01180`, same set the FONLL meson tables use).
-- LHAPDF discovered at runtime via the shared install at
-  `/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local/env/`; see
-  `production/madgraph/_mg5_common.py` for the dyld plumbing.
+- LHAPDF is discovered at runtime from the active environment or the fallback
+  locations implemented in `production/madgraph/_mg5_common.py`.
 
 ### Regenerate
 

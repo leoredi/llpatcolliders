@@ -7,13 +7,12 @@ HNL mass grid used by the production drivers.
 The grid (116 points, 0.20 - 10.00 GeV) is denser where the physics changes
 fastest:
 
-- 0.20 - 0.50 GeV   step 15 MeV    21 points   K -> N threshold region (Ue)
-- 0.50 - 2.00 GeV   step 25 MeV    61 points   D -> N opens; tau -> N richest
-- 2.00 - 8.00 GeV   step 200 MeV   31 points   B -> N dominates
-- 8.00 - 10.00 GeV  step 500 MeV    5 points   approach to Bc threshold
+- 0.200 - 0.500 GeV step 15 MeV    21 points   kaon-threshold region
+- 0.525 - 2.000 GeV step 25 MeV    60 points   charm and tau thresholds
+- 2.200 - 8.000 GeV mostly 200 MeV 31 points   bottom and Bc production
+- 8.500 - 10.00 GeV step 500 MeV    4 points   electroweak tail
 
-The grid matches the one used by the upstream `llpatcolliders_FONLL`
-prototype, so per-mass CSVs from both pipelines can be diffed directly.
+The same grid is used by production, channel combination, and analysis.
 
 `format_mass_for_filename(m)` controls the filename encoding:
 `mN_{m:.3f}.csv` with the decimal replaced by `p` (e.g. 1.025 -> mN_1p025).
