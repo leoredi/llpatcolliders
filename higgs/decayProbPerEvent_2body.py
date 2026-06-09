@@ -25,6 +25,7 @@ from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
     calculate_decay_length, cache_geometry, mesh_fiducial,
     points_on_tracker, classify_points_with_basis,
+    path_3d_fiducial, tunnel_profile_points,
 )
 
 M_ELECTRON = 0.000511  # GeV/c²
@@ -58,8 +59,23 @@ SEP_OUT_MAX_PARALLEL = 0.30  # m — max sep_outer applied only when open_angle 
 COLLIN_MIN          = 0.030  # m (30 mm) — min collinearity for events above the gate
 SEP_OUT_COLLIN_GATE = 0.30   # m — collinearity cut applies only when sep_outer > this
 
-outString = "15GeV"
-sample_csv = "LLPSmall.csv"
+# L-scaled ("fractional") collinearity cut — the ACTIVE collinearity veto,
+# shared with the cosmic-decay background (cosmic_decay_check imports COLLIN_FRAC
+# from here). When sep_outer > L (= DETECTOR_THICKNESS) require
+# collinearity > COLLIN_FRAC * L. The signal collinearity ceiling is L/2 (a wide
+# two-body V saturates there), so COLLIN_FRAC < 0.5. COLLIN_MIN /
+# SEP_OUT_COLLIN_GATE above are the older static version, kept for comparison.
+COLLIN_FRAC = 0.48
+
+# Conditional tight pointing. For collimated decays (small sep_inner) the
+# bisector points back to the IP very well, so a tight pointing cut kills
+# background with little signal loss. For wider-sep_inner topologies the
+# pointing resolution degrades and we leave it open.
+POINT_TIGHT_SEP_IN  = 0.050  # rad (50 mrad) — max pointing when sep_in < gate
+SEP_IN_POINT_GATE   = 0.10   # m (10 cm) — pointing cut applies only when sep_in < this
+
+outString = "0p5GeVCheckCo"
+sample_csv = "LLP0p5GeVSmall.csv"
 
 # Tracking resolution
 HIT_RESOLUTION = 0.003  # m (3 mm per layer)
@@ -331,7 +347,7 @@ def _first_forward_hit(mesh, origins, dirs):
 
 def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
                        rng_seed=42, hit_resolution=HIT_RESOLUTION,
-                       n_layers=N_LAYERS):
+                       n_layers=N_LAYERS, use_3d_reco=True):
     """
     Monte Carlo sample decay positions and rest-frame angles to build
     distributions of electron-pair separations, pointing angles, DCA, and
@@ -612,17 +628,51 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     xy_disp_1 = xy_disp[:n_tot]
     xy_disp_2 = xy_disp[n_tot:]
 
+    # ---- Geometric observables ----
+    # By default (use_3d_reco) recompute sep/open/DCA/collin/pointing/vertex from
+    # the REAL 3D daughter hits via the shared reco_common routine — the same
+    # code the cosmic-decay background uses — so the two are guaranteed
+    # consistent. Set use_3d_reco=False to keep the old idealized local-frame
+    # values (the previous behaviour, retained for comparison).
+    sep_arr   = np.concatenate(all_seps)
+    sepo_arr  = np.concatenate(all_sep_out)
+    point_arr = np.concatenate(all_pointing)
+    dca_arr   = np.concatenate(all_dca)
+    vtx_arr   = np.concatenate(all_vtx_in)
+    open_arr  = np.concatenate(all_open)
+    collin_arr = np.concatenate(all_collin)
+
+    if use_3d_reco:
+        import reco_common as _rc
+        in1, out1 = _rc.wall_inner_outer(exit_pts[:n_tot], dir1_all,
+                                         DETECTOR_THICKNESS)
+        in2, out2 = _rc.wall_inner_outer(exit_pts[n_tot:], dir2_all,
+                                         DETECTOR_THICKNESS)
+        fin = (np.all(np.isfinite(in1), 1) & np.all(np.isfinite(out1), 1)
+               & np.all(np.isfinite(in2), 1) & np.all(np.isfinite(out2), 1))
+        if fin.any():
+            g = _rc.reconstruct_3d(out1[fin], in1[fin], in2[fin], out2[fin],
+                                   hit_resolution, rng)
+            sep_arr[fin]    = g['sep']
+            sepo_arr[fin]   = g['sep_outer']
+            open_arr[fin]   = g['open_angle']
+            dca_arr[fin]    = g['dca']
+            collin_arr[fin] = g['collin']
+            point_arr[fin]  = g['pointing']
+            vtx_arr[fin]    = g['vtx_in']
+        vtx_arr[~fin] = False     # no well-defined 3D hits -> not reconstructable
+
     return {
-        'sep': np.concatenate(all_seps),
-        'sep_outer': np.concatenate(all_sep_out),
+        'sep': sep_arr,
+        'sep_outer': sepo_arr,
         'momenta': np.concatenate(all_momenta),
-        'pointing': np.concatenate(all_pointing),
+        'pointing': point_arr,
         'p_soft': np.concatenate(all_p_soft),
-        'dca': np.concatenate(all_dca),
-        'vtx_in': np.concatenate(all_vtx_in),
-        'open_angle': np.concatenate(all_open),
+        'dca': dca_arr,
+        'vtx_in': vtx_arr,
+        'open_angle': open_arr,
         'd_implied': np.concatenate(all_dimp),
-        'collin': np.concatenate(all_collin),
+        'collin': collin_arr,
         'xy_disp_1': xy_disp_1,
         'xy_disp_2': xy_disp_2,
         'on_tracker': on_tracker,
@@ -650,6 +700,9 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
                   sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
                   collin_min=COLLIN_MIN,
                   sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
+                  collin_frac=COLLIN_FRAC,
+                  point_tight_sep_in=POINT_TIGHT_SEP_IN,
+                  sep_in_point_gate=SEP_IN_POINT_GATE,
                   pointing_cut=None):
     """
     Apply signal selection cuts sequentially and return a cutflow table.
@@ -731,19 +784,29 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     add_row(f'sep_out<{sep_out_max_parallel:.1f}m if θ<{theta_parallel*1000:.0f}mrad',
             mask)
 
-    # Conditional collinearity cut: kills IP-muon transits (4 hits on a
-    # single line). Applied only when sep_outer is above the gate so that
-    # collimated signal is unaffected.
+    # Conditional collinearity cut (L-scaled): when sep_outer > L require
+    # collinearity > COLLIN_FRAC * L. The gate stays closed for collimated
+    # signal (small sep_outer); shared with the cosmic-decay background.
     prev_mask = mask.copy()
-    gated = sep_outer > sep_out_collin_gate
-    collin_ok = (~gated) | (collinearity > collin_min)
+    _Lc = DETECTOR_THICKNESS
+    gated = sep_outer > _Lc
+    collin_ok = (~gated) | (collinearity > collin_frac * _Lc)
     mask = mask & collin_ok
-    add_row(f'collin>{collin_min*1000:.0f}mm if sep_out>{sep_out_collin_gate*100:.0f}cm',
+    add_row(f'collin>{collin_frac:.2f}L if sep_out>L ({collin_frac*_Lc*1000:.0f}mm)',
             mask)
 
     prev_mask = mask.copy()
     mask = mask & vtx_in
     add_row('Vertex in fiducial (PCA)', mask)
+
+    # Conditional tight pointing: kills off-IP background for collimated
+    # decays without touching wider-sep topologies whose pointing is noisy.
+    prev_mask = mask.copy()
+    gated_pt = seps < sep_in_point_gate
+    point_ok = (~gated_pt) | (pointing < point_tight_sep_in)
+    mask = mask & point_ok
+    add_row(f'pointing<{point_tight_sep_in*1000:.0f}mrad if sep_in<{sep_in_point_gate*100:.0f}cm',
+            mask)
 
     if pointing_cut is not None:
         prev_mask = mask.copy()
@@ -757,7 +820,10 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                    dca_cut=DCA_CUT, theta_parallel=THETA_PARALLEL,
                    sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
                    collin_min=COLLIN_MIN,
-                   sep_out_collin_gate=SEP_OUT_COLLIN_GATE):
+                   sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
+                   collin_frac=COLLIN_FRAC,
+                   point_tight_sep_in=POINT_TIGHT_SEP_IN,
+                   sep_in_point_gate=SEP_IN_POINT_GATE):
     """
     Boolean per-sample mask for the full signal selection (everything except
     the implicit 'decay in fiducial', which holds for all samples by
@@ -771,6 +837,7 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
     collin     = mc['collin']
     vtx_in     = mc['vtx_in']
     on_tracker = mc['on_tracker']
+    pointing   = mc['pointing']
 
     m = (p_soft >= p_cut)
     m &= (sep >= sep_min) & (sep_outer >= sep_min)
@@ -778,8 +845,10 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
     m &= (dca <= dca_cut)
     is_parallel = open_angle < theta_parallel
     m &= (~is_parallel) | (sep_outer < sep_out_max_parallel)
-    gated = sep_outer > sep_out_collin_gate
-    m &= (~gated) | (collin > collin_min)
+    gated = sep_outer > DETECTOR_THICKNESS
+    m &= (~gated) | (collin > collin_frac * DETECTOR_THICKNESS)
+    gated_pt = sep < sep_in_point_gate
+    m &= (~gated_pt) | (pointing < point_tight_sep_in)
     m &= vtx_in
     m &= on_tracker
     return m
@@ -851,7 +920,14 @@ def mc_exclusion_vs_lifetime(mc, lifetimes, total_events, **cut_kwargs):
 # ============================================================
 if __name__ == "__main__":
     origin = [0, 0, 0]
-    
+
+    # All outputs go under <outString>/, event displays in
+    # <outString>/event_displays/.
+    OUT_DIR = outString
+    EV_DIR = os.path.join(OUT_DIR, 'event_displays')
+    os.makedirs(EV_DIR, exist_ok=True)
+
+    print(f"  Output directory: {OUT_DIR}/")
     print(f"  Detector thickness: {DETECTOR_THICKNESS*100:.0f} cm")
     print(f"  Cuts: p_e > {P_CUT*1000:.0f} MeV/c, "
           f"{SEP_MIN*1000:.0f} mm < separation < {SEP_MAX*100:.0f} cm")
@@ -988,7 +1064,7 @@ if __name__ == "__main__":
         plt.colorbar(h[3], ax=ax3, label='Weighted counts')
         
         plt.tight_layout()
-        plt.savefig('separation_histogram'+outString+'.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'separation_histogram'+outString+'.png'), dpi=150)
         show_or_close()
         
         in_window = (seps >= SEP_MIN) & (seps <= SEP_MAX)
@@ -1051,7 +1127,7 @@ if __name__ == "__main__":
         plt.colorbar(h[3], ax=ax3, label='Weighted counts')
 
         plt.tight_layout()
-        plt.savefig('pointing_angle'+outString+'.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'pointing_angle'+outString+'.png'), dpi=150)
         show_or_close()
 
         print(f"  Median pointing angle (accepted): {median_pt:.3f} mrad")
@@ -1125,7 +1201,7 @@ if __name__ == "__main__":
             plt.colorbar(h[3], ax=ax3, label='Weighted counts')
 
         plt.tight_layout()
-        plt.savefig('dca_' + outString + '.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'dca_' + outString + '.png'), dpi=150)
         show_or_close()
 
         median_dca = np.median(dca_cm)
@@ -1191,7 +1267,7 @@ if __name__ == "__main__":
             ax2.set_title('Same, log scale')
 
             plt.tight_layout()
-            plt.savefig('xy_disp_' + outString + '.png', dpi=150)
+            plt.savefig(os.path.join(OUT_DIR, 'xy_disp_' + outString + '.png'), dpi=150)
             show_or_close()
 
             w_tot = weight_pool.sum()
@@ -1279,7 +1355,7 @@ if __name__ == "__main__":
             ax2.legend(fontsize=9)
 
             plt.tight_layout()
-            plt.savefig('pointing_by_inner_sep_' + outString + '.png',
+            plt.savefig(os.path.join(OUT_DIR, 'pointing_by_inner_sep_' + outString + '.png'),
                         dpi=150)
             show_or_close()
 
@@ -1354,7 +1430,7 @@ if __name__ == "__main__":
         axes_so[0].set_title(f'sep_outer by open-angle band  (τ = {lifetime*1e9:.0f} ns)')
         axes_so[1].set_title('Log-log view')
         plt.tight_layout()
-        plt.savefig('sep_outer_bands_' + outString + '.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'sep_outer_bands_' + outString + '.png'), dpi=150)
         show_or_close()
 
         # Numerical summary
@@ -1461,7 +1537,7 @@ if __name__ == "__main__":
         plt.colorbar(h[3], ax=ax3, label='Weighted counts')
 
         plt.tight_layout()
-        plt.savefig('collinearity_' + outString + '.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'collinearity_' + outString + '.png'), dpi=150)
         show_or_close()
 
         # Numerical summary
@@ -1497,12 +1573,94 @@ if __name__ == "__main__":
             print(f"{row['cut']:<25} {row['efficiency']:<15.4f} "
                   f"{row['marginal_efficiency']:<15.4f}")
 
-        cutflow_df.to_csv('cutflow_' + outString + '.csv', index=False)
-        print(f"\nCutflow saved to cutflow_{outString}.csv")
+        cutflow_df.to_csv(os.path.join(OUT_DIR, 'cutflow_' + outString + '.csv'), index=False)
+        print(f"\nCutflow saved to {OUT_DIR}/cutflow_{outString}.csv")
+
+    # --- Decay position heatmap in tunnel cross-section ---
+    # For events passing the full signal selection, project each decay
+    # position onto the nearest tunnel-centreline segment and bin the
+    # resulting (x_local, y_local) cross-section coordinates weighted by
+    # the decay-probability weight. Shows where in the horseshoe the
+    # accepted decays sit relative to the tunnel walls and fiducial inset.
+    if len(mc.get('decay_pos', [])) > 0:
+        print("\n" + "="*50)
+        print("DECAY POSITION HEATMAP (TUNNEL CROSS-SECTION)")
+        print("="*50)
+
+        sel_mask = selection_mask(mc)
+        if sel_mask.sum() > 0 and weights[sel_mask].sum() > 0:
+            decay_sel = mc['decay_pos'][sel_mask]
+            w_sel = weights[sel_mask]
+
+            # Project each decay position onto the nearest centreline
+            # segment to get the local cross-section (x, y) coordinates.
+            m = len(decay_sel)
+            best_d2 = np.full(m, np.inf)
+            x_local = np.zeros(m)
+            y_local = np.zeros(m)
+            for i in range(len(path_3d_fiducial) - 1):
+                seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+                seg_len = np.linalg.norm(seg)
+                if seg_len == 0:
+                    continue
+                seg_hat = seg / seg_len
+                world_up = np.array([0., 1., 0.]) if abs(seg_hat[1]) < 0.9 \
+                    else np.array([0., 0., 1.])
+                right = np.cross(seg_hat, world_up)
+                right /= np.linalg.norm(right)
+                up = np.cross(right, seg_hat)
+                up /= np.linalg.norm(up)
+                rel = decay_sel - path_3d_fiducial[i]
+                t = np.clip(rel @ seg_hat, 0, seg_len)
+                closest = path_3d_fiducial[i] + np.outer(t, seg_hat)
+                diff = decay_sel - closest
+                d2 = np.einsum('ij,ij->i', diff, diff)
+                upd = d2 < best_d2
+                best_d2[upd] = d2[upd]
+                x_local[upd] = diff[upd] @ right
+                y_local[upd] = diff[upd] @ up
+
+            outer = tunnel_profile_points(inset=0.0)
+            inner = tunnel_profile_points(inset=DETECTOR_THICKNESS)
+            outer_loop = np.vstack([outer, outer[:1]])
+            inner_loop = np.vstack([inner, inner[:1]])
+
+            x_lim = max(np.abs(outer[:, 0]).max(),
+                        np.abs(x_local).max() if len(x_local) else 0) + 0.2
+            y_lo = min(outer[:, 1].min(), y_local.min() if len(y_local) else 0) - 0.1
+            y_hi = max(outer[:, 1].max(), y_local.max() if len(y_local) else 0) + 0.1
+
+            fig_xs, ax_xs = plt.subplots(figsize=(8, 8))
+            h = ax_xs.hist2d(
+                x_local, y_local, bins=60,
+                range=[[-x_lim, x_lim], [y_lo, y_hi]],
+                weights=w_sel, cmap='magma', cmin=1e-30)
+            ax_xs.plot(outer_loop[:, 0], outer_loop[:, 1],
+                       color='white', linewidth=2, label='Tunnel wall')
+            ax_xs.plot(inner_loop[:, 0], inner_loop[:, 1],
+                       color='white', linewidth=1.2, linestyle='--',
+                       label=f'Fiducial (inset {DETECTOR_THICKNESS*100:.0f} cm)')
+            ax_xs.set_aspect('equal')
+            ax_xs.set_xlabel('x_local (m)  [horizontal across profile]')
+            ax_xs.set_ylabel('y_local (m)  [up]')
+            ax_xs.set_title(
+                f'Decay position in tunnel cross-section\n'
+                f'(events passing full selection, τ = {lifetime*1e9:.0f} ns)')
+            ax_xs.legend(loc='upper right', fontsize=9, framealpha=0.7)
+            plt.colorbar(h[3], ax=ax_xs, label='Weighted yield (decay prob.)')
+            plt.tight_layout()
+            plt.savefig(os.path.join(OUT_DIR, 'decay_xsec_heatmap_' + outString + '.png'), dpi=150)
+            show_or_close()
+
+            print(f"  Selected samples: {int(sel_mask.sum())}, "
+                  f"weighted yield: {w_sel.sum():.4e}")
+            print(f"  Saved: {OUT_DIR}/decay_xsec_heatmap_{outString}.png")
+        else:
+            print("  No samples pass the full selection — skipping plot.")
 
     # --- Save MC distributions for overlay plotting ---
     if len(seps) > 0:
-        np.savez('mc_distributions_' + outString + '.npz',
+        np.savez(os.path.join(OUT_DIR, 'mc_distributions_' + outString + '.npz'),
                  seps=seps, pointing=pointing, weights=weights,
                  momenta=momenta, p_soft=p_soft,
                  dca=dca, vtx_in=vtx_in, open_angle=open_angle,
@@ -1516,7 +1674,7 @@ if __name__ == "__main__":
                  collin_min=COLLIN_MIN,
                  sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
                  hit_resolution=HIT_RESOLUTION, n_layers=N_LAYERS)
-        print(f"MC distributions saved to mc_distributions_{outString}.npz")
+        print(f"MC distributions saved to {OUT_DIR}/mc_distributions_{outString}.npz")
 
     # --- Event displays (3D + top-down + side, per-selection) ---
     # Edit ``display_selections`` to control which event populations get
@@ -1539,6 +1697,7 @@ if __name__ == "__main__":
         event_display.make_event_displays(
             mc, display_selections, n_per=10,
             out_prefix=f'event_display_{outString}',
+            out_dir=EV_DIR,
         )
 
     # Lifetime scan
@@ -1639,10 +1798,12 @@ if __name__ == "__main__":
         ax4.legend(fontsize=8, loc='lower right')
         
     plt.tight_layout()
-    plt.savefig('exclusion_2body'+outString+'.png', dpi=150)
+    plt.savefig(os.path.join(OUT_DIR, 'exclusion_2body'+outString+'.png'), dpi=150)
     show_or_close()
     
-    df_results.to_csv("particle_decay_results_2body.csv", index=False)
-    event_df.to_csv("event_decay_statistics_2body.csv", index=False)
+    df_results.to_csv(os.path.join(OUT_DIR, "particle_decay_results_2body.csv"), index=False)
+    event_df.to_csv(os.path.join(OUT_DIR, "event_decay_statistics_2body.csv"), index=False)
     print("\nResults saved.")
-    print("Plots: exclusion_2body"+outString+".png, separation_histogram"+outString+".png")
+    print(f"Plots in {OUT_DIR}/: exclusion_2body{outString}.png, "
+          f"separation_histogram{outString}.png, ...")
+    print(f"Event displays in {EV_DIR}/")

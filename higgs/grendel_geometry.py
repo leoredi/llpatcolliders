@@ -32,6 +32,11 @@ TUNNEL_GAMMA = 2.90   # arch width at springline (m)
 TUNNEL_DELTA = 1.90   # arch height (m)
 TUNNEL_WALL_HEIGHT = TUNNEL_BETA - TUNNEL_DELTA  # 1.25 m
 
+# Single source of truth for the detector shell radial extent. This sets the
+# fiducial-volume inset AND the tracker-layer spacing (inner layer at the
+# fiducial face, outer layer at the tunnel wall). Change it in this ONE place
+# to study a different detector thickness; the mesh and all reconstruction
+# (signal and background) pick it up consistently.
 DETECTOR_THICKNESS = 0.24  # 24 cm
 
 
@@ -607,6 +612,88 @@ def classify_points_with_basis(points):
     theta = np.arctan2(best_y, best_x)
     theta = np.where(theta < 0, theta + 2 * np.pi, theta)
     return theta, best_s, best_tangent, best_right, best_up
+
+
+def local_transverse_xy(points):
+    """
+    Local cross-section coordinates (x_local, y_local) of each (M,3) point:
+    the offset from the nearest centreline point projected onto (right, up).
+    Same projection as classify_points, but returns the 2-D profile coords.
+    """
+    pts = np.asarray(points, dtype=float)
+    m = len(pts)
+    best_d2 = np.full(m, np.inf)
+    bx = np.zeros(m)
+    by = np.zeros(m)
+    for i in range(len(path_3d_fiducial) - 1):
+        seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+        seg_len = np.linalg.norm(seg)
+        if seg_len == 0:
+            continue
+        seg_hat = seg / seg_len
+        wu = np.array([0., 1., 0.]) if abs(seg_hat[1]) < 0.9 else np.array([0., 0., 1.])
+        right = np.cross(seg_hat, wu); right /= np.linalg.norm(right)
+        up = np.cross(right, seg_hat); up /= np.linalg.norm(up)
+        rel = pts - path_3d_fiducial[i]
+        t = np.clip(rel @ seg_hat, 0, seg_len)
+        diff = pts - (path_3d_fiducial[i] + np.outer(t, seg_hat))
+        d2 = np.einsum('ij,ij->i', diff, diff)
+        upd = d2 < best_d2
+        best_d2[upd] = d2[upd]
+        bx[upd] = diff[upd] @ right
+        by[upd] = diff[upd] @ up
+    return bx, by
+
+
+# Fast point-in-fiducial test: project to the nearest centreline and check the
+# local (x,y) against the 2-D fiducial profile polygon. ~180x faster than
+# trimesh mesh.contains (which ray-casts per point) and consistent with the
+# rest of the centreline-based geometry.
+from matplotlib.path import Path as _MplPath
+_fid_profile_2d = tunnel_profile_points(inset=DETECTOR_THICKNESS)
+_fid_path_2d = _MplPath(np.vstack([_fid_profile_2d, _fid_profile_2d[:1]]))
+
+
+def points_in_fiducial(points):
+    """Bool array: True where each (M,3) point lies inside the fiducial volume.
+    Projects to the nearest centreline segment, tests the local cross-section
+    against the inset profile, and rejects points past the end-caps (nearest
+    projection clamped at the first/last node). Fast, exact proxy for
+    mesh.contains away from machine-precision boundaries."""
+    pts = np.asarray(points, dtype=float)
+    m = len(pts)
+    best_d2 = np.full(m, np.inf)
+    bx = np.zeros(m)
+    by = np.zeros(m)
+    beyond = np.zeros(m, dtype=bool)
+    nseg = len(path_3d_fiducial) - 1
+    for i in range(nseg):
+        seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+        seg_len = np.linalg.norm(seg)
+        if seg_len == 0:
+            continue
+        seg_hat = seg / seg_len
+        wu = np.array([0., 1., 0.]) if abs(seg_hat[1]) < 0.9 else np.array([0., 0., 1.])
+        right = np.cross(seg_hat, wu); right /= np.linalg.norm(right)
+        up = np.cross(right, seg_hat); up /= np.linalg.norm(up)
+        rel = pts - path_3d_fiducial[i]
+        t_raw = rel @ seg_hat
+        t = np.clip(t_raw, 0, seg_len)
+        diff = pts - (path_3d_fiducial[i] + np.outer(t, seg_hat))
+        d2 = np.einsum('ij,ij->i', diff, diff)
+        upd = d2 < best_d2
+        best_d2[upd] = d2[upd]
+        bx[upd] = diff[upd] @ right
+        by[upd] = diff[upd] @ up
+        # past the end-caps: nearest projection clamped at the global ends
+        if i == 0:
+            beyond[upd] = t_raw[upd] < 0
+        elif i == nseg - 1:
+            beyond[upd] = t_raw[upd] > seg_len
+        else:
+            beyond[upd] = False
+    in_profile = _fid_path_2d.contains_points(np.column_stack([bx, by]))
+    return in_profile & ~beyond
 
 
 def points_on_tracker(points):
