@@ -723,6 +723,12 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
                 smeared, g['V_reco'], sigma_t, rng)
             timing_arr[fin] = tchi2
         vtx_arr[~fin] = False     # no well-defined 3D hits -> not reconstructable
+        # Fold the 4-hit reconstructability (both daughters give a valid bounded
+        # tracker pair) into on_tracker, so grazing / would-exit tracks die at the
+        # "both daughters on tracker" stage -- matching the cosmic cutflow, where
+        # ok_pair is folded into on_tracker. The net selection is unchanged; this
+        # only makes the stage-by-stage efficiencies directly comparable.
+        on_tracker = on_tracker & fin
 
     # Backward softer daughter: no valid forward vertex in either the
     # 3D-reco or the idealized local-frame path.

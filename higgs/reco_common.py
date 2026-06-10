@@ -19,6 +19,13 @@ from grendel_geometry import (classify_points_with_basis, DETECTOR_THICKNESS,
 
 IP = np.array([0.0, 0.0, 0.0])
 
+# Margin used by wall_inner_outer to push the radial-inward projection safely
+# PAST the fiducial face into the air gap (so the in-fiducial test is unambiguous).
+# Derived from the geometry module's shell thickness rather than a hard-coded
+# 10 cm, so it scales with the detector if DETECTOR_THICKNESS changes; it only
+# needs to stay below the local air-gap depth (the gap is >> 0.4 L everywhere).
+_FIDUCIAL_PROJ_MARGIN = 0.4 * DETECTOR_THICKNESS   # ~10 cm at L = 24 cm
+
 # Timing-consistency cut (single source for signal + cosmic background).
 SIGMA_T_DEFAULT = 0.5e-9      # per-hit timing resolution (s)
 CHI2_TIMING_MAX = 6.0         # chi2 (ndof = 3) cut; chi2(3) CDF(6) ~ 0.89 = signal timing eff
@@ -183,7 +190,9 @@ def wall_inner_outer(exit_pt, direction, L=DETECTOR_THICKNESS):
     if finite.any():
         th_o, _, _, right_o, up_o = classify_points_with_basis(outer[finite])
         n_o = np.cos(th_o)[:, None] * right_o + np.sin(th_o)[:, None] * up_o
-        face_pt = outer[finite] - (L + 0.10) * n_o   # ~10 cm inside the face
+        # Go inward by L (the outer hit's radial offset from the fiducial face)
+        # plus a geometry-derived margin to land safely inside the air gap.
+        face_pt = outer[finite] - (L + _FIDUCIAL_PROJ_MARGIN) * n_o
         inside[finite] = (points_in_fiducial(face_pt)
                           & points_on_tracker(outer[finite]))
     outer = np.where(inside[:, None], outer, np.nan)
