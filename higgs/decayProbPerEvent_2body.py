@@ -88,7 +88,7 @@ SEP_IN_POINT_GATE   = 0.10   # m (10 cm) — pointing cut applies only when sep_
 # cosmic background (single source).
 POINT_GLOBAL = 1.0   # rad (1000 mrad)
 
-outString = "40GeVCheckCo"
+outString = "40GeVFab"
 sample_csv = "LLP40GeVSmall.csv"
 
 # Tracking resolution
@@ -398,6 +398,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     all_p_soft, all_dca, all_vtx_in, all_open = [], [], [], []
     all_sep_out, all_dimp, all_collin = [], [], []
     all_event, all_pid, all_d, all_path, all_bg = [], [], [], [], []
+    all_fwd = []
     decay_list, dir1_list, dir2_list = [], [], []
 
     N = n_samples_per_particle
@@ -430,11 +431,31 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         # Softer electron momentum (truth, not affected by resolution)
         p_soft = gamma * mass / 2 * (1 - beta * cos_theta_star)
 
-        # Lab-frame angles from LLP direction (small-angle regime)
-        # e1 (harder): tanα₁ = sinθ* / γ(cosθ*+β)
-        # e2 (softer): tanα₂ = sinθ* / γ(β-cosθ*)  — opposite side of LLP axis
-        tan_a1 = sin_theta_star / (gamma * (cos_theta_star + beta))
-        tan_a2 = sin_theta_star / (gamma * (beta - cos_theta_star))
+        # Exact lab-frame momentum components (units of M/2; m_e -> 0):
+        #   pz1 = gamma (cos0* + beta)        [harder, always forward]
+        #   pz2 = gamma (beta - cos0*)        [softer; NEGATIVE if cos0* > beta]
+        #   pt  = sin0*                       [same for both]
+        # pz2 < 0 means the softer daughter goes BACKWARD in the lab and
+        # can never make hits in the forward two-layer tracker. These
+        # samples are real decays (their decay-probability weight is
+        # kept) but are flagged unreconstructable via `fwd`, mirroring
+        # the |cos0*| < beta cap in compute_c_upper for the analytic
+        # acceptance.
+        pz1 = gamma * (cos_theta_star + beta)
+        pz2 = gamma * (beta - cos_theta_star)
+        pt = sin_theta_star
+        fwd = pz2 > 0
+
+        # Lab-frame angles (small-angle regime), used only by the
+        # idealized local-frame fallback below. tan_a2 is clamped so a
+        # near-90-degree topology (cos0* -> beta) cannot overflow the
+        # batched SVD; the 3D ray-cast path uses the exact dir1/dir2
+        # built further down and is unaffected by the clamp.
+        tan_a1 = pt / pz1
+        with np.errstate(divide='ignore', invalid='ignore'):
+            tan_a2 = np.where(np.abs(pz2) > 1e-12, pt / pz2,
+                              np.sign(pz2 + 1e-300) * 1e12)
+        tan_a2 = np.clip(tan_a2, -1e9, 1e9)
 
         L = DETECTOR_THICKNESS
 
@@ -547,10 +568,13 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         y_hat = np.cross(z_hat, x_hat)
         u = np.cos(phi)[:, None] * x_hat + np.sin(phi)[:, None] * y_hat
 
-        inv1 = 1.0 / np.sqrt(1.0 + tan_a1**2)
-        inv2 = 1.0 / np.sqrt(1.0 + tan_a2**2)
-        dir1 = inv1[:, None] * z_hat + (tan_a1 * inv1)[:, None] * u
-        dir2 = inv2[:, None] * z_hat - (tan_a2 * inv2)[:, None] * u
+        # Exact unit vectors from the signed momentum components — keeps
+        # the correct (negative) z-component when the softer daughter is
+        # backward, and stays finite at cos0* = beta where tan_a2 blows up.
+        n1 = np.sqrt(pz1**2 + pt**2)
+        n2 = np.sqrt(pz2**2 + pt**2)
+        dir1 = (pz1 / n1)[:, None] * z_hat + (pt / n1)[:, None] * u
+        dir2 = (pz2 / n2)[:, None] * z_hat - (pt / n2)[:, None] * u
         decay_pos = d_samples[:, None] * z_hat  # IP at the origin
 
         decay_list.append(decay_pos)
@@ -573,6 +597,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         all_d.append(d_samples)
         all_path.append(np.full(N, path_length))
         all_bg.append(np.full(N, gamma * beta))
+        all_fwd.append(fwd)
 
     if not all_seps:
         empty = np.array([])
@@ -602,7 +627,12 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     valid = ~np.isnan(exit_pts[:, 0])
     if valid.any():
         on_trk[valid] = points_on_tracker(exit_pts[valid])
-    on_tracker = on_trk[:n_tot] & on_trk[n_tot:]
+    # Backward softer daughters (cos0* > beta) cannot make the two
+    # forward-layer hits the reconstruction assumes: fold the forward
+    # requirement into on_tracker so every selection path (cutflow,
+    # selection_mask, MC exclusion) inherits the cap automatically.
+    fwd_all = np.concatenate(all_fwd)
+    on_tracker = on_trk[:n_tot] & on_trk[n_tot:] & fwd_all
 
     # ---- Per-daughter on-surface displacement between tracker layers ----
     # In the local cavern basis at the daughter's wall hit p1, the
@@ -676,6 +706,10 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
             vtx_arr[fin]    = g['vtx_in']
         vtx_arr[~fin] = False     # no well-defined 3D hits -> not reconstructable
 
+    # Backward softer daughter: no valid forward vertex in either the
+    # 3D-reco or the idealized local-frame path.
+    vtx_arr[~fwd_all] = False
+
     return {
         'sep': sep_arr,
         'sep_outer': sepo_arr,
@@ -737,11 +771,10 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
         require sep_outer < sep_out_max_parallel. For larger open_angle
         no upper bound on sep_outer is applied.
     collin_min, sep_out_collin_gate : float
-        IP-muon-transit veto. When sep_outer > sep_out_collin_gate, require
-        collinearity > collin_min (rejects events where all 4 hits sit on
-        a single straight line, i.e. an IP-shot muon traversing the tunnel).
-        The gate protects collimated signal (small sep_outer) from a cut
-        that cannot discriminate it from muons at this resolution.
+        Retired static IP-muon-transit veto. Accepted for signature
+        compatibility but NOT applied — the active veto is the L-scaled
+        version (collin_frac / sep_out_gate): when sep_outer >
+        sep_out_gate, require collinearity > collin_frac * L.
     pointing_cut : float or None
         Maximum pointing angle (rad). If None, no pointing cut is applied.
 
@@ -1715,6 +1748,10 @@ if __name__ == "__main__":
                  sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
                  collin_min=COLLIN_MIN,
                  sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
+                 collin_frac=COLLIN_FRAC, sep_out_gate=SEP_OUT_GATE,
+                 point_tight_sep_in=POINT_TIGHT_SEP_IN,
+                 sep_in_point_gate=SEP_IN_POINT_GATE,
+                 point_global=POINT_GLOBAL,
                  hit_resolution=HIT_RESOLUTION, n_layers=N_LAYERS)
         print(f"MC distributions saved to {OUT_DIR}/mc_distributions_{outString}.npz")
 

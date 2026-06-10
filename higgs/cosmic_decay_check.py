@@ -42,7 +42,7 @@ import matplotlib
 
 from grendel_geometry import (
     mesh_fiducial, DETECTOR_THICKNESS, SPEED_OF_LIGHT, points_on_tracker,
-    points_in_fiducial,
+    points_in_fiducial, classify_points_with_basis,
 )
 import reco_common
 from decayProbPerEvent_2body import (
@@ -86,9 +86,10 @@ P_SOFT_CUT = 0.010
 # leaving the reconstructed vertex and travelling at c (one free parameter,
 # the vertex time t0; ndof = 3).
 SIGMA_T_DEFAULT = 1.5e-9      # 1.5 ns
-CHI2_TIMING_MAX = 9.0         # ndof = 3 (chi2(3) CDF ~ 0.97), kept for comparison
+CHI2_TIMING_MAX = 9.0         # ndof = 3 (chi2(3) CDF ~ 0.97); the APPLIED final cut
 
-# Per-track outgoing-velocity timing test (the active timing cut). For each
+# Per-track outgoing-velocity timing test (reported as a side-by-side
+# comparison in the cutflow printout; NOT applied as a cut). For each
 # track the two hits must be consistent with motion AWAY from the vertex at c:
 #   pull = [(t_far - t_near) - (R_far - R_near)/c] / (sqrt2 * sigma_t)
 # An incoming muon track gives a large NEGATIVE pull (its far hit is earlier).
@@ -423,13 +424,31 @@ def reconstruct(mu_ori, mu_dir, d_in, d_decay, dir_e, d_out_e,
     L = DETECTOR_THICKNESS        # layer spacing = detector shell (single source)
     V = mu_ori + d_decay[:, None] * mu_dir
 
-    # True hit positions:
-    #   muon: at its entry wall (two layers spanning L, both before vertex)
-    #   electron: at its exit wall (two layers spanning L, after vertex)
-    P_eo = mu_ori + (d_in - L)[:, None] * mu_dir   # entry-outer (tunnel wall)
+    # True hit positions. The layers are separated by L *radially* (inner at
+    # the fiducial face, outer at the tunnel wall), so the along-track pair
+    # spacing is L / |d . n_hat| -- the same convention as
+    # reco_common.wall_inner_outer used by the signal. Plain-L spacing would
+    # systematically shorten the stubs of oblique crossings, shrinking the
+    # 4-hit collinearity of kinked vertices and underestimating the
+    # background surviving the collinearity veto. Grazing tracks
+    # (|d . n_hat| < 1e-6) are flagged unreconstructable, mirroring the NaN
+    # behaviour of wall_inner_outer.
     P_ei = mu_ori + (d_in)[:, None] * mu_dir       # entry-inner (fiducial face)
     P_xi = V + (d_out_e)[:, None] * dir_e          # exit-inner  (fiducial face)
-    P_xo = V + (d_out_e + L)[:, None] * dir_e       # exit-outer  (tunnel wall)
+
+    def _along_track_spacing(P, d):
+        theta, _, _, right, up = classify_points_with_basis(P)
+        n_hat = np.cos(theta)[:, None] * right + np.sin(theta)[:, None] * up
+        dn = np.abs(np.einsum('ij,ij->i', d, n_hat))
+        return np.where(dn > 1e-6, L / np.maximum(dn, 1e-6), np.nan)
+
+    s_mu = _along_track_spacing(P_ei, mu_dir)
+    s_e = _along_track_spacing(P_xi, dir_e)
+    ok_pair = np.isfinite(s_mu) & np.isfinite(s_e)
+    s_mu = np.where(ok_pair, s_mu, L)              # placeholder; excluded below
+    s_e = np.where(ok_pair, s_e, L)
+    P_eo = P_ei - s_mu[:, None] * mu_dir           # entry-outer (tunnel wall)
+    P_xo = P_xi + s_e[:, None] * dir_e             # exit-outer  (tunnel wall)
 
     # Geometric reconstruction via the shared single-source routine (same code
     # the signal uses). *_out = farther from the vertex: muon entry-outer and
@@ -442,8 +461,9 @@ def reconstruct(mu_ori, mu_dir, d_in, d_decay, dir_e, d_out_e,
     H_xi, H_xo = geo['H_in2'], geo['H_out2']
 
     # On-tracker: muon must enter through a tracker wall AND electron must
-    # exit through a tracker wall (scintillator walls give no tracks).
-    on_tracker = points_on_tracker(P_ei) & points_on_tracker(P_xi)
+    # exit through a tracker wall (scintillator walls give no tracks), and
+    # neither crossing may be grazing (ill-defined layer pair).
+    on_tracker = (points_on_tracker(P_ei) & points_on_tracker(P_xi) & ok_pair)
 
     p_soft = np.minimum(p_mu, p_e)
 
@@ -797,10 +817,6 @@ def run(n_rays, y_throw, theta_max, p_mean, spectrum, i_vertical,
 
     # keep electrons that exit the fiducial
     sel = good & np.isfinite(d_out_e) & (d_out_e > 1e-3)
-    for arr_name in ('mu_ori', 'mu_dir', 'd_in', 'd_decay', 'dir_e',
-                     'd_out_e', 'p_mu', 'p_e', 'w_flux', 'w_decay',
-                     'cos_z', 'chord'):
-        pass  # (filtered explicitly below)
 
     reco = reconstruct(mu_ori[sel], mu_dir[sel], d_in[sel], d_decay[sel],
                        dir_e[sel], d_out_e[sel], p_mu[sel], p_e[sel],
@@ -823,8 +839,9 @@ def run(n_rays, y_throw, theta_max, p_mean, spectrum, i_vertical,
 
 # Cut sequence shared by the in-memory printer (weighted_cutflow) and the
 # streaming accumulator (run_volume_streaming), so they are guaranteed identical.
-# Index 7 = collinearity stage, 9 = pre-timing (pointing), 10 = final (timing).
-COLLIN_STAGE, PRE_TIMING_STAGE = 7, 9
+# Index 7 = collinearity stage, 10 = pre-timing (everything through the global
+# pointing cut), 11 = final (timing).
+COLLIN_STAGE, PRE_TIMING_STAGE = 7, 10
 
 
 def cutflow_stages(r):
@@ -932,8 +949,9 @@ def make_plot(r, out_path, interactive):
     a = ax[0, 2]
     a.hist(r['collin'] * 1000, bins=np.linspace(0, 50, 60), weights=w,
            color='purple', edgecolor='k', linewidth=0.3)
-    a.axvline(COLLIN_MIN * 1000, color='red', ls='--',
-              label=f'cut = {COLLIN_MIN*1e3:.0f} mm')
+    a.axvline(COLLIN_FRAC * DETECTOR_THICKNESS * 1000, color='red', ls='--',
+              label=f'cut = {COLLIN_FRAC:.2f}L = '
+                    f'{COLLIN_FRAC*DETECTOR_THICKNESS*1e3:.0f} mm')
     a.set_xlabel('collinearity (mm)'); a.set_ylabel('rate [Hz]')
     a.legend(); a.set_title('4-hit collinearity')
 
@@ -1165,6 +1183,7 @@ def pre_timing_mask(r, apply_collin=True):
     m &= r['vtx_in']
     gpt = r['sep_in'] < SEP_IN_POINT_GATE
     m &= (~gpt) | (r['pointing'] < POINT_TIGHT_SEP_IN)
+    m &= r['pointing'] < POINT_GLOBAL
     return m
 
 
@@ -1433,7 +1452,8 @@ def dump_collin_passers(r, out_csv):
     bx, by = local_transverse_xy(V)
     th, s, *_ = classify_points_with_basis(V)
     gpt = sep[idx] < SEP_IN_POINT_GATE
-    pass_point = (~gpt) | (r['pointing'][idx] < POINT_TIGHT_SEP_IN)
+    pass_point = ((~gpt) | (r['pointing'][idx] < POINT_TIGHT_SEP_IN)) \
+        & (r['pointing'][idx] < POINT_GLOBAL)
     pass_time = r['timing_chi2'][idx] < CHI2_TIMING_MAX
     df = pd.DataFrame({
         'idx': idx,
