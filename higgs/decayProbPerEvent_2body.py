@@ -714,6 +714,11 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
             # daughters are OUTGOING from the vertex (sign +1) at c (beta ~ 1
             # for GeV electrons). True hits set the true times; the smeared
             # hits + reco vertex set the predicted times.
+            # NOTE: this is a single frozen random draw per particle, reused for
+            # every lifetime point in the exclusion scan (sample_separations is
+            # called once and reweighted). Unbiased, but it adds correlated noise
+            # along the lifetime curve near the chi2 cut boundary -- only relevant
+            # if few-percent wiggles appear in the exclusion curve.
             nf = int(fin.sum())
             true_hits = np.stack([out1[fin], in1[fin], in2[fin], out2[fin]], 1)
             smeared = np.stack([g['H_out1'], g['H_in1'],
@@ -729,6 +734,13 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         # ok_pair is folded into on_tracker. The net selection is unchanged; this
         # only makes the stage-by-stage efficiencies directly comparable.
         on_tracker = on_tracker & fin
+    else:
+        # Idealized local-frame fallback (kept only for compare_reco.py): it
+        # builds no 3D hits, so the timing chi2 cannot be simulated. Treat timing
+        # as a no-op (pass) rather than leaving timing_arr = +inf, which
+        # selection_mask (apply_timing=True by default) would otherwise turn into
+        # zero acceptance for the whole sample.
+        timing_arr[:] = 0.0
 
     # Backward softer daughter: no valid forward vertex in either the
     # 3D-reco or the idealized local-frame path.
