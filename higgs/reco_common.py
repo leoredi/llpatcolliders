@@ -14,7 +14,8 @@ so the pointing bisector is the sum of the two outgoing unit directions.
 """
 import numpy as np
 from grendel_geometry import (classify_points_with_basis, DETECTOR_THICKNESS,
-                              points_in_fiducial, SPEED_OF_LIGHT)
+                              points_in_fiducial, points_on_tracker,
+                              SPEED_OF_LIGHT)
 
 IP = np.array([0.0, 0.0, 0.0])
 
@@ -158,9 +159,13 @@ def wall_inner_outer(exit_pt, direction, L=DETECTOR_THICKNESS):
     radially back onto the fiducial face and requiring that point inside the
     fiducial volume; tracks failing it (grazing / would-exit, and the
     ill-defined-normal case) return NaN for the outer hit -> unreconstructable.
-    This keeps the 4-hit geometry physical for BOTH signal and the cosmic
-    background (single source) and prevents grazing tracks from inflating
-    sep_outer / collinearity beyond the cavern.
+    The outer hit must ALSO land on a TRACKER wall (points_on_tracker): an oblique
+    track whose inner hit is on the tracker but whose layer-2 crossing walks over
+    the tracker/scintillator boundary does not make two tracker hits -- counting
+    it would be optimistic for signal (one real tracker hit) and (anti-)conservative
+    for background (the real event fires the scintillator veto). This keeps the
+    4-hit geometry physical for BOTH signal and the cosmic background (single
+    source) and prevents grazing tracks from inflating sep_outer / collinearity.
     """
     exit_pt = np.asarray(exit_pt, float)
     direction = np.asarray(direction, float)
@@ -170,14 +175,16 @@ def wall_inner_outer(exit_pt, direction, L=DETECTOR_THICKNESS):
     d_dot_n = np.where(np.abs(d_dot_n) < 1e-6, np.nan, d_dot_n)
     outer = exit_pt + (L / d_dot_n)[:, None] * direction
 
-    # Physical bound: the outer hit must sit on the cavern shell. Project it
-    # radially inward (just past the fiducial face) and require it in-fiducial.
+    # Physical bound: the outer hit must sit on the cavern shell (project it
+    # radially inward, just past the fiducial face, and require it in-fiducial)
+    # AND land on a tracker wall (not the scintillator complement).
     finite = np.isfinite(outer[:, 0])
     inside = np.zeros(len(outer), dtype=bool)
     if finite.any():
         th_o, _, _, right_o, up_o = classify_points_with_basis(outer[finite])
         n_o = np.cos(th_o)[:, None] * right_o + np.sin(th_o)[:, None] * up_o
         face_pt = outer[finite] - (L + 0.10) * n_o   # ~10 cm inside the face
-        inside[finite] = points_in_fiducial(face_pt)
+        inside[finite] = (points_in_fiducial(face_pt)
+                          & points_on_tracker(outer[finite]))
     outer = np.where(inside[:, None], outer, np.nan)
     return exit_pt, outer
