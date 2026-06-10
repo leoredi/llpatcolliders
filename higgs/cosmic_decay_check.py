@@ -84,9 +84,9 @@ P_SOFT_CUT = 0.010
 # Per-hit timing resolution (s) and the timing-consistency chi^2 cut.
 # The selection asks that the 4 hit times are consistent with particles
 # leaving the reconstructed vertex and travelling at c (one free parameter,
-# the vertex time t0; ndof = 3).
-SIGMA_T_DEFAULT = 1.5e-9      # 1.5 ns
-CHI2_TIMING_MAX = 9.0         # ndof = 3 (chi2(3) CDF ~ 0.97); the APPLIED final cut
+# the vertex time t0; ndof = 3). Single-sourced in reco_common and shared with
+# the signal (which uses the identical timing model, all outgoing).
+from reco_common import SIGMA_T_DEFAULT, CHI2_TIMING_MAX  # noqa: E402
 
 # Per-track outgoing-velocity timing test (reported as a side-by-side
 # comparison in the cutflow printout; NOT applied as a cut). For each
@@ -424,31 +424,23 @@ def reconstruct(mu_ori, mu_dir, d_in, d_decay, dir_e, d_out_e,
     L = DETECTOR_THICKNESS        # layer spacing = detector shell (single source)
     V = mu_ori + d_decay[:, None] * mu_dir
 
-    # True hit positions. The layers are separated by L *radially* (inner at
-    # the fiducial face, outer at the tunnel wall), so the along-track pair
-    # spacing is L / |d . n_hat| -- the same convention as
-    # reco_common.wall_inner_outer used by the signal. Plain-L spacing would
-    # systematically shorten the stubs of oblique crossings, shrinking the
-    # 4-hit collinearity of kinked vertices and underestimating the
-    # background surviving the collinearity veto. Grazing tracks
-    # (|d . n_hat| < 1e-6) are flagged unreconstructable, mirroring the NaN
-    # behaviour of wall_inner_outer.
+    # True hit positions via the SHARED single-source routine the signal uses
+    # (reco_common.wall_inner_outer): inner hit on the fiducial face, outer hit
+    # L farther along the track measured radially (along-track stub L/|d.n_hat|),
+    # bounded so the outer hit must lie on the cavern shell -- grazing tracks
+    # that would exit the cavern before reaching the outer layer make only one
+    # hit and are flagged unreconstructable (NaN). The muon is incoming, so its
+    # outer hit (tunnel wall) is reached travelling -mu_dir (outward); the
+    # electron is outgoing, so its outer hit is along +dir_e.
     P_ei = mu_ori + (d_in)[:, None] * mu_dir       # entry-inner (fiducial face)
     P_xi = V + (d_out_e)[:, None] * dir_e          # exit-inner  (fiducial face)
-
-    def _along_track_spacing(P, d):
-        theta, _, _, right, up = classify_points_with_basis(P)
-        n_hat = np.cos(theta)[:, None] * right + np.sin(theta)[:, None] * up
-        dn = np.abs(np.einsum('ij,ij->i', d, n_hat))
-        return np.where(dn > 1e-6, L / np.maximum(dn, 1e-6), np.nan)
-
-    s_mu = _along_track_spacing(P_ei, mu_dir)
-    s_e = _along_track_spacing(P_xi, dir_e)
-    ok_pair = np.isfinite(s_mu) & np.isfinite(s_e)
-    s_mu = np.where(ok_pair, s_mu, L)              # placeholder; excluded below
-    s_e = np.where(ok_pair, s_e, L)
-    P_eo = P_ei - s_mu[:, None] * mu_dir           # entry-outer (tunnel wall)
-    P_xo = P_xi + s_e[:, None] * dir_e             # exit-outer  (tunnel wall)
+    _, P_eo = reco_common.wall_inner_outer(P_ei, -mu_dir, L)  # entry-outer (wall)
+    _, P_xo = reco_common.wall_inner_outer(P_xi, dir_e, L)    # exit-outer  (wall)
+    ok_pair = np.isfinite(P_eo[:, 0]) & np.isfinite(P_xo[:, 0])
+    # Non-degenerate placeholder (plain-L offset) for excluded grazing tracks so
+    # the batched SVD stays finite; they are dropped via ok_pair in on_tracker.
+    P_eo = np.where(ok_pair[:, None], P_eo, P_ei - L * mu_dir)
+    P_xo = np.where(ok_pair[:, None], P_xo, P_xi + L * dir_e)
 
     # Geometric reconstruction via the shared single-source routine (same code
     # the signal uses). *_out = farther from the vertex: muon entry-outer and
@@ -467,31 +459,19 @@ def reconstruct(mu_ori, mu_dir, d_in, d_decay, dir_e, d_out_e,
 
     p_soft = np.minimum(p_mu, p_e)
 
-    # ---- Timing selection ----
-    # True hit times relative to the decay (t=0 at the vertex): the muon
-    # reaches the vertex from outside (entry hits at NEGATIVE time), the
-    # electron leaves the vertex outward (exit hits at POSITIVE time). Each
-    # particle travels at its own beta. Times are then smeared by sigma_t.
+    # ---- Timing selection (shared single-source model, see reco_common) ----
+    # Muon entry hits are BEFORE the vertex (incoming, sign -1); electron exit
+    # hits are AFTER it (outgoing, sign +1). Each particle travels at its own
+    # beta. The signal uses the identical routine with all signs +1, beta ~ 1.
     c = SPEED_OF_LIGHT
     beta_mu = p_mu / np.sqrt(p_mu**2 + M_MUON**2)
     beta_e = p_e / np.sqrt(p_e**2 + M_ELECTRON**2)
-    r_eo = np.linalg.norm(P_eo - V, axis=1)
-    r_ei = np.linalg.norm(P_ei - V, axis=1)
-    r_xi = np.linalg.norm(P_xi - V, axis=1)
-    r_xo = np.linalg.norm(P_xo - V, axis=1)
-    t_true = np.stack([-r_eo / (beta_mu * c), -r_ei / (beta_mu * c),
-                       r_xi / (beta_e * c), r_xo / (beta_e * c)], axis=1)
-    t_meas = t_true + rng.normal(0, sigma_t, t_true.shape)
-
-    # Hypothesis: all 4 hits come from particles leaving the reconstructed
-    # vertex at c. Predicted time = t0 + R_i/c with R_i the measured-hit to
-    # reco-vertex distance. Fit the single t0 (= mean residual) and form chi2.
-    H = np.stack([H_eo, H_ei, H_xi, H_xo], axis=1)
-    R = np.linalg.norm(H - V_reco[:, None, :], axis=2)
-    x = t_meas - R / c
-    resid = x - x.mean(axis=1, keepdims=True)
-    timing_chi2 = (resid**2).sum(axis=1) / sigma_t**2          # ndof = 3
-    timing_rms = np.sqrt((resid**2).mean(axis=1))
+    true_hits = np.stack([P_eo, P_ei, P_xi, P_xo], axis=1)
+    smeared = np.stack([H_eo, H_ei, H_xi, H_xo], axis=1)
+    beta4 = np.stack([beta_mu, beta_mu, beta_e, beta_e], axis=1)
+    sign4 = np.tile([-1.0, -1.0, 1.0, 1.0], (len(P_eo), 1))
+    timing_chi2, timing_rms, t_meas, R = reco_common.timing_chi2_4hit(
+        true_hits, V, beta4, sign4, smeared, V_reco, sigma_t, rng)
 
     # ---- Per-track outgoing-velocity test (t0-free, per track) ----
     # For each track, the far-from-vertex hit must arrive later than the near

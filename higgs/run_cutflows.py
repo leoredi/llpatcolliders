@@ -23,7 +23,8 @@ def cutflow(csv):
     return sig.build_cutflow(
         mc['sep'], mc['pointing'], mc['weights'], mc['momenta'],
         mc['p_soft'], mc['dca'], mc['vtx_in'], mc['open_angle'],
-        mc['sep_outer'], mc['collin'], on_tracker=mc['on_tracker'])
+        mc['sep_outer'], mc['collin'], on_tracker=mc['on_tracker'],
+        timing_chi2=mc['timing_chi2'])
 
 
 def main():

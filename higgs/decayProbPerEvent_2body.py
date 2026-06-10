@@ -27,6 +27,7 @@ from grendel_geometry import (
     points_on_tracker, classify_points_with_basis,
     path_3d_fiducial, tunnel_profile_points,
 )
+from reco_common import SIGMA_T_DEFAULT, CHI2_TIMING_MAX
 
 M_ELECTRON = 0.000511  # GeV/c²
 
@@ -86,10 +87,10 @@ SEP_IN_POINT_GATE   = 0.10   # m (10 cm) — pointing cut applies only when sep_
 # tail (signal pointing medians are 15/150/280 mrad at 0.5/15/40 GeV) while
 # removing the wide-pointing cosmic decay-in-flight survivors. Shared with the
 # cosmic background (single source).
-POINT_GLOBAL = 1.0   # rad (1000 mrad)
+POINT_GLOBAL = 0.4   # rad (400 mrad)
 
-outString = "40GeVFab"
-sample_csv = "LLP40GeVSmall.csv"
+outString = "15GeVPostTimingUpdate"
+sample_csv = "LLPSmall.csv"
 
 # Tracking resolution
 HIT_RESOLUTION = 0.003  # m (3 mm per layer)
@@ -361,7 +362,8 @@ def _first_forward_hit(mesh, origins, dirs):
 
 def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
                        rng_seed=42, hit_resolution=HIT_RESOLUTION,
-                       n_layers=N_LAYERS, use_3d_reco=True):
+                       n_layers=N_LAYERS, use_3d_reco=True,
+                       sigma_t=SIGMA_T_DEFAULT):
     """
     Monte Carlo sample decay positions and rest-frame angles to build
     distributions of electron-pair separations, pointing angles, DCA, and
@@ -686,6 +688,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     open_arr  = np.concatenate(all_open)
     collin_arr = np.concatenate(all_collin)
 
+    timing_arr = np.full(n_tot, np.inf)   # non-reconstructable -> fail timing
     if use_3d_reco:
         import reco_common as _rc
         in1, out1 = _rc.wall_inner_outer(exit_pts[:n_tot], dir1_all,
@@ -704,6 +707,18 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
             collin_arr[fin] = g['collin']
             point_arr[fin]  = g['pointing']
             vtx_arr[fin]    = g['vtx_in']
+            # Timing chi2, identical model to the cosmic background: both
+            # daughters are OUTGOING from the vertex (sign +1) at c (beta ~ 1
+            # for GeV electrons). True hits set the true times; the smeared
+            # hits + reco vertex set the predicted times.
+            nf = int(fin.sum())
+            true_hits = np.stack([out1[fin], in1[fin], in2[fin], out2[fin]], 1)
+            smeared = np.stack([g['H_out1'], g['H_in1'],
+                                g['H_in2'], g['H_out2']], 1)
+            tchi2, _, _, _ = _rc.timing_chi2_4hit(
+                true_hits, decay_all[fin], np.ones((nf, 4)), np.ones((nf, 4)),
+                smeared, g['V_reco'], sigma_t, rng)
+            timing_arr[fin] = tchi2
         vtx_arr[~fin] = False     # no well-defined 3D hits -> not reconstructable
 
     # Backward softer daughter: no valid forward vertex in either the
@@ -721,6 +736,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         'open_angle': open_arr,
         'd_implied': np.concatenate(all_dimp),
         'collin': collin_arr,
+        'timing_chi2': timing_arr,
         'xy_disp_1': xy_disp_1,
         'xy_disp_2': xy_disp_2,
         'on_tracker': on_tracker,
@@ -753,6 +769,7 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
                   point_tight_sep_in=POINT_TIGHT_SEP_IN,
                   sep_in_point_gate=SEP_IN_POINT_GATE,
                   point_global=POINT_GLOBAL,
+                  timing_chi2=None, chi2_timing_max=CHI2_TIMING_MAX,
                   pointing_cut=None):
     """
     Apply signal selection cuts sequentially and return a cutflow table.
@@ -862,6 +879,13 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     mask = mask & (pointing < point_global)
     add_row(f'global pointing < {point_global*1000:.0f} mrad', mask)
 
+    # Timing chi2 (same model as the cosmic background): signal daughters are
+    # outgoing from the vertex at c, so this is ~97% efficient (smearing-limited).
+    if timing_chi2 is not None:
+        prev_mask = mask.copy()
+        mask = mask & (timing_chi2 < chi2_timing_max)
+        add_row(f'timing chi2 < {chi2_timing_max:.0f}', mask)
+
     if pointing_cut is not None:
         prev_mask = mask.copy()
         mask = mask & (pointing <= pointing_cut)
@@ -879,7 +903,8 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                    sep_out_gate=SEP_OUT_GATE,
                    point_tight_sep_in=POINT_TIGHT_SEP_IN,
                    sep_in_point_gate=SEP_IN_POINT_GATE,
-                   point_global=POINT_GLOBAL):
+                   point_global=POINT_GLOBAL,
+                   apply_timing=True, chi2_timing_max=CHI2_TIMING_MAX):
     """
     Boolean per-sample mask for the full signal selection (everything except
     the implicit 'decay in fiducial', which holds for all samples by
@@ -906,6 +931,8 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
     gated_pt = sep < sep_in_point_gate
     m &= (~gated_pt) | (pointing < point_tight_sep_in)
     m &= pointing < point_global
+    if apply_timing and 'timing_chi2' in mc:
+        m &= mc['timing_chi2'] < chi2_timing_max
     m &= vtx_in
     m &= on_tracker
     return m
@@ -1059,6 +1086,7 @@ if __name__ == "__main__":
     sep_outer    = mc['sep_outer']
     d_implied    = mc['d_implied']
     collinearity = mc['collin']
+    timing_chi2  = mc['timing_chi2']
     xy_disp_1    = mc['xy_disp_1']
     xy_disp_2    = mc['xy_disp_2']
     on_tracker   = mc['on_tracker']
@@ -1640,7 +1668,8 @@ if __name__ == "__main__":
 
         cutflow = build_cutflow(seps, pointing, weights, momenta, p_soft,
                                 dca, vtx_in, open_angle, sep_outer,
-                                collinearity, on_tracker=on_tracker)
+                                collinearity, on_tracker=on_tracker,
+                                timing_chi2=timing_chi2)
         cutflow_df = pd.DataFrame(cutflow)
         print(f"\n{'Cut':<25} {'Eff (cumul.)':<15} {'Eff (margin.)':<15}")
         print("-" * 55)

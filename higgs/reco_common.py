@@ -14,9 +14,42 @@ so the pointing bisector is the sum of the two outgoing unit directions.
 """
 import numpy as np
 from grendel_geometry import (classify_points_with_basis, DETECTOR_THICKNESS,
-                              points_in_fiducial)
+                              points_in_fiducial, SPEED_OF_LIGHT)
 
 IP = np.array([0.0, 0.0, 0.0])
+
+# Timing-consistency cut (single source for signal + cosmic background).
+SIGMA_T_DEFAULT = 1.5e-9      # per-hit timing resolution (s)
+CHI2_TIMING_MAX = 6.0         # chi2 (ndof = 3) cut; chi2(3) CDF(9) ~ 0.97
+
+
+def timing_chi2_4hit(true_hits, V_true, beta, sign, smeared_hits, V_reco,
+                     sigma_t, rng):
+    """Timing-consistency chi2 (ndof = 3) under the hypothesis that all four
+    hits come from particles leaving the *reconstructed* vertex at c.
+
+    Identical model for signal and the cosmic background:
+      - true arrival time of each hit (t = 0 at the true vertex) is
+        sign * r_true / (beta c), with sign = +1 for a hit AFTER the vertex
+        (outgoing track) and -1 BEFORE it (incoming track, e.g. the cosmic
+        muon); r_true = true-hit-to-true-vertex distance, beta = particle speed.
+      - times are smeared by sigma_t.
+      - predicted time t_i = t0 + R_i / c with R_i = smeared-hit-to-reco-vertex
+        distance; the single free t0 (= mean residual) is fit out (ndof = 3).
+
+    true_hits, smeared_hits: (n, 4, 3).  beta, sign: (n, 4).
+    Returns (chi2, rms, t_meas, R) so callers can also build per-track tests.
+    """
+    c = SPEED_OF_LIGHT
+    r_true = np.linalg.norm(true_hits - V_true[:, None, :], axis=2)
+    t_true = sign * r_true / (beta * c)
+    t_meas = t_true + rng.normal(0, sigma_t, t_true.shape)
+    R = np.linalg.norm(smeared_hits - V_reco[:, None, :], axis=2)
+    x = t_meas - R / c
+    resid = x - x.mean(axis=1, keepdims=True)
+    chi2 = (resid**2).sum(axis=1) / sigma_t**2
+    rms = np.sqrt((resid**2).mean(axis=1))
+    return chi2, rms, t_meas, R
 
 
 def collinearity_4hit(pts):
@@ -115,8 +148,19 @@ def wall_inner_outer(exit_pt, direction, L=DETECTOR_THICKNESS):
     """
     Given a track's wall-crossing point (inner hit) and its 3D direction,
     return (inner, outer) real 3D hits, the outer being L farther along the
-    track measured radially (the layer-2 hit). NaN where the local normal is
-    ill-defined or the track is grazing.
+    track measured radially (the layer-2 hit).
+
+    The along-track stub is L / |d.n_hat| (radial layer spacing L divided by the
+    track's normal cosine), so an oblique crossing has a long stub. That stub is
+    only physical while the track stays inside the instrumented shell of the
+    cavern: a grazing track exits the cavern before reaching the outer layer and
+    makes only ONE hit. We enforce this by projecting the candidate outer hit
+    radially back onto the fiducial face and requiring that point inside the
+    fiducial volume; tracks failing it (grazing / would-exit, and the
+    ill-defined-normal case) return NaN for the outer hit -> unreconstructable.
+    This keeps the 4-hit geometry physical for BOTH signal and the cosmic
+    background (single source) and prevents grazing tracks from inflating
+    sep_outer / collinearity beyond the cavern.
     """
     exit_pt = np.asarray(exit_pt, float)
     direction = np.asarray(direction, float)
@@ -125,4 +169,15 @@ def wall_inner_outer(exit_pt, direction, L=DETECTOR_THICKNESS):
     d_dot_n = np.einsum('ij,ij->i', direction, n_hat)
     d_dot_n = np.where(np.abs(d_dot_n) < 1e-6, np.nan, d_dot_n)
     outer = exit_pt + (L / d_dot_n)[:, None] * direction
+
+    # Physical bound: the outer hit must sit on the cavern shell. Project it
+    # radially inward (just past the fiducial face) and require it in-fiducial.
+    finite = np.isfinite(outer[:, 0])
+    inside = np.zeros(len(outer), dtype=bool)
+    if finite.any():
+        th_o, _, _, right_o, up_o = classify_points_with_basis(outer[finite])
+        n_o = np.cos(th_o)[:, None] * right_o + np.sin(th_o)[:, None] * up_o
+        face_pt = outer[finite] - (L + 0.10) * n_o   # ~10 cm inside the face
+        inside[finite] = points_in_fiducial(face_pt)
+    outer = np.where(inside[:, None], outer, np.nan)
     return exit_pt, outer
