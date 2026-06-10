@@ -31,7 +31,9 @@ def main():
     print(f"SEP_OUT_GATE = {sig.SEP_OUT_GATE*100:.0f} cm, "
           f"COLLIN_FRAC = {sig.COLLIN_FRAC} "
           f"(collin > {sig.COLLIN_FRAC*sig.DETECTOR_THICKNESS*1000:.0f} mm), "
-          f"no global pointing cut\n")
+          f"pointing < {sig.POINT_TIGHT_SEP_IN*1000:.0f} mrad (sep_in<{sig.SEP_IN_POINT_GATE*100:.0f}cm) "
+          f"/ < {sig.POINT_GLOBAL*1000:.0f} mrad, "
+          f"timing chi2 < {sig.CHI2_TIMING_MAX:.0f} @ {sig.SIGMA_T_DEFAULT*1e9:.2g} ns\n")
     for label, csv in MASSES:
         rows = cutflow(csv)
         print("=" * 72)

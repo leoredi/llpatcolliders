@@ -20,7 +20,7 @@ from grendel_geometry import (classify_points_with_basis, DETECTOR_THICKNESS,
 IP = np.array([0.0, 0.0, 0.0])
 
 # Timing-consistency cut (single source for signal + cosmic background).
-SIGMA_T_DEFAULT = 1.5e-9      # per-hit timing resolution (s)
+SIGMA_T_DEFAULT = 0.5e-9      # per-hit timing resolution (s)
 CHI2_TIMING_MAX = 6.0         # chi2 (ndof = 3) cut; chi2(3) CDF(6) ~ 0.89 = signal timing eff
 
 

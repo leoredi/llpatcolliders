@@ -82,12 +82,14 @@ SEP_OUT_GATE = 0.16   # m (16 cm)
 POINT_TIGHT_SEP_IN  = 0.050  # rad (50 mrad) — max pointing when sep_in < gate
 SEP_IN_POINT_GATE   = 0.10   # m (10 cm) — pointing cut applies only when sep_in < this
 
-# Global (mass-independent) pointing cut applied at ALL sep_in, on top of the
-# conditional tight cut above. At 1000 mrad it only clips the non-physical >1 rad
-# tail (signal pointing medians are 15/150/280 mrad at 0.5/15/40 GeV) while
-# removing the wide-pointing cosmic decay-in-flight survivors. Shared with the
-# cosmic background (single source).
-POINT_GLOBAL = 0.4   # rad (400 mrad)
+# Global pointing cut for the well-separated (sep_in >= 10 cm) topologies, on
+# top of the tight 50 mrad applied to close (sep_in < 10 cm) decays above. This
+# is the single-region selection: pointing < 50 mrad for close, < 800 mrad for
+# well separated. 800 mrad captures the high-mass signal tail (15/40 GeV pointing
+# reach ~660 mrad at 99%); the cosmic decay-in-flight background it admits is
+# handled by the timing chi2 cut (default 0.5 ns). Shared with the cosmic
+# background (single source).
+POINT_GLOBAL = 0.8   # rad (800 mrad)
 
 outString = "15GeVPostTimingUpdate"
 sample_csv = "LLPSmall.csv"
