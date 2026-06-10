@@ -94,7 +94,8 @@ from reco_common import SIGMA_T_DEFAULT, CHI2_TIMING_MAX  # noqa: E402
 #   pull = [(t_far - t_near) - (R_far - R_near)/c] / (sqrt2 * sigma_t)
 # An incoming muon track gives a large NEGATIVE pull (its far hit is earlier).
 # Require BOTH tracks pull > -VELO_NCUT. Signal daughters are outgoing
-# (pull ~ N(0,1)); n_cut = 2.17 -> per-event signal eff ~0.97 (matches chi2<9).
+# (pull ~ N(0,1)); n_cut = 2.17 was tuned to ~0.97 signal eff to match the
+# chi2 < 9 working point (the APPLIED cut is CHI2_TIMING_MAX, currently 6).
 VELO_NCUT = 2.17
 
 # The tracker-layer spacing is NOT a separate knob: it equals DETECTOR_THICKNESS

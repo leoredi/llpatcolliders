@@ -880,7 +880,8 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     add_row(f'global pointing < {point_global*1000:.0f} mrad', mask)
 
     # Timing chi2 (same model as the cosmic background): signal daughters are
-    # outgoing from the vertex at c, so this is ~97% efficient (smearing-limited).
+    # outgoing from the vertex at c, so this is smearing-limited (= chi2(3) CDF,
+    # ~0.89 at chi2<6, ~0.97 at chi2<9) and sigma_t-independent, flat in mass.
     if timing_chi2 is not None:
         prev_mask = mask.copy()
         mask = mask & (timing_chi2 < chi2_timing_max)
