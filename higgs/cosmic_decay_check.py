@@ -48,8 +48,8 @@ import reco_common
 from decayProbPerEvent_2body import (
     P_CUT, SEP_MIN, SEP_MAX, DCA_CUT,
     THETA_PARALLEL, SEP_OUT_MAX_PARALLEL,
-    COLLIN_MIN, SEP_OUT_COLLIN_GATE, COLLIN_FRAC,
-    POINT_TIGHT_SEP_IN, SEP_IN_POINT_GATE,
+    COLLIN_MIN, SEP_OUT_COLLIN_GATE, COLLIN_FRAC, SEP_OUT_GATE,
+    POINT_TIGHT_SEP_IN, SEP_IN_POINT_GATE, POINT_GLOBAL,
     HIT_RESOLUTION, _first_forward_hit,
 )
 
@@ -158,6 +158,94 @@ def sample_depth_momentum(cos_z, theta_max, rng, e_min=0.3):
         if m.any():
             E[m] = np.interp(u[m], cdf_table[i], E_grid)
     return np.sqrt(np.maximum(E**2 - M_MUON**2, 1e-6))
+
+
+# Path to a ROOT file holding the measured cavern-entry muon |p| spectrum
+# (TH1D 'h_muon_momentum_at_cavern_entry', MeV). Set by main() from --momentum-root.
+EMPIRICAL_ROOT_PATH = 'muon_entry_distributions.root'
+# Optional generation window [GeV]: restrict muon |p| sampling to this range
+# (importance sampling) and scale the rate by the window's spectral fraction.
+# None => full spectrum. Set by main() from --gen-pmin/--gen-pmax.
+GEN_PMIN = None
+GEN_PMAX = None
+_EMP_CACHE = {}
+
+
+def _load_empirical(path):
+    """Load (and cache) the measured cavern-entry momentum histogram.
+    Returns dict with resolved-bin edges_GeV, per-bin counts, the overflow
+    count (>10 GeV, shapeless) and the total (resolved + overflow)."""
+    if path in _EMP_CACHE:
+        return _EMP_CACHE[path]
+    import uproot
+    h = uproot.open(path)['h_muon_momentum_at_cavern_entry']
+    c = h.values(flow=True)                  # [underflow, ...bins..., overflow]
+    edges = h.axis().edges() / 1000.0        # MeV -> GeV, len = nbins+1
+    counts = c[1:-1].astype(float)
+    overflow = float(c[-1])
+    res = dict(edges=edges, counts=counts, overflow=overflow,
+               total=float(counts.sum() + overflow))
+    _EMP_CACHE[path] = res
+    return res
+
+
+def empirical_window_fraction(p_min, p_max, path=None):
+    """Fraction of the full measured spectrum within [p_min, p_max] GeV
+    (resolved range only; assumes p_max <= the histogram's upper edge)."""
+    d = _load_empirical(path or EMPIRICAL_ROOT_PATH)
+    lo, hi = d['edges'][:-1], d['edges'][1:]
+    overlap = np.clip(np.minimum(hi, p_max) - np.maximum(lo, p_min), 0.0, None)
+    w = float((d['counts'] * overlap / (hi - lo)).sum())
+    return w / d['total']
+
+
+def sample_empirical_momentum(n, rng, path=None, tail_index=2.7, tail_max=2000.0):
+    """Sample muon |p| (GeV/c) from the measured cavern-entry spectrum.
+
+    Full-spectrum mode (GEN_PMIN/GEN_PMAX both None): the resolved range
+    (<= 10 GeV, ~4.5% of muons) is drawn from the histogram by inverse-CDF;
+    the unresolved overflow (>10 GeV, ~95.5%) from a p^-tail_index tail. Those
+    high-betagamma muons give forward/collinear electrons removed by the
+    collinearity cut, so the FINAL selected background is insensitive to the
+    tail shape; only the low-p (large-kink) tail, which is resolved, matters.
+
+    Restricted mode (GEN_PMIN/GEN_PMAX set): draw only within the window from
+    the resolved histogram (importance sampling); the caller scales the rate by
+    empirical_window_fraction() to recover the absolute normalisation.
+    """
+    d = _load_empirical(path or EMPIRICAL_ROOT_PATH)
+    edges, counts = d['edges'], d['counts']
+    lo, hi = edges[:-1], edges[1:]
+
+    if GEN_PMIN is not None or GEN_PMAX is not None:
+        pmin = 0.0 if GEN_PMIN is None else GEN_PMIN
+        pmax = edges[-1] if GEN_PMAX is None else GEN_PMAX
+        win = np.clip(np.minimum(hi, pmax) - np.maximum(lo, pmin), 0.0, None)
+        wbin = counts * win / (hi - lo)              # expected counts in window
+        if wbin.sum() <= 0:
+            return np.full(n, 0.5 * (pmin + pmax))
+        cdf = np.cumsum(wbin) / wbin.sum()
+        bi = np.clip(np.searchsorted(cdf, rng.uniform(0, 1, n)), 0, len(lo) - 1)
+        blo = np.maximum(lo[bi], pmin)
+        bhi = np.minimum(hi[bi], pmax)
+        return np.maximum(blo + rng.uniform(0, 1, n) * (bhi - blo), 1e-3)
+
+    # full spectrum: resolved histogram + power-law overflow tail
+    f_inrange = counts.sum() / d['total']
+    p = np.empty(n)
+    is_in = rng.uniform(0, 1, n) < f_inrange
+    nin = int(is_in.sum())
+    if nin:
+        cdf = np.cumsum(counts) / counts.sum()
+        bi = np.clip(np.searchsorted(cdf, rng.uniform(0, 1, nin)), 0, len(lo) - 1)
+        p[is_in] = lo[bi] + rng.uniform(0, 1, nin) * (hi - lo)[bi]
+    nt = n - nin
+    if nt:
+        a = tail_index
+        ut = rng.uniform(0, 1, nt)
+        p[~is_in] = ((1 - ut) * edges[-1]**(1 - a)
+                     + ut * tail_max**(1 - a)) ** (1.0 / (1 - a))
+    return np.maximum(p, 1e-3)
 
 
 # ------------------------------------------------------------------
@@ -449,6 +537,8 @@ def _volume_chunk(m, seed_chunk, rng, theta_max, p_mean, spectrum, i_vertical,
 
     if spectrum == 'depth':
         p_mu = sample_depth_momentum(cos_z, theta_max, rng, e_min=depth_e_min)
+    elif spectrum == 'empirical':
+        p_mu = sample_empirical_momentum(m, rng)
     else:
         p_mu = sample_momentum(m, rng, mean=p_mean, kind=spectrum)
     lam = (p_mu / M_MUON) * CTAU_MUON
@@ -482,7 +572,7 @@ def _volume_chunk(m, seed_chunk, rng, theta_max, p_mean, spectrum, i_vertical,
 def run_volume(n_events, theta_max, p_mean, spectrum, i_vertical,
                sigma_hit, seed, sigma_t=SIGMA_T_DEFAULT,
                target_muon_rate_hz=MUON_RATE_HZ_DEFAULT, chunk=200_000,
-               depth_e_min=0.3):
+               depth_e_min=0.3, spectrum_weight=1.0):
     """
     Volume importance sampler. Sample the decay vertex uniformly in the
     fiducial volume + a cos^2(theta) downgoing direction + the momentum
@@ -524,7 +614,9 @@ def run_volume(n_events, theta_max, p_mean, spectrum, i_vertical,
             for k in reco_chunks[0] if k != 'n_reco'}
     mean_inv_chord = inv_chord_sum / n_geom
     muon_rate = pref * mean_inv_chord
-    w_all = pref * reco['inv_lam'] / n_events              # decay-rate per sample [Hz]
+    # decay-rate per sample [Hz]; spectrum_weight = generated window's spectral
+    # fraction when importance-sampling a restricted momentum range (else 1).
+    w_all = pref * reco['inv_lam'] / n_events * spectrum_weight
     if target_muon_rate_hz:
         w_all *= target_muon_rate_hz / muon_rate
         muon_rate = target_muon_rate_hz
@@ -549,7 +641,8 @@ def _passers_to_csv(d, out_csv):
     bx, by = local_transverse_xy(V)
     th, s, *_ = classify_points_with_basis(V)
     gpt = d['sep_in'] < SEP_IN_POINT_GATE
-    pass_point = (~gpt) | (d['pointing'] < POINT_TIGHT_SEP_IN)
+    pass_point = ((~gpt) | (d['pointing'] < POINT_TIGHT_SEP_IN)) \
+        & (d['pointing'] < POINT_GLOBAL)
     pass_time = d['timing_chi2'] < CHI2_TIMING_MAX
     pd.DataFrame({
         'x_m': V[:, 0], 'y_m': V[:, 1], 'z_m': V[:, 2],
@@ -571,7 +664,7 @@ def run_volume_streaming(n_events, theta_max, p_mean, spectrum, i_vertical,
                          sigma_hit, seed, livetime_s, collin_csv,
                          sigma_t=SIGMA_T_DEFAULT,
                          target_muon_rate_hz=MUON_RATE_HZ_DEFAULT,
-                         chunk=200_000, depth_e_min=0.3):
+                         chunk=200_000, depth_e_min=0.3, spectrum_weight=1.0):
     """Memory-bounded volume run: accumulate the weighted cutflow per chunk and
     keep only the (rare) collinearity-cut passers, so arbitrarily large N runs
     in fixed memory. Prints the merged cutflow and writes the passers CSV."""
@@ -594,7 +687,7 @@ def run_volume_streaming(n_events, theta_max, p_mean, spectrum, i_vertical,
                                       depth_e_min, cmin)
         inv_chord_sum += ics
         n_geom += ngeo
-        w_un = pref * rc['inv_lam'] / n_events            # unanchored rate/event
+        w_un = pref * rc['inv_lam'] / n_events * spectrum_weight  # unanchored rate/event
         stages = cutflow_stages(rc)
         if wsum is None:
             names = [s[0] for s in stages]
@@ -668,6 +761,8 @@ def run(n_rays, y_throw, theta_max, p_mean, spectrum, i_vertical,
     # Momentum: realistic depth spectrum (per-muon, angle-dependent) or a toy.
     if spectrum == 'depth':
         p_mu = sample_depth_momentum(cos_z, theta_max, rng)
+    elif spectrum == 'empirical':
+        p_mu = sample_empirical_momentum(nv, rng)
     else:
         p_mu = sample_momentum(nv, rng, mean=p_mean, kind=spectrum)
 
@@ -752,15 +847,17 @@ def cutflow_stages(r):
     par = r['open_a'] < THETA_PARALLEL
     m = m & ((~par) | (sepo < SEP_OUT_MAX_PARALLEL))
     out.append(('conditional max sep_outer (parallel)', m.copy()))
-    gated = sepo > L
+    gated = sepo > SEP_OUT_GATE
     m = m & ((~gated) | (r['collin'] > COLLIN_FRAC * L))
-    out.append((f'collin>{COLLIN_FRAC:.2f}L if sep_out>L '
+    out.append((f'collin>{COLLIN_FRAC:.2f}L if sep_out>{SEP_OUT_GATE*100:.0f}cm '
                 f'({COLLIN_FRAC*L*1000:.0f}mm)', m.copy()))
     m = m & r['vtx_in']
     out.append(('vertex in fiducial (PCA)', m.copy()))
     gpt = sep < SEP_IN_POINT_GATE
     m = m & ((~gpt) | (r['pointing'] < POINT_TIGHT_SEP_IN))
     out.append(('conditional tight pointing', m.copy()))
+    m = m & (r['pointing'] < POINT_GLOBAL)
+    out.append((f'global pointing < {POINT_GLOBAL*1000:.0f} mrad', m.copy()))
     m = m & (r['timing_chi2'] < CHI2_TIMING_MAX)
     out.append((f'timing chi2 < {CHI2_TIMING_MAX:.0f}', m.copy()))
     return out
@@ -888,6 +985,118 @@ def make_plot(r, out_path, interactive):
         plt.close('all')
 
 
+def make_variable_plots(r, out_dir, interactive=False):
+    """One rate-weighted distribution per file (signal-style) into out_dir, with
+    the ACTIVE cut thresholds drawn (single-sourced). Mirrors the signal
+    per-mass plot set: Michel momentum, kink, collinearity, DCA, sep_in,
+    sep_out, pointing, timing chi2, timing residual, geometry."""
+    import matplotlib.pyplot as plt
+    os.makedirs(out_dir, exist_ok=True)
+    w = r['w']
+    L = DETECTOR_THICKNESS
+    collin_cut_mm = COLLIN_FRAC * L * 1000
+
+    def save(name):
+        p = os.path.join(out_dir, name)
+        plt.tight_layout(); plt.savefig(p, dpi=150)
+        if interactive: plt.show()
+        else: plt.close('all')
+
+    # 1. Michel electron momentum
+    plt.figure(figsize=(7, 5))
+    plt.hist(r['p_e'], bins=np.linspace(0, 2, 60), weights=w,
+             color='steelblue', edgecolor='k', linewidth=0.3)
+    plt.axvline(P_SOFT_CUT, color='red', ls='--', label=f'p_cut = {P_SOFT_CUT*1e3:.0f} MeV')
+    plt.xlabel('electron lab momentum (GeV/c)'); plt.ylabel('rate [Hz]')
+    plt.legend(); plt.title('Michel electron momentum'); save('michel_momentum.png')
+
+    # 2. kink angle
+    plt.figure(figsize=(7, 5))
+    plt.hist(np.degrees(r['open_a']), bins=60, weights=w,
+             color='darkgreen', edgecolor='k', linewidth=0.3)
+    plt.xlabel('reco opening (kink) angle (deg)'); plt.ylabel('rate [Hz]')
+    plt.title('muon-electron kink'); save('kink_angle.png')
+
+    # 3. collinearity (ACTIVE cut + L/2 ceiling)
+    plt.figure(figsize=(7, 5))
+    plt.hist(r['collin'] * 1000, bins=np.linspace(0, max(collin_cut_mm*1.3, 150), 80),
+             weights=w, color='purple', edgecolor='k', linewidth=0.3)
+    plt.axvline(collin_cut_mm, color='red', ls='--',
+                label=f'cut = {COLLIN_FRAC:.2f}L = {collin_cut_mm:.0f} mm')
+    plt.axvline(L/2*1000, color='green', ls=':',
+                label=f'signal ceiling L/2 = {L/2*1000:.0f} mm')
+    plt.yscale('log')
+    plt.xlabel('collinearity (mm)'); plt.ylabel('rate [Hz]')
+    plt.legend(); plt.title(f'4-hit collinearity (gate sep_out>{SEP_OUT_GATE*100:.0f}cm)')
+    save('collinearity.png')
+
+    # 4. DCA
+    plt.figure(figsize=(7, 5))
+    plt.hist(r['dca'] * 100, bins=np.linspace(0, 30, 60), weights=w,
+             color='orange', edgecolor='k', linewidth=0.3)
+    plt.axvline(DCA_CUT * 100, color='red', ls='--', label=f'cut = {DCA_CUT*100:.0f} cm')
+    plt.xlabel('DCA (cm)'); plt.ylabel('rate [Hz]')
+    plt.legend(); plt.title('track DCA'); save('dca.png')
+
+    # 5. sep_inner
+    plt.figure(figsize=(7, 5))
+    plt.hist(r['sep_in'] * 100, bins=np.linspace(0, 100, 60), weights=w,
+             color='teal', edgecolor='k', linewidth=0.3)
+    plt.xlabel('inner-layer separation (cm)'); plt.ylabel('rate [Hz]')
+    plt.title('sep_inner'); save('sep_inner.png')
+
+    # 6. sep_outer (ACTIVE gate)
+    plt.figure(figsize=(7, 5))
+    plt.hist(r['sep_out'] * 100, bins=np.linspace(0, 100, 60), weights=w,
+             color='darkcyan', edgecolor='k', linewidth=0.3)
+    plt.axvline(SEP_OUT_GATE * 100, color='red', ls='--',
+                label=f'collinearity gate = {SEP_OUT_GATE*100:.0f} cm')
+    plt.xlabel('outer-layer separation (cm)'); plt.ylabel('rate [Hz]')
+    plt.legend(); plt.title('sep_outer'); save('sep_outer.png')
+
+    # 7. pointing (tight + global cut lines, log-x)
+    plt.figure(figsize=(7, 5))
+    pt = np.clip(r['pointing'] * 1000, 1e-1, 3000)
+    plt.hist(pt, bins=np.logspace(-1, np.log10(3000), 60), weights=w,
+             color='darkorange', edgecolor='k', linewidth=0.3)
+    plt.axvline(POINT_GLOBAL * 1000, color='purple', ls='-',
+                label=f'global cut = {POINT_GLOBAL*1000:.0f} mrad')
+    plt.axvline(POINT_TIGHT_SEP_IN * 1000, color='blue', ls=':',
+                label=f'tight cut (sep_in<{SEP_IN_POINT_GATE*100:.0f}cm) = {POINT_TIGHT_SEP_IN*1000:.0f} mrad')
+    plt.xscale('log'); plt.yscale('log')
+    plt.xlabel('pointing angle (mrad)'); plt.ylabel('rate [Hz]')
+    plt.legend(); plt.title('pointing (bisector vs IP flight)'); save('pointing.png')
+
+    # 8. timing chi2
+    plt.figure(figsize=(7, 5))
+    plt.hist(np.clip(r['timing_chi2'], 1e-2, 1e6), bins=np.logspace(-2, 6, 60),
+             weights=w, color='crimson', edgecolor='k', linewidth=0.3)
+    plt.axvline(CHI2_TIMING_MAX, color='black', ls='--', label=f'cut = {CHI2_TIMING_MAX:.0f}')
+    plt.xscale('log'); plt.yscale('log')
+    plt.xlabel('timing chi2 (ndof=3)'); plt.ylabel('rate [Hz]')
+    plt.legend(); plt.title(f'timing consistency (sigma_t={r["sigma_t_ns"]:.1f} ns)')
+    save('timing_chi2.png')
+
+    # 9. timing residual
+    plt.figure(figsize=(7, 5))
+    plt.hist(np.clip(r['timing_rms'] * 1e9, 0, 60), bins=60, weights=w,
+             color='slateblue', edgecolor='k', linewidth=0.3)
+    plt.axvline(r['sigma_t_ns'], color='red', ls='--', label=f'sigma_t = {r["sigma_t_ns"]:.1f} ns')
+    plt.xlabel('timing residual RMS (ns)'); plt.ylabel('rate [Hz]')
+    plt.legend(); plt.title('per-event timing residual'); save('timing_residual.png')
+
+    # 10. geometry (zenith vs chord)
+    plt.figure(figsize=(7, 5))
+    plt.hist2d(np.degrees(np.arccos(np.clip(r['cos_z'], -1, 1))), r['chord'],
+               bins=[np.linspace(0, 90, 50), np.linspace(0, 8, 50)],
+               weights=w, cmap='magma')
+    plt.colorbar(label='rate [Hz]')
+    plt.xlabel('zenith (deg)'); plt.ylabel('fiducial chord (m)')
+    plt.title('geometry (rate-weighted)'); save('geometry.png')
+
+    print(f"Saved per-variable plots -> {out_dir}/")
+
+
 # ------------------------------------------------------------------
 
 def local_xy(points):
@@ -951,7 +1160,7 @@ def pre_timing_mask(r, apply_collin=True):
     par = r['open_a'] < THETA_PARALLEL
     m &= (~par) | (r['sep_out'] < SEP_OUT_MAX_PARALLEL)
     if apply_collin:
-        gated = r['sep_out'] > DETECTOR_THICKNESS
+        gated = r['sep_out'] > SEP_OUT_GATE
         m &= (~gated) | (r['collin'] > COLLIN_FRAC * DETECTOR_THICKNESS)
     m &= r['vtx_in']
     gpt = r['sep_in'] < SEP_IN_POINT_GATE
@@ -980,20 +1189,17 @@ def make_collin_sepout_plot(r, out_path, label='', interactive=False):
     plt.colorbar(h[3], ax=ax, label='rate [Hz] per bin')
     ax.set_ylim(1e-1, 1e3)
 
-    gate = SEP_OUT_COLLIN_GATE * 100.0
-    ax.axvline(gate, color='red', ls='--', lw=1.5,
-               label=f'nominal gate = {gate:.0f} cm')
-    ax.axhline(COLLIN_MIN * 1000, color='red', ls='-', lw=1.5,
-               label=f'nominal cut = {COLLIN_MIN*1000:.0f} mm')
-    # Targeted (active) cut keyed to the detector thickness: sep_out>L -> collin>frac*L
-    L_cm = DETECTOR_THICKNESS * 100.0
+    # Active cut: when sep_out > SEP_OUT_GATE require collin > COLLIN_FRAC*L.
+    gate_cm = SEP_OUT_GATE * 100.0
     tgt_mm = COLLIN_FRAC * DETECTOR_THICKNESS * 1000.0
-    ax.axvline(L_cm, color='orange', ls='--', lw=1.5,
-               label=f'targeted gate = L = {L_cm:.0f} cm')
-    ax.axhline(tgt_mm, color='orange', ls='-', lw=1.5,
-               label=f'targeted cut = {COLLIN_FRAC:.2f} L = {tgt_mm:.0f} mm')
-    ax.fill_between([L_cm, 1e4], 1e-1, tgt_mm,
-                    color='orange', alpha=0.15, label='targeted reject')
+    ax.axvline(gate_cm, color='red', ls='--', lw=1.8,
+               label=f'gate = {gate_cm:.0f} cm')
+    ax.axhline(tgt_mm, color='red', ls='-', lw=1.8,
+               label=f'cut = {COLLIN_FRAC:.2f}L = {tgt_mm:.0f} mm')
+    ax.axhline(DETECTOR_THICKNESS / 2 * 1000, color='green', ls=':', lw=1.5,
+               label=f'signal ceiling L/2 = {DETECTOR_THICKNESS/2*1000:.0f} mm')
+    ax.fill_between([gate_cm, 1e4], 1e-1, tgt_mm,
+                    color='red', alpha=0.15, label='reject (muon-like)')
     ax.set_xscale('log'); ax.set_yscale('log')
     ax.set_xlabel('sep_outer (cm)'); ax.set_ylabel('collinearity (mm)')
     ax.set_title(f'Cosmic muon-decay: collinearity vs sep_outer\n'
@@ -1216,7 +1422,7 @@ def dump_collin_passers(r, out_csv):
     m &= r['dca'] <= DCA_CUT
     par = r['open_a'] < THETA_PARALLEL
     m &= (~par) | (sepo < SEP_OUT_MAX_PARALLEL)
-    gated = sepo > L
+    gated = sepo > SEP_OUT_GATE
     m &= (~gated) | (r['collin'] > COLLIN_FRAC * L)   # through collinearity
     idx = np.where(m)[0]
     print(f"\n{len(idx)} events pass the collinearity cut -> {out_csv}")
@@ -1272,9 +1478,21 @@ def parse_args():
     p.add_argument('--p-mean', type=float, default=1.0,
                    help='Mean of the input momentum spectrum (GeV/c).')
     p.add_argument('--spectrum', default='depth',
-                   choices=['depth', 'exp', 'powerlaw', 'mono'],
+                   choices=['depth', 'empirical', 'exp', 'powerlaw', 'mono'],
                    help="'depth' = realistic post-overburden spectrum "
-                        "(CosmicMuonFlux); others are toy spectra in |p|.")
+                        "(CosmicMuonFlux); 'empirical' = measured cavern-entry "
+                        "spectrum from --momentum-root; others are toy spectra.")
+    p.add_argument('--momentum-root', default=EMPIRICAL_ROOT_PATH,
+                   help="ROOT file with the measured cavern-entry |p| spectrum "
+                        "(TH1D h_muon_momentum_at_cavern_entry, MeV); used by "
+                        "--spectrum empirical.")
+    p.add_argument('--gen-pmin', type=float, default=None,
+                   help="Restrict empirical generation to |p| > this (GeV) and "
+                        "scale the rate by the window's spectral fraction "
+                        "(importance sampling; skips useless high-p muons).")
+    p.add_argument('--gen-pmax', type=float, default=None,
+                   help="Restrict empirical generation to |p| < this (GeV). "
+                        "Must be <= the histogram's upper edge (10 GeV).")
     p.add_argument('--timing-res-ns', type=float, default=SIGMA_T_DEFAULT * 1e9,
                    help='Per-hit timing resolution (ns).')
     p.add_argument('--velo-ncut', type=float, default=VELO_NCUT,
@@ -1292,6 +1510,9 @@ def parse_args():
     p.add_argument('--seed', type=int, default=42)
     p.add_argument('--interactive', action='store_true')
     p.add_argument('--out', default='cosmic_decay_observables.png')
+    p.add_argument('--plot-dir', default='cosmic_g16',
+                   help='Dedicated folder for one-per-file variable plots '
+                        '(signal-style), with the active cut thresholds drawn.')
     p.add_argument('--n-displays', type=int, default=4,
                    help='Number of passing-event displays to draw (0 = none).')
     p.add_argument('--display-dir', default='cosmic_decay_event_displays')
@@ -1309,14 +1530,31 @@ def main():
     if not args.interactive and not os.environ.get('MPLBACKEND'):
         matplotlib.use('Agg')
 
-    global VELO_NCUT, COLLIN_FRAC
+    global VELO_NCUT, COLLIN_FRAC, EMPIRICAL_ROOT_PATH, GEN_PMIN, GEN_PMAX
     VELO_NCUT = args.velo_ncut
     COLLIN_FRAC = args.collin_frac
+    EMPIRICAL_ROOT_PATH = args.momentum_root
+    GEN_PMIN = args.gen_pmin
+    GEN_PMAX = args.gen_pmax
+
+    # Importance-sampling weight: when generating only a restricted momentum
+    # window, scale the rate by that window's fraction of the full spectrum.
+    spectrum_weight = 1.0
+    if args.spectrum == 'empirical' and (GEN_PMIN is not None
+                                         or GEN_PMAX is not None):
+        edges = _load_empirical(EMPIRICAL_ROOT_PATH)['edges']
+        wlo = 0.0 if GEN_PMIN is None else GEN_PMIN
+        whi = edges[-1] if GEN_PMAX is None else GEN_PMAX
+        spectrum_weight = empirical_window_fraction(wlo, whi)
+        print(f"  GENERATION WINDOW: {wlo:.3g} < p < {whi:.3g} GeV  "
+              f"(spectral fraction {spectrum_weight:.4e}; rate scaled by it)")
 
     print("=" * 70)
     print("COSMIC-MUON DECAY-IN-FLIGHT BACKGROUND")
     print("=" * 70)
     spec_desc = ('realistic depth spectrum' if args.spectrum == 'depth'
+                 else f'measured cavern-entry spectrum ({args.momentum_root})'
+                 if args.spectrum == 'empirical'
                  else f'{args.spectrum} (mean p = {args.p_mean} GeV/c)')
     print(f"  spectrum: {spec_desc}, "
           f"cos^2 theta to {np.degrees(args.theta_max):.0f} deg")
@@ -1335,14 +1573,15 @@ def main():
             args.i_vertical, HIT_RESOLUTION, args.seed, livetime_s,
             args.collin_csv, sigma_t=args.timing_res_ns * 1e-9,
             target_muon_rate_hz=args.muon_rate_hz, chunk=args.chunk,
-            depth_e_min=0.3)
+            depth_e_min=0.3, spectrum_weight=spectrum_weight)
         return
 
     if args.sampler == 'volume':
         r = run_volume(args.n_rays, args.theta_max, args.p_mean,
                        args.spectrum, args.i_vertical, HIT_RESOLUTION, args.seed,
                        sigma_t=args.timing_res_ns * 1e-9,
-                       target_muon_rate_hz=args.muon_rate_hz, chunk=args.chunk)
+                       target_muon_rate_hz=args.muon_rate_hz, chunk=args.chunk,
+                       spectrum_weight=spectrum_weight)
     else:
         r = run(args.n_rays, args.y_throw, args.theta_max, args.p_mean,
                 args.spectrum, args.i_vertical, HIT_RESOLUTION, args.seed,
@@ -1388,19 +1627,23 @@ def main():
         print(f"    perp. distance to nearest wall : "
               f"{dm[0]*100:6.1f} / {dm[1]*100:6.1f} / {dm[2]*100:6.1f} cm")
 
-    make_plot(r, args.out, args.interactive)
+    # Per-variable plots (one file each, signal-style) in a dedicated folder.
+    pdir = args.plot_dir
+    os.makedirs(pdir, exist_ok=True)
+    make_variable_plots(r, pdir, interactive=args.interactive)
+    make_plot(r, os.path.join(pdir, 'observables_overview.png'), args.interactive)
 
     make_decay_horseshoe(
-        r, pre_timing, args.horseshoe_out,
+        r, pre_timing, os.path.join(pdir, 'decay_horseshoe.png'),
         label=f'pre-timing selection (spacing {DETECTOR_THICKNESS*100:.0f} cm)',
         interactive=args.interactive)
 
     make_collin_sepout_plot(
-        r, args.collin_plot_out,
+        r, os.path.join(pdir, 'collin_vs_sepout.png'),
         label=f'spacing {DETECTOR_THICKNESS*100:.0f} cm',
         interactive=args.interactive)
 
-    make_collin_ceiling_plot(r, args.collin_ceiling_out,
+    make_collin_ceiling_plot(r, os.path.join(pdir, 'collinearity_log.png'),
                              interactive=args.interactive)
 
     if args.n_displays > 0:

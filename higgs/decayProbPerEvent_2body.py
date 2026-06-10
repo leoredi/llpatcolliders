@@ -61,11 +61,18 @@ SEP_OUT_COLLIN_GATE = 0.30   # m — collinearity cut applies only when sep_oute
 
 # L-scaled ("fractional") collinearity cut — the ACTIVE collinearity veto,
 # shared with the cosmic-decay background (cosmic_decay_check imports COLLIN_FRAC
-# from here). When sep_outer > L (= DETECTOR_THICKNESS) require
-# collinearity > COLLIN_FRAC * L. The signal collinearity ceiling is L/2 (a wide
-# two-body V saturates there), so COLLIN_FRAC < 0.5. COLLIN_MIN /
+# from here). When sep_outer > SEP_OUT_GATE require collinearity > COLLIN_FRAC * L
+# (L = DETECTOR_THICKNESS; the threshold is tied to the physical L/2 ceiling that
+# a wide two-body V saturates, so COLLIN_FRAC < 0.5). COLLIN_MIN /
 # SEP_OUT_COLLIN_GATE above are the older static version, kept for comparison.
 COLLIN_FRAC = 0.48
+
+# sep_outer gate for the collinearity veto: the cut fires when sep_outer >
+# SEP_OUT_GATE. Lowered below L (= DETECTOR_THICKNESS = 24 cm) to 16 cm so the
+# collinearity cut reaches the cosmic decay-in-flight "crack" (narrow events with
+# sep_out just under L), at a small cost to collimated low-mass signal. Shared
+# with the cosmic background (single source).
+SEP_OUT_GATE = 0.16   # m (16 cm)
 
 # Conditional tight pointing. For collimated decays (small sep_inner) the
 # bisector points back to the IP very well, so a tight pointing cut kills
@@ -74,8 +81,15 @@ COLLIN_FRAC = 0.48
 POINT_TIGHT_SEP_IN  = 0.050  # rad (50 mrad) — max pointing when sep_in < gate
 SEP_IN_POINT_GATE   = 0.10   # m (10 cm) — pointing cut applies only when sep_in < this
 
-outString = "0p5GeVCheckCo"
-sample_csv = "LLP0p5GeVSmall.csv"
+# Global (mass-independent) pointing cut applied at ALL sep_in, on top of the
+# conditional tight cut above. At 1000 mrad it only clips the non-physical >1 rad
+# tail (signal pointing medians are 15/150/280 mrad at 0.5/15/40 GeV) while
+# removing the wide-pointing cosmic decay-in-flight survivors. Shared with the
+# cosmic background (single source).
+POINT_GLOBAL = 1.0   # rad (1000 mrad)
+
+outString = "40GeVCheckCo"
+sample_csv = "LLP40GeVSmall.csv"
 
 # Tracking resolution
 HIT_RESOLUTION = 0.003  # m (3 mm per layer)
@@ -701,8 +715,10 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
                   collin_min=COLLIN_MIN,
                   sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
                   collin_frac=COLLIN_FRAC,
+                  sep_out_gate=SEP_OUT_GATE,
                   point_tight_sep_in=POINT_TIGHT_SEP_IN,
                   sep_in_point_gate=SEP_IN_POINT_GATE,
+                  point_global=POINT_GLOBAL,
                   pointing_cut=None):
     """
     Apply signal selection cuts sequentially and return a cutflow table.
@@ -784,16 +800,16 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     add_row(f'sep_out<{sep_out_max_parallel:.1f}m if θ<{theta_parallel*1000:.0f}mrad',
             mask)
 
-    # Conditional collinearity cut (L-scaled): when sep_outer > L require
-    # collinearity > COLLIN_FRAC * L. The gate stays closed for collimated
-    # signal (small sep_outer); shared with the cosmic-decay background.
+    # Conditional collinearity cut (L-scaled): when sep_outer > SEP_OUT_GATE
+    # require collinearity > COLLIN_FRAC * L. The gate stays closed for
+    # collimated signal (small sep_outer); shared with the cosmic-decay background.
     prev_mask = mask.copy()
     _Lc = DETECTOR_THICKNESS
-    gated = sep_outer > _Lc
+    gated = sep_outer > sep_out_gate
     collin_ok = (~gated) | (collinearity > collin_frac * _Lc)
     mask = mask & collin_ok
-    add_row(f'collin>{collin_frac:.2f}L if sep_out>L ({collin_frac*_Lc*1000:.0f}mm)',
-            mask)
+    add_row(f'collin>{collin_frac:.2f}L if sep_out>{sep_out_gate*100:.0f}cm '
+            f'({collin_frac*_Lc*1000:.0f}mm)', mask)
 
     prev_mask = mask.copy()
     mask = mask & vtx_in
@@ -807,6 +823,11 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     mask = mask & point_ok
     add_row(f'pointing<{point_tight_sep_in*1000:.0f}mrad if sep_in<{sep_in_point_gate*100:.0f}cm',
             mask)
+
+    # Global pointing cut (all sep_in): clips the >1 rad tail.
+    prev_mask = mask.copy()
+    mask = mask & (pointing < point_global)
+    add_row(f'global pointing < {point_global*1000:.0f} mrad', mask)
 
     if pointing_cut is not None:
         prev_mask = mask.copy()
@@ -822,8 +843,10 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                    collin_min=COLLIN_MIN,
                    sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
                    collin_frac=COLLIN_FRAC,
+                   sep_out_gate=SEP_OUT_GATE,
                    point_tight_sep_in=POINT_TIGHT_SEP_IN,
-                   sep_in_point_gate=SEP_IN_POINT_GATE):
+                   sep_in_point_gate=SEP_IN_POINT_GATE,
+                   point_global=POINT_GLOBAL):
     """
     Boolean per-sample mask for the full signal selection (everything except
     the implicit 'decay in fiducial', which holds for all samples by
@@ -845,10 +868,11 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
     m &= (dca <= dca_cut)
     is_parallel = open_angle < theta_parallel
     m &= (~is_parallel) | (sep_outer < sep_out_max_parallel)
-    gated = sep_outer > DETECTOR_THICKNESS
+    gated = sep_outer > sep_out_gate
     m &= (~gated) | (collin > collin_frac * DETECTOR_THICKNESS)
     gated_pt = sep < sep_in_point_gate
     m &= (~gated_pt) | (pointing < point_tight_sep_in)
+    m &= pointing < point_global
     m &= vtx_in
     m &= on_tracker
     return m
@@ -919,6 +943,10 @@ def mc_exclusion_vs_lifetime(mc, lifetimes, total_events, **cut_kwargs):
 # Main
 # ============================================================
 if __name__ == "__main__":
+    import sys
+    # Optional per-mass override:  python decayProbPerEvent_2body.py <csv> <outString>
+    if len(sys.argv) >= 3:
+        sample_csv, outString = sys.argv[1], sys.argv[2]
     origin = [0, 0, 0]
 
     # All outputs go under <outString>/, event displays in
@@ -1006,8 +1034,10 @@ if __name__ == "__main__":
           f"N layers: {N_LAYERS}, DCA cut: {DCA_CUT*100:.1f} cm")
     print(f"  Conditional max sep_outer: < {SEP_OUT_MAX_PARALLEL:.1f} m "
           f"when open_angle < {THETA_PARALLEL*1000:.0f} mrad")
-    print(f"  IP-muon-transit veto: collinearity > {COLLIN_MIN*1000:.0f} mm "
-          f"when sep_outer > {SEP_OUT_COLLIN_GATE*100:.0f} cm")
+    print(f"  Collinearity veto: collinearity > {COLLIN_FRAC*DETECTOR_THICKNESS*1000:.0f} mm "
+          f"({COLLIN_FRAC:.2f}L) when sep_outer > {SEP_OUT_GATE*100:.0f} cm")
+    print(f"  Global pointing cut: < {POINT_GLOBAL*1000:.0f} mrad "
+          f"(tight {POINT_TIGHT_SEP_IN*1000:.0f} mrad when sep_in < {SEP_IN_POINT_GATE*100:.0f} cm)")
     if len(seps) > 0:
         w_on = weights[on_tracker].sum() / weights.sum() if weights.sum() else 0
         print(f"  Scintillator veto: both daughters on a tracker surface "
@@ -1102,17 +1132,26 @@ if __name__ == "__main__":
         median_pt = np.median(pointing_mrad)
         ax.axvline(median_pt, color='red', linestyle='--', linewidth=2,
                    label=f'Median = {median_pt:.2f} mrad')
-        ax.legend(fontsize=9)
+        ax.axvline(POINT_GLOBAL*1000, color='purple', linestyle='-', linewidth=2,
+                   label=f'global cut = {POINT_GLOBAL*1000:.0f} mrad')
+        ax.axvline(POINT_TIGHT_SEP_IN*1000, color='blue', linestyle=':', linewidth=2,
+                   label=f'tight cut (sep_in<{SEP_IN_POINT_GATE*100:.0f}cm) = {POINT_TIGHT_SEP_IN*1000:.0f} mrad')
+        ax.legend(fontsize=8)
 
         ax2 = axes_pt[1]
         bins_log_pt = np.logspace(np.log10(max(pointing_mrad.min(), 1e-3)),
                                   np.log10(pointing_mrad.max()), 80)
         ax2.hist(pointing_mrad, bins=bins_log_pt, weights=weights_acc,
                  color='darkorange', edgecolor='black', linewidth=0.3, alpha=0.8)
+        ax2.axvline(POINT_GLOBAL*1000, color='purple', linestyle='-', linewidth=2,
+                    label=f'global cut = {POINT_GLOBAL*1000:.0f} mrad')
+        ax2.axvline(POINT_TIGHT_SEP_IN*1000, color='blue', linestyle=':', linewidth=2,
+                    label=f'tight cut = {POINT_TIGHT_SEP_IN*1000:.0f} mrad')
         ax2.set_xscale('log')
         ax2.set_xlabel('Pointing angle (mrad)')
         ax2.set_ylabel('Weighted counts (decay prob.)')
         ax2.set_title('Log-scale pointing angle')
+        ax2.legend(fontsize=8)
 
         ax3 = axes_pt[2]
         mask_fin = np.isfinite(pointing_mrad) & (pointing_mrad > 0)
@@ -1462,18 +1501,21 @@ if __name__ == "__main__":
         so = sep_outer[in_window]
         ww = weights[in_window]
 
-        below = so <= SEP_OUT_COLLIN_GATE
-        above = so >  SEP_OUT_COLLIN_GATE
+        # Active collinearity veto thresholds (single-sourced):
+        gate_cm = SEP_OUT_GATE * 100
+        collin_cut_mm = COLLIN_FRAC * DETECTOR_THICKNESS * 1000
+        below = so <= SEP_OUT_GATE
+        above = so >  SEP_OUT_GATE
 
         fig_co, axes_co = plt.subplots(1, 3, figsize=(18, 5))
 
         co_mm = co * 1000
         ax = axes_co[0]
-        bins = np.linspace(0, max(np.percentile(co_mm, 99.5), COLLIN_MIN*1000*3), 80)
+        bins = np.linspace(0, max(np.percentile(co_mm, 99.5), collin_cut_mm*1.3), 80)
         for lbl, m, color in [
-            (f'sep_out ≤ {SEP_OUT_COLLIN_GATE*100:.0f} cm (gate closed)',
+            (f'sep_out ≤ {gate_cm:.0f} cm (gate closed)',
                  below, 'steelblue'),
-            (f'sep_out > {SEP_OUT_COLLIN_GATE*100:.0f} cm (gate open)',
+            (f'sep_out > {gate_cm:.0f} cm (gate open)',
                  above, 'crimson'),
         ]:
             if m.sum() == 0:
@@ -1481,11 +1523,10 @@ if __name__ == "__main__":
             ax.hist(co_mm[m], bins=bins, weights=ww[m],
                     histtype='step', linewidth=2, color=color,
                     label=f'{lbl}  (w={ww[m].sum():.2e})')
-        ax.axvline(COLLIN_MIN*1000, color='gray', linestyle='--', linewidth=1.5,
-                   label=f'cut = {COLLIN_MIN*1000:.0f} mm')
-        # IP-muon reference (from realistic ray-cast MC, σ_hit=3mm, L=24cm)
-        ax.axvspan(0, 8.2, color='gray', alpha=0.15,
-                   label='IP-muon transit range (≤ 8 mm)')
+        ax.axvline(collin_cut_mm, color='gray', linestyle='--', linewidth=1.5,
+                   label=f'cut = {COLLIN_FRAC:.2f}L = {collin_cut_mm:.0f} mm')
+        ax.axvline(DETECTOR_THICKNESS/2*1000, color='green', linestyle=':',
+                   linewidth=1.5, label=f'signal ceiling L/2 = {DETECTOR_THICKNESS/2*1000:.0f} mm')
         ax.set_xlabel('collinearity (mm)')
         ax.set_ylabel('Weighted counts (decay prob.)')
         ax.set_title(f'Collinearity by sep_outer gate (τ = {lifetime*1e9:.0f} ns)')
@@ -1505,9 +1546,10 @@ if __name__ == "__main__":
                 continue
             ax2.hist(co_mm[m], bins=bins_log, weights=ww[m],
                      histtype='step', linewidth=2, color=color, label=lbl)
-        ax2.axvline(COLLIN_MIN*1000, color='gray', linestyle='--', linewidth=1.5)
-        ax2.axvspan(0.1, 8.2, color='gray', alpha=0.15,
-                    label='IP-muon range')
+        ax2.axvline(collin_cut_mm, color='gray', linestyle='--', linewidth=1.5,
+                    label=f'cut = {collin_cut_mm:.0f} mm')
+        ax2.axvline(DETECTOR_THICKNESS/2*1000, color='green', linestyle=':',
+                    linewidth=1.5, label=f'L/2 = {DETECTOR_THICKNESS/2*1000:.0f} mm')
         ax2.set_xscale('log'); ax2.set_yscale('log')
         ax2.set_xlabel('collinearity (mm)')
         ax2.set_ylabel('Weighted counts')
@@ -1521,13 +1563,12 @@ if __name__ == "__main__":
         h = ax3.hist2d(so[mask_fin]*100, co_mm[mask_fin],
                        bins=[np.logspace(0, 3, 50), np.logspace(-1, 3, 50)],
                        weights=ww[mask_fin], cmap='viridis', cmin=1e-30)
-        ax3.axvline(SEP_OUT_COLLIN_GATE*100, color='red', linestyle='--',
-                    linewidth=1.5,
-                    label=f'gate = {SEP_OUT_COLLIN_GATE*100:.0f} cm')
-        ax3.axhline(COLLIN_MIN*1000, color='red', linestyle='--', linewidth=1.5,
-                    label=f'cut = {COLLIN_MIN*1000:.0f} mm')
+        ax3.axvline(gate_cm, color='red', linestyle='--',
+                    linewidth=1.5, label=f'gate = {gate_cm:.0f} cm')
+        ax3.axhline(collin_cut_mm, color='red', linestyle='--', linewidth=1.5,
+                    label=f'cut = {collin_cut_mm:.0f} mm')
         # Shade rejection region (sep_out > gate AND collin < cut)
-        ax3.fill_between([SEP_OUT_COLLIN_GATE*100, 1e3], 1e-1, COLLIN_MIN*1000,
+        ax3.fill_between([gate_cm, 1e3], 1e-1, collin_cut_mm,
                          color='red', alpha=0.15, label='reject (muon-like)')
         ax3.set_xscale('log'); ax3.set_yscale('log')
         ax3.set_xlabel('sep_outer (cm)')
@@ -1548,14 +1589,15 @@ if __name__ == "__main__":
                 idx = np.argsort(x); xs, ws = x[idx], w[idx]
                 c = np.cumsum(ws); return xs[np.searchsorted(c, q*c[-1])]
             med = wpct(x_, w_, 0.50); p1 = wpct(x_, w_, 0.01)
-            frac_fail = w_[x_ < COLLIN_MIN].sum() / w_.sum()
-            print(f"  Above gate (sep_out > {SEP_OUT_COLLIN_GATE*100:.0f} cm): "
+            _ccut = COLLIN_FRAC * DETECTOR_THICKNESS
+            frac_fail = w_[x_ < _ccut].sum() / w_.sum()
+            print(f"  Above gate (sep_out > {SEP_OUT_GATE*100:.0f} cm): "
                   f"median = {med*1000:.1f} mm, 1% = {p1*1000:.1f} mm")
-            print(f"  Signal failing collinearity > {COLLIN_MIN*1000:.0f} mm "
+            print(f"  Signal failing collinearity > {_ccut*1000:.0f} mm "
                   f"in this band: {frac_fail*100:.3f}%")
         else:
             print(f"  No events above the gate (sep_out > "
-                  f"{SEP_OUT_COLLIN_GATE*100:.0f} cm) for this sample.")
+                  f"{SEP_OUT_GATE*100:.0f} cm) for this sample.")
 
     # --- Cutflow table ---
     if len(seps) > 0:
