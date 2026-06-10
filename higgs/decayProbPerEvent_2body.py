@@ -63,10 +63,11 @@ SEP_OUT_COLLIN_GATE = 0.30   # m — collinearity cut applies only when sep_oute
 # L-scaled ("fractional") collinearity cut — the ACTIVE collinearity veto,
 # shared with the cosmic-decay background (cosmic_decay_check imports COLLIN_FRAC
 # from here). When sep_outer > SEP_OUT_GATE require collinearity > COLLIN_FRAC * L
-# (L = DETECTOR_THICKNESS; the threshold is tied to the physical L/2 ceiling that
-# a wide two-body V saturates, so COLLIN_FRAC < 0.5). COLLIN_MIN /
+# (L = DETECTOR_THICKNESS). Loosened to 0.40L: at the 0.5 ns timing default the
+# cosmic decay-in-flight background is timing-handled, so the looser collinearity
+# recovers high-mass signal (40 GeV) the tighter 0.48L would cost. COLLIN_MIN /
 # SEP_OUT_COLLIN_GATE above are the older static version, kept for comparison.
-COLLIN_FRAC = 0.48
+COLLIN_FRAC = 0.40
 
 # sep_outer gate for the collinearity veto: the cut fires when sep_outer >
 # SEP_OUT_GATE. Lowered below L (= DETECTOR_THICKNESS = 24 cm) to 16 cm so the
