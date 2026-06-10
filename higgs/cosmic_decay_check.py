@@ -136,11 +136,11 @@ def sample_depth_momentum(cos_z, theta_max, rng, e_min=0.3):
     """
     Sample per-muon momenta |p| (GeV/c) from the realistic *depth* spectrum
     (Gaisser surface flux propagated through the rock overburden), using each
-    muon's own zenith angle. Uses CosmicMuonFlux from background_trident_update.
+    muon's own zenith angle. Uses CosmicMuonFlux from cosmic_muon_flux.
 
     A (cos_theta, E) inverse-CDF table is built once and inverted per muon.
     """
-    from background_trident_update import CosmicMuonFlux
+    from cosmic_muon_flux import CosmicMuonFlux
     flux = CosmicMuonFlux()
 
     E_grid = np.geomspace(e_min, 2000.0, 400)
