@@ -67,10 +67,11 @@ CTAU_MUON  = SPEED_OF_LIGHT * TAU_MUON   # ~658.6 m
 # anchoring the total muon-through-tunnel rate (see --muon-rate-hz).
 I_VERTICAL_DEFAULT = 70.0
 
-# Total cosmic-muon rate through the fiducial volume (Hz). The user supplies
-# this from their separate overburden treatment; all weights are rescaled so
-# the "muons through fiducial" stage equals this value.
-MUON_RATE_HZ_DEFAULT = 600.0
+# Total cosmic-muon rate through the cavern (Hz). The user supplies this from
+# their separate overburden treatment; all weights are rescaled so the "muons
+# through fiducial" stage equals this value. 300 Hz is the cavern rate (the
+# earlier 600 Hz was the extended-throw-plane rate, not the cavern).
+MUON_RATE_HZ_DEFAULT = 300.0
 
 # Minimum reconstructed-track momentum (GeV/c). Overrides the signal's
 # 600 MeV electron cut for this cosmic-decay study.
@@ -162,9 +163,12 @@ def sample_depth_momentum(cos_z, theta_max, rng, e_min=0.3):
     return np.sqrt(np.maximum(E**2 - M_MUON**2, 1e-6))
 
 
-# Path to a ROOT file holding the measured cavern-entry muon |p| spectrum
-# (TH1D 'h_muon_momentum_at_cavern_entry', MeV). Set by main() from --momentum-root.
-EMPIRICAL_ROOT_PATH = 'muon_entry_distributions.root'
+# Path to a ROOT file holding the measured cavern-entry muon |p| spectrum.
+# Default: the high-stats log-binned full-range histogram (TH1D 'h_momentum_GeV',
+# in GeV, ~4.6M entries, no overflow). The older linear MeV histogram
+# 'h_muon_momentum_at_cavern_entry' is still read as a fallback. Set by main()
+# from --momentum-root.
+EMPIRICAL_ROOT_PATH = 'muon_entry_distribution_histograms.root'
 # Optional generation window [GeV]: restrict muon |p| sampling to this range
 # (importance sampling) and scale the rate by the window's spectral fraction.
 # None => full spectrum. Set by main() from --gen-pmin/--gen-pmax.
@@ -175,14 +179,23 @@ _EMP_CACHE = {}
 
 def _load_empirical(path):
     """Load (and cache) the measured cavern-entry momentum histogram.
-    Returns dict with resolved-bin edges_GeV, per-bin counts, the overflow
-    count (>10 GeV, shapeless) and the total (resolved + overflow)."""
+    Returns dict with resolved-bin edges_GeV, per-bin counts, the overflow count
+    (shapeless, beyond the resolved range) and the total (resolved + overflow).
+
+    Prefers the high-stats GeV histogram 'h_momentum_GeV' (log-binned, full
+    range, no overflow); falls back to the older MeV 'h_muon_momentum_at_cavern_
+    entry' (linear, 95% in overflow) with the GeV unit conversion."""
     if path in _EMP_CACHE:
         return _EMP_CACHE[path]
     import uproot
-    h = uproot.open(path)['h_muon_momentum_at_cavern_entry']
-    c = h.values(flow=True)                  # [underflow, ...bins..., overflow]
-    edges = h.axis().edges() / 1000.0        # MeV -> GeV, len = nbins+1
+    f = uproot.open(path)
+    if 'h_momentum_GeV' in f:
+        h = f['h_momentum_GeV']
+        edges = h.axis().edges()                 # already GeV
+    else:
+        h = f['h_muon_momentum_at_cavern_entry']
+        edges = h.axis().edges() / 1000.0        # MeV -> GeV
+    c = h.values(flow=True)                      # [underflow, ...bins..., overflow]
     counts = c[1:-1].astype(float)
     overflow = float(c[-1])
     res = dict(edges=edges, counts=counts, overflow=overflow,
