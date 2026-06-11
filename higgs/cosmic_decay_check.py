@@ -174,6 +174,11 @@ EMPIRICAL_ROOT_PATH = 'muon_entry_distribution_histograms.root'
 # None => full spectrum. Set by main() from --gen-pmin/--gen-pmax.
 GEN_PMIN = None
 GEN_PMAX = None
+
+# Hard momentum floor (GeV): muons below this stop in the rock / range out rather
+# than decay in flight, so they are excluded from the background. Always enforced
+# in both the sampler and the rate-scaling fraction (set by --p-mu-min).
+P_MU_MIN = 0.1
 _EMP_CACHE = {}
 
 
@@ -205,62 +210,38 @@ def _load_empirical(path):
 
 
 def empirical_window_fraction(p_min, p_max, path=None):
-    """Fraction of the full measured spectrum within [p_min, p_max] GeV
-    (resolved range only; assumes p_max <= the histogram's upper edge)."""
+    """Fraction of the full measured spectrum within [p_min, p_max] GeV, with the
+    hard P_MU_MIN floor applied to the lower bound."""
     d = _load_empirical(path or EMPIRICAL_ROOT_PATH)
+    p_min = max(p_min, P_MU_MIN)
     lo, hi = d['edges'][:-1], d['edges'][1:]
     overlap = np.clip(np.minimum(hi, p_max) - np.maximum(lo, p_min), 0.0, None)
     w = float((d['counts'] * overlap / (hi - lo)).sum())
     return w / d['total']
 
 
-def sample_empirical_momentum(n, rng, path=None, tail_index=2.7, tail_max=2000.0):
-    """Sample muon |p| (GeV/c) from the measured cavern-entry spectrum.
-
-    Full-spectrum mode (GEN_PMIN/GEN_PMAX both None): the resolved range
-    (<= 10 GeV, ~4.5% of muons) is drawn from the histogram by inverse-CDF;
-    the unresolved overflow (>10 GeV, ~95.5%) from a p^-tail_index tail. Those
-    high-betagamma muons give forward/collinear electrons removed by the
-    collinearity cut, so the FINAL selected background is insensitive to the
-    tail shape; only the low-p (large-kink) tail, which is resolved, matters.
-
-    Restricted mode (GEN_PMIN/GEN_PMAX set): draw only within the window from
-    the resolved histogram (importance sampling); the caller scales the rate by
-    empirical_window_fraction() to recover the absolute normalisation.
-    """
+def sample_empirical_momentum(n, rng, path=None):
+    """Sample muon |p| (GeV/c) from the measured cavern-entry spectrum by
+    inverse-CDF, within [max(P_MU_MIN, GEN_PMIN), GEN_PMAX]. The P_MU_MIN floor is
+    always enforced (sub-floor muons stop, not decay in flight); GEN_PMIN/GEN_PMAX
+    additionally restrict it for importance sampling. The caller scales the rate
+    by empirical_window_fraction() to recover the absolute normalisation. The new
+    default histogram is full-range and log-binned, so no overflow extrapolation
+    is needed."""
     d = _load_empirical(path or EMPIRICAL_ROOT_PATH)
     edges, counts = d['edges'], d['counts']
     lo, hi = edges[:-1], edges[1:]
-
-    if GEN_PMIN is not None or GEN_PMAX is not None:
-        pmin = 0.0 if GEN_PMIN is None else GEN_PMIN
-        pmax = edges[-1] if GEN_PMAX is None else GEN_PMAX
-        win = np.clip(np.minimum(hi, pmax) - np.maximum(lo, pmin), 0.0, None)
-        wbin = counts * win / (hi - lo)              # expected counts in window
-        if wbin.sum() <= 0:
-            return np.full(n, 0.5 * (pmin + pmax))
-        cdf = np.cumsum(wbin) / wbin.sum()
-        bi = np.clip(np.searchsorted(cdf, rng.uniform(0, 1, n)), 0, len(lo) - 1)
-        blo = np.maximum(lo[bi], pmin)
-        bhi = np.minimum(hi[bi], pmax)
-        return np.maximum(blo + rng.uniform(0, 1, n) * (bhi - blo), 1e-3)
-
-    # full spectrum: resolved histogram + power-law overflow tail
-    f_inrange = counts.sum() / d['total']
-    p = np.empty(n)
-    is_in = rng.uniform(0, 1, n) < f_inrange
-    nin = int(is_in.sum())
-    if nin:
-        cdf = np.cumsum(counts) / counts.sum()
-        bi = np.clip(np.searchsorted(cdf, rng.uniform(0, 1, nin)), 0, len(lo) - 1)
-        p[is_in] = lo[bi] + rng.uniform(0, 1, nin) * (hi - lo)[bi]
-    nt = n - nin
-    if nt:
-        a = tail_index
-        ut = rng.uniform(0, 1, nt)
-        p[~is_in] = ((1 - ut) * edges[-1]**(1 - a)
-                     + ut * tail_max**(1 - a)) ** (1.0 / (1 - a))
-    return np.maximum(p, 1e-3)
+    pmin = max(P_MU_MIN, 0.0 if GEN_PMIN is None else GEN_PMIN)
+    pmax = edges[-1] if GEN_PMAX is None else GEN_PMAX
+    win = np.clip(np.minimum(hi, pmax) - np.maximum(lo, pmin), 0.0, None)
+    wbin = counts * win / (hi - lo)                  # expected counts in window
+    if wbin.sum() <= 0:
+        return np.full(n, 0.5 * (pmin + pmax))
+    cdf = np.cumsum(wbin) / wbin.sum()
+    bi = np.clip(np.searchsorted(cdf, rng.uniform(0, 1, n)), 0, len(lo) - 1)
+    blo = np.maximum(lo[bi], pmin)
+    bhi = np.minimum(hi[bi], pmax)
+    return np.maximum(blo + rng.uniform(0, 1, n) * (bhi - blo), 1e-3)
 
 
 # ------------------------------------------------------------------
@@ -1506,7 +1487,11 @@ def parse_args():
                         "(importance sampling; skips useless high-p muons).")
     p.add_argument('--gen-pmax', type=float, default=None,
                    help="Restrict empirical generation to |p| < this (GeV). "
-                        "Must be <= the histogram's upper edge (10 GeV).")
+                        "Must be <= the histogram's upper edge.")
+    p.add_argument('--p-mu-min', type=float, default=P_MU_MIN,
+                   help="Hard muon |p| floor (GeV): below this, muons stop / range "
+                        "out rather than decay in flight, so they are excluded "
+                        "(always enforced; default 0.1 GeV).")
     p.add_argument('--timing-res-ns', type=float, default=SIGMA_T_DEFAULT * 1e9,
                    help='Per-hit timing resolution (ns).')
     p.add_argument('--velo-ncut', type=float, default=VELO_NCUT,
@@ -1544,24 +1529,26 @@ def main():
     if not args.interactive and not os.environ.get('MPLBACKEND'):
         matplotlib.use('Agg')
 
-    global VELO_NCUT, COLLIN_FRAC, EMPIRICAL_ROOT_PATH, GEN_PMIN, GEN_PMAX
+    global VELO_NCUT, COLLIN_FRAC, EMPIRICAL_ROOT_PATH, GEN_PMIN, GEN_PMAX, P_MU_MIN
     VELO_NCUT = args.velo_ncut
     COLLIN_FRAC = args.collin_frac
     EMPIRICAL_ROOT_PATH = args.momentum_root
     GEN_PMIN = args.gen_pmin
     GEN_PMAX = args.gen_pmax
+    P_MU_MIN = args.p_mu_min
 
-    # Importance-sampling weight: when generating only a restricted momentum
-    # window, scale the rate by that window's fraction of the full spectrum.
+    # Rate-scaling weight for the empirical spectrum: always scale by the spectral
+    # fraction of the generated band [max(P_MU_MIN, GEN_PMIN), GEN_PMAX], so the
+    # P_MU_MIN floor (and any importance-sampling window) is normalised correctly.
     spectrum_weight = 1.0
-    if args.spectrum == 'empirical' and (GEN_PMIN is not None
-                                         or GEN_PMAX is not None):
+    if args.spectrum == 'empirical':
         edges = _load_empirical(EMPIRICAL_ROOT_PATH)['edges']
-        wlo = 0.0 if GEN_PMIN is None else GEN_PMIN
+        wlo = max(P_MU_MIN, 0.0 if GEN_PMIN is None else GEN_PMIN)
         whi = edges[-1] if GEN_PMAX is None else GEN_PMAX
         spectrum_weight = empirical_window_fraction(wlo, whi)
-        print(f"  GENERATION WINDOW: {wlo:.3g} < p < {whi:.3g} GeV  "
-              f"(spectral fraction {spectrum_weight:.4e}; rate scaled by it)")
+        print(f"  MOMENTUM BAND: {wlo:.3g} < p < {whi:.3g} GeV  "
+              f"(floor {P_MU_MIN} GeV; spectral fraction {spectrum_weight:.4e}, "
+              f"rate scaled by it)")
 
     print("=" * 70)
     print("COSMIC-MUON DECAY-IN-FLIGHT BACKGROUND")
