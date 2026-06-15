@@ -1,0 +1,23 @@
+# Local working tree
+src/fonll/
+env/
+build/
+conda-pkgs/
+logs/
+run/
+output/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Agent tooling
+.cache/
+.claude/
