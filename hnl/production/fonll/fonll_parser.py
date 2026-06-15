@@ -71,8 +71,9 @@ FONLL_FILES = _GridFileMap()
 def _reject_envelope_grid(path):
     """Refuse pointwise variation-envelope grids.
 
-    The NNPDF40 workspace combiner writes envelope grids (scale/pdf/mass
-    max-min or +/-sigma constructions) in this same three-column format and
+    The variation combiner (tools/fonll_nnpdf40/scripts/combine_variations.py)
+    writes envelope grids (scale/pdf/mass max-min or +/-sigma constructions)
+    in this same three-column format and
     marks them with an ``envelope_band`` header. They are not physical cross
     sections, so sampling kinematics from them is meaningless; only coherent
     individual variation grids may be used here.

@@ -1,6 +1,7 @@
 """Shared MG5 executable, LHAPDF, and macOS rpath helpers."""
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -35,28 +36,31 @@ MG5_EXE = _resolve_mg5_exe()
 
 
 def _resolve_lhapdf_config():
-    """Resolve lhapdf-config from $HNL_LHAPDF_CONFIG, active conda env, or
-    the legacy NNPDF40/fonll-local install."""
+    """Resolve lhapdf-config from $HNL_LHAPDF_CONFIG or the active conda env.
+
+    No sibling-directory fallback: if neither resolves, the returned path will
+    not exist and the MG5 runners report a precise error before launching.
+    """
     env_path = os.environ.get("HNL_LHAPDF_CONFIG")
     if env_path:
         return Path(env_path)
     conda_prefix = os.environ.get("CONDA_PREFIX")
     if conda_prefix:
-        candidate = Path(conda_prefix) / "bin" / "lhapdf-config"
-        if candidate.exists():
-            return candidate
-    return PROJECT_ROOT.parent.parent / "NNPDF40" / "fonll-local" / "env" / "bin" / "lhapdf-config"
+        return Path(conda_prefix) / "bin" / "lhapdf-config"
+    found = shutil.which("lhapdf-config")
+    return Path(found) if found else Path("lhapdf-config")
 
 
 LHAPDF_CONFIG = _resolve_lhapdf_config()
 LHAPDF_LIBDIR = LHAPDF_CONFIG.parent.parent / "lib"
 
-# Existing PDF data set (NNPDF40_nlo_as_01180 etc.) bundled with the
-# sibling FONLL install. Pointed at via LHAPDF_DATA_PATH so the active
-# conda env reuses it instead of re-downloading ~340 MB.
+# PDF data set (NNPDF40_nlo_as_01180, ~340 MB). Defaults to the active conda
+# env's LHAPDF data dir. Provision it once with
+# `lhapdf install NNPDF40_nlo_as_01180`, or point $HNL_LHAPDF_DATA at an
+# existing LHAPDF data directory (e.g. a prior FONLL install).
 LHAPDF_DATA_DIR = Path(os.environ.get(
     "HNL_LHAPDF_DATA",
-    PROJECT_ROOT.parent.parent / "NNPDF40" / "fonll-local" / "env" / "share" / "LHAPDF",
+    LHAPDF_CONFIG.parent.parent / "share" / "LHAPDF",
 ))
 
 
