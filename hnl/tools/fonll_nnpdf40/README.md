@@ -106,6 +106,66 @@ fragmentation. There is no shared state across chunks; results are
 deterministic up to floating-point reordering at chunk boundaries (none
 in practice for the grids here).
 
+## Production-uncertainty variation campaign
+
+`generate_meson_grids.py --campaign` produces the grids needed to put a
+theory-uncertainty band on downstream studies, varying three axes:
+
+- **scale:** the standard 7-point `(muR, muF)` set over `{0.5, 1, 2}`,
+  excluding the two antipodal extremes. FONLL's grid driver reads the two
+  factors as `(ffact = muF, fren = muR)` (see `src/fonll/misc1/fonllgrid.f`);
+  the generator maps each point accordingly.
+- **PDF members:** any subset of the NNPDF4.0 Monte-Carlo replicas. The LHAPDF
+  id is `base_id + member` (`331700 + member`); member 0 is the central set and
+  is reused as the central grid.
+- **heavy-quark mass:** `m_b = 4.75 +/- 0.25`, `m_c = 1.5 -0.2/+0.2` GeV
+  (FONLL benchmark conventions), set via FONLL's mass input -- no extra PDF
+  sets are needed.
+
+A bare `--campaign` runs the full default set (7 scale + 100 replicas + 2 mass
+per quark = 218 grids). Narrow it with `--scale-variations`, `--mass-variations`,
+and `--pdf-members` (e.g. `--pdf-members 0-30` or `0,1,5`). `--max-parallel N`
+runs `N` whole grids concurrently and `--compress-logs` gzips each log on
+success. Each grid is roughly two single-core hours, so the full set is a
+multi-day, full-machine job; size `--max-parallel` to your core count and keep
+`--grid-workers 1` (whole grids are the parallel unit). Example on a dedicated
+machine:
+
+    python scripts/generate_meson_grids.py --campaign \
+        --max-parallel 6 --grid-workers 1 --compress-logs
+
+Outputs land under `output/`, one `.dat` per variation (the variation is in the
+filename and the `#` header: `ffact`, `fren`, `lhapdf_id`, `lhapdf_member`,
+`heavy_quark_mass_GeV`, `variation_kind`, `variation_tag`). A
+`variation_manifest.json` records the FONLL revision, patches, PDF set/members,
+scale points, masses, grid bounds, the charm feeddown calibration, and a SHA-256
+and integrated cross section for every grid. The run is resumable: re-invoke
+with `--reuse-existing-grids` to skip grids already on disk.
+
+`scripts/combine_variations.py` then reads the manifest and writes envelope
+grids under `output/envelopes/` in the same three-column format:
+
+- `scaleup`/`scaledn` -- pointwise max/min over the 7 scale grids;
+- `pdfmean`, `pdfup`/`pdfdn` -- NNPDF Monte-Carlo mean and central +/- replica
+  std (ddof=1);
+- `massup`/`massdn` -- pointwise max/min over the mass grids;
+- `combup`/`combdn` -- central +/- the three deviations in uncorrelated
+  quadrature.
+
+Bands are only emitted for axes with at least two grids, so a scale-only or
+PDF-only campaign still combines cleanly.
+
+Before launching a long campaign, confirm the refactored generator still
+reproduces the committed central grids:
+
+    python scripts/validate_variation_gate.py --quark bottom --grid-workers 6
+
+This regenerates the central (member 0, scale 1, central mass) grid and asserts
+its `dsigma` column matches `grids/...central_<quark>.dat` within `--rtol`
+(default `1e-3`), and reports the fraction of cross section in the outermost
+`pT`/rapidity bins as a grid-coverage check. A nonzero exit means the central
+result moved -- do not trust the campaign until it passes.
+
 ## Validating against public FONLL CTEQ6.6
 
     python scripts/validate_cteq66_public_points.py
