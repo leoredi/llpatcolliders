@@ -35,8 +35,9 @@ generated for the HL-LHC pp 14 TeV setup.
   `(50^2 + 5.28^2) * cosh(3)^2 ~ 2.5e5 GeV^2`
   is always satisfied, so the table is insensitive to `xmh` here —
   verified empirically by regenerating with `xmh = M_B0 / M_D0` and
-  recovering byte-identical numerics. The sampler at
-  `meson_sampler.py:147` reconstructs the on-shell meson four-vector
+  recovering byte-identical numerics. The sampler in
+  `meson_sampler.py` (`sample_meson_4vectors`, and the shared-shape helper
+  `meson_4vec_from_kinematics`) reconstructs the on-shell meson four-vector
   with the physical PDG mass, which is the kinematically consistent
   thing to do for this convention. If the grid is ever extended toward
   the kinematic edge of `sh/4`, the guard would become active and this
@@ -93,11 +94,19 @@ Pure-Python computation of HNL production and decay branching ratios.
 - Vendored files: `HNLCalc.py`, `alph_str.csv`, `README.md`
 - Stripped from upstream snapshot: `.git/`, notebook examples, embedded
   PNG plots, build artifacts (`__pycache__/`).
+- Snapshot limitation: the vendored files do not retain an upstream commit or
+  release tag. Most embedded form-factor parameterizations also lack
+  channel-level citations, so this snapshot is not independently traceable as
+  a current lattice/HFLAV form-factor set. The resulting SM-limit
+  normalization audit is documented in `REMAINING_WORK.md`.
 
 Used in `hnl/production/decay_engine/` to evaluate:
 - `get_2body_br` and `get_3body_dbr_*` for meson -> HNL channels
+- `get_3body_dbr_baryon` for the b-baryon channel
+  (`Lambda_b -> Lambda_c l N`)
 - `get_2body_br_tau` and `get_3body_dbr_tau` for tau -> HNL channels
-- `integrate_3body_br` for numerical phase-space integration
+- `integrate_3body_br` for numerical phase-space integration; the b-baryon
+  channel calls it with `integration='dq2dm122'`
 
 Production calls HNLCalc with unit coupling (`U^2 = 1`) so the active mixing
 factors cleanly from each stored row. `analysis/run_sensitivity.py` performs
@@ -126,6 +135,25 @@ the explicit `U^2` scan using the committed lifetime and visible-BR tables.
   The deleted `0.747` block appears to have copied the `D -> K` value
   into the `Ds -> K` channel.
 
+- Fixed a misplaced parenthesis in `get_2body_br_tau` (pseudoscalar
+  branch, `tau -> P N` for `P = pi, K`). Upstream builds the two-body
+  phase-space (Källén) factor as `sqrt(1 - A*(1 - B))` instead of
+  `sqrt((1 - A)*(1 - B))`, with `A = ((M1 - m_N)/m_tau)^2` and
+  `B = ((M1 + m_N)/m_tau)^2`; the vector branch three lines above has the
+  correct parenthesization. The upstream form overestimates
+  `BR(tau -> pi N)` by x1.07 at `m_N = 0.5 GeV`, x1.38 at `1.0 GeV`,
+  x3.9 at `1.5 GeV`, and x8.5 at `1.6 GeV` (`tau -> K N` similarly:
+  x1.9 at `1.0 GeV`). The same line is present in the public upstream
+  repository (github.com/laroccod/HNLCalc) as of 2026-06; this fix is a
+  deliberate local deviation.
+
+- Fixed a double-squared mixing factor in `get_3body_dbr_baryon`.
+  Upstream sets `Ulx = vcoupling^2` and then multiplies the squared
+  amplitude by `Ulx^2`, giving `|U|^4` instead of `|U|^2`. Changed `Ulx`
+  to the unsquared coupling so the `Ulx^2` in the amplitude yields
+  `|U|^2`. Numerically inert for this package's single-flavor instances
+  (`vcoupling` is 0 or 1), but wrong for any mixed-coupling use.
+
 ## Prompt-tau pool (`tau_pool.csv`)
 
 `tmp/cache/tau_pool.csv` is the default LHE-extracted tau four-vector pool
@@ -150,9 +178,10 @@ that downstream loops consume many times.
   (gluon, light quarks) for direct-DY events.
 - The per-row `w` already encodes `sigma_LO / N_pool_events`. For
   `tau+ tau-`, each tau row keeps the full event weight because either tau is
-  an independent potential HNL parent. The pool is pre-multiplied by
-  `K_FACTOR_EW = 1.3` (see `production/constants.py`) so the summed weight
-  approximates `sigma_NLO`.
+  an independent potential HNL parent. The pool is pre-multiplied by the
+  process-keyed EW K-factor per row (`K_FACTOR_EW_BY_PROCESS["W"]` for
+  W-origin taus, `["DY"]` for Drell-Yan taus; both currently `1.3`, see
+  `production/constants.py`) so the summed weight approximates `sigma_NLO`.
 
 ### MG5 / PDF settings
 

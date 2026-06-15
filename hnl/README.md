@@ -29,7 +29,7 @@ hnl/
 |   `-- ctau/                  committed lifetime and visible-BR tables
 |-- production/
 |   |-- combine_channels.py
-|   |-- decay_engine/          meson, kaon, and tau decays
+|   |-- decay_engine/          meson, baryon, kaon, and tau decays
 |   |-- fonll/                 heavy-meson spectrum parser and sampler
 |   `-- madgraph/
 |       |-- run_tau_production.py
@@ -48,9 +48,16 @@ hnl/
 Production includes:
 
 - charged and semileptonic decays of `K`, `D`, `Ds`, `B`, `Bs`, and `Bc`;
-- induced taus from `Ds -> tau nu` and `B+ -> tau nu`;
+- b-baryons through `Lambda_b -> Lambda_c l N` (the "Bbaryon" channel);
+- induced taus from the leptonic `Ds/D+/B+/Bc -> tau nu` modes and the
+  semitauonic `B/Bs -> D(*)/Ds(*) tau nu` and `Lambda_b -> Lambda_c tau nu`
+  modes (polarization treatment under "Decay Kinematics" below);
 - prompt taus from `W -> tau nu` and `gamma*/Z -> tau tau`;
 - `W/Z -> ell N` through MadGraph.
+
+The channel labels combined per mass are `Bmeson`, `Dmeson`, `Bc`,
+`Bbaryon`, `tau`, `induced_tau`, `Kmeson`, and `WZ`
+(`production/combine_channels.py::CHANNELS`).
 
 The meson spectra come from the committed 14 TeV FONLL tables. HNLCalc
 provides production branching ratios, differential three-body rates, HNL
@@ -70,12 +77,16 @@ The analysis implements this scan at `3000 fb^-1` and uses
 ### Decay Kinematics
 
 Two-body decays use exact rest-frame kinematics followed by a Lorentz boost.
-The polarized two-body tau modes use the configured longitudinal analyzing
-power.
+The polarized two-body tau modes use a fixed unit longitudinal analyzing
+power whose sign follows the tau origin: `+1` (HNL forward) for W-origin
+taus, `-1` (HNL backward) for the helicity-suppressed heavy-meson leptonic
+sources (`production/decay_engine/tau_decay.py`).
 
 Meson three-body decays are sampled with
 `decay_3body_weighted_dq2dE`, using the HNLCalc differential
-`dBR/(dq2 dE)` expression. Leptonic tau three-body decays use
+`dBR/(dq2 dE)` expression. The b-baryon mode `Lambda_b -> Lambda_c l N` uses
+`decay_3body_weighted_dq2dm122` with the HNLCalc `dBR/(dq2 dm12^2)`
+expression. Leptonic tau three-body decays use
 `decay_3body_weighted_dE` with the HNLCalc `dBR/dE` expression. These are not
 flat phase-space samplers. The remaining approximation is the treatment of
 angular and spin correlations that are not contained in those one- or
@@ -101,9 +112,15 @@ Direct meson weights use
 where the factor of two converts the FONLL quark-plus-antiquark convention to
 the total rate. `Bc` uses its separately configured cross section.
 
-Induced-tau weights additionally include `BR(parent -> tau nu)`. Prompt-tau
-and W/Z rows use their MadGraph event weights and the configured electroweak
-K-factor. The kaon channel uses the approximate inclusive kaon flux documented
+Induced-tau weights additionally include the parent-to-tau branching ratios
+(`parent -> tau nu` for the two-body modes, `B -> D(*) tau nu` for the
+semitauonic ones). The b-baryon weight carries the bottom-fragmentation closure
+remainder (`FRAG_LAMBDA_B`) and `BR(Lambda_b -> Lambda_c l N)`. Prompt-tau and
+W/Z rows use their MadGraph event weights and the electroweak K-factor, which
+is now keyed per process (`K_FACTOR_EW_BY_PROCESS` in
+`production/constants.py`: the W value for `W/Z -> ell N`, and the W vs
+Drell-Yan values per tau origin) rather than a single flat constant in the
+drivers. The kaon channel uses the approximate inclusive kaon flux documented
 in `production/constants.py`.
 
 ## Setup
@@ -296,18 +313,36 @@ compatibility module.
 
 - The heavy-meson backend is the committed NNPDF4.0 NLO FONLL grid.
 - The FONLL tables stop at `pT = 50 GeV` and contain one central scale choice.
-  PDF and scale uncertainties are not propagated.
+  PDF and scale uncertainties are not propagated
+  (see `REMAINING_WORK.md`).
 - Charm and bottom species share one heavy-flavor shape per table; species
-  fractions are applied in the event weights.
-- Bottom fragmentation fractions are static and omit explicit heavy-baryon
-  production channels.
+  fractions are applied in the event weights. `Bc` reuses the bottom shape at
+  the Bc mass. Per-species and dedicated-Bc shapes are planned
+  (see `REMAINING_WORK.md`).
+- b-baryons are now included through `Lambda_b -> Lambda_c l N`, which carries
+  the closure remainder of the LHCb bottom-fragmentation ratios;
+  `Xi_b`/`Omega_b` are not separated and are approximated as Lambda_b-like.
+  The Lambda_b pT-y shape reuses the bottom FONLL grid at the Lambda_b mass.
+- Bottom and charm fragmentation inputs are measured in restricted,
+  different acceptances and are extrapolated as constants over the FONLL
+  phase space; their uncertainties are not propagated
+  (see `REMAINING_WORK.md`).
 - The kaon flux is a parametrized soft-QCD approximation and dominates the
-  normalization uncertainty at the lightest masses.
-- Meson and tau three-body energy distributions are HNLCalc-weighted, but
-  complete multidimensional matrix-element spin correlations are not modeled.
-- The W/Z K-factor is a constant approximation.
+  normalization uncertainty at the lightest masses. A measured/Pythia kaon
+  spectrum is planned (see `REMAINING_WORK.md`).
+- Meson, baryon, and tau three-body energy/`q^2` distributions are
+  HNLCalc-weighted, but complete multidimensional matrix-element spin
+  correlations are not modeled (see `REMAINING_WORK.md`).
+- The vendored HNLCalc form factors are not a pinned current lattice set.
+  Induced-tau modes use externally normalized branching fractions, but direct
+  HNL channels retain HNLCalc's absolute normalization
+  (see `REMAINING_WORK.md`).
+- The electroweak K-factor is a per-process table whose entries all currently
+  hold the inclusive `1.3` constant; differential NLO/LO values are an optional
+  upgrade (see `REMAINING_WORK.md`).
 - The analysis uses a zero-background three-event threshold. It does not
   include detector backgrounds or systematic uncertainties.
 
 The FONLL and HNLCalc source details, versions, and local modifications are
-recorded in `vendored/PROVENANCE.md`.
+recorded in `vendored/PROVENANCE.md`. Physics, detector, numerical, and
+reproducibility work still needed is tracked in `REMAINING_WORK.md`.

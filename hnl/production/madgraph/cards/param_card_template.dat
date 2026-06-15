@@ -49,7 +49,7 @@ Block mass
   16 0.000000e+00 # vt : 0.0 
   21 0.000000e+00 # g : 0.0 
   22 0.000000e+00 # a : 0.0 
-  24 8.037700e+01 # w+ (PDG 2025 central value, GeV)
+  24 8.037700e+01 # w+ (interface value only: the ME uses internal MW derived from aEWM1/Gf/MZ, ~79.95 GeV in this UFO's EW scheme)
 
 ###################################
 ## INFORMATION FOR NUMIXING

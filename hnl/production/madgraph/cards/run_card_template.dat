@@ -13,6 +13,9 @@
 #*********************************************************************
   N_EVENTS_PLACEHOLDER = nevents ! Number of unweighted events requested
       0 = iseed      ! rnd seed (0=assigned automatically=default))
+  sum = event_norm   ! LHE weights sum to sigma (pb); lhe_to_csv and the
+                     ! channel-combination step assume sum(w) = sigma, so
+                     ! this must not be left to the MG5 version default
 
 #*********************************************************************
 # Collider type and energy                                          *

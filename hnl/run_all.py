@@ -38,8 +38,8 @@ def _worker_induced_tau(flavor: str, masses: list, n_pool: int, seed: int) -> st
     from production.decay_engine.generate_induced_tau import build_tau_pool, process_flavor
     rng = np.random.default_rng(seed)
     random.seed(seed)
-    tau_4v, tau_w = build_tau_pool(n_pool, rng)
-    process_flavor(flavor, tau_4v, tau_w, masses, rng)
+    tau_4v, tau_w, tau_asym = build_tau_pool(n_pool, rng)
+    process_flavor(flavor, tau_4v, tau_w, tau_asym, masses, rng)
     return f"itau  {flavor:>5s}"
 
 
@@ -50,6 +50,14 @@ def _worker_kaon(flavor: str, masses: list, n_pool: int, seed: int) -> str:
     pool = sample_kaon_4vectors(n_pool, rng)
     process_flavor(flavor, pool, masses, rng)
     return f"kaon  {flavor:>5s}"
+
+
+def _worker_baryon(flavor, masses, n_pool, seed):
+    from production.decay_engine.generate_baryon_csvs import build_lambda_b_pool, process_flavor
+    rng = np.random.default_rng(seed); random.seed(seed)
+    pool_v, sigma_b = build_lambda_b_pool(n_pool, rng)
+    process_flavor(flavor, pool_v, sigma_b, masses, rng)
+    return f"baryon {flavor:>5s}"
 
 
 def _worker_prompt_tau_stage2(flavor: str, masses: list, seed: int) -> str:
@@ -100,16 +108,33 @@ def main():
                          "Ignored if a compatible cached tau pool already exists.")
     ap.add_argument("--prompt-tau-nb-core", type=int, default=1,
                     help="CPU cores for Stage 1 MG5 generate_events")
+    ap.add_argument("--channels", nargs="+", default=None,
+                    choices=["bottom", "charm", "bc", "induced_tau",
+                             "kaon", "baryon", "prompt_tau", "wz"],
+                    help="Generate only these channels (default: all). Used by the "
+                         "FONLL-variation band driver to regenerate only the "
+                         "FONLL-dependent channels.")
     args = ap.parse_args()
 
     workers = args.workers or os.cpu_count() or 1
     masses = args.masses if args.masses else MASS_GRID
-    meson_channels = ["bottom", "charm", "bc"]
+
+    # Channel selection: --channels narrows the set; --no-wz / --no-prompt-tau
+    # still subtract from whatever was selected (backward compatible).
+    all_channels = ["bottom", "charm", "bc", "induced_tau",
+                    "kaon", "baryon", "prompt_tau", "wz"]
+    selected = set(args.channels) if args.channels else set(all_channels)
+    if args.no_wz:
+        selected.discard("wz")
+    if args.no_prompt_tau:
+        selected.discard("prompt_tau")
+
+    meson_channels = [ch for ch in ("bottom", "charm", "bc") if ch in selected]
     from production.paths import describe_paths
     print("HNL artifact paths:")
     print(describe_paths())
 
-    if not args.no_prompt_tau:
+    if "prompt_tau" in selected:
         from production.madgraph.run_tau_production import POOL_CSV, generate_tau_pool
         from production.paths import existing_tau_pool_csv
         from config_mass_grid import N_EVENTS_DEFAULT
@@ -144,15 +169,20 @@ def main():
         for ch in meson_channels:
             jobs.append((_worker_meson, (flavor, ch, masses, args.n_pool, seed)))
             seed += 1
-        jobs.append((_worker_induced_tau, (flavor, masses, args.n_pool, seed)))
-        seed += 1
-        jobs.append((_worker_kaon, (flavor, masses, args.n_pool, seed)))
-        seed += 1
-        if not args.no_prompt_tau:
+        if "induced_tau" in selected:
+            jobs.append((_worker_induced_tau, (flavor, masses, args.n_pool, seed)))
+            seed += 1
+        if "kaon" in selected:
+            jobs.append((_worker_kaon, (flavor, masses, args.n_pool, seed)))
+            seed += 1
+        if "baryon" in selected:
+            jobs.append((_worker_baryon, (flavor, masses, args.n_pool, seed)))
+            seed += 1
+        if "prompt_tau" in selected:
             jobs.append((_worker_prompt_tau_stage2, (flavor, masses, seed)))
             seed += 1
 
-    if not args.no_wz:
+    if "wz" in selected:
         from config_mass_grid import N_EVENTS_DEFAULT
         wz_nevents = args.wz_nevents or N_EVENTS_DEFAULT
         for flavor in args.flavor:
@@ -180,7 +210,7 @@ def main():
     if not args.skip_combine:
         print("\nCombining channels...")
         from production.combine_channels import combine_for_point
-        active_channels = ["Bmeson", "Dmeson", "Bc", "induced_tau", "Kmeson"]
+        active_channels = ["Bmeson", "Dmeson", "Bc", "Bbaryon", "induced_tau", "Kmeson"]
         if not args.no_prompt_tau:
             active_channels.append("tau")
         if not args.no_wz:

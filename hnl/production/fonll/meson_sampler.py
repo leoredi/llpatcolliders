@@ -42,6 +42,22 @@ def _build_cdf(pt_arr, y_arr, dsigma_2d):
     return cdf, pt_edges, y_edges
 
 
+def meson_4vec_from_kinematics(pt, y, phi, m):
+    """Build a meson lab four-vector from sampled (pT, y, phi) and a parent mass.
+
+    In the shared-shape approximation, one pool serves any parent species by
+    re-deriving E and pz with the species mass. Returns a dict of arrays
+    ``{E, px, py, pz}``.
+    """
+    mt = np.sqrt(np.asarray(pt) ** 2 + m ** 2)
+    return {
+        'E': mt * np.cosh(y),
+        'px': pt * np.cos(phi),
+        'py': pt * np.sin(phi),
+        'pz': mt * np.sinh(y),
+    }
+
+
 def sample_meson_4vectors(n_events, quark, rng=None, force_species=None):
     if rng is None:
         rng = np.random.default_rng()

@@ -9,9 +9,17 @@ from production.decay_engine.kinematics import (
 from production.hnlcalc import init_hnlcalc
 
 
-TAU_POLARIZATION = -1.0
-TAU_2BODY_ANALYZING_POWER = 1.0
-TAU_2BODY_ASYMMETRY = TAU_POLARIZATION * TAU_2BODY_ANALYZING_POWER
+# Longitudinal asymmetry of the N direction relative to the tau lab momentum
+# in the 2-body tau -> meson N decay (pdf ~ 1 + asym*cos(theta_N)), in the
+# fixed unit-analyzing-power approximation. The sign is set by the tau
+# helicity at production and is the same for both tau charges within a source:
+#  - W -> tau nu yields natural-helicity taus (h = -1 for tau-, +1 for tau+);
+#    the N carries the spin projection and is emitted forward -> asym = +1.
+#  - P+ -> tau+ nu leptonic decays (Ds/D/B/Bc) yield helicity-suppressed
+#    "wrong-helicity" taus (h = -1 for tau+, +1 for tau-); the N is emitted
+#    backward -> asym = -1.
+TAU_W_2BODY_ASYMMETRY = +1.0
+TAU_MESON_2BODY_ASYMMETRY = -1.0
 
 
 TAU_2BODY_MESON_PDGS = [211, 321, 213, 323]   # pi+, K+, rho+, K*+ (HNLCalc convention)
@@ -69,7 +77,7 @@ def compute_tau_production_br_components(hnl, m_N):
 
 def sample_hnl_from_tau(tau_E, tau_px, tau_py, tau_pz, m_N,
                         br_2body_channels, br_3body_channels, br_total, rng,
-                        asymmetry=TAU_2BODY_ASYMMETRY):
+                        asymmetry):
     n_events = len(tau_E)
     hnl_4v = np.empty((n_events, 4))
 

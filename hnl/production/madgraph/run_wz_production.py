@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config_mass_grid import MASS_GRID, N_EVENTS_DEFAULT
-from production.constants import K_FACTOR_EW, FLAVOR_TO_MG5
+from production.constants import K_FACTOR_EW_BY_PROCESS, FLAVOR_TO_MG5
 from production.madgraph._mg5_common import MG5_EXE, LHAPDF_CONFIG
 from production.madgraph.runner import (
     ensure_process_dir, run_events as mg5_run_events, write_run_card,
@@ -88,7 +88,12 @@ def run_single_point(flavor, mass, n_events, nb_core=1):
 
     print(f"    OK: {n_ev} events → {csv_path}")
 
-    scale_weight_column(csv_path, K_FACTOR_EW)
+    # The sample mixes p p > W -> l N (dominant) with p p > Z -> nu N in one
+    # LHE/CSV and carries no per-row process tag, so the whole sample is scaled
+    # by the W K-factor. A per-row W vs Z split would require carrying the LHE
+    # mother PDG into the HNL rows (a future refinement; see
+    # `REMAINING_WORK.md`).
+    scale_weight_column(csv_path, K_FACTOR_EW_BY_PROCESS["W"])
 
     shutil.rmtree(work_subdir / "Events" / run_name, ignore_errors=True)
     return True

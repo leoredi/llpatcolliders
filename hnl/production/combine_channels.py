@@ -14,11 +14,11 @@ from production.paths import LLP_VECTORS_DIR
 
 OUTPUT_BASE = LLP_VECTORS_DIR
 
-CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "induced_tau", "Kmeson", "WZ"]
+CHANNELS = ["Bmeson", "Dmeson", "Bc", "Bbaryon", "tau", "induced_tau", "Kmeson", "WZ"]
 FLAVORS = ["Ue", "Umu", "Utau"]
 
 
-def combine_for_point(flavor, mass, channels=None, strict=False):
+def combine_for_point(flavor, mass, channels=None, strict=True):
     combined_path = llp_csv_path(flavor, "combined", mass, base=OUTPUT_BASE)
 
     channels = CHANNELS if channels is None else channels
@@ -61,6 +61,10 @@ def main():
     parser = argparse.ArgumentParser(description="Combine HNL production channels")
     parser.add_argument("--flavor", choices=FLAVORS, nargs="+", default=FLAVORS)
     parser.add_argument("--masses", type=float, nargs="+", default=None)
+    parser.add_argument("--allow-missing", action="store_true",
+                        help="skip missing or malformed channels instead of failing "
+                             "(for deliberate partial runs; zero-byte closed-channel "
+                             "sentinels are always accepted)")
     args = parser.parse_args()
 
     masses = args.masses if args.masses else MASS_GRID
@@ -72,7 +76,7 @@ def main():
     for flavor in args.flavor:
         print(f"\n{flavor}:")
         for mass in masses:
-            n_ev = combine_for_point(flavor, mass)
+            n_ev = combine_for_point(flavor, mass, strict=not args.allow_missing)
             total_files += 1
             total_events += n_ev
             if n_ev == 0:

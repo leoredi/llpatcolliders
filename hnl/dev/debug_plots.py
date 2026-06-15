@@ -32,11 +32,12 @@ PLOT_DIR = ANALYSIS_DIR / "debug_plots"
 
 FLAVORS = ["Ue", "Umu", "Utau"]
 # Same channel folders as combine_channels.py / run_all.py.
-FRACTION_CHANNELS = ["Bmeson", "Dmeson", "Bc", "tau", "induced_tau", "Kmeson", "WZ"]
+FRACTION_CHANNELS = ["Bmeson", "Dmeson", "Bc", "Bbaryon", "tau", "induced_tau", "Kmeson", "WZ"]
 CHAN_COLORS = {
     "Bmeson": "C0",
     "Dmeson": "C1",
     "Bc": "C2",
+    "Bbaryon": "C7",
     "tau": "C3",
     "induced_tau": "C6",
     "Kmeson": "C4",
@@ -46,6 +47,7 @@ CHAN_LABELS = {
     "Bmeson": "Bmeson",
     "Dmeson": "Dmeson",
     "Bc": "Bc",
+    "Bbaryon": r"$\Lambda_b$",
     "tau": r"prompt $\tau$",
     "induced_tau": r"induced $\tau$",
     "Kmeson": r"$K^\pm$",

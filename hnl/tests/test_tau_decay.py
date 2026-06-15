@@ -21,7 +21,8 @@ from production.decay_engine.tau_decay import (
     init_hnlcalc,
     compute_tau_production_br_components,
     sample_hnl_from_tau,
-    TAU_2BODY_ASYMMETRY,
+    TAU_MESON_2BODY_ASYMMETRY,
+    TAU_W_2BODY_ASYMMETRY,
     TAU_2BODY_MESON_PDGS,
 )
 
@@ -102,11 +103,12 @@ def test_sample_hnl_from_tau_asymmetry_flips_distribution(hnl_utau):
     """Mean N rapidity in the tau rest frame shifts with asymmetry.
 
     asymmetry=0 -> isotropic in tau rest frame -> <p_z^N (tau frame)> = 0;
-    asymmetry=-1 -> N preferentially recoils backward to tau momentum.
+    asymmetry=-1 (heavy-meson-origin taus) -> N recoils backward to the tau
+    momentum; asymmetry=+1 (W-origin taus) -> N recoils forward.
 
     Operationally we check that the *direction* of the mean lab-frame p_z
-    flips between the two cases (the tau is boosted along +z, so a tau-rest
-    backward N becomes a lab N with lower mean p_z).
+    shifts both ways around the flat case (the tau is boosted along +z, so a
+    tau-rest backward N becomes a lab N with lower mean p_z and vice versa).
     """
     rng = np.random.default_rng(1)
     n = 5000
@@ -124,12 +126,17 @@ def test_sample_hnl_from_tau_asymmetry_flips_distribution(hnl_utau):
         tau_E, tau_px, tau_py, tau_pz, m_N, br2, br3, brt,
         np.random.default_rng(1), asymmetry=0.0,
     )
-    biased, _, _ = sample_hnl_from_tau(
+    meson_like, _, _ = sample_hnl_from_tau(
         tau_E, tau_px, tau_py, tau_pz, m_N, br2, br3, brt,
-        np.random.default_rng(1), asymmetry=TAU_2BODY_ASYMMETRY,  # = -1
+        np.random.default_rng(1), asymmetry=TAU_MESON_2BODY_ASYMMETRY,  # -1
+    )
+    w_like, _, _ = sample_hnl_from_tau(
+        tau_E, tau_px, tau_py, tau_pz, m_N, br2, br3, brt,
+        np.random.default_rng(1), asymmetry=TAU_W_2BODY_ASYMMETRY,  # +1
     )
 
-    # With asymmetry=-1 the N is pulled backward in the tau rest frame, which
-    # *reduces* the mean lab pz vs the flat case. Loose bound to absorb the
-    # 3-body component (~unaffected) and statistical noise.
-    assert biased[:, 3].mean() < flat[:, 3].mean()
+    # asymmetry=-1 pulls the N backward in the tau rest frame (lower mean lab
+    # pz); asymmetry=+1 pushes it forward (higher mean lab pz). Loose bounds
+    # absorb the 3-body component (~unaffected) and statistical noise.
+    assert meson_like[:, 3].mean() < flat[:, 3].mean()
+    assert w_like[:, 3].mean() > flat[:, 3].mean()

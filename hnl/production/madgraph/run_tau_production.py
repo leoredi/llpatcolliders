@@ -13,10 +13,10 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config_mass_grid import MASS_GRID, N_EVENTS_DEFAULT
-from production.constants import K_FACTOR_EW, M_TAU
+from production.constants import K_FACTOR_EW_BY_PROCESS, M_TAU
 from production.decay_engine.tau_decay import (
     init_hnlcalc, compute_tau_production_br_components, sample_hnl_from_tau,
-    TAU_2BODY_ASYMMETRY,
+    TAU_W_2BODY_ASYMMETRY,
 )
 from production.madgraph._mg5_common import MG5_EXE, LHAPDF_CONFIG
 from production.madgraph.runner import (
@@ -24,7 +24,7 @@ from production.madgraph.runner import (
 )
 from production.madgraph.lhe_to_csv import LHEParser
 from production.io import (
-    llp_csv_path, read_csv_matrix, scale_weight_column, write_csv_matrix, write_empty_csv,
+    llp_csv_path, read_csv_matrix, write_csv_matrix, write_empty_csv,
 )
 from production.paths import (
     MG5_WORK_DIR, TAU_POOL_CSV, existing_tau_pool_csv,
@@ -69,7 +69,15 @@ def generate_tau_pool(n_events, nb_core=1, pool_path=None):
         return False
     print(f"    OK: {n_tau} tau rows → {pool_path}")
 
-    scale_weight_column(pool_path, K_FACTOR_EW)
+    # The pool carries the parent origin in column 6 (w, E, px, py, pz, origin):
+    # |origin| == 24 marks W-origin taus, everything else is Drell-Yan
+    # (gamma*/Z -> tau tau). Scale each row by its process K-factor.
+    data = read_csv_matrix(pool_path)
+    if data.size:
+        is_w = np.abs(data[:, 5]) == 24
+        data[is_w, 0] *= K_FACTOR_EW_BY_PROCESS["W"]
+        data[~is_w, 0] *= K_FACTOR_EW_BY_PROCESS["DY"]
+        write_csv_matrix(pool_path, data)
 
     shutil.rmtree(work_subdir / "Events" / "run_pool", ignore_errors=True)
     return True
@@ -79,7 +87,8 @@ def process_flavor(flavor, pool_w, pool_E, pool_px, pool_py, pool_pz, pool_origi
                    masses, rng):
     hnl = init_hnlcalc(flavor)
 
-    # W-origin taus are polarized; all DY-like rows are treated unpolarized.
+    # W-origin taus are polarized (natural helicity: the 2-body N comes out
+    # forward, asym = +1); all DY-like rows are treated unpolarized.
     is_W = np.abs(pool_origin) == 24
     is_DY = ~is_W
 
@@ -97,7 +106,7 @@ def process_flavor(flavor, pool_w, pool_E, pool_px, pool_py, pool_pz, pool_origi
 
         out_rows = []
         for sel, asym in (
-            (is_W,  TAU_2BODY_ASYMMETRY),
+            (is_W,  TAU_W_2BODY_ASYMMETRY),
             (is_DY, 0.0),
         ):
             if not sel.any():

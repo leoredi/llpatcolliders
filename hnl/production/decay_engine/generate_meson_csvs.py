@@ -12,10 +12,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from config_mass_grid import MASS_GRID
 from production.constants import (
     MESON_MASSES, LEPTON_MASSES, FLAVOR_TO_LEPTON_PDG,
-    FRAG_B, FRAG_C, SIGMA_BC_PB,
+    QUARK_MESON_MAP, SIGMA_BC_PB,
 )
 from production.fonll.fonll_parser import get_sigma_total
-from production.fonll.meson_sampler import sample_meson_4vectors
+from production.fonll.meson_sampler import (
+    sample_meson_4vectors, meson_4vec_from_kinematics,
+)
 from production.decay_engine.kinematics import (
     decay_2body, decay_3body_weighted_dq2dE,
 )
@@ -214,11 +216,6 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
     m_lepton = LEPTON_MASSES[flavor]
     channel_label = CHANNEL_LABELS[quark]
 
-    if quark in ("bottom", "charm"):
-        frag_map = FRAG_B if quark == "bottom" else FRAG_C
-    else:
-        frag_map = None  # Bc handled separately
-
     n_pool = len(pool['E'])
 
     for m_N in masses:
@@ -259,40 +256,31 @@ def process_channel(flavor, quark, pool, sigma_fonll, masses, rng):
             all_pz.append(hnl_4v[:, 3])
 
         else:
-            unique_species = np.unique(pool['species_pdg'])
-            for species_pdg in unique_species:
+            n_pool = len(pool['pt'])
+            open_species = []
+            for species_pdg, frag in QUARK_MESON_MAP[quark]:
                 m_parent = MESON_MASSES[species_pdg]
-                if m_N >= m_parent - m_lepton:
+                if m_N >= m_parent - m_lepton or frag <= 0:
                     continue
-
                 _, br_3body_channels, br = compute_production_br_components(
-                    hnl, int(species_pdg), lepton_pdg, m_N
-                )
+                    hnl, int(species_pdg), lepton_pdg, m_N)
                 if br <= 0:
                     continue
+                open_species.append((species_pdg, m_parent, frag, br, br_3body_channels))
 
-                frag = frag_map.get(species_pdg, 0.0)
-                if frag <= 0:
-                    continue
-
-                mask = pool['species_pdg'] == species_pdg
-                n_species = mask.sum()
-                if n_species == 0:
-                    continue
-
-                w = 2.0 * sigma_fonll * frag * br / n_species
-
-                hnl_4v = _sample_hnl_from_mesons(
-                    pool['E'][mask], pool['px'][mask], pool['py'][mask], pool['pz'][mask],
-                    m_parent, m_lepton, m_N,
-                    br_3body_channels, br, hnl, rng,
-                )
-
-                all_weights.append(np.full(n_species, w))
-                all_E.append(hnl_4v[:, 0])
-                all_px.append(hnl_4v[:, 1])
-                all_py.append(hnl_4v[:, 2])
-                all_pz.append(hnl_4v[:, 3])
+            if open_species:
+                n_each = max(1, n_pool // len(open_species))
+                for species_pdg, m_parent, frag, br, br_3body_channels in open_species:
+                    idx = rng.integers(0, n_pool, size=n_each)
+                    v = meson_4vec_from_kinematics(
+                        pool['pt'][idx], pool['y'][idx], pool['phi'][idx], m_parent)
+                    w = 2.0 * sigma_fonll * frag * br / n_each
+                    hnl_4v = _sample_hnl_from_mesons(
+                        v['E'], v['px'], v['py'], v['pz'],
+                        m_parent, m_lepton, m_N, br_3body_channels, br, hnl, rng)
+                    all_weights.append(np.full(n_each, w))
+                    all_E.append(hnl_4v[:, 0]); all_px.append(hnl_4v[:, 1])
+                    all_py.append(hnl_4v[:, 2]); all_pz.append(hnl_4v[:, 3])
 
         if all_weights:
             weights = np.concatenate(all_weights)

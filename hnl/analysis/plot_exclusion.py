@@ -17,14 +17,24 @@ _FLAVOR_LABEL = {
 }
 
 
-def plot_exclusion(results_csv, output_dir=None, basename="hnl_exclusion"):
-    """Create the (m_N, U^2) exclusion figure from a sensitivity CSV."""
+def plot_exclusion(results_csv, output_dir=None, basename="hnl_exclusion",
+                   band_csv=None):
+    """Create the (m_N, U^2) exclusion figure from a sensitivity CSV.
+
+    If ``band_csv`` (from ``analysis/combine_band.py``) is given, the FONLL
+    theory-uncertainty ribbons are overlaid on each exclusion boundary while the
+    central excluded-region fill is preserved.
+    """
     results_csv = Path(results_csv)
     df = pd.read_csv(results_csv)
     if output_dir is None:
         output_dir = results_csv.parent
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    band_df = None
+    if band_csv is not None and Path(band_csv).exists():
+        band_df = pd.read_csv(band_csv)
 
     flavors_present = [f for f in ["Ue", "Umu", "Utau"]
                        if f in df["flavor"].unique()]
@@ -38,7 +48,8 @@ def plot_exclusion(results_csv, output_dir=None, basename="hnl_exclusion"):
     axes = axes[0]
 
     for idx, flavor in enumerate(flavors_present):
-        _plot_single_panel(axes[idx], df, flavor, is_leftmost=(idx == 0))
+        _plot_single_panel(axes[idx], df, flavor, is_leftmost=(idx == 0),
+                           band_df=band_df)
 
     fig.tight_layout(w_pad=2.0)
     out_pdf = output_dir / f"{basename}.pdf"
@@ -66,9 +77,29 @@ def _sensitive_segments(sel):
         yield segment
 
 
-def _plot_single_panel(ax, df, flavor, is_leftmost=True):
+def _band_ribbons(ax, flavor, mass, band_df, labelled):
+    """Overlay theory-uncertainty ribbons on the two boundaries for one segment."""
+    if band_df is None:
+        return labelled
+    bsel = band_df[band_df["flavor"] == flavor].set_index("mass_GeV")
+    for col in ("u2_min", "u2_max"):
+        lo = np.array([bsel[f"{col}_band_lo"].get(m, np.nan) for m in mass], dtype=float)
+        hi = np.array([bsel[f"{col}_band_hi"].get(m, np.nan) for m in mass], dtype=float)
+        good = np.isfinite(lo) & np.isfinite(hi)
+        if not good.any():
+            continue
+        ax.fill_between(
+            mass, np.where(good, lo, np.nan), np.where(good, hi, np.nan),
+            alpha=0.35, color="orange", linewidth=0, zorder=4,
+            label="FONLL theory band" if not labelled else None)
+        labelled = True
+    return labelled
+
+
+def _plot_single_panel(ax, df, flavor, is_leftmost=True, band_df=None):
     sel = df[df["flavor"] == flavor].sort_values("mass_GeV")
     plotted = False
+    band_labelled = False
 
     for valid in _sensitive_segments(sel):
         mass = valid["mass_GeV"].to_numpy(dtype=float)
@@ -78,6 +109,10 @@ def _plot_single_panel(ax, df, flavor, is_leftmost=True):
             valid, "u2_min_open", "u2_min", PLOT_U2_MIN)
         max_open = _open_flags(
             valid, "u2_max_open", "u2_max", PLOT_U2_MAX)
+
+        # FONLL theory ribbons sit under the central fill so the excluded
+        # region stays legible while the boundary uncertainty shows through.
+        band_labelled = _band_ribbons(ax, flavor, mass, band_df, band_labelled)
 
         lower_fill = np.where(min_open, PLOT_U2_MIN, u2_min)
         upper_fill = np.where(max_open, PLOT_U2_MAX, u2_max)

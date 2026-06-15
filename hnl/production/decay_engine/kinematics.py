@@ -312,41 +312,59 @@ def decay_3body_weighted_dq2dE(parent_E, parent_px, parent_py, parent_pz,
 
     q2_acc = np.empty(N)
     E_acc = np.empty(N)
-    accepted = np.zeros(N, dtype=bool)
-    for _ in range(max_iter):
-        if accepted.all():
-            break
-        n_need = int((~accepted).sum())
-        q2c = rng.uniform(q2min, q2max, n_need)
-        qc = np.sqrt(q2c)
-        E2 = (q2c - m2 ** 2 + m3 ** 2) / (2.0 * qc)
-        E3 = (M ** 2 - q2c - m1 ** 2) / (2.0 * qc)
-        A = E2 + E3
-        B1 = np.sqrt(np.maximum(E2 ** 2 - m3 ** 2, 0.0))
-        B2 = np.sqrt(np.maximum(E3 ** 2 - m1 ** 2, 0.0))
-        mmin = A ** 2 - (B1 + B2) ** 2
-        mmax = A ** 2 - (B1 - B2) ** 2
-        ENmin = (mmin + q2c - m2 ** 2 - m1 ** 2) / (2.0 * M)
-        ENmax = (mmax + q2c - m2 ** 2 - m1 ** 2) / (2.0 * M)
-        uc = rng.random(n_need)
-        Ec = ENmin + uc * (ENmax - ENmin)
-        span = ENmax - ENmin
-        wc = _eval_dbr(
-            dbr_expr,
-            {"q": qc, "q2": q2c, "energy": Ec, "mass": m3, "coupling": coupling},
-        )
-        wc = np.where(np.isfinite(wc) & (wc > 0), wc, 0.0)
-        u_acc = rng.uniform(0.0, ceiling, n_need)
-        ok = u_acc < (wc * span)
-        idx = np.where(~accepted)[0]
-        q2_acc[idx[ok]] = q2c[ok]
-        E_acc[idx[ok]] = Ec[ok]
-        accepted[idx[ok]] = True
-    if not accepted.all():
+    max_restarts = 5
+    for _restart in range(max_restarts):
+        accepted = np.zeros(N, dtype=bool)
+        w_seen_max = 0.0
+        for _ in range(max_iter):
+            if accepted.all():
+                break
+            n_need = int((~accepted).sum())
+            q2c = rng.uniform(q2min, q2max, n_need)
+            qc = np.sqrt(q2c)
+            E2 = (q2c - m2 ** 2 + m3 ** 2) / (2.0 * qc)
+            E3 = (M ** 2 - q2c - m1 ** 2) / (2.0 * qc)
+            A = E2 + E3
+            B1 = np.sqrt(np.maximum(E2 ** 2 - m3 ** 2, 0.0))
+            B2 = np.sqrt(np.maximum(E3 ** 2 - m1 ** 2, 0.0))
+            mmin = A ** 2 - (B1 + B2) ** 2
+            mmax = A ** 2 - (B1 - B2) ** 2
+            ENmin = (mmin + q2c - m2 ** 2 - m1 ** 2) / (2.0 * M)
+            ENmax = (mmax + q2c - m2 ** 2 - m1 ** 2) / (2.0 * M)
+            uc = rng.random(n_need)
+            Ec = ENmin + uc * (ENmax - ENmin)
+            span = ENmax - ENmin
+            wc = _eval_dbr(
+                dbr_expr,
+                {"q": qc, "q2": q2c, "energy": Ec, "mass": m3, "coupling": coupling},
+            )
+            wc = np.where(np.isfinite(wc) & (wc > 0), wc, 0.0)
+            wspan = wc * span
+            w_seen_max = max(w_seen_max, float(wspan.max()))
+            u_acc = rng.uniform(0.0, ceiling, n_need)
+            ok = u_acc < wspan
+            idx = np.where(~accepted)[0]
+            q2_acc[idx[ok]] = q2c[ok]
+            E_acc[idx[ok]] = Ec[ok]
+            accepted[idx[ok]] = True
+        if w_seen_max > ceiling:
+            # The grid scan under-estimated the true maximum, so the sample
+            # is biased against the over-ceiling region: discard and restart
+            # with the observed maximum.
+            ceiling = w_seen_max * safety
+            continue
+        if not accepted.all():
+            raise RuntimeError(
+                f"dq2dE accept-reject failed to converge ({(~accepted).sum()} "
+                f"of {N} unaccepted after {max_iter} iterations; ceiling may be "
+                f"too loose)."
+            )
+        break
+    else:
         raise RuntimeError(
-            f"dq2dE accept-reject failed to converge ({(~accepted).sum()} "
-            f"of {N} unaccepted after {max_iter} iterations; ceiling may be "
-            f"too loose)."
+            f"dq2dE ceiling still exceeded after {max_restarts} restarts; "
+            f"dbr may be unbounded at this (M, m1, m2, m3) = "
+            f"({M}, {m1}, {m2}, {m3})."
         )
 
     q_acc = np.sqrt(q2_acc)
@@ -445,24 +463,40 @@ def decay_3body_weighted_dE(parent_E, parent_px, parent_py, parent_pz,
         )
 
     E_acc = np.empty(N)
-    accepted = np.zeros(N, dtype=bool)
-    for _ in range(max_iter):
-        if accepted.all():
-            break
-        n_need = int((~accepted).sum())
-        Ec = rng.uniform(Emin, Emax, n_need)
-        wc = _eval_dbr(
-            dbr_expr,
-            {"energy": Ec, "mass": m3, "coupling": coupling},
+    max_restarts = 5
+    for _restart in range(max_restarts):
+        accepted = np.zeros(N, dtype=bool)
+        w_seen_max = 0.0
+        for _ in range(max_iter):
+            if accepted.all():
+                break
+            n_need = int((~accepted).sum())
+            Ec = rng.uniform(Emin, Emax, n_need)
+            wc = _eval_dbr(
+                dbr_expr,
+                {"energy": Ec, "mass": m3, "coupling": coupling},
+            )
+            wc = np.where(np.isfinite(wc) & (wc > 0), wc, 0.0)
+            w_seen_max = max(w_seen_max, float(wc.max()))
+            u = rng.uniform(0.0, ceiling, n_need)
+            ok = u < wc
+            idx = np.where(~accepted)[0]
+            E_acc[idx[ok]] = Ec[ok]
+            accepted[idx[ok]] = True
+        if w_seen_max > ceiling:
+            # The grid scan under-estimated the true maximum, so the sample
+            # is biased against the over-ceiling region: discard and restart
+            # with the observed maximum.
+            ceiling = w_seen_max * safety
+            continue
+        if not accepted.all():
+            raise RuntimeError("dE accept-reject failed to converge.")
+        break
+    else:
+        raise RuntimeError(
+            f"dE ceiling still exceeded after {max_restarts} restarts; "
+            f"(M, m1, m2, m3) = ({M}, {m1}, {m2}, {m3})."
         )
-        wc = np.where(np.isfinite(wc) & (wc > 0), wc, 0.0)
-        u = rng.uniform(0.0, ceiling, n_need)
-        ok = u < wc
-        idx = np.where(~accepted)[0]
-        E_acc[idx[ok]] = Ec[ok]
-        accepted[idx[ok]] = True
-    if not accepted.all():
-        raise RuntimeError("dE accept-reject failed to converge.")
 
     p_d3 = np.sqrt(np.maximum(E_acc ** 2 - m3 ** 2, 0.0))
     cos_t3 = rng.uniform(-1.0, 1.0, N)
@@ -494,5 +528,151 @@ def decay_3body_weighted_dE(parent_E, parent_px, parent_py, parent_pz,
     d1_lab = _boost_to_lab(d1_parent, parent_E, parent_px, parent_py, parent_pz)
     d2_lab = _boost_to_lab(d2_parent, parent_E, parent_px, parent_py, parent_pz)
     d3_lab = _boost_to_lab(d3_parent, parent_E, parent_px, parent_py, parent_pz)
+
+    return d1_lab, d2_lab, d3_lab
+
+
+def _dalitz_q2_range(M, m1, m2, m3, s12):
+    """(p2+p3)^2 range at fixed s12=(p1+p2)^2, mirroring HNLCalc dq2dm122."""
+    sq = np.sqrt(s12)
+    e2 = (s12 - m1 ** 2 + m2 ** 2) / (2.0 * sq)   # d2 energy in the (12) rest frame
+    e3 = (M ** 2 - s12 - m3 ** 2) / (2.0 * sq)     # d3 energy in the (12) rest frame
+    a = e2 + e3
+    b1 = np.sqrt(np.maximum(e2 ** 2 - m2 ** 2, 0.0))
+    b2 = np.sqrt(np.maximum(e3 ** 2 - m3 ** 2, 0.0))
+    q2min = a ** 2 - (b1 + b2) ** 2
+    q2max = a ** 2 - (b1 - b2) ** 2
+    return q2min, q2max
+
+
+def decay_3body_weighted_dq2dm122(parent_E, parent_px, parent_py, parent_pz,
+                                  m_parent, m1, m2, m3, dbr_expr,
+                                  coupling=1.0, rng=None,
+                                  ceiling_grid=80, safety=1.2, max_iter=10000):
+    """Sample parent -> d1+d2+d3 with HNLCalc dBR/dq2/dm12^2 weighting.
+
+    This mirrors ``HNLCalc.integrate_3body_br_3body_dq2dm122`` (used by the
+    baryon channels): the differential rate is parametrized in
+    ``m12sq = (p1+p2)^2`` and ``q2 = (p2+p3)^2`` rather than in the HNL energy.
+    ``d3`` is the HNL (mass ``m3``). The dbr string references ``q2``,
+    ``m12sq``, ``mass`` and ``coupling``. Returns ``(d1_lab, d2_lab, d3_lab)``.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    N = len(parent_E)
+    M = m_parent
+
+    s12min = (m1 + m2) ** 2
+    s12max = (M - m3) ** 2
+    if s12max <= s12min:
+        raise RuntimeError("No 3-body phase space (dq2dm122, at or below threshold).")
+
+    # Accept-reject ceiling on a grid over (s12, q2-fraction).
+    s12_grid = np.linspace(s12min + 1e-9, s12max - 1e-9, ceiling_grid)
+    u_grid = np.linspace(1e-6, 1.0 - 1e-6, ceiling_grid)
+    S12, U = np.meshgrid(s12_grid, u_grid, indexing="ij")
+    q2min_g, q2max_g = _dalitz_q2_range(M, m1, m2, m3, S12)
+    Q2g = q2min_g + U * (q2max_g - q2min_g)
+    span_g = np.maximum(q2max_g - q2min_g, 0.0)
+    wg = _eval_dbr(dbr_expr, {"q2": Q2g, "m12sq": S12, "mass": m3, "coupling": coupling})
+    wg = np.where(np.isfinite(wg) & (wg > 0), wg, 0.0)
+    ceiling = float((wg * span_g).max()) * safety
+    if not np.isfinite(ceiling) or ceiling <= 0:
+        raise RuntimeError(
+            f"dq2dm122 ceiling not positive (max={ceiling}); "
+            f"(M, m1, m2, m3) = ({M}, {m1}, {m2}, {m3})."
+        )
+
+    s12_acc = np.empty(N)
+    q2_acc = np.empty(N)
+    max_restarts = 5
+    for _restart in range(max_restarts):
+        accepted = np.zeros(N, dtype=bool)
+        w_seen_max = 0.0
+        for _ in range(max_iter):
+            if accepted.all():
+                break
+            n_need = int((~accepted).sum())
+            s12c = rng.uniform(s12min, s12max, n_need)
+            q2min_c, q2max_c = _dalitz_q2_range(M, m1, m2, m3, s12c)
+            uc = rng.random(n_need)
+            q2c = q2min_c + uc * (q2max_c - q2min_c)
+            span = q2max_c - q2min_c
+            wc = _eval_dbr(dbr_expr, {"q2": q2c, "m12sq": s12c, "mass": m3, "coupling": coupling})
+            wc = np.where(np.isfinite(wc) & (wc > 0), wc, 0.0)
+            wspan = wc * span
+            w_seen_max = max(w_seen_max, float(wspan.max()))
+            ua = rng.uniform(0.0, ceiling, n_need)
+            ok = ua < wspan
+            idx = np.where(~accepted)[0]
+            s12_acc[idx[ok]] = s12c[ok]
+            q2_acc[idx[ok]] = q2c[ok]
+            accepted[idx[ok]] = True
+        if w_seen_max > ceiling:
+            # The grid scan under-estimated the true maximum, so the sample
+            # is biased against the over-ceiling region: discard and restart
+            # with the observed maximum.
+            ceiling = w_seen_max * safety
+            continue
+        if not accepted.all():
+            raise RuntimeError(
+                f"dq2dm122 accept-reject failed to converge "
+                f"({(~accepted).sum()} of {N} unaccepted after {max_iter} iterations)."
+            )
+        break
+    else:
+        raise RuntimeError(
+            f"dq2dm122 ceiling still exceeded after {max_restarts} restarts; "
+            f"(M, m1, m2, m3) = ({M}, {m1}, {m2}, {m3})."
+        )
+
+    # Dalitz reconstruction in the parent rest frame from (s12, s23=q2).
+    s12 = s12_acc
+    s23 = q2_acc
+    s13 = M ** 2 + m1 ** 2 + m2 ** 2 + m3 ** 2 - s12 - s23
+
+    E1 = (M ** 2 + m1 ** 2 - s23) / (2.0 * M)
+    E2 = (M ** 2 + m2 ** 2 - s13) / (2.0 * M)
+    E3 = (M ** 2 + m3 ** 2 - s12) / (2.0 * M)
+    p1 = np.sqrt(np.maximum(E1 ** 2 - m1 ** 2, 0.0))
+    p3 = np.sqrt(np.maximum(E3 ** 2 - m3 ** 2, 0.0))
+
+    # Angle between p1 and p3 from s13 = m1^2 + m3^2 + 2(E1 E3 - p1 p3 cos13).
+    denom = p1 * p3
+    safe = denom > 1e-15
+    cos13 = np.where(
+        safe,
+        (E1 * E3 - (s13 - m1 ** 2 - m3 ** 2) / 2.0) / np.where(safe, denom, 1.0),
+        0.0,
+    )
+    cos13 = np.clip(cos13, -1.0, 1.0)
+    sin13 = np.sqrt(np.maximum(1.0 - cos13 ** 2, 0.0))
+
+    # Isotropic orientation: random direction for p1, random azimuth for p3.
+    cos_t = rng.uniform(-1.0, 1.0, N)
+    sin_t = np.sqrt(np.maximum(1.0 - cos_t ** 2, 0.0))
+    phi = rng.uniform(0.0, 2 * np.pi, N)
+    n1x = sin_t * np.cos(phi)
+    n1y = sin_t * np.sin(phi)
+    n1z = cos_t
+    (e1x, e1y, e1z), (e2x, e2y, e2z) = _orthonormal_basis(n1x, n1y, n1z)
+    psi = rng.uniform(0.0, 2 * np.pi, N)
+    cpsi, spsi = np.cos(psi), np.sin(psi)
+    d3x = cos13 * n1x + sin13 * (cpsi * e1x + spsi * e2x)
+    d3y = cos13 * n1y + sin13 * (cpsi * e1y + spsi * e2y)
+    d3z = cos13 * n1z + sin13 * (cpsi * e1z + spsi * e2z)
+
+    p1x, p1y, p1z = p1 * n1x, p1 * n1y, p1 * n1z
+    p3x, p3y, p3z = p3 * d3x, p3 * d3y, p3 * d3z
+    p2x, p2y, p2z = -(p1x + p3x), -(p1y + p3y), -(p1z + p3z)
+
+    d1_rest = np.column_stack([E1, p1x, p1y, p1z])
+    d2_rest = np.column_stack([E2, p2x, p2y, p2z])
+    d3_rest = np.column_stack([E3, p3x, p3y, p3z])
+
+    d1_lab = _boost_to_lab(d1_rest, parent_E, parent_px, parent_py, parent_pz)
+    d2_lab = _boost_to_lab(d2_rest, parent_E, parent_px, parent_py, parent_pz)
+    d3_lab = _boost_to_lab(d3_rest, parent_E, parent_px, parent_py, parent_pz)
 
     return d1_lab, d2_lab, d3_lab

@@ -393,7 +393,7 @@ class HNLCalc(Utility):
             M1=self.masses(pid1)
             prefactor=(tautau*GF**2*VH**2*fH**2*Mtau**3/(16*np.pi))
             prefactor*=(self.vcoupling[str(abs(int(pid0)))]**2)
-            br=f"{prefactor}*coupling**2*((1-(mass**2/{Mtau}**2))**2-({M1}**2/{Mtau}**2)*(1+(mass**2/{Mtau}**2)))*np.sqrt((1-(({M1}-mass)**2/{Mtau}**2)*(1-(({M1}+mass)**2/{Mtau}**2))))"
+            br=f"{prefactor}*coupling**2*((1-(mass**2/{Mtau}**2))**2-({M1}**2/{Mtau}**2)*(1+(mass**2/{Mtau}**2)))*np.sqrt((1-(({M1}-mass)**2/{Mtau}**2))*(1-(({M1}+mass)**2/{Mtau}**2)))"
         return (br)
 
     ###############################
@@ -937,7 +937,7 @@ class HNLCalc(Utility):
         tauB = self.tau(pid0)   #seconds
         SecToGev=1./(6.582122*pow(10.,-25.))
         tauB = tauB*SecToGev    #1/GeV
-        Ulx = self.vcoupling[str(abs(int(pid2)))]**2
+        Ulx = self.vcoupling[str(abs(int(pid2)))]
 
         #\Lambda_c^+ \to \Lambda^0
         #4122 to 3122

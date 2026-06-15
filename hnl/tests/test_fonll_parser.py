@@ -63,6 +63,20 @@ def test_parser_rejects_descending_y(tmp_path):
         parse_fonll_file(path)
 
 
+def test_parser_rejects_envelope_grids(tmp_path):
+    """Pointwise variation envelopes are not physical cross sections and must
+    be refused even though they share the three-column format."""
+    path = tmp_path / "envelope.dat"
+    rows = []
+    for pt in (0.0, 1.0):
+        for y in (-1.0, 0.0, 1.0):
+            rows.append([pt, y, 1.0])
+    header = "# FONLL heavy-flavor meson grid (variation envelope)\n# envelope_band: scale_up\n"
+    path.write_text(header + "\n".join(" ".join(str(v) for v in r) for r in rows) + "\n")
+    with pytest.raises(ValueError, match="variation envelope"):
+        parse_fonll_file(path)
+
+
 def test_dsigma_nonnegative_majority():
     """At least 95% of bins should be non-negative (small numerical negatives allowed near edges)."""
     for q in ("charm", "bottom"):

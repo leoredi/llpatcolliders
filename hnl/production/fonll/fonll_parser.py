@@ -1,17 +1,96 @@
-"""Parse vendored FONLL meson-level differential cross-section tables."""
+"""Parse vendored FONLL meson-level differential cross-section tables.
 
+The bottom and charm grids are selected independently so a single production run
+can use, e.g., a varied m_b grid for bottom while holding charm central. Each
+quark's grid is overridden by its own environment variable, pointing at a
+*coherent* individual grid (one consistent scale/PDF-member/mass choice) -- never
+a pointwise envelope grid, which is not a physical cross section:
+
+    HNL_FONLL_BOTTOM_GRID   path to the bottom dsigma/dpT/dy table
+    HNL_FONLL_CHARM_GRID    path to the charm  dsigma/dpT/dy table
+
+Unset variables fall back to the committed central grids in vendored/.
+"""
+
+import os
 import numpy as np
 from pathlib import Path
 
 _VENDORED_DIR = Path(__file__).parent.parent.parent / "vendored"
 
-FONLL_FILES = {
+_DEFAULT_GRIDS = {
     "bottom": _VENDORED_DIR / "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_bottom.dat",
     "charm": _VENDORED_DIR / "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3_central_charm.dat",
 }
 
+_GRID_ENV_VARS = {
+    "bottom": "HNL_FONLL_BOTTOM_GRID",
+    "charm": "HNL_FONLL_CHARM_GRID",
+}
+
+
+def fonll_grid_path(quark):
+    """Resolve the FONLL grid for ``quark``: per-quark env override, else central.
+
+    The override must exist; a missing path is an error rather than a silent
+    fall-back, so a mistyped variation grid cannot quietly revert to central.
+    """
+    if quark not in _DEFAULT_GRIDS:
+        raise KeyError(f"unknown quark {quark!r}; expected one of {sorted(_DEFAULT_GRIDS)}")
+    override = os.environ.get(_GRID_ENV_VARS[quark])
+    if override:
+        path = Path(override).expanduser()
+        if not path.exists():
+            raise FileNotFoundError(
+                f"{_GRID_ENV_VARS[quark]}={override} does not exist"
+            )
+        return path
+    return _DEFAULT_GRIDS[quark]
+
+
+class _GridFileMap:
+    """Backward-compatible ``FONLL_FILES[quark]`` that resolves at access time."""
+
+    def __getitem__(self, quark):
+        return fonll_grid_path(quark)
+
+    def __contains__(self, quark):
+        return quark in _DEFAULT_GRIDS
+
+    def keys(self):
+        return _DEFAULT_GRIDS.keys()
+
+    def items(self):
+        return [(quark, fonll_grid_path(quark)) for quark in _DEFAULT_GRIDS]
+
+
+FONLL_FILES = _GridFileMap()
+
+
+def _reject_envelope_grid(path):
+    """Refuse pointwise variation-envelope grids.
+
+    The NNPDF40 workspace combiner writes envelope grids (scale/pdf/mass
+    max-min or +/-sigma constructions) in this same three-column format and
+    marks them with an ``envelope_band`` header. They are not physical cross
+    sections, so sampling kinematics from them is meaningless; only coherent
+    individual variation grids may be used here.
+    """
+    with open(path) as fh:
+        for line in fh:
+            if not line.startswith("#"):
+                break
+            if "envelope_band:" in line:
+                raise ValueError(
+                    f"{path} is a pointwise variation envelope, not a physical "
+                    f"cross section; point the grid override at a coherent "
+                    f"individual variation grid (one scale point, one PDF "
+                    f"member, one mass) instead"
+                )
+
 
 def parse_fonll_file(path):
+    _reject_envelope_grid(path)
     data = np.loadtxt(path, comments="#")
     pt_all = data[:, 0]
     y_all = data[:, 1]
@@ -36,7 +115,7 @@ def parse_fonll_file(path):
 
 
 def get_sigma_total(quark):
-    path = FONLL_FILES[quark]
+    path = fonll_grid_path(quark)
     pt_arr, y_arr, dsigma_2d = parse_fonll_file(path)
 
     trapezoid = getattr(np, "trapezoid", None) or np.trapz
