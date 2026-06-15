@@ -1,6 +1,6 @@
 """GRENDEL signal acceptance from FairShip HNL decays (Stage 2).
 
-Replaces the idealized analytic two-body acceptance in ``sensitivity.py`` with
+Replaces the earlier idealized analytic two-body acceptance (now removed) with
 the single-source PR #13 reconstruction (``reco_common``): each HNL decay's
 charged daughters (from the FairShip rest-frame templates, boosted to the lab)
 are turned into real wall hits and run through the same bounded 4-hit

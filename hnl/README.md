@@ -7,7 +7,10 @@ This package runs the full GRENDEL HNL chain for proton-proton collisions at
    and electroweak W/Z processes;
 2. combine the production channels for each flavor and mass;
 3. ray-cast the HNL trajectories through the GRENDEL detector geometry;
-4. scan the active-flavor mixing and produce sensitivity tables and plots.
+4. for the events that cross the fiducial volume, sample flavor-dependent
+   FairShip decays, reconstruct the visible tracks with the shared GRENDEL
+   reconstruction, and apply the PR #13 selection to get the acceptance;
+5. scan the active-flavor mixing and produce sensitivity tables and plots.
 
 The supported flavor hypotheses are `Ue`, `Umu`, and `Utau`. The committed
 mass grid contains 116 points from 0.2 to 10 GeV.
@@ -22,11 +25,9 @@ hnl/
 |-- run_all.py                 production orchestrator
 |-- run_analysis.py            sensitivity entry point
 |-- run_full_all.sh            complete three-flavor workflow
-|-- analysis/                  decay probability, acceptance, contours, plots
-|-- geometry/
-|   `-- grendel_geometry.py    GRENDEL fiducial mesh and ray casting
+|-- analysis/                  FairShip decay templates, GRENDEL acceptance,
+|                              exclusion band, plots
 |-- data/
-|   |-- ctau/                  committed lifetime and visible-BR tables
 |   `-- production/fonll/central/   committed central FONLL grids (consumed)
 |-- production/
 |   |-- combine_channels.py
@@ -40,10 +41,16 @@ hnl/
 |   `-- fonll_nnpdf40/         FONLL grid generator (imported with history)
 |-- tests/
 |-- vendored/
-|   |-- HNLCalc/
-|   `-- SM_HeavyN_CKM_AllMasses_LO/
-`-- tmp/                       generated runs, caches, logs; git-ignored
+|   |-- HNLCalc/               production BRs, differential rates, lifetimes
+|   |-- fairship/              FairShip HNL decay modules (rest-frame sampling)
+|   `-- SM_HeavyN_CKM_AllMasses_LO/   MadGraph HeavyN model
+`-- tmp/                       generated runs, caches, decay templates; git-ignored
 ```
+
+The GRENDEL detector geometry and 4-hit reconstruction are not duplicated
+here: the analysis imports `grendel_geometry` and `reco_common` directly from
+the sibling `../higgs/` package, the single source on
+exoticdarksectors/llpatcolliders `main` (PR #13).
 
 ## Physics Chain
 
@@ -53,7 +60,7 @@ Production includes:
 - b-baryons through `Lambda_b -> Lambda_c l N` (the "Bbaryon" channel);
 - induced taus from the leptonic `Ds/D+/B+/Bc -> tau nu` modes and the
   semitauonic `B/Bs -> D(*)/Ds(*) tau nu` and `Lambda_b -> Lambda_c tau nu`
-  modes (polarization treatment under "Decay Kinematics" below);
+  modes (polarization treatment under "Production Decay Kinematics" below);
 - prompt taus from `W -> tau nu` and `gamma*/Z -> tau tau`;
 - `W/Z -> ell N` through MadGraph.
 
@@ -62,8 +69,9 @@ The channel labels combined per mass are `Bmeson`, `Dmeson`, `Bc`,
 (`production/combine_channels.py::CHANNELS`).
 
 The meson spectra come from the committed 14 TeV FONLL tables. HNLCalc
-provides production branching ratios, differential three-body rates, HNL
-lifetimes, visible branching fractions, and tau-decay rates.
+provides production branching ratios, differential three-body rates, and
+tau-decay rates. The HNL lifetime and visible final states used downstream come
+from the FairShip decay modules instead (see "Signal Decay and Acceptance").
 
 For a production row generated at unit mixing, the downstream yield is
 
@@ -74,11 +82,37 @@ N_signal = L_int * sum_i [
 ```
 
 The analysis implements this scan at `3000 fb^-1` and uses
-`N_signal >= 3` as its default threshold.
+`N_signal >= 3` as its default threshold. Here `acceptance_i` is the GRENDEL
+reconstruction + selection efficiency described next, and the lifetime
+reweighting plus decay-in-volume probability `P_decay_i(U^2)` are applied in
+`analysis/decay_reco_acceptance.py::scan_u2`.
 
-### Decay Kinematics
+### Signal Decay and Acceptance
 
-Two-body decays use exact rest-frame kinematics followed by a Lorentz boost.
+The HNL's own decay is flavor dependent -- the visible final states differ for
+`Ue`, `Umu`, and `Utau` -- so a fixed `e+e-` final state is wrong for the muon
+and tau scenarios. Decays are sampled with the vendored FairShip HNL modules
+(`vendored/fairship/`, driven through `ROOT.TPythia8`), which also supply the
+flavor-aware lifetime `ctau(U^2 = 1)`. This is a separate template-generation
+stage (`analysis/generate_decay_templates.py`) that caches rest-frame decays to
+`tmp/decay_templates/<flavor>/templates_<mass>.npz`. It is the only stage that
+needs PyROOT + Pythia8, and runs under the Homebrew-ROOT venv, not the conda
+`hnl` env.
+
+For each four-vector that crosses the fiducial volume, the analysis samples a
+decay vertex along the flight path, boosts a FairShip template to the lab,
+keeps the two highest-momentum charged stable daughters (best-two-track),
+ray-casts them to the tracker walls, and runs the shared
+`../higgs/reco_common` bounded 4-hit reconstruction followed by the PR #13
+selection (gate / pointing / collinearity / timing). The surviving fraction is
+`acceptance_i`. This is the same reconstruction and selection the cosmic-decay
+background uses, so signal and background share one definition.
+
+### Production Decay Kinematics
+
+These are the parent-to-HNL production decays (the HNL's own decay is covered
+above). Two-body decays use exact rest-frame kinematics followed by a Lorentz
+boost.
 The polarized two-body tau modes use a fixed unit longitudinal analyzing
 power whose sign follows the tau origin: `+1` (HNL forward) for W-origin
 taus, `-1` (HNL backward) for the helicity-suppressed heavy-meson leptonic
@@ -153,6 +187,14 @@ point `$HNL_LHAPDF_DATA` at an existing LHAPDF data directory. Resolution is
 conda-only (no sibling-checkout fallback); a missing PDF backend fails with a
 precise error before MadGraph launches.
 
+The signal decay-template stage (`analysis/generate_decay_templates.py`)
+additionally needs PyROOT + Pythia8 (`ROOT.TPythia8`), which the conda `hnl`
+env does not provide. Run it under a Python that has both; on this development
+machine that is the venv at
+`/Volumes/sandbox/projects/aaaPHYSICSaaa/.venvs/fairship` (Homebrew ROOT with
+`--with-pythia`, plus `numpy`/`scipy`). Everything else -- production,
+geometry, and the exclusion scan -- runs entirely in the conda env.
+
 ## Full Run
 
 From the repository root:
@@ -166,6 +208,11 @@ cd hnl
 The script performs the complete three-flavor chain. It first runs non-W/Z
 production, then runs W/Z production in independent mass shards, combines all
 channels, and runs the analysis.
+
+It does **not** generate the FairShip decay templates (that stage needs ROOT +
+Pythia8, which the conda env lacks). Generate them once beforehand -- see
+"Decay templates" under Manual Operation -- or the analysis will skip every
+mass point with a "no decay templates" note.
 
 By default it uses:
 
@@ -250,6 +297,21 @@ which avoids process-tree collisions.
 python -m production.combine_channels --flavor Ue Umu Utau
 ```
 
+### Decay templates
+
+Generate the FairShip rest-frame decay templates once per flavor (this is the
+only stage that needs PyROOT + Pythia8, so use the ROOT venv, not conda):
+
+```bash
+/Volumes/sandbox/projects/aaaPHYSICSaaa/.venvs/fairship/bin/python \
+  analysis/generate_decay_templates.py \
+  --flavor Ue Umu Utau --n-templates 20000 --out tmp/decay_templates
+```
+
+The analysis reads `tmp/decay_templates/<flavor>/templates_<mass>.npz`; a mass
+point with no template file is skipped with a note. `--skip-existing` reuses
+already-generated files.
+
 ### Analysis
 
 ```bash
@@ -310,7 +372,9 @@ python -P -m pytest hnl/tests/ -q
 
 The tests cover FONLL parsing and sampling, mass labels, channel combination,
 two- and three-body kinematics, tau and kaon production, W/Z CSV conversion,
-open contour handling, and a meson-production smoke path. `-P` prevents any
+open contour handling, the FairShip->GRENDEL acceptance core (boost, best-two
+tracks, reconstruction/selection, and the interior lifetime peak of the `U^2`
+scan), and a meson-production smoke path. `-P` prevents any
 stale ignored MG5 parser cache named `py.py` from shadowing pytest's
 compatibility module.
 
@@ -348,8 +412,12 @@ compatibility module.
 - The electroweak K-factor is a per-process table whose entries all currently
   hold the inclusive `1.3` constant; differential NLO/LO values are an optional
   upgrade (see `REMAINING_WORK.md`).
-- The analysis uses a zero-background three-event threshold. It does not
-  include detector backgrounds or systematic uncertainties.
+- The signal acceptance is the GRENDEL 4-hit reconstruction + PR #13 selection
+  efficiency (best-two-track) applied to the FairShip decays, the same
+  selection the cosmic-decay background uses. The exclusion itself is still a
+  zero-background `N_signal >= 3` threshold: the cosmic background is computed
+  by the shared `../higgs/` machinery but is not yet folded into the limit, and
+  no systematic uncertainties are included (see `REMAINING_WORK.md`).
 
 The FONLL and HNLCalc source details, versions, and local modifications are
 recorded in `vendored/PROVENANCE.md`. Physics, detector, numerical, and

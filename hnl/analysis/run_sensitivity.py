@@ -19,7 +19,7 @@ Inputs (read via ``production.paths``):
 
     {LLP_VECTORS_DIR}/{flavor}/combined/mN_{mass}.csv    -- 4-vectors per point
     {TMP_DIR}/decay_templates/{flavor}/templates_{mass}.npz  -- FairShip decays + ctau
-    {REPO_ROOT}/higgs/grendel_geometry.py                -- shared detector mesh
+    ../higgs/grendel_geometry.py  (sibling package, PR #13)  -- shared mesh
 
 Outputs:
 

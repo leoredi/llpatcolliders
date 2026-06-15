@@ -110,7 +110,10 @@ Used in `hnl/production/decay_engine/` to evaluate:
 
 Production calls HNLCalc with unit coupling (`U^2 = 1`) so the active mixing
 factors cleanly from each stored row. `analysis/run_sensitivity.py` performs
-the explicit `U^2` scan using the committed lifetime and visible-BR tables.
+the explicit `U^2` scan; the HNL lifetime and visible final states it reweights
+with come from the FairShip decay templates (below), not from HNLCalc. HNLCalc
+itself is used only for production BRs, three-body differential rates, tau-decay
+rates, and phase-space integration (the calls listed above).
 
 ### Local modifications
 
@@ -153,6 +156,16 @@ the explicit `U^2` scan using the committed lifetime and visible-BR tables.
   to the unsquared coupling so the `Ulx^2` in the amplitude yields
   `|U|^2`. Numerically inert for this package's single-flavor instances
   (`vcoupling` is 0 or 1), but wrong for any mixed-coupling use.
+
+## FairShip HNL decay modules (`fairship/`)
+
+`fairship/` holds the FairShip (github.com/ShipSoft/FairShip) Heavy-Neutral-
+Lepton physics modules, used to sample **flavor-dependent** HNL rest-frame
+decays (the visible final states differ for `Ue`/`Umu`/`Utau`) and to supply
+the flavor-aware lifetime `ctau(U^2 = 1)`. They are unmodified copies imported
+via the project's `hnl_alaship` package. Per-file roles, the decay-selection
+config (`analysis/fairship_decay_selection.conf`), and the PyROOT + Pythia8
+template-generation flow are documented in `fairship/PROVENANCE.md`.
 
 ## Prompt-tau pool (`tau_pool.csv`)
 

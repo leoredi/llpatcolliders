@@ -30,27 +30,32 @@ scenarios; they are not a statistical uncertainty band.
 
 ## P0: define the detector-level result
 
-### 1. Replace the idealized two-body acceptance with a decay/reconstruction model
+### 1. Add detector response to the decay/reconstruction acceptance
 
-**Current code:** `analysis/sensitivity.py` applies one analytic two-body
-acceptance to every visible HNL decay. Both daughters use the electron mass,
-with fixed cuts of 0.6 GeV momentum and 1 mm--1 m separation. The inclusive
-`BR_vis` is multiplied afterward, so decay modes with different multiplicity,
-particle content, thresholds, and reconstruction efficiency receive the same
-acceptance.
+**Current code:** the old analytic two-body acceptance (`analysis/sensitivity.py`)
+is gone. `analysis/decay_reco_acceptance.py` now runs a per-event Monte Carlo:
+for each HNL four-vector that crosses the fiducial volume it samples decay
+vertices along the flight path, draws flavor-dependent FairShip rest-frame decay
+templates, boosts them to the lab, keeps the two highest-momentum charged stable
+daughters (best-two-track), and runs the shared `../higgs/reco_common` bounded
+4-hit reconstruction plus the PR #13 selection (gate/pointing/collinearity/
+timing). The visible branching fraction is implicit (the fraction of templates
+with two reconstructable charged tracks), not a single inclusive `BR_vis`
+factor. What is still idealized: detector response is geometric wall hits with
+Gaussian position/time smearing only -- no material interactions, tracking or
+vertexing inefficiency, trigger/readout, pileup, dead regions, or occupancy --
+and the FairShip templates are Pythia-level final states with no detector
+simulation.
 
 **Required work:**
 
-- define the visible final states included in the signal for each flavor and
-  mass;
-- generate their channel-specific decay kinematics, including two-, three-,
-  and higher-body modes;
-- implement detector response, trigger/readout, tracking, vertexing, particle
-  thresholds, material interactions, and event-selection efficiencies;
+- implement detector response beyond geometric hits + smearing: tracking,
+  vertexing, particle thresholds, material interactions, trigger/readout, and
+  event-selection efficiencies;
 - include pileup, timing, dead regions, and occupancy if they affect the
   proposed detector;
-- replace the single inclusive `BR_vis * A_2body` factor with a sum over
-  channel-specific branching fractions and efficiencies.
+- assign per-channel / per-flavor efficiency uncertainties and validate the
+  FairShip visible-final-state modelling against an independent generator.
 
 **Completion test:** an efficiency map or detector simulation with versioned
 inputs reproduces benchmark samples, and the sensitivity code consumes
@@ -58,11 +63,12 @@ per-channel efficiencies with uncertainty variations.
 
 ### 2. Validate the geometry and detector configuration
 
-**Current code:** `geometry/grendel_geometry.py` builds a closed tunnel mesh
-from one survey polyline, a fixed 22 m vertical position, and a fixed 24 cm
-wall inset. Rays originate at `(0, 0, 0)`. The mesh contains no supports,
-services, inactive regions, material, alignment uncertainty, or configurable
-detector layout.
+**Current code:** the shared `../higgs/grendel_geometry.py` (the PR #13 single
+source) builds a closed tunnel mesh from one survey polyline, a fixed 22 m
+vertical position, and a fixed 24 cm wall inset, and classifies tracker vs
+scintillator surfaces. Rays originate at `(0, 0, 0)`. The mesh contains no
+supports, services, inactive regions, material, alignment uncertainty, or
+configurable detector layout.
 
 **Required work:**
 
@@ -81,8 +87,11 @@ and a geometry-variation envelope propagated to the curves.
 ### 3. Supply backgrounds and a statistical model
 
 **Current code:** `analysis/constants.py` defines exclusion as
-`N_signal >= 3`, described as a zero-background 95% CL approximation. There is
-no background estimate, control region, nuisance parameter, systematic
+`N_signal >= 3`, a zero-background 95% CL approximation. Signal now passes the
+PR #13 selection (gate/pointing/collinearity/timing), and a cosmic
+decay-in-flight background is modelled by the shared `../higgs/` machinery, but
+that background is not folded into the limit: there is still no background count
+in the statistical model, no control region, nuisance parameter, systematic
 uncertainty, or coverage calculation.
 
 **Required work:**
@@ -363,26 +372,35 @@ external-normalization uncertainty.
 **Completion test:** a machine-readable input table generates the constants
 and produces correlated induced-tau normalization variations.
 
-### 15. Validate lifetime and visible-branching-fraction tables
+### 15. Validate the FairShip lifetime and visible-fraction model
 
-**Current code:** `data/ctau/ctau_*.dat` and `br_vis_*.dat` are committed
-central tables with only column headers. Their generator revision, decay-mode
-definition, Majorana/Dirac convention, and uncertainties are not recorded.
-`run_sensitivity.py` prints a note and falls back to `BR_vis = 1` if a table is
-missing, and uses the nearest mass point rather than interpolation.
+**Current code:** the HNL lifetime `ctau(U^2 = 1)` and the visible final states
+now come from the FairShip decay templates (`analysis/generate_decay_templates.py`):
+the lifetime is `HNLbranchings.computeNLifetime`, and the visible fraction is
+implicit in the per-flavor template multiplicity. The previous
+`data/ctau/*.dat` lifetime / `BR_vis` tables and the `BR_vis = 1` fallback are
+gone. Still unrecorded: the FairShip module revision, the exact decay-mode and
+visible definition for GRENDEL, the Majorana/Dirac convention, finite-template
+statistics, and any uncertainty on the lifetime or visible fraction. Templates
+are generated on a fixed mass grid and matched per mass label (no interpolation
+between masses).
 
 **Required work:**
 
-- regenerate both table families from the selected rate model and preserve a
-  manifest with code revision, couplings, mode list, and convention;
-- define exactly which modes count as visible for GRENDEL;
-- propagate rate/model uncertainties and correlations with production;
-- replace nearest-neighbor lookup with validated interpolation and reject
-  missing/out-of-range inputs;
-- cross-check total widths and visible fractions independently.
+- pin the FairShip module revision and write a manifest (mass grid,
+  `n_templates`, seed, couplings, decay-selection config);
+- define exactly which modes count as visible for GRENDEL and confirm the
+  template-derived visible fraction matches that definition;
+- propagate lifetime and visible-fraction uncertainties and correlate them with
+  production;
+- quantify finite-template statistics and confirm the mass-grid spacing needs
+  no interpolation (or add it);
+- cross-check the FairShip total width / lifetime and visible fraction against
+  an independent calculation.
 
-**Completion test:** reproducible table generation, strict loading, smooth
-threshold-aware interpolation, and regression benchmarks.
+**Completion test:** a pinned, manifested template generation, strict loading,
+threshold-aware mass coverage, and regression benchmarks against an independent
+lifetime/visible-fraction calculation.
 
 ### 16. Complete tau decay modes and implement realistic spin correlations
 
@@ -441,18 +459,21 @@ target or appears in the final band.
 
 ### 18. Converge the acceptance, serialization, and exclusion scans
 
-**Current code:** accepted decay probability uses a fixed 30-point trapezoid
-rule. The mixing scan has 200 points from `1e-12` to `1e-1`, followed by local
-interpolation. The mass grid has a minimum spacing of 15 MeV and becomes much
-coarser at high mass; plotted lines simply connect calculated points.
+**Current code:** the accepted decay probability is a Monte Carlo estimate over
+`DECAY_SAMPLES = 100` decay vertices sampled uniformly along the in-volume path,
+with the reconstruction + selection re-evaluated per vertex
+(`analysis/decay_reco_acceptance.py::build_event_mc`/`scan_u2`). The mixing scan
+has 200 points from `1e-12` to `1e-1`, followed by local interpolation. The mass
+grid has a minimum spacing of 15 MeV and becomes much coarser at high mass;
+plotted lines simply connect calculated points.
 
 **Required work:**
 
 - increase or replace the eight-significant-digit CSV serialization and
   quantify its effect on reconstructed mass, boost, geometry, and acceptance,
   especially for ultra-boosted low-mass HNLs;
-- compare the vectorized acceptance against the exact quadrature over the full
-  kinematic range and adapt the quadrature where needed;
+- demonstrate the decay-vertex Monte Carlo is converged (vary `DECAY_SAMPLES`
+  and seeds) against an exact quadrature of the decay-in-volume integral;
 - replace or validate the fixed mixing scan with bracketed root finding for
   both exclusion boundaries;
 - demonstrate stability under mass-grid refinement, especially at production
@@ -538,8 +559,10 @@ outputs and regenerated from the run manifest.
 
 ## Work that can be done in the NNPDF40 workspace
 
-The repository at `/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40` can address
-most of item 5 and part of item 6. Status as of 2026-06-11:
+The grid generator is committed at `hnl/tools/fonll_nnpdf40/` (imported with
+history); the heavy ~2.3 GB grid/output workspace stays external at
+`/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40`, which can address most of
+item 5 and part of item 6. Status as of 2026-06-11:
 
 1. **Done.** `scripts/generate_meson_grids.py --campaign` accepts
    `(mu_R, mu_F)` (verified against FONLL's `read ffact,fren` order), PDF
