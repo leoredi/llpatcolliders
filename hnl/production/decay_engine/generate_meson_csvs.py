@@ -102,9 +102,8 @@ def _eval_2body_br(hnl, parent_pdg, lepton_pdg, m_N):
     sign = "-" if parent_pdg > 0 else ""
     pid_lep = f"{sign}{abs(lepton_pdg)}"
     br_expr = hnl.get_2body_br(str(parent_pdg), pid_lep)
-    mass = m_N
-    coupling = 1.0
-    br_val = eval(br_expr)
+    br_val = eval(br_expr, {"np": np, "__builtins__": {}},
+                  {"mass": m_N, "coupling": 1.0})
     if np.isnan(br_val) or br_val < 0:
         return 0.0
     return float(br_val)

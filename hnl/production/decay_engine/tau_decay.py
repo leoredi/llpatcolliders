@@ -27,9 +27,8 @@ TAU_2BODY_MESON_PDGS = [211, 321, 213, 323]   # pi+, K+, rho+, K*+ (HNLCalc conv
 
 def _eval_tau_2body_br(hnl, meson_pdg, m_N):
     br_expr = hnl.get_2body_br_tau(15, meson_pdg)
-    mass = m_N        # noqa: F841 - referenced by eval'd HNLCalc expression
-    coupling = 1.0    # noqa: F841
-    br_val = eval(br_expr)
+    br_val = eval(br_expr, {"np": np, "__builtins__": {}},
+                  {"mass": m_N, "coupling": 1.0})
     if np.isnan(br_val) or br_val < 0:
         return 0.0
     return float(br_val)
