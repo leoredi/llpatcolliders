@@ -17,10 +17,11 @@ Pipeline per HNL four-vector that hits the fiducial air volume:
      and time them (``timing_chi2_4hit``);
   5. apply ``selection_mask`` (gate / pointing / collinearity / timing).
 
-Geometry + reconstruction come from the ported ``grendel_geometry`` /
-``reco_common`` (identical to exoticdarksectors/llpatcolliders main). Selection
-constants are mirrored from higgs/decayProbPerEvent_2body.py so signal and the
-cosmic background share one definition.
+Geometry + reconstruction are the *shared* ``higgs/grendel_geometry`` /
+``higgs/reco_common`` single source on exoticdarksectors/llpatcolliders main
+(PR #13) -- imported directly, not copied. Selection constants are mirrored
+from higgs/decayProbPerEvent_2body.py so signal and the cosmic background share
+one definition.
 """
 from __future__ import annotations
 
@@ -30,9 +31,12 @@ from pathlib import Path
 import numpy as np
 
 _HNL_ROOT = Path(__file__).resolve().parent.parent
-_GEOM_DIR = _HNL_ROOT / "geometry"
-if str(_GEOM_DIR) not in sys.path:
-    sys.path.insert(0, str(_GEOM_DIR))
+# Single source for detector geometry + 4-hit reconstruction: import the SAME
+# grendel_geometry / reco_common the higgs analysis uses (PR #13 on main), so
+# signal and the cosmic background share one reconstruction definition.
+_RECO_DIR = _HNL_ROOT.parent / "higgs"
+if str(_RECO_DIR) not in sys.path:
+    sys.path.insert(0, str(_RECO_DIR))
 
 from grendel_geometry import (  # noqa: E402
     mesh_fiducial, points_on_tracker, DETECTOR_THICKNESS,

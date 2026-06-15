@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 _HNL = Path(__file__).resolve().parent.parent
-for _p in (_HNL / "analysis", _HNL / "geometry"):
+# geometry + reconstruction live in the shared higgs/ single source (PR #13)
+for _p in (_HNL / "analysis", _HNL.parent / "higgs"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 

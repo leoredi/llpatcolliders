@@ -19,7 +19,7 @@ Inputs (read via ``production.paths``):
 
     {LLP_VECTORS_DIR}/{flavor}/combined/mN_{mass}.csv    -- 4-vectors per point
     {TMP_DIR}/decay_templates/{flavor}/templates_{mass}.npz  -- FairShip decays + ctau
-    {HNL_ROOT}/geometry/grendel_geometry.py              -- detector mesh
+    {REPO_ROOT}/higgs/grendel_geometry.py                -- shared detector mesh
 
 Outputs:
 
@@ -72,7 +72,9 @@ TEMPLATE_DIR = TMP_DIR / "decay_templates"
 # decay positions sampled per hitting event for the acceptance MC
 DECAY_SAMPLES = 100
 
-GEOMETRY_DIR = HNL_ROOT / "geometry"
+# Single source for the GRENDEL mesh + reconstruction: the higgs analysis's
+# grendel_geometry / reco_common (PR #13 on main), shared by the signal MC.
+RECO_DIR = HNL_ROOT.parent / "higgs"
 GEOM_CACHE_DIR = ANALYSIS_DIR / "geometry_cache"
 
 
@@ -81,14 +83,14 @@ GEOM_CACHE_DIR = ANALYSIS_DIR / "geometry_cache"
 # =========================================================================
 
 def _get_mesh():
-    """Lazy-import the GRENDEL mesh from ``hnl/geometry/``."""
-    if not GEOMETRY_DIR.exists():
+    """Lazy-import the GRENDEL mesh from the shared ``higgs/`` single source."""
+    if not RECO_DIR.exists():
         raise FileNotFoundError(
-            f"geometry/ directory not found at {GEOMETRY_DIR}.\n"
-            "The checkout is incomplete; hnl/geometry/grendel_geometry.py is required."
+            f"higgs/ directory not found at {RECO_DIR}.\n"
+            "The checkout is incomplete; higgs/grendel_geometry.py is required."
         )
-    if str(GEOMETRY_DIR) not in sys.path:
-        sys.path.insert(0, str(GEOMETRY_DIR))
+    if str(RECO_DIR) not in sys.path:
+        sys.path.insert(0, str(RECO_DIR))
     from grendel_geometry import mesh_fiducial
     return mesh_fiducial
 
