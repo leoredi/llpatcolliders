@@ -190,3 +190,91 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
             m &= mc['timing_chi2'] < chi2_timing_max
     m = m & vtx_in & on_tracker
     return m
+
+
+# =========================================================================
+# Per-event Monte Carlo and the U^2 scan
+# =========================================================================
+# The decay geometry (vertex, daughter directions, wall hits, reconstruction,
+# selection) is independent of the mixing U^2, so the MC is built ONCE per mass
+# point and reweighted to every U^2 by the decay-density factor, exactly as the
+# higgs MC reweights a single uniform-sampled pass to each lifetime.
+
+CMS_ORIGIN = np.zeros(3)
+
+
+def build_event_mc(p4, direction, entry_d, exit_d, templates, n_samples, rng,
+                   sigma_hit=HIT_RESOLUTION, sigma_t=SIGMA_T_DEFAULT,
+                   origin=CMS_ORIGIN):
+    """Sample decay vertices and reconstruct, for a batch of HNL four-vectors.
+
+    For each of the ``n_events`` four-vectors, sample ``n_samples`` decay
+    distances uniformly in ``[entry_d, exit_d]``, draw a FairShip decay template
+    at each, boost it to the lab, take the best two charged tracks, and run the
+    full reconstruction + selection. Decays with fewer than two charged tracks
+    (the invisible fraction) fail, so the visible branching fraction is folded
+    in here -- no separate BR_vis table is needed.
+
+    Returns ``(d, passed)``, each ``(n_events, n_samples)``: the sampled decay
+    distance and whether that decay passes the signal selection. Both are
+    U^2-independent; ``scan_u2`` applies the lifetime weight.
+    """
+    origin = np.asarray(origin, float)
+    p4 = np.asarray(p4, float)
+    direction = np.asarray(direction, float)
+    n_ev = len(entry_d)
+    counts = templates['daughter_counts']
+    off = np.concatenate([[0], np.cumsum(counts)])
+    n_tmpl = len(counts)
+
+    d = rng.uniform(np.asarray(entry_d)[:, None], np.asarray(exit_d)[:, None],
+                    size=(n_ev, n_samples))
+    M = n_ev * n_samples
+    vtx = origin[None, :] + d.reshape(M, 1) * np.repeat(direction, n_samples, axis=0)
+
+    dir1 = np.empty((M, 3)); dir2 = np.empty((M, 3)); psoft = np.zeros(M)
+    valid = np.zeros(M, dtype=bool)
+    tmpl_idx = rng.integers(0, n_tmpl, size=M)
+    for k in range(M):
+        ti = tmpl_idx[k]
+        s, e = off[ti], off[ti + 1]
+        ev = k // n_samples
+        lx, ly, lz, _ = boost_rest_to_lab(
+            p4[ev], templates['px'][s:e], templates['py'][s:e],
+            templates['pz'][s:e], templates['energy'][s:e])
+        bt = best_two_directions(lx, ly, lz, templates['charge'][s:e],
+                                 templates['stable'][s:e])
+        if bt is not None:
+            dir1[k], dir2[k], psoft[k] = bt
+            valid[k] = True
+
+    passed = np.zeros(M, dtype=bool)
+    if valid.any():
+        mc = reconstruct_decays(vtx[valid], dir1[valid], dir2[valid],
+                                psoft[valid], sigma_hit, sigma_t, rng)
+        passed[valid] = selection_mask(mc)
+    return d, passed.reshape(n_ev, n_samples)
+
+
+def scan_u2(d, passed, path_len, weight, beta_gamma, ctau_u2_1,
+            L_int_pb, u2_grid):
+    """N_signal(U^2) by reweighting the once-built MC.
+
+    For each event the decay-and-pass probability is the MC estimate of
+    ``int (1/lam) e^{-x/lam} [pass] dx`` with ``lam = beta*gamma * ctau_u2_1/U^2``;
+    ``N = L_int * U^2 * sum_events weight * P``. ``d``/``passed`` are
+    ``(n_events, n_samples)`` from :func:`build_event_mc`.
+    """
+    n_ev, n_samples = d.shape
+    pw = passed.astype(float)
+    weight = np.asarray(weight, float)
+    bg = np.asarray(beta_gamma, float)
+    per_sample = (np.asarray(path_len, float) / n_samples)[:, None]
+    N_grid = np.zeros(len(u2_grid))
+    for iu, u2 in enumerate(u2_grid):
+        lam = bg * ctau_u2_1 / u2                       # (n_ev,)
+        inv = (1.0 / lam)[:, None]
+        density = inv * np.exp(-d * inv)                # (n_ev, n_samples)
+        P_ev = (per_sample * density * pw).sum(axis=1)  # (n_ev,)
+        N_grid[iu] = L_int_pb * u2 * float(weight @ P_ev)
+    return u2_grid, N_grid

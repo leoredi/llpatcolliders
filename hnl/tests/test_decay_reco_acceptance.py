@@ -81,3 +81,41 @@ def test_reconstruct_and_select_smoke():
         assert k in mc and len(mc[k]) == N
     sel = dra.selection_mask(mc)
     assert sel.dtype == bool and len(sel) == N
+
+
+def _synthetic_templates():
+    """Two decay templates, each e+ e- back-to-back (2 charged stable tracks)."""
+    # rest-frame: each daughter |p| = 0.5 GeV (m_N ~ 1 GeV), opposite directions
+    pdg = np.array([11, -11, 11, -11], dtype=np.int32)
+    px = np.array([0.5, -0.5, 0.0, 0.0]); py = np.array([0.0, 0.0, 0.5, -0.5])
+    pz = np.zeros(4); energy = np.full(4, 0.5); mass = np.zeros(4)
+    charge = np.array([-1.0, 1.0, -1.0, 1.0]); stable = np.ones(4, bool)
+    return dict(daughter_counts=np.array([2, 2], np.int32),
+                pdg=pdg, px=px, py=py, pz=pz, energy=energy, mass=mass,
+                charge=charge, stable=stable)
+
+
+def test_scan_u2_has_interior_lifetime_peak():
+    rng = np.random.default_rng(2)
+    origin = np.zeros(3)
+    p4s, dirs, ent, exi = [], [], [], []
+    m = 1.0
+    while len(p4s) < 8:
+        d = rng.normal(size=3); d[1] = abs(d[1]) + 0.4; d /= np.linalg.norm(d)
+        loc, _, _ = mesh_fiducial.ray.intersects_location([origin], [d])
+        if len(loc) < 2:
+            continue
+        ds = np.sort(np.linalg.norm(loc - origin, axis=1))
+        P = 30.0; E = np.sqrt(P * P + m * m)
+        p4s.append([E, *(P * d)]); dirs.append(d); ent.append(ds[0]); exi.append(ds[1])
+    p4s = np.array(p4s); dirs = np.array(dirs); ent = np.array(ent); exi = np.array(exi)
+    bg = np.array([np.linalg.norm(p[1:]) / m for p in p4s])
+    T = _synthetic_templates()
+    d, passed = dra.build_event_mc(p4s, dirs, ent, exi, T, n_samples=40, rng=rng)
+    u2 = np.logspace(-9, -1, 30)
+    u2, N = dra.scan_u2(d, passed, exi - ent, np.ones(len(p4s)), bg,
+                        ctau_u2_1=1e-3, L_int_pb=3e6, u2_grid=u2)
+    ipk = int(np.argmax(N))
+    assert 0 < ipk < len(u2) - 1          # peak is interior (lifetime frontier)
+    assert N[0] < N[ipk] and N[-1] < N[ipk]
+    assert N[ipk] > 0
