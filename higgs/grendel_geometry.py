@@ -32,6 +32,11 @@ TUNNEL_GAMMA = 2.90   # arch width at springline (m)
 TUNNEL_DELTA = 1.90   # arch height (m)
 TUNNEL_WALL_HEIGHT = TUNNEL_BETA - TUNNEL_DELTA  # 1.25 m
 
+# Single source of truth for the detector shell radial extent. This sets the
+# fiducial-volume inset AND the tracker-layer spacing (inner layer at the
+# fiducial face, outer layer at the tunnel wall). Change it in this ONE place
+# to study a different detector thickness; the mesh and all reconstruction
+# (signal and background) pick it up consistently.
 DETECTOR_THICKNESS = 0.24  # 24 cm
 
 
@@ -387,6 +392,53 @@ TRACKER_SURFACES = ('Arch/Ceiling', 'Left Wall')
 SCINTILLATOR_SURFACES = ('Floor', 'Right Wall')
 
 
+# ============================================================
+# Profile arc-length parametrization (around the cross-section)
+# ============================================================
+# Cumulative arc-length along the closed polygon walk of the profile
+# vertices. The walk is CCW so the unwrapped angle increases by 2π
+# over one full traversal.
+_seg_lens = np.linalg.norm(
+    np.diff(_profile_pts, axis=0, append=_profile_pts[:1]), axis=1)
+_profile_cum_s = np.concatenate([[0], np.cumsum(_seg_lens)])  # length N+1
+profile_perimeter = float(_profile_cum_s[-1])
+
+# Build a monotonically-increasing (theta, s) lookup by unwrapping the
+# polygon angles. Close the loop by repeating the first vertex at
+# theta + 2π.
+_theta_walk = _profile_angles.copy()
+for i in range(1, len(_theta_walk)):
+    while _theta_walk[i] < _theta_walk[i - 1]:
+        _theta_walk[i] += 2 * np.pi
+_theta_walk = np.concatenate([_theta_walk, [_theta_walk[0] + 2 * np.pi]])
+_s_walk = np.concatenate([_profile_cum_s[:-1], [profile_perimeter]])
+
+
+def arc_length_at_theta(theta):
+    """
+    Cumulative arc-length s(theta) along the cross-section profile (m),
+    measured from the start of the polygon walk (floor-left corner).
+    Accepts scalar or array inputs in [0, 2π).
+    """
+    theta = np.atleast_1d(np.asarray(theta, dtype=float))
+    theta_mod = theta % (2 * np.pi)
+    base = _theta_walk[0]
+    theta_shifted = np.where(theta_mod < base, theta_mod + 2 * np.pi, theta_mod)
+    return np.interp(theta_shifted, _theta_walk, _s_walk)
+
+
+def arc_distance_between_thetas(theta_a, theta_b):
+    """
+    Shortest arc-length distance (m) along the profile contour between
+    two points at profile angles theta_a and theta_b. Naturally bounded
+    by profile_perimeter / 2.
+    """
+    s_a = arc_length_at_theta(theta_a)
+    s_b = arc_length_at_theta(theta_b)
+    diff = np.abs(s_a - s_b)
+    return np.minimum(diff, profile_perimeter - diff)
+
+
 def _in_arc(theta, a, b):
     """True where theta is in the half-open CCW arc [a, b) (handles wrap)."""
     theta = np.asarray(theta, dtype=float) % (2 * np.pi)
@@ -499,6 +551,149 @@ def classify_points(points):
     theta = np.arctan2(best_y, best_x)
     theta = np.where(theta < 0, theta + 2 * np.pi, theta)
     return theta, best_s
+
+
+def classify_points_with_basis(points):
+    """
+    Same surface mapping as classify_points, but also returns the local
+    cavern basis at each point: (tangent, right, up) where ``tangent``
+    is the centreline tangent at the nearest segment ("down the tunnel"),
+    and (right, up) span the profile plane. The radial outward normal at
+    profile angle theta is cos(theta)*right + sin(theta)*up; the arc
+    tangent (around the cross-section) is -sin(theta)*right + cos(theta)*up.
+
+    Returns
+    -------
+    theta   : ndarray, shape (M,)
+    s       : ndarray, shape (M,)
+    tangent : ndarray, shape (M, 3)
+    right   : ndarray, shape (M, 3)
+    up      : ndarray, shape (M, 3)
+    """
+    points = np.asarray(points, dtype=float)
+    m = len(points)
+    best_d2 = np.full(m, np.inf)
+    best_x = np.zeros(m)
+    best_y = np.zeros(m)
+    best_s = np.zeros(m)
+    best_tangent = np.zeros((m, 3))
+    best_right = np.zeros((m, 3))
+    best_up = np.zeros((m, 3))
+
+    for i in range(len(path_3d_fiducial) - 1):
+        seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+        seg_len = np.linalg.norm(seg)
+        if seg_len == 0:
+            continue
+        seg_hat = seg / seg_len
+        if abs(seg_hat[1]) < 0.9:
+            world_up = np.array([0., 1., 0.])
+        else:
+            world_up = np.array([0., 0., 1.])
+        right = np.cross(seg_hat, world_up)
+        right /= np.linalg.norm(right)
+        up = np.cross(right, seg_hat)
+        up /= np.linalg.norm(up)
+
+        rel = points - path_3d_fiducial[i]
+        t = np.clip(rel @ seg_hat, 0, seg_len)
+        closest = path_3d_fiducial[i] + np.outer(t, seg_hat)
+        diff = points - closest
+        d2 = np.einsum('ij,ij->i', diff, diff)
+        upd = d2 < best_d2
+        best_d2[upd] = d2[upd]
+        best_x[upd] = diff[upd] @ right
+        best_y[upd] = diff[upd] @ up
+        best_s[upd] = cumulative_length[i] + t[upd]
+        best_tangent[upd] = seg_hat
+        best_right[upd] = right
+        best_up[upd] = up
+
+    theta = np.arctan2(best_y, best_x)
+    theta = np.where(theta < 0, theta + 2 * np.pi, theta)
+    return theta, best_s, best_tangent, best_right, best_up
+
+
+def local_transverse_xy(points):
+    """
+    Local cross-section coordinates (x_local, y_local) of each (M,3) point:
+    the offset from the nearest centreline point projected onto (right, up).
+    Same projection as classify_points, but returns the 2-D profile coords.
+    """
+    pts = np.asarray(points, dtype=float)
+    m = len(pts)
+    best_d2 = np.full(m, np.inf)
+    bx = np.zeros(m)
+    by = np.zeros(m)
+    for i in range(len(path_3d_fiducial) - 1):
+        seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+        seg_len = np.linalg.norm(seg)
+        if seg_len == 0:
+            continue
+        seg_hat = seg / seg_len
+        wu = np.array([0., 1., 0.]) if abs(seg_hat[1]) < 0.9 else np.array([0., 0., 1.])
+        right = np.cross(seg_hat, wu); right /= np.linalg.norm(right)
+        up = np.cross(right, seg_hat); up /= np.linalg.norm(up)
+        rel = pts - path_3d_fiducial[i]
+        t = np.clip(rel @ seg_hat, 0, seg_len)
+        diff = pts - (path_3d_fiducial[i] + np.outer(t, seg_hat))
+        d2 = np.einsum('ij,ij->i', diff, diff)
+        upd = d2 < best_d2
+        best_d2[upd] = d2[upd]
+        bx[upd] = diff[upd] @ right
+        by[upd] = diff[upd] @ up
+    return bx, by
+
+
+# Fast point-in-fiducial test: project to the nearest centreline and check the
+# local (x,y) against the 2-D fiducial profile polygon. ~180x faster than
+# trimesh mesh.contains (which ray-casts per point) and consistent with the
+# rest of the centreline-based geometry.
+from matplotlib.path import Path as _MplPath
+_fid_profile_2d = tunnel_profile_points(inset=DETECTOR_THICKNESS)
+_fid_path_2d = _MplPath(np.vstack([_fid_profile_2d, _fid_profile_2d[:1]]))
+
+
+def points_in_fiducial(points):
+    """Bool array: True where each (M,3) point lies inside the fiducial volume.
+    Projects to the nearest centreline segment, tests the local cross-section
+    against the inset profile, and rejects points past the end-caps (nearest
+    projection clamped at the first/last node). Fast, exact proxy for
+    mesh.contains away from machine-precision boundaries."""
+    pts = np.asarray(points, dtype=float)
+    m = len(pts)
+    best_d2 = np.full(m, np.inf)
+    bx = np.zeros(m)
+    by = np.zeros(m)
+    beyond = np.zeros(m, dtype=bool)
+    nseg = len(path_3d_fiducial) - 1
+    for i in range(nseg):
+        seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+        seg_len = np.linalg.norm(seg)
+        if seg_len == 0:
+            continue
+        seg_hat = seg / seg_len
+        wu = np.array([0., 1., 0.]) if abs(seg_hat[1]) < 0.9 else np.array([0., 0., 1.])
+        right = np.cross(seg_hat, wu); right /= np.linalg.norm(right)
+        up = np.cross(right, seg_hat); up /= np.linalg.norm(up)
+        rel = pts - path_3d_fiducial[i]
+        t_raw = rel @ seg_hat
+        t = np.clip(t_raw, 0, seg_len)
+        diff = pts - (path_3d_fiducial[i] + np.outer(t, seg_hat))
+        d2 = np.einsum('ij,ij->i', diff, diff)
+        upd = d2 < best_d2
+        best_d2[upd] = d2[upd]
+        bx[upd] = diff[upd] @ right
+        by[upd] = diff[upd] @ up
+        # past the end-caps: nearest projection clamped at the global ends
+        if i == 0:
+            beyond[upd] = t_raw[upd] < 0
+        elif i == nseg - 1:
+            beyond[upd] = t_raw[upd] > seg_len
+        else:
+            beyond[upd] = False
+    in_profile = _fid_path_2d.contains_points(np.column_stack([bx, by]))
+    return in_profile & ~beyond
 
 
 def points_on_tracker(points):

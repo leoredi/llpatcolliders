@@ -24,8 +24,10 @@ def show_or_close():
 from grendel_geometry import (
     SPEED_OF_LIGHT, DETECTOR_THICKNESS,
     calculate_decay_length, cache_geometry, mesh_fiducial,
-    points_on_tracker,
+    points_on_tracker, classify_points_with_basis,
+    path_3d_fiducial, tunnel_profile_points,
 )
+from reco_common import SIGMA_T_DEFAULT, CHI2_TIMING_MAX
 
 M_ELECTRON = 0.000511  # GeV/c²
 
@@ -58,8 +60,40 @@ SEP_OUT_MAX_PARALLEL = 0.30  # m — max sep_outer applied only when open_angle 
 COLLIN_MIN          = 0.030  # m (30 mm) — min collinearity for events above the gate
 SEP_OUT_COLLIN_GATE = 0.30   # m — collinearity cut applies only when sep_outer > this
 
-outString = "0p5GeV"
-sample_csv = "LLP0p5GeVSmall.csv"
+# L-scaled ("fractional") collinearity cut — the ACTIVE collinearity veto,
+# shared with the cosmic-decay background (cosmic_decay_check imports COLLIN_FRAC
+# from here). When sep_outer > SEP_OUT_GATE require collinearity > COLLIN_FRAC * L
+# (L = DETECTOR_THICKNESS). Loosened to 0.40L: at the 0.5 ns timing default the
+# cosmic decay-in-flight background is timing-handled, so the looser collinearity
+# recovers high-mass signal (40 GeV) the tighter 0.48L would cost. COLLIN_MIN /
+# SEP_OUT_COLLIN_GATE above are the older static version, kept for comparison.
+COLLIN_FRAC = 0.40
+
+# sep_outer gate for the collinearity veto: the cut fires when sep_outer >
+# SEP_OUT_GATE. Lowered below L (= DETECTOR_THICKNESS = 24 cm) to 16 cm so the
+# collinearity cut reaches the cosmic decay-in-flight "crack" (narrow events with
+# sep_out just under L), at a small cost to collimated low-mass signal. Shared
+# with the cosmic background (single source).
+SEP_OUT_GATE = 0.16   # m (16 cm)
+
+# Conditional tight pointing. For collimated decays (small sep_inner) the
+# bisector points back to the IP very well, so a tight pointing cut kills
+# background with little signal loss. For wider-sep_inner topologies the
+# pointing resolution degrades and we leave it open.
+POINT_TIGHT_SEP_IN  = 0.050  # rad (50 mrad) — max pointing when sep_in < gate
+SEP_IN_POINT_GATE   = 0.10   # m (10 cm) — pointing cut applies only when sep_in < this
+
+# Global pointing cut for the well-separated (sep_in >= 10 cm) topologies, on
+# top of the tight 50 mrad applied to close (sep_in < 10 cm) decays above. This
+# is the single-region selection: pointing < 50 mrad for close, < 800 mrad for
+# well separated. 800 mrad captures the high-mass signal tail (15/40 GeV pointing
+# reach ~660 mrad at 99%); the cosmic decay-in-flight background it admits is
+# handled by the timing chi2 cut (default 0.5 ns). Shared with the cosmic
+# background (single source).
+POINT_GLOBAL = 0.8   # rad (800 mrad)
+
+outString = "15GeVPostTimingUpdate"
+sample_csv = "LLPSmall.csv"
 
 # Tracking resolution
 HIT_RESOLUTION = 0.003  # m (3 mm per layer)
@@ -331,7 +365,8 @@ def _first_forward_hit(mesh, origins, dirs):
 
 def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
                        rng_seed=42, hit_resolution=HIT_RESOLUTION,
-                       n_layers=N_LAYERS):
+                       n_layers=N_LAYERS, use_3d_reco=True,
+                       sigma_t=SIGMA_T_DEFAULT):
     """
     Monte Carlo sample decay positions and rest-frame angles to build
     distributions of electron-pair separations, pointing angles, DCA, and
@@ -368,6 +403,7 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     all_p_soft, all_dca, all_vtx_in, all_open = [], [], [], []
     all_sep_out, all_dimp, all_collin = [], [], []
     all_event, all_pid, all_d, all_path, all_bg = [], [], [], [], []
+    all_fwd = []
     decay_list, dir1_list, dir2_list = [], [], []
 
     N = n_samples_per_particle
@@ -400,11 +436,31 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         # Softer electron momentum (truth, not affected by resolution)
         p_soft = gamma * mass / 2 * (1 - beta * cos_theta_star)
 
-        # Lab-frame angles from LLP direction (small-angle regime)
-        # e1 (harder): tanα₁ = sinθ* / γ(cosθ*+β)
-        # e2 (softer): tanα₂ = sinθ* / γ(β-cosθ*)  — opposite side of LLP axis
-        tan_a1 = sin_theta_star / (gamma * (cos_theta_star + beta))
-        tan_a2 = sin_theta_star / (gamma * (beta - cos_theta_star))
+        # Exact lab-frame momentum components (units of M/2; m_e -> 0):
+        #   pz1 = gamma (cos0* + beta)        [harder, always forward]
+        #   pz2 = gamma (beta - cos0*)        [softer; NEGATIVE if cos0* > beta]
+        #   pt  = sin0*                       [same for both]
+        # pz2 < 0 means the softer daughter goes BACKWARD in the lab and
+        # can never make hits in the forward two-layer tracker. These
+        # samples are real decays (their decay-probability weight is
+        # kept) but are flagged unreconstructable via `fwd`, mirroring
+        # the |cos0*| < beta cap in compute_c_upper for the analytic
+        # acceptance.
+        pz1 = gamma * (cos_theta_star + beta)
+        pz2 = gamma * (beta - cos_theta_star)
+        pt = sin_theta_star
+        fwd = pz2 > 0
+
+        # Lab-frame angles (small-angle regime), used only by the
+        # idealized local-frame fallback below. tan_a2 is clamped so a
+        # near-90-degree topology (cos0* -> beta) cannot overflow the
+        # batched SVD; the 3D ray-cast path uses the exact dir1/dir2
+        # built further down and is unaffected by the clamp.
+        tan_a1 = pt / pz1
+        with np.errstate(divide='ignore', invalid='ignore'):
+            tan_a2 = np.where(np.abs(pz2) > 1e-12, pt / pz2,
+                              np.sign(pz2 + 1e-300) * 1e12)
+        tan_a2 = np.clip(tan_a2, -1e9, 1e9)
 
         L = DETECTOR_THICKNESS
 
@@ -517,10 +573,13 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         y_hat = np.cross(z_hat, x_hat)
         u = np.cos(phi)[:, None] * x_hat + np.sin(phi)[:, None] * y_hat
 
-        inv1 = 1.0 / np.sqrt(1.0 + tan_a1**2)
-        inv2 = 1.0 / np.sqrt(1.0 + tan_a2**2)
-        dir1 = inv1[:, None] * z_hat + (tan_a1 * inv1)[:, None] * u
-        dir2 = inv2[:, None] * z_hat - (tan_a2 * inv2)[:, None] * u
+        # Exact unit vectors from the signed momentum components — keeps
+        # the correct (negative) z-component when the softer daughter is
+        # backward, and stays finite at cos0* = beta where tan_a2 blows up.
+        n1 = np.sqrt(pz1**2 + pt**2)
+        n2 = np.sqrt(pz2**2 + pt**2)
+        dir1 = (pz1 / n1)[:, None] * z_hat + (pt / n1)[:, None] * u
+        dir2 = (pz2 / n2)[:, None] * z_hat - (pt / n2)[:, None] * u
         decay_pos = d_samples[:, None] * z_hat  # IP at the origin
 
         decay_list.append(decay_pos)
@@ -543,13 +602,18 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         all_d.append(d_samples)
         all_path.append(np.full(N, path_length))
         all_bg.append(np.full(N, gamma * beta))
+        all_fwd.append(fwd)
 
     if not all_seps:
         empty = np.array([])
+        empty3 = np.empty((0, 3))
         return {k: empty for k in (
             'sep', 'sep_outer', 'momenta', 'pointing', 'p_soft', 'dca',
             'vtx_in', 'open_angle', 'd_implied', 'collin', 'on_tracker',
+            'xy_disp_1', 'xy_disp_2',
             'weights', 'event', 'pid', 'd', 'path_len', 'betagamma')} \
+            | {k: empty3 for k in ('decay_pos', 'dir1', 'dir2',
+                                   'exit_pt_1', 'exit_pt_2')} \
             | {'n_per': N}
 
     # ---- Batch ray-cast both daughters and classify landing surface ----
@@ -568,19 +632,134 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
     valid = ~np.isnan(exit_pts[:, 0])
     if valid.any():
         on_trk[valid] = points_on_tracker(exit_pts[valid])
-    on_tracker = on_trk[:n_tot] & on_trk[n_tot:]
+    # Backward softer daughters (cos0* > beta) cannot make the two
+    # forward-layer hits the reconstruction assumes: fold the forward
+    # requirement into on_tracker so every selection path (cutflow,
+    # selection_mask, MC exclusion) inherits the cap automatically.
+    fwd_all = np.concatenate(all_fwd)
+    on_tracker = on_trk[:n_tot] & on_trk[n_tot:] & fwd_all
+
+    # ---- Per-daughter on-surface displacement between tracker layers ----
+    # In the local cavern basis at the daughter's wall hit p1, the
+    # layer1->layer2 displacement decomposes into a radial component
+    # (= L, the layer spacing) and two tangential components: one along
+    # the centreline direction ("down the tunnel", Delta_s) and one
+    # around the cross-section profile ("along the arc", Delta_arc).
+    # The experimentally observed lateral separation between the two hits
+    # is sqrt(Delta_s^2 + Delta_arc^2). Daughters whose predicted layer-2
+    # hit lands off the tracker are marked NaN.
+    xy_disp = np.full(2 * n_tot, np.nan)
+    if valid.any():
+        theta_e, _, tangent_e, right_e, up_e = classify_points_with_basis(
+            exit_pts[valid])
+        cos_th = np.cos(theta_e)[:, None]
+        sin_th = np.sin(theta_e)[:, None]
+        n_hat = cos_th * right_e + sin_th * up_e
+        t_arc = -sin_th * right_e + cos_th * up_e
+        d_valid = dirs[valid]
+        d_dot_n   = np.einsum('ij,ij->i', d_valid, n_hat)
+        d_dot_tan = np.einsum('ij,ij->i', d_valid, tangent_e)
+        d_dot_arc = np.einsum('ij,ij->i', d_valid, t_arc)
+
+        safe_n = np.where(np.abs(d_dot_n) < 1e-6, np.nan, d_dot_n)
+        lateral = DETECTOR_THICKNESS \
+            * np.sqrt(d_dot_tan**2 + d_dot_arc**2) / np.abs(safe_n)
+
+        # Filter: predicted layer-2 hit must also land on the tracker
+        lam = DETECTOR_THICKNESS / safe_n
+        p2_pred = exit_pts[valid] + lam[:, None] * d_valid
+        finite_p2 = np.all(np.isfinite(p2_pred), axis=1)
+        p2_on_trk = np.zeros(len(p2_pred), dtype=bool)
+        if finite_p2.any():
+            p2_on_trk[finite_p2] = points_on_tracker(p2_pred[finite_p2])
+        lateral = np.where(p2_on_trk, lateral, np.nan)
+        xy_disp[valid] = lateral
+    xy_disp_1 = xy_disp[:n_tot]
+    xy_disp_2 = xy_disp[n_tot:]
+
+    # ---- Geometric observables ----
+    # By default (use_3d_reco) recompute sep/open/DCA/collin/pointing/vertex from
+    # the REAL 3D daughter hits via the shared reco_common routine — the same
+    # code the cosmic-decay background uses — so the two are guaranteed
+    # consistent. Set use_3d_reco=False to keep the old idealized local-frame
+    # values (the previous behaviour, retained for comparison).
+    sep_arr   = np.concatenate(all_seps)
+    sepo_arr  = np.concatenate(all_sep_out)
+    point_arr = np.concatenate(all_pointing)
+    dca_arr   = np.concatenate(all_dca)
+    vtx_arr   = np.concatenate(all_vtx_in)
+    open_arr  = np.concatenate(all_open)
+    collin_arr = np.concatenate(all_collin)
+
+    timing_arr = np.full(n_tot, np.inf)   # non-reconstructable -> fail timing
+    if use_3d_reco:
+        import reco_common as _rc
+        in1, out1 = _rc.wall_inner_outer(exit_pts[:n_tot], dir1_all,
+                                         DETECTOR_THICKNESS)
+        in2, out2 = _rc.wall_inner_outer(exit_pts[n_tot:], dir2_all,
+                                         DETECTOR_THICKNESS)
+        fin = (np.all(np.isfinite(in1), 1) & np.all(np.isfinite(out1), 1)
+               & np.all(np.isfinite(in2), 1) & np.all(np.isfinite(out2), 1))
+        if fin.any():
+            g = _rc.reconstruct_3d(out1[fin], in1[fin], in2[fin], out2[fin],
+                                   hit_resolution, rng)
+            sep_arr[fin]    = g['sep']
+            sepo_arr[fin]   = g['sep_outer']
+            open_arr[fin]   = g['open_angle']
+            dca_arr[fin]    = g['dca']
+            collin_arr[fin] = g['collin']
+            point_arr[fin]  = g['pointing']
+            vtx_arr[fin]    = g['vtx_in']
+            # Timing chi2, identical model to the cosmic background: both
+            # daughters are OUTGOING from the vertex (sign +1) at c (beta ~ 1
+            # for GeV electrons). True hits set the true times; the smeared
+            # hits + reco vertex set the predicted times.
+            # NOTE: this is a single frozen random draw per particle, reused for
+            # every lifetime point in the exclusion scan (sample_separations is
+            # called once and reweighted). Unbiased, but it adds correlated noise
+            # along the lifetime curve near the chi2 cut boundary -- only relevant
+            # if few-percent wiggles appear in the exclusion curve.
+            nf = int(fin.sum())
+            true_hits = np.stack([out1[fin], in1[fin], in2[fin], out2[fin]], 1)
+            smeared = np.stack([g['H_out1'], g['H_in1'],
+                                g['H_in2'], g['H_out2']], 1)
+            tchi2, _, _, _ = _rc.timing_chi2_4hit(
+                true_hits, decay_all[fin], np.ones((nf, 4)), np.ones((nf, 4)),
+                smeared, g['V_reco'], sigma_t, rng)
+            timing_arr[fin] = tchi2
+        vtx_arr[~fin] = False     # no well-defined 3D hits -> not reconstructable
+        # Fold the 4-hit reconstructability (both daughters give a valid bounded
+        # tracker pair) into on_tracker, so grazing / would-exit tracks die at the
+        # "both daughters on tracker" stage -- matching the cosmic cutflow, where
+        # ok_pair is folded into on_tracker. The net selection is unchanged; this
+        # only makes the stage-by-stage efficiencies directly comparable.
+        on_tracker = on_tracker & fin
+    else:
+        # Idealized local-frame fallback (kept only for compare_reco.py): it
+        # builds no 3D hits, so the timing chi2 cannot be simulated. Treat timing
+        # as a no-op (pass) rather than leaving timing_arr = +inf, which
+        # selection_mask (apply_timing=True by default) would otherwise turn into
+        # zero acceptance for the whole sample.
+        timing_arr[:] = 0.0
+
+    # Backward softer daughter: no valid forward vertex in either the
+    # 3D-reco or the idealized local-frame path.
+    vtx_arr[~fwd_all] = False
 
     return {
-        'sep': np.concatenate(all_seps),
-        'sep_outer': np.concatenate(all_sep_out),
+        'sep': sep_arr,
+        'sep_outer': sepo_arr,
         'momenta': np.concatenate(all_momenta),
-        'pointing': np.concatenate(all_pointing),
+        'pointing': point_arr,
         'p_soft': np.concatenate(all_p_soft),
-        'dca': np.concatenate(all_dca),
-        'vtx_in': np.concatenate(all_vtx_in),
-        'open_angle': np.concatenate(all_open),
+        'dca': dca_arr,
+        'vtx_in': vtx_arr,
+        'open_angle': open_arr,
         'd_implied': np.concatenate(all_dimp),
-        'collin': np.concatenate(all_collin),
+        'collin': collin_arr,
+        'timing_chi2': timing_arr,
+        'xy_disp_1': xy_disp_1,
+        'xy_disp_2': xy_disp_2,
         'on_tracker': on_tracker,
         'weights': np.concatenate(all_weights),
         'event': np.concatenate(all_event),
@@ -588,6 +767,11 @@ def sample_separations(geo_cache, lifetime_seconds, n_samples_per_particle=100,
         'd': np.concatenate(all_d),
         'path_len': np.concatenate(all_path),
         'betagamma': np.concatenate(all_bg),
+        'decay_pos': decay_all,
+        'dir1': dir1_all,
+        'dir2': dir2_all,
+        'exit_pt_1': exit_pts[:n_tot],
+        'exit_pt_2': exit_pts[n_tot:],
         'n_per': N,
     }
 
@@ -601,6 +785,12 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
                   sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
                   collin_min=COLLIN_MIN,
                   sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
+                  collin_frac=COLLIN_FRAC,
+                  sep_out_gate=SEP_OUT_GATE,
+                  point_tight_sep_in=POINT_TIGHT_SEP_IN,
+                  sep_in_point_gate=SEP_IN_POINT_GATE,
+                  point_global=POINT_GLOBAL,
+                  timing_chi2=None, chi2_timing_max=CHI2_TIMING_MAX,
                   pointing_cut=None):
     """
     Apply signal selection cuts sequentially and return a cutflow table.
@@ -619,11 +809,10 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
         require sep_outer < sep_out_max_parallel. For larger open_angle
         no upper bound on sep_outer is applied.
     collin_min, sep_out_collin_gate : float
-        IP-muon-transit veto. When sep_outer > sep_out_collin_gate, require
-        collinearity > collin_min (rejects events where all 4 hits sit on
-        a single straight line, i.e. an IP-shot muon traversing the tunnel).
-        The gate protects collimated signal (small sep_outer) from a cut
-        that cannot discriminate it from muons at this resolution.
+        Retired static IP-muon-transit veto. Accepted for signature
+        compatibility but NOT applied — the active veto is the L-scaled
+        version (collin_frac / sep_out_gate): when sep_outer >
+        sep_out_gate, require collinearity > collin_frac * L.
     pointing_cut : float or None
         Maximum pointing angle (rad). If None, no pointing cut is applied.
 
@@ -682,19 +871,42 @@ def build_cutflow(seps, pointing, weights, momenta, p_soft, dca, vtx_in,
     add_row(f'sep_out<{sep_out_max_parallel:.1f}m if θ<{theta_parallel*1000:.0f}mrad',
             mask)
 
-    # Conditional collinearity cut: kills IP-muon transits (4 hits on a
-    # single line). Applied only when sep_outer is above the gate so that
-    # collimated signal is unaffected.
+    # Conditional collinearity cut (L-scaled): when sep_outer > SEP_OUT_GATE
+    # require collinearity > COLLIN_FRAC * L. The gate stays closed for
+    # collimated signal (small sep_outer); shared with the cosmic-decay background.
     prev_mask = mask.copy()
-    gated = sep_outer > sep_out_collin_gate
-    collin_ok = (~gated) | (collinearity > collin_min)
+    _Lc = DETECTOR_THICKNESS
+    gated = sep_outer > sep_out_gate
+    collin_ok = (~gated) | (collinearity > collin_frac * _Lc)
     mask = mask & collin_ok
-    add_row(f'collin>{collin_min*1000:.0f}mm if sep_out>{sep_out_collin_gate*100:.0f}cm',
-            mask)
+    add_row(f'collin>{collin_frac:.2f}L if sep_out>{sep_out_gate*100:.0f}cm '
+            f'({collin_frac*_Lc*1000:.0f}mm)', mask)
 
     prev_mask = mask.copy()
     mask = mask & vtx_in
     add_row('Vertex in fiducial (PCA)', mask)
+
+    # Conditional tight pointing: kills off-IP background for collimated
+    # decays without touching wider-sep topologies whose pointing is noisy.
+    prev_mask = mask.copy()
+    gated_pt = seps < sep_in_point_gate
+    point_ok = (~gated_pt) | (pointing < point_tight_sep_in)
+    mask = mask & point_ok
+    add_row(f'pointing<{point_tight_sep_in*1000:.0f}mrad if sep_in<{sep_in_point_gate*100:.0f}cm',
+            mask)
+
+    # Global pointing cut (all sep_in): clips the >1 rad tail.
+    prev_mask = mask.copy()
+    mask = mask & (pointing < point_global)
+    add_row(f'global pointing < {point_global*1000:.0f} mrad', mask)
+
+    # Timing chi2 (same model as the cosmic background): signal daughters are
+    # outgoing from the vertex at c, so this is smearing-limited (= chi2(3) CDF,
+    # ~0.89 at chi2<6, ~0.97 at chi2<9) and sigma_t-independent, flat in mass.
+    if timing_chi2 is not None:
+        prev_mask = mask.copy()
+        mask = mask & (timing_chi2 < chi2_timing_max)
+        add_row(f'timing chi2 < {chi2_timing_max:.0f}', mask)
 
     if pointing_cut is not None:
         prev_mask = mask.copy()
@@ -708,7 +920,13 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
                    dca_cut=DCA_CUT, theta_parallel=THETA_PARALLEL,
                    sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
                    collin_min=COLLIN_MIN,
-                   sep_out_collin_gate=SEP_OUT_COLLIN_GATE):
+                   sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
+                   collin_frac=COLLIN_FRAC,
+                   sep_out_gate=SEP_OUT_GATE,
+                   point_tight_sep_in=POINT_TIGHT_SEP_IN,
+                   sep_in_point_gate=SEP_IN_POINT_GATE,
+                   point_global=POINT_GLOBAL,
+                   apply_timing=True, chi2_timing_max=CHI2_TIMING_MAX):
     """
     Boolean per-sample mask for the full signal selection (everything except
     the implicit 'decay in fiducial', which holds for all samples by
@@ -722,6 +940,7 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
     collin     = mc['collin']
     vtx_in     = mc['vtx_in']
     on_tracker = mc['on_tracker']
+    pointing   = mc['pointing']
 
     m = (p_soft >= p_cut)
     m &= (sep >= sep_min) & (sep_outer >= sep_min)
@@ -729,8 +948,13 @@ def selection_mask(mc, p_cut=P_CUT, sep_min=SEP_MIN, sep_max=SEP_MAX,
     m &= (dca <= dca_cut)
     is_parallel = open_angle < theta_parallel
     m &= (~is_parallel) | (sep_outer < sep_out_max_parallel)
-    gated = sep_outer > sep_out_collin_gate
-    m &= (~gated) | (collin > collin_min)
+    gated = sep_outer > sep_out_gate
+    m &= (~gated) | (collin > collin_frac * DETECTOR_THICKNESS)
+    gated_pt = sep < sep_in_point_gate
+    m &= (~gated_pt) | (pointing < point_tight_sep_in)
+    m &= pointing < point_global
+    if apply_timing and 'timing_chi2' in mc:
+        m &= mc['timing_chi2'] < chi2_timing_max
     m &= vtx_in
     m &= on_tracker
     return m
@@ -801,8 +1025,19 @@ def mc_exclusion_vs_lifetime(mc, lifetimes, total_events, **cut_kwargs):
 # Main
 # ============================================================
 if __name__ == "__main__":
+    import sys
+    # Optional per-mass override:  python decayProbPerEvent_2body.py <csv> <outString>
+    if len(sys.argv) >= 3:
+        sample_csv, outString = sys.argv[1], sys.argv[2]
     origin = [0, 0, 0]
-    
+
+    # All outputs go under <outString>/, event displays in
+    # <outString>/event_displays/.
+    OUT_DIR = outString
+    EV_DIR = os.path.join(OUT_DIR, 'event_displays')
+    os.makedirs(EV_DIR, exist_ok=True)
+
+    print(f"  Output directory: {OUT_DIR}/")
     print(f"  Detector thickness: {DETECTOR_THICKNESS*100:.0f} cm")
     print(f"  Cuts: p_e > {P_CUT*1000:.0f} MeV/c, "
           f"{SEP_MIN*1000:.0f} mm < separation < {SEP_MAX*100:.0f} cm")
@@ -873,14 +1108,19 @@ if __name__ == "__main__":
     sep_outer    = mc['sep_outer']
     d_implied    = mc['d_implied']
     collinearity = mc['collin']
+    timing_chi2  = mc['timing_chi2']
+    xy_disp_1    = mc['xy_disp_1']
+    xy_disp_2    = mc['xy_disp_2']
     on_tracker   = mc['on_tracker']
 
     print(f"  Hit resolution: {HIT_RESOLUTION*1000:.1f} mm, "
           f"N layers: {N_LAYERS}, DCA cut: {DCA_CUT*100:.1f} cm")
     print(f"  Conditional max sep_outer: < {SEP_OUT_MAX_PARALLEL:.1f} m "
           f"when open_angle < {THETA_PARALLEL*1000:.0f} mrad")
-    print(f"  IP-muon-transit veto: collinearity > {COLLIN_MIN*1000:.0f} mm "
-          f"when sep_outer > {SEP_OUT_COLLIN_GATE*100:.0f} cm")
+    print(f"  Collinearity veto: collinearity > {COLLIN_FRAC*DETECTOR_THICKNESS*1000:.0f} mm "
+          f"({COLLIN_FRAC:.2f}L) when sep_outer > {SEP_OUT_GATE*100:.0f} cm")
+    print(f"  Global pointing cut: < {POINT_GLOBAL*1000:.0f} mrad "
+          f"(tight {POINT_TIGHT_SEP_IN*1000:.0f} mrad when sep_in < {SEP_IN_POINT_GATE*100:.0f} cm)")
     if len(seps) > 0:
         w_on = weights[on_tracker].sum() / weights.sum() if weights.sum() else 0
         print(f"  Scintillator veto: both daughters on a tracker surface "
@@ -937,7 +1177,7 @@ if __name__ == "__main__":
         plt.colorbar(h[3], ax=ax3, label='Weighted counts')
         
         plt.tight_layout()
-        plt.savefig('separation_histogram'+outString+'.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'separation_histogram'+outString+'.png'), dpi=150)
         show_or_close()
         
         in_window = (seps >= SEP_MIN) & (seps <= SEP_MAX)
@@ -975,17 +1215,26 @@ if __name__ == "__main__":
         median_pt = np.median(pointing_mrad)
         ax.axvline(median_pt, color='red', linestyle='--', linewidth=2,
                    label=f'Median = {median_pt:.2f} mrad')
-        ax.legend(fontsize=9)
+        ax.axvline(POINT_GLOBAL*1000, color='purple', linestyle='-', linewidth=2,
+                   label=f'global cut = {POINT_GLOBAL*1000:.0f} mrad')
+        ax.axvline(POINT_TIGHT_SEP_IN*1000, color='blue', linestyle=':', linewidth=2,
+                   label=f'tight cut (sep_in<{SEP_IN_POINT_GATE*100:.0f}cm) = {POINT_TIGHT_SEP_IN*1000:.0f} mrad')
+        ax.legend(fontsize=8)
 
         ax2 = axes_pt[1]
         bins_log_pt = np.logspace(np.log10(max(pointing_mrad.min(), 1e-3)),
                                   np.log10(pointing_mrad.max()), 80)
         ax2.hist(pointing_mrad, bins=bins_log_pt, weights=weights_acc,
                  color='darkorange', edgecolor='black', linewidth=0.3, alpha=0.8)
+        ax2.axvline(POINT_GLOBAL*1000, color='purple', linestyle='-', linewidth=2,
+                    label=f'global cut = {POINT_GLOBAL*1000:.0f} mrad')
+        ax2.axvline(POINT_TIGHT_SEP_IN*1000, color='blue', linestyle=':', linewidth=2,
+                    label=f'tight cut = {POINT_TIGHT_SEP_IN*1000:.0f} mrad')
         ax2.set_xscale('log')
         ax2.set_xlabel('Pointing angle (mrad)')
         ax2.set_ylabel('Weighted counts (decay prob.)')
         ax2.set_title('Log-scale pointing angle')
+        ax2.legend(fontsize=8)
 
         ax3 = axes_pt[2]
         mask_fin = np.isfinite(pointing_mrad) & (pointing_mrad > 0)
@@ -1000,7 +1249,7 @@ if __name__ == "__main__":
         plt.colorbar(h[3], ax=ax3, label='Weighted counts')
 
         plt.tight_layout()
-        plt.savefig('pointing_angle'+outString+'.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'pointing_angle'+outString+'.png'), dpi=150)
         show_or_close()
 
         print(f"  Median pointing angle (accepted): {median_pt:.3f} mrad")
@@ -1074,7 +1323,7 @@ if __name__ == "__main__":
             plt.colorbar(h[3], ax=ax3, label='Weighted counts')
 
         plt.tight_layout()
-        plt.savefig('dca_' + outString + '.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'dca_' + outString + '.png'), dpi=150)
         show_or_close()
 
         median_dca = np.median(dca_cm)
@@ -1088,6 +1337,163 @@ if __name__ == "__main__":
         print(f"  Fraction passing DCA < {DCA_CUT*100:.1f} cm: {frac_dca:.4f}")
         print(f"  Fraction with vertex in fiducial: {frac_vtx:.4f}")
         print(f"  (fractions above computed after separation cuts)")
+
+    # --- Per-track on-surface displacement between tracker layer 1 and 2 ---
+    # sqrt(Delta_s^2 + Delta_arc^2): the experimentally observed lateral
+    # separation between layer-1 and layer-2 hits on the tracker surface
+    # (down-tunnel + around-the-arc components). Radial L is excluded.
+    # Daughters whose predicted layer-2 hit falls off the tracker are
+    # dropped (NaN).
+    if len(xy_disp_1) > 0:
+        print("\n" + "="*50)
+        print("PER-TRACK LAYER-TO-LAYER XY DISPLACEMENT (on tracker surface)")
+        print("="*50)
+
+        sel_mask    = selection_mask(mc)
+        xy_pool     = np.concatenate([xy_disp_1[sel_mask],
+                                      xy_disp_2[sel_mask]]) * 100   # cm
+        weight_pool = np.concatenate([weights[sel_mask],
+                                      weights[sel_mask]])
+
+        finite = np.isfinite(xy_pool)
+        xy_pool, weight_pool = xy_pool[finite], weight_pool[finite]
+
+        if len(xy_pool) > 0 and weight_pool.sum() > 0:
+            fig_tg, axes_tg = plt.subplots(1, 2, figsize=(12, 5))
+
+            pct99 = np.percentile(xy_pool, 99.5)
+            pct_axis = np.percentile(xy_pool, 90.0)
+            bins_lin = np.linspace(0, max(pct_axis, 1.0), 80)
+            ax = axes_tg[0]
+            ax.hist(xy_pool, bins=bins_lin, weights=weight_pool,
+                    color='darkorange', edgecolor='black', linewidth=0.3,
+                    alpha=0.85)
+            ax.set_xlabel('xy displacement (cm)  [√(Δs² + Δarc²)]')
+            ax.set_ylabel('Weighted counts (decay prob.)')
+            ax.set_title(f'Per-track layer1→layer2 on-surface displacement '
+                         f'(after full selection, linear axis to 90%)\n'
+                         f'(L = {DETECTOR_THICKNESS*100:.0f} cm radial, '
+                         f'τ = {lifetime*1e9:.0f} ns)')
+
+            ax2 = axes_tg[1]
+            t_pos = xy_pool[xy_pool > 0]
+            if len(t_pos) > 0:
+                bins_log = np.logspace(np.log10(max(t_pos.min(), 1e-4)),
+                                       np.log10(max(t_pos.max(), 1.0)), 80)
+                ax2.hist(xy_pool, bins=bins_log, weights=weight_pool,
+                         color='darkorange', edgecolor='black', linewidth=0.3,
+                         alpha=0.85)
+                ax2.set_xscale('log')
+            ax2.set_xlabel('xy displacement (cm)')
+            ax2.set_ylabel('Weighted counts (decay prob.)')
+            ax2.set_title('Same, log scale')
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(OUT_DIR, 'xy_disp_' + outString + '.png'), dpi=150)
+            show_or_close()
+
+            w_tot = weight_pool.sum()
+            mean_xy = np.average(xy_pool, weights=weight_pool)
+            sort_idx = np.argsort(xy_pool)
+            cw = np.cumsum(weight_pool[sort_idx]) / w_tot
+            median_xy = xy_pool[sort_idx][np.searchsorted(cw, 0.5)]
+            print(f"  Pool size: {len(xy_pool)} tracks "
+                  f"(both daughters of pairs passing full selection)")
+            print(f"  Weighted mean:    {mean_xy:.3f} cm")
+            print(f"  Weighted median:  {median_xy:.3f} cm")
+            print(f"  99.5th percentile: {pct99:.3f} cm")
+            for thr in (5, 10, 20, 50):
+                frac = weight_pool[xy_pool < thr].sum() / w_tot
+                print(f"  Fraction with xy disp. < {thr} cm: {frac:.4f}")
+
+    # --- Pointing angle split by inner separation (low vs high sep_inner) ---
+    # Compare pointing for tight (sep_inner < SPLIT) and wide (sep_inner >=
+    # SPLIT) decay topologies, with a common kinematic baseline (on_tracker
+    # + momentum + outer-sep window). Surfaces whether pointing discriminates
+    # the two topologies independently of the inner-separation cut.
+    SEP_INNER_SPLIT = 0.10  # m  — split point for the comparison
+    if len(pointing) > 0:
+        print("\n" + "="*50)
+        print(f"POINTING ANGLE: sep_inner < {SEP_INNER_SPLIT*100:.0f} cm "
+              f"vs ≥ {SEP_INNER_SPLIT*100:.0f} cm")
+        print("="*50)
+
+        m_base = on_tracker & (p_soft >= P_CUT) \
+            & (sep_outer >= SEP_MIN) & (seps <= SEP_MAX)
+        m_low  = m_base & (seps <  SEP_INNER_SPLIT)
+        m_high = m_base & (seps >= SEP_INNER_SPLIT)
+
+        pt_low_mrad  = pointing[m_low]  * 1000
+        w_low        = weights[m_low]
+        pt_high_mrad = pointing[m_high] * 1000
+        w_high       = weights[m_high]
+
+        if (len(pt_low_mrad) > 0 and w_low.sum() > 0
+                and len(pt_high_mrad) > 0 and w_high.sum() > 0):
+            fig_pf, axes_pf = plt.subplots(1, 2, figsize=(12, 5))
+
+            all_pt = np.concatenate([pt_low_mrad, pt_high_mrad])
+            all_w  = np.concatenate([w_low, w_high])
+            pct99  = np.percentile(all_pt, 99.5)
+            bins_lin = np.linspace(0, max(pct99, 50.0), 80)
+
+            label_low  = (f'sep_in < {SEP_INNER_SPLIT*100:.0f} cm  '
+                          f'(yield {w_low.sum():.2e})')
+            label_high = (f'sep_in ≥ {SEP_INNER_SPLIT*100:.0f} cm  '
+                          f'(yield {w_high.sum():.2e})')
+
+            ax = axes_pf[0]
+            ax.hist(pt_low_mrad, bins=bins_lin, weights=w_low,
+                    color='crimson', edgecolor='black', linewidth=0.3,
+                    alpha=0.75, density=True, label=label_low)
+            ax.hist(pt_high_mrad, bins=bins_lin, weights=w_high,
+                    color='steelblue', edgecolor='black', linewidth=0.3,
+                    alpha=0.5, density=True, label=label_high)
+            ax.set_xlabel('Pointing angle (mrad)')
+            ax.set_ylabel('Density')
+            ax.set_title(f'Pointing angle by inner separation '
+                         f'(τ = {lifetime*1e9:.0f} ns)\n'
+                         f'(on_trk + p_soft + sep_out baseline)')
+            ax.legend(fontsize=9)
+
+            ax2 = axes_pf[1]
+            all_pos = all_pt[all_pt > 0]
+            if len(all_pos) > 0:
+                lo = max(all_pos.min(), 1e-3)
+                hi = max(all_pos.max(), 1.0)
+                bins_log = np.logspace(np.log10(lo), np.log10(hi), 80)
+                ax2.hist(pt_low_mrad, bins=bins_log, weights=w_low,
+                         color='crimson', edgecolor='black', linewidth=0.3,
+                         alpha=0.75, density=True,
+                         label=f'sep_in < {SEP_INNER_SPLIT*100:.0f} cm')
+                ax2.hist(pt_high_mrad, bins=bins_log, weights=w_high,
+                         color='steelblue', edgecolor='black',
+                         linewidth=0.3, alpha=0.5, density=True,
+                         label=f'sep_in ≥ {SEP_INNER_SPLIT*100:.0f} cm')
+                ax2.set_xscale('log')
+            ax2.set_xlabel('Pointing angle (mrad)')
+            ax2.set_ylabel('Density')
+            ax2.set_title('Same, log scale')
+            ax2.legend(fontsize=9)
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(OUT_DIR, 'pointing_by_inner_sep_' + outString + '.png'),
+                        dpi=150)
+            show_or_close()
+
+            def _wmed(x, w):
+                wt = w.sum()
+                if wt <= 0:
+                    return float('nan')
+                idx = np.argsort(x)
+                return x[idx][np.searchsorted(np.cumsum(w[idx]) / wt, 0.5)]
+
+            for label, pt, w in (("sep_in < split", pt_low_mrad, w_low),
+                                  ("sep_in ≥ split", pt_high_mrad, w_high)):
+                print(f"  {label}: samples={len(pt)}, "
+                      f"yield={w.sum():.4e}, "
+                      f"median={_wmed(pt, w):.3f} mrad, "
+                      f"mean={np.average(pt, weights=w):.3f} mrad")
 
     # --- sep_outer distribution, split by open-angle band ---
     # Motivates the conditional sep_outer<X-when-parallel cut:
@@ -1146,7 +1552,7 @@ if __name__ == "__main__":
         axes_so[0].set_title(f'sep_outer by open-angle band  (τ = {lifetime*1e9:.0f} ns)')
         axes_so[1].set_title('Log-log view')
         plt.tight_layout()
-        plt.savefig('sep_outer_bands_' + outString + '.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'sep_outer_bands_' + outString + '.png'), dpi=150)
         show_or_close()
 
         # Numerical summary
@@ -1178,18 +1584,21 @@ if __name__ == "__main__":
         so = sep_outer[in_window]
         ww = weights[in_window]
 
-        below = so <= SEP_OUT_COLLIN_GATE
-        above = so >  SEP_OUT_COLLIN_GATE
+        # Active collinearity veto thresholds (single-sourced):
+        gate_cm = SEP_OUT_GATE * 100
+        collin_cut_mm = COLLIN_FRAC * DETECTOR_THICKNESS * 1000
+        below = so <= SEP_OUT_GATE
+        above = so >  SEP_OUT_GATE
 
         fig_co, axes_co = plt.subplots(1, 3, figsize=(18, 5))
 
         co_mm = co * 1000
         ax = axes_co[0]
-        bins = np.linspace(0, max(np.percentile(co_mm, 99.5), COLLIN_MIN*1000*3), 80)
+        bins = np.linspace(0, max(np.percentile(co_mm, 99.5), collin_cut_mm*1.3), 80)
         for lbl, m, color in [
-            (f'sep_out ≤ {SEP_OUT_COLLIN_GATE*100:.0f} cm (gate closed)',
+            (f'sep_out ≤ {gate_cm:.0f} cm (gate closed)',
                  below, 'steelblue'),
-            (f'sep_out > {SEP_OUT_COLLIN_GATE*100:.0f} cm (gate open)',
+            (f'sep_out > {gate_cm:.0f} cm (gate open)',
                  above, 'crimson'),
         ]:
             if m.sum() == 0:
@@ -1197,11 +1606,10 @@ if __name__ == "__main__":
             ax.hist(co_mm[m], bins=bins, weights=ww[m],
                     histtype='step', linewidth=2, color=color,
                     label=f'{lbl}  (w={ww[m].sum():.2e})')
-        ax.axvline(COLLIN_MIN*1000, color='gray', linestyle='--', linewidth=1.5,
-                   label=f'cut = {COLLIN_MIN*1000:.0f} mm')
-        # IP-muon reference (from realistic ray-cast MC, σ_hit=3mm, L=24cm)
-        ax.axvspan(0, 8.2, color='gray', alpha=0.15,
-                   label='IP-muon transit range (≤ 8 mm)')
+        ax.axvline(collin_cut_mm, color='gray', linestyle='--', linewidth=1.5,
+                   label=f'cut = {COLLIN_FRAC:.2f}L = {collin_cut_mm:.0f} mm')
+        ax.axvline(DETECTOR_THICKNESS/2*1000, color='green', linestyle=':',
+                   linewidth=1.5, label=f'signal ceiling L/2 = {DETECTOR_THICKNESS/2*1000:.0f} mm')
         ax.set_xlabel('collinearity (mm)')
         ax.set_ylabel('Weighted counts (decay prob.)')
         ax.set_title(f'Collinearity by sep_outer gate (τ = {lifetime*1e9:.0f} ns)')
@@ -1221,9 +1629,10 @@ if __name__ == "__main__":
                 continue
             ax2.hist(co_mm[m], bins=bins_log, weights=ww[m],
                      histtype='step', linewidth=2, color=color, label=lbl)
-        ax2.axvline(COLLIN_MIN*1000, color='gray', linestyle='--', linewidth=1.5)
-        ax2.axvspan(0.1, 8.2, color='gray', alpha=0.15,
-                    label='IP-muon range')
+        ax2.axvline(collin_cut_mm, color='gray', linestyle='--', linewidth=1.5,
+                    label=f'cut = {collin_cut_mm:.0f} mm')
+        ax2.axvline(DETECTOR_THICKNESS/2*1000, color='green', linestyle=':',
+                    linewidth=1.5, label=f'L/2 = {DETECTOR_THICKNESS/2*1000:.0f} mm')
         ax2.set_xscale('log'); ax2.set_yscale('log')
         ax2.set_xlabel('collinearity (mm)')
         ax2.set_ylabel('Weighted counts')
@@ -1237,13 +1646,12 @@ if __name__ == "__main__":
         h = ax3.hist2d(so[mask_fin]*100, co_mm[mask_fin],
                        bins=[np.logspace(0, 3, 50), np.logspace(-1, 3, 50)],
                        weights=ww[mask_fin], cmap='viridis', cmin=1e-30)
-        ax3.axvline(SEP_OUT_COLLIN_GATE*100, color='red', linestyle='--',
-                    linewidth=1.5,
-                    label=f'gate = {SEP_OUT_COLLIN_GATE*100:.0f} cm')
-        ax3.axhline(COLLIN_MIN*1000, color='red', linestyle='--', linewidth=1.5,
-                    label=f'cut = {COLLIN_MIN*1000:.0f} mm')
+        ax3.axvline(gate_cm, color='red', linestyle='--',
+                    linewidth=1.5, label=f'gate = {gate_cm:.0f} cm')
+        ax3.axhline(collin_cut_mm, color='red', linestyle='--', linewidth=1.5,
+                    label=f'cut = {collin_cut_mm:.0f} mm')
         # Shade rejection region (sep_out > gate AND collin < cut)
-        ax3.fill_between([SEP_OUT_COLLIN_GATE*100, 1e3], 1e-1, COLLIN_MIN*1000,
+        ax3.fill_between([gate_cm, 1e3], 1e-1, collin_cut_mm,
                          color='red', alpha=0.15, label='reject (muon-like)')
         ax3.set_xscale('log'); ax3.set_yscale('log')
         ax3.set_xlabel('sep_outer (cm)')
@@ -1253,7 +1661,7 @@ if __name__ == "__main__":
         plt.colorbar(h[3], ax=ax3, label='Weighted counts')
 
         plt.tight_layout()
-        plt.savefig('collinearity_' + outString + '.png', dpi=150)
+        plt.savefig(os.path.join(OUT_DIR, 'collinearity_' + outString + '.png'), dpi=150)
         show_or_close()
 
         # Numerical summary
@@ -1264,14 +1672,15 @@ if __name__ == "__main__":
                 idx = np.argsort(x); xs, ws = x[idx], w[idx]
                 c = np.cumsum(ws); return xs[np.searchsorted(c, q*c[-1])]
             med = wpct(x_, w_, 0.50); p1 = wpct(x_, w_, 0.01)
-            frac_fail = w_[x_ < COLLIN_MIN].sum() / w_.sum()
-            print(f"  Above gate (sep_out > {SEP_OUT_COLLIN_GATE*100:.0f} cm): "
+            _ccut = COLLIN_FRAC * DETECTOR_THICKNESS
+            frac_fail = w_[x_ < _ccut].sum() / w_.sum()
+            print(f"  Above gate (sep_out > {SEP_OUT_GATE*100:.0f} cm): "
                   f"median = {med*1000:.1f} mm, 1% = {p1*1000:.1f} mm")
-            print(f"  Signal failing collinearity > {COLLIN_MIN*1000:.0f} mm "
+            print(f"  Signal failing collinearity > {_ccut*1000:.0f} mm "
                   f"in this band: {frac_fail*100:.3f}%")
         else:
             print(f"  No events above the gate (sep_out > "
-                  f"{SEP_OUT_COLLIN_GATE*100:.0f} cm) for this sample.")
+                  f"{SEP_OUT_GATE*100:.0f} cm) for this sample.")
 
     # --- Cutflow table ---
     if len(seps) > 0:
@@ -1281,7 +1690,8 @@ if __name__ == "__main__":
 
         cutflow = build_cutflow(seps, pointing, weights, momenta, p_soft,
                                 dca, vtx_in, open_angle, sep_outer,
-                                collinearity, on_tracker=on_tracker)
+                                collinearity, on_tracker=on_tracker,
+                                timing_chi2=timing_chi2)
         cutflow_df = pd.DataFrame(cutflow)
         print(f"\n{'Cut':<25} {'Eff (cumul.)':<15} {'Eff (margin.)':<15}")
         print("-" * 55)
@@ -1289,12 +1699,94 @@ if __name__ == "__main__":
             print(f"{row['cut']:<25} {row['efficiency']:<15.4f} "
                   f"{row['marginal_efficiency']:<15.4f}")
 
-        cutflow_df.to_csv('cutflow_' + outString + '.csv', index=False)
-        print(f"\nCutflow saved to cutflow_{outString}.csv")
+        cutflow_df.to_csv(os.path.join(OUT_DIR, 'cutflow_' + outString + '.csv'), index=False)
+        print(f"\nCutflow saved to {OUT_DIR}/cutflow_{outString}.csv")
+
+    # --- Decay position heatmap in tunnel cross-section ---
+    # For events passing the full signal selection, project each decay
+    # position onto the nearest tunnel-centreline segment and bin the
+    # resulting (x_local, y_local) cross-section coordinates weighted by
+    # the decay-probability weight. Shows where in the horseshoe the
+    # accepted decays sit relative to the tunnel walls and fiducial inset.
+    if len(mc.get('decay_pos', [])) > 0:
+        print("\n" + "="*50)
+        print("DECAY POSITION HEATMAP (TUNNEL CROSS-SECTION)")
+        print("="*50)
+
+        sel_mask = selection_mask(mc)
+        if sel_mask.sum() > 0 and weights[sel_mask].sum() > 0:
+            decay_sel = mc['decay_pos'][sel_mask]
+            w_sel = weights[sel_mask]
+
+            # Project each decay position onto the nearest centreline
+            # segment to get the local cross-section (x, y) coordinates.
+            m = len(decay_sel)
+            best_d2 = np.full(m, np.inf)
+            x_local = np.zeros(m)
+            y_local = np.zeros(m)
+            for i in range(len(path_3d_fiducial) - 1):
+                seg = path_3d_fiducial[i + 1] - path_3d_fiducial[i]
+                seg_len = np.linalg.norm(seg)
+                if seg_len == 0:
+                    continue
+                seg_hat = seg / seg_len
+                world_up = np.array([0., 1., 0.]) if abs(seg_hat[1]) < 0.9 \
+                    else np.array([0., 0., 1.])
+                right = np.cross(seg_hat, world_up)
+                right /= np.linalg.norm(right)
+                up = np.cross(right, seg_hat)
+                up /= np.linalg.norm(up)
+                rel = decay_sel - path_3d_fiducial[i]
+                t = np.clip(rel @ seg_hat, 0, seg_len)
+                closest = path_3d_fiducial[i] + np.outer(t, seg_hat)
+                diff = decay_sel - closest
+                d2 = np.einsum('ij,ij->i', diff, diff)
+                upd = d2 < best_d2
+                best_d2[upd] = d2[upd]
+                x_local[upd] = diff[upd] @ right
+                y_local[upd] = diff[upd] @ up
+
+            outer = tunnel_profile_points(inset=0.0)
+            inner = tunnel_profile_points(inset=DETECTOR_THICKNESS)
+            outer_loop = np.vstack([outer, outer[:1]])
+            inner_loop = np.vstack([inner, inner[:1]])
+
+            x_lim = max(np.abs(outer[:, 0]).max(),
+                        np.abs(x_local).max() if len(x_local) else 0) + 0.2
+            y_lo = min(outer[:, 1].min(), y_local.min() if len(y_local) else 0) - 0.1
+            y_hi = max(outer[:, 1].max(), y_local.max() if len(y_local) else 0) + 0.1
+
+            fig_xs, ax_xs = plt.subplots(figsize=(8, 8))
+            h = ax_xs.hist2d(
+                x_local, y_local, bins=60,
+                range=[[-x_lim, x_lim], [y_lo, y_hi]],
+                weights=w_sel, cmap='magma', cmin=1e-30)
+            ax_xs.plot(outer_loop[:, 0], outer_loop[:, 1],
+                       color='white', linewidth=2, label='Tunnel wall')
+            ax_xs.plot(inner_loop[:, 0], inner_loop[:, 1],
+                       color='white', linewidth=1.2, linestyle='--',
+                       label=f'Fiducial (inset {DETECTOR_THICKNESS*100:.0f} cm)')
+            ax_xs.set_aspect('equal')
+            ax_xs.set_xlabel('x_local (m)  [horizontal across profile]')
+            ax_xs.set_ylabel('y_local (m)  [up]')
+            ax_xs.set_title(
+                f'Decay position in tunnel cross-section\n'
+                f'(events passing full selection, τ = {lifetime*1e9:.0f} ns)')
+            ax_xs.legend(loc='upper right', fontsize=9, framealpha=0.7)
+            plt.colorbar(h[3], ax=ax_xs, label='Weighted yield (decay prob.)')
+            plt.tight_layout()
+            plt.savefig(os.path.join(OUT_DIR, 'decay_xsec_heatmap_' + outString + '.png'), dpi=150)
+            show_or_close()
+
+            print(f"  Selected samples: {int(sel_mask.sum())}, "
+                  f"weighted yield: {w_sel.sum():.4e}")
+            print(f"  Saved: {OUT_DIR}/decay_xsec_heatmap_{outString}.png")
+        else:
+            print("  No samples pass the full selection — skipping plot.")
 
     # --- Save MC distributions for overlay plotting ---
     if len(seps) > 0:
-        np.savez('mc_distributions_' + outString + '.npz',
+        np.savez(os.path.join(OUT_DIR, 'mc_distributions_' + outString + '.npz'),
                  seps=seps, pointing=pointing, weights=weights,
                  momenta=momenta, p_soft=p_soft,
                  dca=dca, vtx_in=vtx_in, open_angle=open_angle,
@@ -1307,8 +1799,36 @@ if __name__ == "__main__":
                  sep_out_max_parallel=SEP_OUT_MAX_PARALLEL,
                  collin_min=COLLIN_MIN,
                  sep_out_collin_gate=SEP_OUT_COLLIN_GATE,
+                 collin_frac=COLLIN_FRAC, sep_out_gate=SEP_OUT_GATE,
+                 point_tight_sep_in=POINT_TIGHT_SEP_IN,
+                 sep_in_point_gate=SEP_IN_POINT_GATE,
+                 point_global=POINT_GLOBAL,
                  hit_resolution=HIT_RESOLUTION, n_layers=N_LAYERS)
-        print(f"MC distributions saved to mc_distributions_{outString}.npz")
+        print(f"MC distributions saved to {OUT_DIR}/mc_distributions_{outString}.npz")
+
+    # --- Event displays (3D + top-down + side, per-selection) ---
+    # Edit ``display_selections`` to control which event populations get
+    # rendered. Each entry is a per-sample boolean mask; the first
+    # ``n_per`` events with at least one passing sample are drawn.
+    if len(mc.get('decay_pos', [])) > 0:
+        import event_display
+        sel_full = selection_mask(mc)
+        base_kin = (mc['p_soft'] >= P_CUT) \
+            & (mc['sep_outer'] >= SEP_MIN) & (mc['sep'] <= SEP_MAX)
+        display_selections = {
+            'accepted':      sel_full,
+            'off_tracker':   (~mc['on_tracker']) & base_kin,
+            'fail_sep_in':   mc['on_tracker'] & base_kin & (mc['sep'] < SEP_MIN),
+            'fail_dca':      mc['on_tracker'] & base_kin
+                & (mc['sep'] >= SEP_MIN) & (mc['dca'] > DCA_CUT),
+            'fail_vtx':      mc['on_tracker'] & base_kin
+                & (mc['sep'] >= SEP_MIN) & ~mc['vtx_in'],
+        }
+        event_display.make_event_displays(
+            mc, display_selections, n_per=10,
+            out_prefix=f'event_display_{outString}',
+            out_dir=EV_DIR,
+        )
 
     # Lifetime scan
     print("\n" + "="*50)
@@ -1408,10 +1928,12 @@ if __name__ == "__main__":
         ax4.legend(fontsize=8, loc='lower right')
         
     plt.tight_layout()
-    plt.savefig('exclusion_2body'+outString+'.png', dpi=150)
+    plt.savefig(os.path.join(OUT_DIR, 'exclusion_2body'+outString+'.png'), dpi=150)
     show_or_close()
     
-    df_results.to_csv("particle_decay_results_2body.csv", index=False)
-    event_df.to_csv("event_decay_statistics_2body.csv", index=False)
+    df_results.to_csv(os.path.join(OUT_DIR, "particle_decay_results_2body.csv"), index=False)
+    event_df.to_csv(os.path.join(OUT_DIR, "event_decay_statistics_2body.csv"), index=False)
     print("\nResults saved.")
-    print("Plots: exclusion_2body"+outString+".png, separation_histogram"+outString+".png")
+    print(f"Plots in {OUT_DIR}/: exclusion_2body{outString}.png, "
+          f"separation_histogram{outString}.png, ...")
+    print(f"Event displays in {EV_DIR}/")
