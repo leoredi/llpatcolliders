@@ -25,6 +25,7 @@ dependencies:
   - tqdm
   - trimesh
   - rtree
+  - networkx        # trimesh mesh-repair backend (fix_normals/fix_winding)
   - scipy
   - pandas
   - pytest
