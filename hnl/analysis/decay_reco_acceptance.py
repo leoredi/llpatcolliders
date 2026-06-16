@@ -230,6 +230,13 @@ def build_event_mc(p4, direction, entry_d, exit_d, templates, n_samples, rng,
     counts = templates['daughter_counts']
     off = np.concatenate([[0], np.cumsum(counts)])
     n_tmpl = len(counts)
+    # Materialize the daughter arrays once. A compressed NpzFile re-decompresses
+    # the whole array on every __getitem__, so slicing them inside the per-decay
+    # loop below would otherwise decompress each array M times over.
+    t_px = np.asarray(templates['px']); t_py = np.asarray(templates['py'])
+    t_pz = np.asarray(templates['pz']); t_E = np.asarray(templates['energy'])
+    t_charge = np.asarray(templates['charge'])
+    t_stable = np.asarray(templates['stable'])
 
     d = rng.uniform(np.asarray(entry_d)[:, None], np.asarray(exit_d)[:, None],
                     size=(n_ev, n_samples))
@@ -244,10 +251,8 @@ def build_event_mc(p4, direction, entry_d, exit_d, templates, n_samples, rng,
         s, e = off[ti], off[ti + 1]
         ev = k // n_samples
         lx, ly, lz, _ = boost_rest_to_lab(
-            p4[ev], templates['px'][s:e], templates['py'][s:e],
-            templates['pz'][s:e], templates['energy'][s:e])
-        bt = best_two_directions(lx, ly, lz, templates['charge'][s:e],
-                                 templates['stable'][s:e])
+            p4[ev], t_px[s:e], t_py[s:e], t_pz[s:e], t_E[s:e])
+        bt = best_two_directions(lx, ly, lz, t_charge[s:e], t_stable[s:e])
         if bt is not None:
             dir1[k], dir2[k], psoft[k] = bt
             valid[k] = True

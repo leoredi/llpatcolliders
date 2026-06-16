@@ -122,13 +122,27 @@ def compute_geometry(eta, phi, mesh, origin=CMS_ORIGIN, batch_label=""):
           flush=True)
 
     cand_dirs = directions[candidates]
-    origins = np.tile(origin_arr, (n_cand, 1))
-    locations, ray_ids, _ = mesh.ray.intersects_location(
-        ray_origins=origins, ray_directions=cand_dirs)
+    # Chunk the ray-cast: intersects_location allocates per-ray x per-triangle
+    # intermediates, so casting all candidates at once spikes to several GB on
+    # the highest-multiplicity (lowest-mass) points. Rays are independent, so
+    # batching gives identical results while bounding peak memory.
+    GEOM_RAY_CHUNK = 25000
+    loc_parts, rid_parts = [], []
+    for cs in range(0, n_cand, GEOM_RAY_CHUNK):
+        ce = min(cs + GEOM_RAY_CHUNK, n_cand)
+        chunk_dirs = cand_dirs[cs:ce]
+        chunk_origins = np.tile(origin_arr, (len(chunk_dirs), 1))
+        loc_c, rid_c, _ = mesh.ray.intersects_location(
+            ray_origins=chunk_origins, ray_directions=chunk_dirs)
+        if len(loc_c):
+            loc_parts.append(loc_c)
+            rid_parts.append(rid_c + cs)  # ray_ids are chunk-local; shift to candidate index
 
-    if len(locations) == 0:
+    if not loc_parts:
         print(f"  0/{n} events hit detector", flush=True)
         return hits, entry_d, exit_d
+    locations = np.concatenate(loc_parts)
+    ray_ids = np.concatenate(rid_parts)
 
     dists = np.linalg.norm(locations - origin_arr, axis=1)
     order = np.argsort(ray_ids)
