@@ -11,7 +11,13 @@ the committed electroweak production tail is included.
 L_INT_FB = 3000.0           # fb-1
 L_INT_PB = L_INT_FB * 1e3   # pb-1 = 3e6 pb-1
 
-# Exclusion threshold: N_signal >= N_THRESHOLD (95% CL Poisson, zero bkg)
+# Exclusion threshold on the expected signal yield. N_signal >= 3 is the
+# zero-background 95% CL Poisson upper limit for an observed zero
+# (e^-3 ~ 0.05), the community convention for HNL money plots. (The
+# median-expected zero-background limit is ~2.44; 3.0 is the slightly
+# conservative observed-zero number.) The live selection cuts are NOT here:
+# they live in analysis/decay_reco_acceptance.py, single-sourced with the
+# higgs/ GRENDEL reconstruction.
 N_THRESHOLD = 3.0
 
 # U^2 scan range (log10 space)
@@ -21,14 +27,6 @@ N_U2_POINTS = 200
 
 # CMS IP5 origin for ray-casting
 CMS_ORIGIN = (0.0, 0.0, 0.0)
-
-# 2-body acceptance cuts (must match the daughter ray-cast cuts upstream)
-SEP_MIN = 0.001    # m -- minimum track separation (1 mm)
-SEP_MAX = 1.0      # m -- maximum track separation
-P_CUT = 0.600      # GeV/c -- minimum daughter momentum
-
-# Electron mass for 2-body acceptance kinematics
-M_ELECTRON = 0.000511  # GeV/c^2
 
 # Full analysis range represented by the committed mass grid.
 ANALYSIS_MASS_MAX = 10.0  # GeV

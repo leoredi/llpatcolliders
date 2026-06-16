@@ -54,6 +54,14 @@ done
 "$PYTHON_BIN" -m production.combine_channels --flavor Ue Umu Utau \
   2>&1 | tee "tmp/${HNL_RUN_TAG}_combine.log"
 
+# Rest-frame decay templates feed the acceptance MC; without them every mass
+# point is dropped and the analysis would emit an empty plot. --skip-existing
+# keeps re-runs cheap (templates live under tmp/decay_templates, shared tags).
+"$PYTHON_BIN" -u -m analysis.generate_decay_templates \
+  --flavor Ue Umu Utau \
+  --skip-existing \
+  2>&1 | tee "tmp/${HNL_RUN_TAG}_templates.log"
+
 "$PYTHON_BIN" -u run_analysis.py \
   --flavor Ue Umu Utau \
   --workers "$ANALYSIS_WORKERS" \

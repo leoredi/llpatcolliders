@@ -28,6 +28,34 @@ configured mass point and in 0.3 GeV bins. Those ranges are explicitly
 classified as calculations, literature-informed ranges, proxies, or unknowable
 scenarios; they are not a statistical uncertainty band.
 
+## Curve-visibility triage (production x analysis, by PBC scenario)
+
+The items below are ordered by physics priority, not by their effect on the
+*current* curves. As of 2026-06-16 every PBC scenario -- 100 (Ue), 010 (Umu),
+001 (Utau) -- has complete production (116 combined CSVs each) and complete
+decay templates (116 each); the live selection in
+`analysis/decay_reco_acceptance.py` matches the upstream `higgs/` GRENDEL
+reconstruction cut-for-cut, and the exclusion threshold is the standard
+zero-background 95% CL value (`N >= 3`). No remaining item moves any of the three
+curves visibly: each is an NLO refinement (sub-leading uncertainty, provenance,
+convergence) or a model gap that changes the *meaning* of the result
+(backgrounds, detector response) rather than the plotted central line.
+
+| layer \ scenario | 100 (Ue) | 010 (Umu) | 001 (Utau) |
+|---|---|---|---|
+| **production** | mesons + W/Z EW; kaon flux parametric (NLO) | mesons + W/Z EW; kaon flux parametric (NLO) | mesons + tau-parent + W/Z EW; tau Kallen & W-tau polarization already fixed |
+| **analysis** | cuts/geometry/threshold single-sourced with `higgs/` -- aligned | aligned | aligned |
+
+Robustness fixes that *prevent* a future silent curve corruption (not a current
+defect) were applied on 2026-06-16: the geometry cache now invalidates when its
+source CSV is newer (mtime guard, item 19); `run_sensitivity.py` records every
+skipped `(flavor, mass)` with its reason in `run_metadata.json` and exits
+non-zero when nothing is processed; and `run_full_all.sh` generates decay
+templates before the analysis so a clean checkout cannot emit an empty plot. The
+dead, stale `SEP_MIN/SEP_MAX/P_CUT` block was removed from
+`analysis/constants.py` (the live cuts were always sourced from
+`decay_reco_acceptance.py`).
+
 ## P0: define the detector-level result
 
 ### 1. Add detector response to the decay/reconstruction acceptance
@@ -277,7 +305,10 @@ kinematics, origin, and normalization.
 **Current code:** LO MadGraph samples use one NNPDF central member and a flat
 `K = 1.3`. Direct `W -> l N` and `Z -> nu N` rows are merged without a parent
 tag, so all rows receive the W factor. Prompt-tau W and Drell-Yan origins are
-separable but use the same central factor.
+separable but use the same central factor. Because the W and Drell-Yan factors
+are currently identical (`K = 1.3`), the missing per-row W/Z split has **no
+numerical effect on the present curves**; it is a logic refinement that only
+matters once the factors differ.
 
 **Required work:**
 
@@ -486,9 +517,15 @@ within a declared numerical tolerance.
 
 ### 19. Make caches and channel completeness self-validating
 
-**Current code:** geometry caches are named only by flavor and mass. They do
-not include a checksum of the input vectors, geometry version, origin, or
-cuts. Channel combination is strict by default everywhere since 2026-06-11:
+**Current code:** geometry caches are named only by flavor and mass and do not
+yet embed a checksum of the input vectors, geometry version, origin, or cuts.
+Since 2026-06-16 a cache is invalidated when its source 4-vector CSV is newer
+than the cached NPZ (mtime guard), so regenerating a combined CSV forces a fresh
+ray-cast; a full content/geometry checksum is still outstanding (use
+`--force-geometry` after geometry-code edits). `run_sensitivity.py` now records
+every skipped `(flavor, mass)` with its reason in `run_metadata.json` and exits
+non-zero when no point is processed, so dropped masses are no longer silent.
+Channel combination is strict by default everywhere since 2026-06-11:
 `combine_channels.py` fails on missing or malformed channels while accepting
 zero-byte closed-channel sentinels, partial runs must opt in via
 `--allow-missing`, and `run_full_all.sh` therefore fails on an incomplete run.

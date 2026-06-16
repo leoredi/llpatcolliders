@@ -177,12 +177,23 @@ def compute_geometry(eta, phi, mesh, origin=CMS_ORIGIN, batch_label=""):
     return hits, entry_d, exit_d
 
 
-def load_or_compute_geometry(flavor, mass_label, eta, phi, mesh, force=False):
-    """Load cached geometry or compute + cache as NPZ."""
+def load_or_compute_geometry(flavor, mass_label, eta, phi, mesh, force=False,
+                             source_mtime=None):
+    """Load cached geometry or compute + cache as NPZ.
+
+    The cache is keyed on (flavor, mass) only, so a stale NPZ is invalidated
+    whenever the source 4-vector CSV is newer than the cache (``source_mtime``):
+    regenerating a combined CSV forces a fresh ray-cast instead of serving old
+    hits. Geometry-code changes are not tracked by mtime -- pass --force-geometry
+    after editing the GRENDEL mesh.
+    """
     cache_dir = GEOM_CACHE_DIR / flavor
     cache_path = cache_dir / f"geom_{mass_label}.npz"
 
-    if cache_path.exists() and not force:
+    fresh = cache_path.exists() and not force
+    if fresh and source_mtime is not None:
+        fresh = cache_path.stat().st_mtime >= source_mtime
+    if fresh:
         data = np.load(cache_path)
         return data["hits"].astype(bool), data["entry_d"], data["exit_d"]
 
@@ -232,7 +243,7 @@ def process_mass_point(flavor, mass, mesh,
 
     hits, entry_d, exit_d = load_or_compute_geometry(
         flavor, mass_label, data["eta"], data["phi"], mesh,
-        force=force_geometry)
+        force=force_geometry, source_mtime=csv_path.stat().st_mtime)
 
     n_hits = int(hits.sum())
     if n_hits == 0:
@@ -385,9 +396,57 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
 
     total_time = time.time() - t_start
 
+    # Honest coverage accounting: every requested (flavor, mass) that produced
+    # no result is recorded with the reason it was dropped, so a missing point
+    # never silently disappears from the money plot.
+    processed = {(r["flavor"], r["mass_GeV"]) for r in results}
+    skipped = []
+    for flavor in flavors:
+        for mass in masses:
+            if (flavor, mass) in processed:
+                continue
+            label = format_mass_for_filename(mass)
+            csv = LLP_VECTORS_DIR / flavor / "combined" / f"mN_{label}.csv"
+            tmpl = TEMPLATE_DIR / flavor / f"templates_{label}.npz"
+            if not csv.exists() or csv.stat().st_size == 0:
+                reason = "missing_or_empty_combined_csv"
+            elif not tmpl.exists():
+                reason = "missing_decay_templates"
+            else:
+                reason = "no_acceptance_or_nonpositive_ctau"
+            skipped.append({"flavor": flavor, "mass_GeV": mass, "reason": reason})
+
+    n_requested = len(flavors) * len(masses)
+    n_processed = len(results)
+    meta = {
+        "timestamp": datetime.now().isoformat(),
+        "flavors": flavors,
+        "n_masses": len(masses),
+        "n_points_requested": n_requested,
+        "n_points_processed": n_processed,
+        "n_points_skipped": len(skipped),
+        "skipped": skipped,
+        "n_workers": n_workers,
+        "n_results": n_processed,
+        "n_sensitive": 0,
+        "mass_range": [float(min(masses)), float(max(masses))],
+        "total_time_s": round(total_time, 1),
+        "llp_vectors_dir": str(LLP_VECTORS_DIR),
+    }
+
+    if skipped:
+        by_reason = {}
+        for s in skipped:
+            by_reason[s["reason"]] = by_reason.get(s["reason"], 0) + 1
+        print(f"\nWARNING: {len(skipped)}/{n_requested} requested points "
+              f"skipped (recorded in run_metadata.json):")
+        for reason, n in sorted(by_reason.items()):
+            print(f"    {n:4d}  {reason}")
+
     if not results:
-        print("No results produced.")
-        return
+        print("\nNo results produced -- every requested point was skipped.")
+        (ANALYSIS_DIR / "run_metadata.json").write_text(json.dumps(meta, indent=2))
+        return 0
 
     results.sort(key=lambda r: (r["flavor"], r["mass_GeV"]))
     df = pd.DataFrame(results)
@@ -396,23 +455,14 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
     print(f"\nResults saved: {out_csv}")
 
     n_sens = int(df["has_sensitivity"].sum())
+    meta["n_sensitive"] = n_sens
     print(f"Sensitivity found at {n_sens}/{len(df)} mass points")
     print(f"Total time: {total_time:.0f}s ({total_time/60:.1f} min)")
 
-    meta = {
-        "timestamp": datetime.now().isoformat(),
-        "flavors": flavors,
-        "n_masses": len(masses),
-        "n_workers": n_workers,
-        "n_results": len(results),
-        "n_sensitive": n_sens,
-        "mass_range": [float(min(masses)), float(max(masses))],
-        "total_time_s": round(total_time, 1),
-        "llp_vectors_dir": str(LLP_VECTORS_DIR),
-    }
     (ANALYSIS_DIR / "run_metadata.json").write_text(json.dumps(meta, indent=2))
 
     plot_exclusion(out_csv, ANALYSIS_DIR)
+    return n_processed
 
 
 def main(argv=None):
@@ -459,10 +509,14 @@ def main(argv=None):
     print(f"  Inputs:    {LLP_VECTORS_DIR}")
     print(f"  Outputs:   {ANALYSIS_DIR}")
 
-    run(flavors, masses,
-        n_workers=args.workers,
-        force_geometry=args.force_geometry,
-        save_diagnostics=args.diagnostics)
+    n_processed = run(flavors, masses,
+                      n_workers=args.workers,
+                      force_geometry=args.force_geometry,
+                      save_diagnostics=args.diagnostics)
+    if not n_processed:
+        print("ERROR: analysis produced no results; see run_metadata.json "
+              "for the per-point skip reasons.", file=sys.stderr)
+        return 1
     return 0
 
 
