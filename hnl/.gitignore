@@ -14,3 +14,7 @@ vendored/MG5_aMC_v3_6_6/
 # these inside tmp/cache, but ignore old checkout-root copies as well.
 py.py
 parser.out
+# Pickled UFO model cache MG5 writes into a model dir on `import model`.
+# Python-version-specific and regenerated on demand; the .py UFO sources are
+# the tracked source of truth.
+py3_model.pkl
