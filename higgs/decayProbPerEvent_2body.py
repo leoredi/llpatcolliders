@@ -32,7 +32,9 @@ from reco_common import SIGMA_T_DEFAULT, CHI2_TIMING_MAX
 M_ELECTRON = 0.000511  # GeV/c²
 
 # Analysis cuts
-P_CUT   = 0.600    # GeV/c — minimum electron momentum
+P_CUT   = 0.100    # GeV/c — minimum electron momentum (track must be energetic
+                   # enough to reconstruct as a straight track despite multiple
+                   # scattering in the scintillator; ~2 deg Highland angle at 100 MeV)
 SEP_MIN = 0.01    # m — minimum separation at detector (1 cm)
 SEP_MAX = 10.0      # m — maximum separation at detector
 DCA_CUT = 0.1  # m (10 cm) — maximum DCA between reconstructed tracks
