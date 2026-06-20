@@ -90,15 +90,21 @@ the binary tree given its size).
 
 Pure-Python computation of HNL production and decay branching ratios.
 
-- Upstream: https://github.com/kaiserds-jr/HNLCalc
+- Upstream: https://github.com/laroccod/HNLCalc (Feng, Hewitt, Kling,
+  La Rocco; arXiv:2405.07330).
+- Vendored from our fork https://github.com/leoredi/HNLCalc, branch
+  `physics-fixes` at commit `e292cef9` — i.e. upstream `laroccod/HNLCalc`
+  `main` @ `07f84728` plus the four local-fix commits listed under "Local
+  modifications" below. `HNLCalc.py` here is byte-identical to that fork
+  commit (normalized to LF line endings; the prior snapshot was checked out
+  CRLF).
 - Vendored files: `HNLCalc.py`, `alph_str.csv`, `README.md`
-- Stripped from upstream snapshot: `.git/`, notebook examples, embedded
-  PNG plots, build artifacts (`__pycache__/`).
-- Snapshot limitation: the vendored files do not retain an upstream commit or
-  release tag. Most embedded form-factor parameterizations also lack
+- Stripped from the snapshot: `.git/`, notebook examples, embedded PNG plots,
+  build artifacts (`__pycache__/`).
+- Form-factor caveat: most embedded form-factor parameterizations lack
   channel-level citations, so this snapshot is not independently traceable as
-  a current lattice/HFLAV form-factor set. The resulting SM-limit
-  normalization audit is documented in `REMAINING_WORK.md`.
+  a current lattice/HFLAV form-factor set. The SM-limit normalization audit is
+  documented in `REMAINING_WORK.md`.
 
 Used in `hnl/production/decay_engine/` to evaluate:
 - `get_2body_br` and `get_3body_dbr_*` for meson -> HNL channels
@@ -116,6 +122,14 @@ itself is used only for production BRs, three-body differential rates, tau-decay
 rates, and phase-space integration (the calls listed above).
 
 ### Local modifications
+
+These are the four commits on `leoredi/HNLCalc@physics-fixes` (pinned above).
+
+- Commented out the unused `from skhep.math.vectors import LorentzVector,
+  Vector3D` (HNLCalc.py line ~15). Those symbols are never referenced in the
+  module; the import only forced a hard dependency on scikit-hep's
+  `skhep.math` (dropped from modern scikit-hep), so the file would not import
+  standalone. No numerical effect.
 
 - Removed a duplicated `Ds+ -> K0` form-factor block in `HNLCalc.py`.
   Upstream contained two independent `if` statements matching the same
