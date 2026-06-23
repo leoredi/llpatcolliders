@@ -25,6 +25,7 @@ one definition.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -45,7 +46,7 @@ import reco_common as _rc  # noqa: E402
 from reco_common import SIGMA_T_DEFAULT, CHI2_TIMING_MAX  # noqa: E402
 
 # --- Selection constants (mirror higgs/decayProbPerEvent_2body.py on main) ---
-P_CUT = 0.600                 # GeV/c  — minimum charged-track momentum
+P_CUT = float(os.environ.get("HNL_P_CUT", "0.600"))  # GeV/c — min charged-track momentum (env override for cut studies)
 SEP_MIN = 0.01                # m
 SEP_MAX = 10.0                # m
 DCA_CUT = 0.1                 # m

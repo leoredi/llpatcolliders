@@ -227,8 +227,31 @@ def _seed_for(flavor, mass_label):
 # Single-point processing
 # =========================================================================
 
+def _select_hit_sample(idx, weights, max_hit_events, rng):
+    """Return hit indices and scan weights for exact or approximate evaluation."""
+    weights = np.asarray(weights, dtype=float)
+    if max_hit_events is None or max_hit_events <= 0 or len(idx) <= max_hit_events:
+        return idx, weights, "exact"
+
+    total_weight = float(weights.sum())
+    if total_weight > 0.0 and np.isfinite(total_weight):
+        probabilities = weights / total_weight
+        sampled_idx = rng.choice(
+            idx, size=int(max_hit_events), replace=True, p=probabilities)
+        sampled_weights = np.full(
+            len(sampled_idx), total_weight / len(sampled_idx), dtype=float)
+        return sampled_idx, sampled_weights, "weighted_resample"
+
+    sampled_pos = rng.choice(len(idx), size=int(max_hit_events), replace=False)
+    sampled_idx = idx[sampled_pos]
+    sampled_weights = np.asarray(weights[sampled_pos], dtype=float)
+    sampled_weights *= len(idx) / max(len(sampled_idx), 1)
+    return sampled_idx, sampled_weights, "uniform_rescale"
+
+
 def process_mass_point(flavor, mass, mesh,
-                       force_geometry=False, save_diagnostic=False):
+                       force_geometry=False, save_diagnostic=False,
+                       decay_samples=DECAY_SAMPLES, max_hit_events=None):
     """Process one (flavor, mass) point and return its exclusion band."""
     mass_label = format_mass_for_filename(mass)
     csv_path = LLP_VECTORS_DIR / flavor / "combined" / f"mN_{mass_label}.csv"
@@ -265,19 +288,21 @@ def process_mass_point(flavor, mass, mesh,
         return None
 
     # Build the acceptance MC for the hitting events only.
-    idx = np.where(hits & np.isfinite(entry_d) & np.isfinite(exit_d))[0]
+    idx_all = np.where(hits & np.isfinite(entry_d) & np.isfinite(exit_d))[0]
+    rng = np.random.default_rng(_seed_for(flavor, mass_label))
+    idx, scan_weights, hit_estimator = _select_hit_sample(
+        idx_all, data["weight"][idx_all], max_hit_events, rng)
     direction = _eta_phi_to_directions_batch(data["eta"][idx], data["phi"][idx])
     p_mag = data["beta_gamma"][idx] * mass
     energy = data["gamma"][idx] * mass
     p4 = np.column_stack([energy, p_mag[:, None] * direction])
-    rng = np.random.default_rng(_seed_for(flavor, mass_label))
     d, passed = build_event_mc(
-        p4, direction, entry_d[idx], exit_d[idx], templates, DECAY_SAMPLES,
+        p4, direction, entry_d[idx], exit_d[idx], templates, decay_samples,
         rng, origin=CMS_ORIGIN)
 
     u2_grid = np.logspace(LOG_U2_MIN, LOG_U2_MAX, N_U2_POINTS)
     u2_grid, N_grid = scan_u2(
-        d, passed, exit_d[idx] - entry_d[idx], data["weight"][idx],
+        d, passed, exit_d[idx] - entry_d[idx], scan_weights,
         data["beta_gamma"][idx], ctau_u2_1, L_INT_PB, u2_grid)
 
     result = find_exclusion_band(u2_grid, N_grid, N_THRESHOLD)
@@ -285,6 +310,9 @@ def process_mass_point(flavor, mass, mesh,
     result["flavor"] = flavor
     result["n_events"] = n_events
     result["n_hits"] = n_hits
+    result["n_hits_eval"] = len(idx)
+    result["decay_samples"] = decay_samples
+    result["hit_estimator"] = hit_estimator
 
     if save_diagnostic:
         diag_dir = ANALYSIS_DIR / "diagnostics"
@@ -306,11 +334,12 @@ def _worker_init():
 
 
 def _worker_process_point(args):
-    flavor, mass, force_geom, save_diag = args
+    flavor, mass, force_geom, save_diag, decay_samples, max_hit_events = args
     t0 = time.time()
     result = process_mass_point(
         flavor, mass, _WORKER_MESH,
-        force_geometry=force_geom, save_diagnostic=save_diag)
+        force_geometry=force_geom, save_diagnostic=save_diag,
+        decay_samples=decay_samples, max_hit_events=max_hit_events)
     elapsed = time.time() - t0
     mass_label = format_mass_for_filename(mass)
     tag = f"{flavor}/mN_{mass_label}"
@@ -328,14 +357,17 @@ def _worker_process_point(args):
 # =========================================================================
 
 def run(flavors, masses, n_workers=1, force_geometry=False,
-        save_diagnostics=False):
+        save_diagnostics=False, decay_samples=DECAY_SAMPLES,
+        max_hit_events=None, checkpoint_every=0):
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
     GEOM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     work_items = []
     for flavor in flavors:
         for mass in masses:
-            work_items.append((flavor, mass, force_geometry, save_diagnostics))
+            work_items.append((
+                flavor, mass, force_geometry, save_diagnostics,
+                decay_samples, max_hit_events))
 
     n_total = len(work_items)
     print(f"\nProcessing {n_total} mass points "
@@ -344,6 +376,16 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
     t_start = time.time()
     results = []
     status_path = ANALYSIS_DIR / "scan_status.json"
+    partial_csv = ANALYSIS_DIR / "hnl_sensitivity.partial.csv"
+
+    def _write_partial(done):
+        if not results:
+            return
+        rows = sorted(results, key=lambda r: (r["flavor"], r["mass_GeV"]))
+        pd.DataFrame(rows).to_csv(partial_csv, index=False)
+        if checkpoint_every and done % checkpoint_every == 0:
+            plot_exclusion(partial_csv, ANALYSIS_DIR,
+                           basename="hnl_exclusion_partial")
 
     def _write_status(done, n_sens):
         elapsed = time.time() - t_start
@@ -360,14 +402,16 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
     if n_workers <= 1:
         mesh = _get_mesh()
         for i, item in enumerate(work_items):
-            flavor, mass, fg, sd = item
+            flavor, mass, fg, sd, ds, mhe = item
             t0 = time.time()
             r = process_mass_point(flavor, mass, mesh,
-                                   force_geometry=fg, save_diagnostic=sd)
+                                   force_geometry=fg, save_diagnostic=sd,
+                                   decay_samples=ds, max_hit_events=mhe)
             elapsed = time.time() - t0
             mass_label = format_mass_for_filename(mass)
             if r is not None:
                 results.append(r)
+                _write_partial(i + 1)
             n_sens = sum(1 for r in results if r.get("has_sensitivity"))
             _write_status(i + 1, n_sens)
             print(f"  [{i+1}/{n_total}] {flavor}/mN_{mass_label} "
@@ -386,6 +430,7 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
                 r = future.result()
                 if r is not None:
                     results.append(r)
+                    _write_partial(done_count)
                 n_sens = sum(1 for r in results if r.get("has_sensitivity"))
                 _write_status(done_count, n_sens)
                 if done_count % 10 == 0 or done_count == n_total:
@@ -427,6 +472,9 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
         "n_points_skipped": len(skipped),
         "skipped": skipped,
         "n_workers": n_workers,
+        "decay_samples": decay_samples,
+        "max_hit_events": max_hit_events,
+        "checkpoint_every": checkpoint_every,
         "n_results": n_processed,
         "n_sensitive": 0,
         "mass_range": [float(min(masses)), float(max(masses))],
@@ -486,7 +534,33 @@ def main(argv=None):
     parser.add_argument(
         "--workers", type=int, default=3,
         help="Number of parallel workers (default: 3)")
+    parser.add_argument(
+        "--decay-samples", type=int, default=DECAY_SAMPLES,
+        help=f"Decay positions sampled per hit event (default: {DECAY_SAMPLES})")
+    parser.add_argument(
+        "--max-hit-events", type=int, default=None,
+        help="Approximate mode: weighted-resample at most this many hit events per mass point")
+    parser.add_argument(
+        "--mass-stride", type=int, default=1,
+        help="Approximate mode: keep every Nth mass-grid point (default: 1)")
+    parser.add_argument(
+        "--mass-offset", type=int, default=0,
+        help="Approximate mode: offset used with --mass-stride (default: 0)")
+    parser.add_argument(
+        "--checkpoint-every", type=int, default=0,
+        help="Write partial CSV always; additionally plot partial result every N completed points")
     args = parser.parse_args(argv)
+
+    if args.decay_samples < 1:
+        parser.error("--decay-samples must be >= 1")
+    if args.max_hit_events is not None and args.max_hit_events < 1:
+        parser.error("--max-hit-events must be >= 1 when provided")
+    if args.mass_stride < 1:
+        parser.error("--mass-stride must be >= 1")
+    if args.mass_offset < 0 or args.mass_offset >= args.mass_stride:
+        parser.error("--mass-offset must satisfy 0 <= offset < stride")
+    if args.checkpoint_every < 0:
+        parser.error("--checkpoint-every must be >= 0")
 
     if args.plot_only:
         csv_path = ANALYSIS_DIR / "hnl_sensitivity.csv"
@@ -498,12 +572,21 @@ def main(argv=None):
 
     flavors = args.flavor or DEFAULT_FLAVORS
     masses = args.mass or [m for m in MASS_GRID if m <= ANALYSIS_MASS_MAX]
+    if args.mass_stride > 1:
+        masses = masses[args.mass_offset::args.mass_stride]
+    if not masses:
+        parser.error("selected mass grid is empty")
 
     print("HNL Sensitivity Analysis")
     print(f"  Flavors: {flavors}")
     print(f"  Masses: {len(masses)} points "
           f"({min(masses):.2f} - {max(masses):.2f} GeV)")
     print(f"  Workers: {args.workers}")
+    print(f"  Decay samples: {args.decay_samples}")
+    if args.max_hit_events:
+        print(f"  Hit-event cap: {args.max_hit_events} (weighted resampling)")
+    if args.mass_stride > 1:
+        print(f"  Mass stride: every {args.mass_stride} point(s), offset {args.mass_offset}")
     print(f"  Luminosity: {L_INT_PB:.0f} pb^-1 ({L_INT_PB/1e3:.0f} fb^-1)")
     print(f"  Threshold: N_signal >= {N_THRESHOLD}")
     print(f"  Inputs:    {LLP_VECTORS_DIR}")
@@ -512,7 +595,10 @@ def main(argv=None):
     n_processed = run(flavors, masses,
                       n_workers=args.workers,
                       force_geometry=args.force_geometry,
-                      save_diagnostics=args.diagnostics)
+                      save_diagnostics=args.diagnostics,
+                      decay_samples=args.decay_samples,
+                      max_hit_events=args.max_hit_events,
+                      checkpoint_every=args.checkpoint_every)
     if not n_processed:
         print("ERROR: analysis produced no results; see run_metadata.json "
               "for the per-point skip reasons.", file=sys.stderr)
