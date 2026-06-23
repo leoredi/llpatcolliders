@@ -596,10 +596,10 @@ outputs and regenerated from the run manifest.
 
 ## Work that can be done in the NNPDF40 workspace
 
-The grid generator is committed at `hnl/tools/fonll_nnpdf40/` (imported with
-history); the heavy ~2.3 GB grid/output workspace stays external at
-`/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40`, which can address most of
-item 5 and part of item 6. Status as of 2026-06-11:
+The active FONLL grid-generation workspace is external to this repository:
+`/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local`. Do not maintain
+a second active copy under this HNL tree; use the external workspace for item 5
+and part of item 6. Status as of 2026-06-11:
 
 1. **Done.** `scripts/generate_meson_grids.py --campaign` accepts
    `(mu_R, mu_F)` (verified against FONLL's `read ffact,fren` order), PDF

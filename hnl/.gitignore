@@ -30,4 +30,5 @@ tools/fonll_nnpdf40/
 
 # Editor / agent cruft and paper build artifact.
 .cursor/
+HNL_production.tex
 HNL_production.pdf
