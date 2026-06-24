@@ -161,22 +161,26 @@ and agrees with independent benchmark rates for the same convention.
 
 ### 5. Produce FONLL scale, PDF, heavy-quark-mass, and grid-coverage variations
 
-**Current code:** the committed bottom and charm grids contain one central
-scale choice and the central `NNPDF40_nlo_as_01180` member. They stop at
-`pT = 50 GeV` and `|y| = 3`. No perturbative, PDF, heavy-quark-mass, alpha_s,
-or phase-space truncation uncertainty reaches the exclusion curves.
+**Current code:** the committed bottom and charm grids in
+`data/production/fonll/central/` carry one central scale choice and the central
+`NNPDF40_nlo_as_01180` member, stopping at `pT = 50 GeV` and `|y| = 3`. The full
+variation set has now been generated in the external NNPDF40 workspace -- a
+218-grid SHA-256 `variation_manifest.json` (7-point scale, 100 NNPDF4.0 NLO
+replicas, `m_b`/`m_c`) plus the `as_01170`/`as_01190` alpha_s companions. What
+remains is propagating those grids through the production+analysis chain into a
+band at every mass point (`run_variation_band.py` + `analysis/combine_band.py`);
+no such band yet reaches the exclusion curves, and the `pT`/rapidity truncation
+is still unbounded.
 
 **Required work:**
 
-- standard seven-point `(mu_R, mu_F)` variations;
-- all NNPDF4.0 NLO replicas, combined with the documented Monte Carlo
-  prescription;
-- bottom- and charm-quark mass variations consistent with the FONLL setup;
-- optional alpha_s variations if they are not covered by the selected PDF set;
-- extended `pT` and rapidity grids, or a quantitative bound on the omitted
-  contribution after GRENDEL acceptance;
-- retain both normalization and shape variations rather than reducing every
-  variation to a single total-cross-section factor.
+- propagate the generated variations (seven-point scale, 100 NNPDF4.0 replicas,
+  `m_b`/`m_c`, alpha_s companions) through the full production+analysis chain
+  into an uncertainty band at every mass point -- the coherent grids, retained
+  normalization+shape variations, and SHA-256 manifest now exist; the band
+  itself does not yet;
+- extend the `pT` and rapidity grids, or place a quantitative bound on the
+  omitted contribution after GRENDEL acceptance (still outstanding).
 
 Use the same three-column rectangular table format as the committed grids:
 
@@ -353,21 +357,31 @@ double-counting tests.
 
 ### 13. Replace or pin the HNLCalc rate model
 
-**Current code:** `vendored/HNLCalc` has no retained upstream commit or release
-tag. Direct meson and baryon channels use its embedded form factors and
-absolute branching ratios. Several parameterizations are old or weakly
-sourced. Manual `m_N -> 0` spot checks found substantial differences between
-selected HNLCalc integrals and external tau-mode branching fractions, but the
-comparison script and benchmark table are not yet committed. Two concrete
-defects have already been found and fixed in the vendored copy (a misplaced
-Källén-factor parenthesis in `tau -> P N` and an `|U|^4` mixing factor in the
-baryon channel; see `vendored/PROVENANCE.md`), both also present upstream --
-which strengthens the case for a full channel-by-channel validation.
+**Current code:** `vendored/HNLCalc` is now pinned to our fork
+`leoredi/HNLCalc` `physics-fixes` @ `e292cef9` (upstream `laroccod/HNLCalc`
+`main` @ `07f84728` plus four local-fix commits; see `vendored/PROVENANCE.md`).
+Direct meson and baryon channels use its embedded form factors and
+absolute branching ratios. Several parameterizations are old or weakly sourced
+-- e.g. several channels reuse the pion form factor as a proxy, and the CKM
+elements and decay constants are hardcoded without uncertainties. These are
+HNLCalc's own community-standard choices, inherited by citing the tool rather
+than independently revalidated; for an exclusion *contour* that is accepted
+practice and sub-leading (a P1 normalization effect on a log-scale reach
+boundary -- see the curve-impact audit -- not a P0 result-definition gap), so
+they are flagged here for a precision upgrade, not as bespoke errors. Manual
+`m_N -> 0` spot checks found substantial differences between selected HNLCalc
+integrals and external tau-mode branching fractions, but the comparison script
+and benchmark table are not yet committed. The exception is the four local fixes
+the pinned fork carries over upstream (including a misplaced Källén-factor
+parenthesis in `tau -> P N` and an `|U|^4` mixing factor in the baryon channel;
+see `vendored/PROVENANCE.md`): these correct genuine upstream bugs, so the
+vendored copy is a deliberate deviation from the citable release until the fixes
+are upstreamed.
 
 **Required work:**
 
-- pin an upstream HNLCalc revision or replace it with a maintained local rate
-  library;
+- upstream the four local fixes, and either track a maintained HNLCalc release
+  or replace it with a local rate library (the fork is pinned but unmaintained);
 - update decay constants, CKM inputs, hadron masses, and semileptonic form
   factors to a coherent current set;
 - include form-factor covariance and normalization uncertainties for every
@@ -496,7 +510,10 @@ with the reconstruction + selection re-evaluated per vertex
 (`analysis/decay_reco_acceptance.py::build_event_mc`/`scan_u2`). The mixing scan
 has 200 points from `1e-12` to `1e-1`, followed by local interpolation. The mass
 grid has a minimum spacing of 15 MeV and becomes much coarser at high mass;
-plotted lines simply connect calculated points.
+plotted lines simply connect calculated points. `run_sensitivity.py` now exposes
+`--decay-samples`, `--max-hit-events`, and `--mass-stride` (2026-06-23) so
+`DECAY_SAMPLES` and the hit-event count can be varied for convergence/approximate
+scans without code edits, but a convergence demonstration is not yet recorded.
 
 **Required work:**
 
@@ -544,7 +561,8 @@ and incomplete runs fail before producing a combined curve.
 
 **Current code:** the Python environment, MadGraph, LHAPDF, PDF data,
 compiler/runtime, and some vendored sources are not captured in one immutable
-run description. The HNLCalc snapshot is specifically unpinned.
+run description. (`vendored/HNLCalc` is now pinned to `leoredi/HNLCalc@e292cef9`;
+the broader environment lock remains outstanding.)
 
 **Required work:**
 
@@ -599,17 +617,16 @@ outputs and regenerated from the run manifest.
 The active FONLL grid-generation workspace is external to this repository:
 `/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local`. Do not maintain
 a second active copy under this HNL tree; use the external workspace for item 5
-and part of item 6. Status as of 2026-06-11:
+and part of item 6. Status as of 2026-06-23:
 
 1. **Done.** `scripts/generate_meson_grids.py --campaign` accepts
    `(mu_R, mu_F)` (verified against FONLL's `read ffact,fren` order), PDF
    members, and `m_b`/`m_c` variations, with per-grid tags, headers, and a
    SHA-256 manifest. `validate_variation_gate.py` is the hard-abort
    central-reproduction gate.
-2. **Pilot done.** A members 0-10 + 7-point scale + mass campaign (38 grids)
-   ran on 2026-06-11; the regenerated centrals reproduce the committed
-   grids. The full 100-replica campaign (218 grids, multi-day) is still
-   outstanding.
+2. **Done.** The full campaign completed: `output/variation_manifest.json`
+   indexes 218 coherent grids (100 NNPDF4.0 replicas per quark + 7-point scale
+   + `m_b`/`m_c`), and the regenerated centrals reproduce the committed grids.
 3. **Done with caveat.** `combine_variations.py` writes scale/PDF/mass/
    combined envelopes plus a manifest. The PDF statistics use replica
    members >= 1 only (member 0 excluded; an earlier revision included it and
@@ -620,12 +637,13 @@ and part of item 6. Status as of 2026-06-11:
    below the NNPDF4.0 grid minimum at low pT (suppression x14-20 for
    pT <~ 2 GeV); see `fonll-local/PUBLICATION_BASELINE.md` for the
    prescription caveat before quoting the low-mass charm scale band.
-5. **Outstanding:** the alpha_s companion grids (the `NNPDF40_nlo_as_01170`/
-   `_01190` sets are installed with all 101 members and wired into
-   `generate_meson_grids.py` as `--pdf nlo_as_01170` / `--pdf nlo_as_01190`;
-   the four central grids still have to be generated), extended
-   `pT`/rapidity coverage to bound the GRENDEL-accepted tail (item 6), and
-   per-species fragmentation outputs/variations (item 8).
+5. **Alpha_s done; coverage/fragmentation outstanding.** The alpha_s companion
+   grids are generated -- `as_01170`/`as_01190` central grids for both quarks --
+   and `combine_alphas.py` writes the PDF4LHC alpha_s envelope to
+   `output/envelopes/alphas_manifest.json` (diagnostic-only, refused by the
+   sampler; only the three coherent central grids are sampled). Still
+   outstanding: extended `pT`/rapidity coverage to bound the GRENDEL-accepted
+   tail (item 6), and per-species fragmentation outputs/variations (item 8).
 
 A full replica campaign takes days and produces large logs unless run with
 `--compress-logs`; it is resumable via `--reuse-existing-grids`.

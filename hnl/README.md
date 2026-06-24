@@ -382,7 +382,7 @@ compatibility module.
   `data/production/fonll/central/`, generated in the external workspace
   `/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local`.
 - The FONLL tables stop at `pT = 50 GeV`. The central curve uses one central
-  scale/PDF choice; scale/PDF/mass variation grids are produced in that
+  scale/PDF choice; scale/PDF/mass/alpha_s variation grids are produced in that
   external FONLL workspace and propagated into a band via
   `run_variation_band.py` (`--grid-dir`, default `tmp/fonll/output`), but are
   not folded into the central run (see `REMAINING_WORK.md`).
@@ -404,10 +404,15 @@ compatibility module.
 - Meson, baryon, and tau three-body energy/`q^2` distributions are
   HNLCalc-weighted, but complete multidimensional matrix-element spin
   correlations are not modeled (see `REMAINING_WORK.md`).
-- The vendored HNLCalc form factors are not a pinned current lattice set.
-  Induced-tau modes use externally normalized branching fractions, but direct
-  HNL channels retain HNLCalc's absolute normalization
-  (see `REMAINING_WORK.md`).
+- The direct-HNL rates use HNLCalc's own form factors, CKM elements, and decay
+  constants -- community-standard parameterizations (some are proxies, e.g.
+  several channels reuse the pion form factor; CKM/decay constants are hardcoded
+  without uncertainties), inherited by citing HNLCalc rather than independently
+  revalidated -- adequate for an exclusion contour but not a precision input.
+  Induced-tau modes use externally normalized branching fractions; direct-HNL
+  channels retain HNLCalc's absolute normalization. The vendored fork also
+  corrects four upstream HNLCalc bugs, so it deviates from the citable release
+  until those are upstreamed (see `vendored/PROVENANCE.md`, `REMAINING_WORK.md`).
 - The electroweak K-factor is a per-process table whose entries all currently
   hold the inclusive `1.3` constant; differential NLO/LO values are an optional
   upgrade (see `REMAINING_WORK.md`).

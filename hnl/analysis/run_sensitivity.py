@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -535,14 +536,16 @@ def main(argv=None):
         "--workers", type=int, default=3,
         help="Number of parallel workers (default: 3)")
     parser.add_argument(
-        "--decay-samples", type=int, default=DECAY_SAMPLES,
-        help=f"Decay positions sampled per hit event (default: {DECAY_SAMPLES})")
+        "--decay-samples", type=int,
+        default=int(os.environ.get("HNL_DECAY_SAMPLES", DECAY_SAMPLES)),
+        help=f"Decay positions sampled per hit event (default: {DECAY_SAMPLES}; env HNL_DECAY_SAMPLES)")
     parser.add_argument(
-        "--max-hit-events", type=int, default=None,
-        help="Approximate mode: weighted-resample at most this many hit events per mass point")
+        "--max-hit-events", type=int,
+        default=(int(os.environ["HNL_MAX_HIT_EVENTS"]) if os.environ.get("HNL_MAX_HIT_EVENTS") else None),
+        help="Approximate mode: weighted-resample at most this many hit events per mass point (env HNL_MAX_HIT_EVENTS)")
     parser.add_argument(
-        "--mass-stride", type=int, default=1,
-        help="Approximate mode: keep every Nth mass-grid point (default: 1)")
+        "--mass-stride", type=int, default=int(os.environ.get("HNL_MASS_STRIDE", "1")),
+        help="Approximate mode: keep every Nth mass-grid point (default: 1; env HNL_MASS_STRIDE)")
     parser.add_argument(
         "--mass-offset", type=int, default=0,
         help="Approximate mode: offset used with --mass-stride (default: 0)")
