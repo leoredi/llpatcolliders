@@ -13,7 +13,11 @@ each exclusion boundary into an uncertainty ribbon, per the agreed prescription:
   Monte-Carlo 1 sigma), per boundary;
 * **mass** -> bottom and charm are independent: the per-quark maximum
   ``|x - x_central|`` are added in quadrature;
-* the three axes are combined in quadrature (uncorrelated) into an up/down
+* **alpha_s** (optional, PDF4LHC) -> half the ``|x|`` spread between the
+  as=0.119 and as=0.117 companion curves, folded symmetrically. The two
+  companions are separate coherent grids (not registry replicas), passed via
+  ``--alphas-lo``/``--alphas-hi``; omitting them reproduces the no-alpha_s band;
+* the axes are combined in quadrature (uncorrelated) into an up/down
   ``sigma_x`` per boundary; the ribbon is ``10**(x_central +/- sigma_x)``.
 
 Open-edge (``u2_*_open``) and no-sensitivity states are preserved: a boundary
@@ -52,6 +56,12 @@ def _axis_members(registry: dict) -> dict[str, list[str]]:
     return axes
 
 
+def _read_curve(path) -> pd.DataFrame:
+    """Load a standalone sensitivity CSV (e.g. an alpha_s companion) indexed
+    like the registry curves."""
+    return pd.read_csv(path).set_index(["flavor", "mass_GeV"]).sort_index()
+
+
 def _boundary(curve: pd.DataFrame, key, mass_key, col, open_col):
     """Return (x=log10(boundary), is_open, has_sens) for one variation/point."""
     if key not in curve.index:
@@ -66,7 +76,7 @@ def _boundary(curve: pd.DataFrame, key, mass_key, col, open_col):
     return float(np.log10(val)), is_open, True
 
 
-def combine_band(registry_path: Path) -> pd.DataFrame:
+def combine_band(registry_path: Path, alphas_lo=None, alphas_hi=None) -> pd.DataFrame:
     registry = json.loads(registry_path.read_text())
     curves = _load_curves(registry)
     axes = _axis_members(registry)
@@ -74,6 +84,12 @@ def combine_band(registry_path: Path) -> pd.DataFrame:
         raise ValueError("registry has no central variation")
     central_name = axes["central"][0]
     central = curves[central_name]
+
+    # alpha_s (PDF4LHC) is folded from two standalone companion grids, not
+    # registry replicas; both must be present for the term to contribute.
+    as_lo = _read_curve(alphas_lo) if alphas_lo else None
+    as_hi = _read_curve(alphas_hi) if alphas_hi else None
+    fold_alphas = as_lo is not None and as_hi is not None
 
     out_rows = []
     for (flavor, mass) in central.index:
@@ -130,8 +146,19 @@ def combine_band(registry_path: Path) -> pd.DataFrame:
                 mdev[quark] = max(mdev[quark], abs(x - xc))
             mass_dev = float(np.hypot(mdev["mb"], mdev["mc"]))
 
-            sigma_up = float(np.sqrt(scale_up**2 + pdf_sigma**2 + mass_dev**2))
-            sigma_dn = float(np.sqrt(scale_dn**2 + pdf_sigma**2 + mass_dev**2))
+            # --- alpha_s: half the |x| spread of the two companion curves,
+            #     folded symmetrically (PDF4LHC) ---
+            alphas_dev = 0.0
+            if fold_alphas:
+                xlo, op_lo, _ = _boundary(as_lo, (flavor, mass), mass, col, open_col)
+                xhi, op_hi, _ = _boundary(as_hi, (flavor, mass), mass, col, open_col)
+                if op_lo or op_hi:
+                    any_open = True
+                if xlo is not None and xhi is not None:
+                    alphas_dev = 0.5 * abs(xhi - xlo)
+
+            sigma_up = float(np.sqrt(scale_up**2 + pdf_sigma**2 + mass_dev**2 + alphas_dev**2))
+            sigma_dn = float(np.sqrt(scale_dn**2 + pdf_sigma**2 + mass_dev**2 + alphas_dev**2))
 
             rec[f"{col}_band_lo"] = 10.0 ** (xc - sigma_dn)
             rec[f"{col}_band_hi"] = 10.0 ** (xc + sigma_up)
@@ -140,6 +167,8 @@ def combine_band(registry_path: Path) -> pd.DataFrame:
             rec[f"{col}_scale_dn_dex"] = scale_dn
             rec[f"{col}_pdf_sigma_dex"] = pdf_sigma
             rec[f"{col}_mass_dev_dex"] = mass_dev
+            if fold_alphas:
+                rec[f"{col}_alphas_dex"] = alphas_dev
 
         out_rows.append(rec)
 
@@ -153,6 +182,11 @@ def main(argv=None) -> int:
                     help="band_registry.json from run_variation_band.py")
     ap.add_argument("--out", default=None,
                     help="output band CSV (default: <registry dir>/hnl_band.csv)")
+    ap.add_argument("--alphas-lo", default=None,
+                    help="as=0.117 companion sensitivity CSV (PDF4LHC alpha_s down); "
+                         "folded only if --alphas-hi is also given")
+    ap.add_argument("--alphas-hi", default=None,
+                    help="as=0.119 companion sensitivity CSV (PDF4LHC alpha_s up)")
     args = ap.parse_args(argv)
 
     registry_path = Path(args.registry)
@@ -160,15 +194,16 @@ def main(argv=None) -> int:
         print(f"registry not found: {registry_path}; run run_variation_band.py first")
         return 1
 
-    df = combine_band(registry_path)
+    df = combine_band(registry_path, args.alphas_lo, args.alphas_hi)
     out = Path(args.out) if args.out else registry_path.parent / "hnl_band.csv"
     df.to_csv(out, index=False)
 
     reg = json.loads(registry_path.read_text())
     axes = _axis_members(reg)
     n_sens = int(df["has_sensitivity"].sum())
+    alphas_note = ", alpha_s" if (args.alphas_lo and args.alphas_hi) else ""
     print(f"combined {len(reg['variations'])} variations "
-          f"(scale={len(axes['scale'])}, pdf={len(axes['pdf'])}, mass={len(axes['mass'])})")
+          f"(scale={len(axes['scale'])}, pdf={len(axes['pdf'])}, mass={len(axes['mass'])}{alphas_note})")
     print(f"band written: {out}  ({n_sens}/{len(df)} mass points with sensitivity)")
     return 0
 

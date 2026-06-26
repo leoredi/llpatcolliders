@@ -166,21 +166,35 @@ and agrees with independent benchmark rates for the same convention.
 `NNPDF40_nlo_as_01180` member, stopping at `pT = 50 GeV` and `|y| = 3`. The full
 variation set has now been generated in the external NNPDF40 workspace -- a
 218-grid SHA-256 `variation_manifest.json` (7-point scale, 100 NNPDF4.0 NLO
-replicas, `m_b`/`m_c`) plus the `as_01170`/`as_01190` alpha_s companions. What
-remains is propagating those grids through the production+analysis chain into a
-band at every mass point (`run_variation_band.py` + `analysis/combine_band.py`);
-no such band yet reaches the exclusion curves, and the `pT`/rapidity truncation
-is still unbounded.
+replicas, `m_b`/`m_c`) plus the `as_01170`/`as_01190` alpha_s companions, and
+the band has now been propagated through the full production+analysis chain
+into a per-mass envelope (see Progress below). The `pT`/rapidity truncation is
+still unbounded.
+
+**Progress (2026-06-26): FONLL band propagated and rendered.** The 111 coherent
+variations (6-point scale + 100 NNPDF4.0 replicas + 4 `m_b`/`m_c`) were run end
+to end via `run_variation_band.py` (reusing the FONLL-independent channels,
+exact per-variation geometry -- item 19) and combined by
+`analysis/combine_band.py` into `hnl_band.csv` (asymmetric scale envelope,
+replica `std` for PDF, per-quark mass quadrature; alpha_s foldable via
+`--alphas-lo/--alphas-hi`). The band is overlaid on both exclusion boundaries by
+`analysis/plot_money.py` (the GRENDEL "money plot"). Magnitudes: lower edge
+~0.24 dex median (scale-dominated, comparable to the Bc and form-factor
+normalizations), upper edge ~0.27 dex median with peaks ~1 dex at the `m ~ 1.4`
+GeV charm kinematic edge -- the full propagation regenerates the `pT`-`y`
+spectrum, so the boost -> decay-length -> acceptance shape shifts the lifetime
+(upper) edge, an effect the normalization-only reweight audit
+(`audits/curve_impact_20260610`, ~0.002 dex upper) does not capture. **PDF is
+confirmed sub-dominant** (replica `std` ~0.02-0.05 dex), so the scale and `m_Q`
+legs dominate. The band is a generated artifact (`tmp/runs/`, git-ignored), not
+folded into the committed central run; the code path is tracked.
 
 **Required work:**
 
-- propagate the generated variations (seven-point scale, 100 NNPDF4.0 replicas,
-  `m_b`/`m_c`, alpha_s companions) through the full production+analysis chain
-  into an uncertainty band at every mass point -- the coherent grids, retained
-  normalization+shape variations, and SHA-256 manifest now exist; the band
-  itself does not yet;
 - extend the `pT` and rapidity grids, or place a quantitative bound on the
-  omitted contribution after GRENDEL acceptance (still outstanding).
+  omitted contribution after GRENDEL acceptance (still outstanding);
+- add a tracked driver for the alpha_s companion production+analysis chains
+  (currently the `--alphas-lo/--alphas-hi` curves are run by hand).
 
 Use the same three-column rectangular table format as the committed grids:
 
@@ -390,7 +404,9 @@ are upstreamed.
   calculations and SM-limit branching fractions for all three flavors;
 - validate and assign uncertainty to the abrupt exclusive-hadron versus
   inclusive-parton width matching around 1 GeV, including continuity and
-  quark-hadron-duality assumptions;
+  quark-hadron-duality assumptions *(partially done: item 15's seam-derived
+  width band `delta(m)` propagates this duality for the lifetime / upper edge;
+  the lower-edge form-factor + absolute visible-BR normalization remains open)*;
 - make the direct-HNL and induced-tau channels use compatible rate inputs.
 
 **Completion test:** channel-by-channel benchmark tables and regression tests
@@ -424,11 +440,42 @@ now come from the FairShip decay templates (`analysis/generate_decay_templates.p
 the lifetime is `HNLbranchings.computeNLifetime`, and the visible fraction is
 implicit in the per-flavor template multiplicity. The previous
 `data/ctau/*.dat` lifetime / `BR_vis` tables and the `BR_vis = 1` fallback are
-gone. Still unrecorded: the FairShip module revision, the exact decay-mode and
-visible definition for GRENDEL, the Majorana/Dirac convention, finite-template
-statistics, and any uncertainty on the lifetime or visible fraction. Templates
-are generated on a fixed mass grid and matched per mass label (no interpolation
-between masses).
+gone. Templates are generated on a fixed mass grid and matched per mass label
+(no interpolation between masses).
+
+**Progress (2026-06-25):**
+
+- *Majorana/Dirac factor-2 gate — verified.* The Majorana x2 lives once, in the
+  decay (`NDecayWidth` x2/channel -> `ctau`; visible BRs split /2 into
+  CP-conjugate final states); production carries only the particle+antiparticle
+  charge factor (FONLL `2*sigma`, MadGraph `SM_HeavyN` N1 self-conjugate summing
+  both W charges). No double-count on the `U^2 * P_decay` product.
+- *Lifetime-uncertainty band — done (upper edge).* The HNL total-width / lifetime
+  quark-hadron duality is propagated as a seam-derived band `delta(m)`
+  (`analysis/width_band.py`: floor 5% / cap 20% / per-flavor, read off FairShip's
+  own `max(meson, quark)` disagreement with a transition envelope so the
+  crossover does not notch the band). Driven coherently through both the lifetime
+  leg (`ctau`) and the composition leg (`vis_frac`) in
+  `analysis/decay_model_band.py`; the composition leg self-cancels to ~1%
+  (`Gamma_had` is in both `Gamma_vis` and `Gamma_tot`), so the band is
+  lifetime-dominated (~0.08 dex on the dome / upper edge, where it co-sets the
+  closure mass).
+- *Still open — absolute visible-BR normalization.* A SEPARATE in-scope
+  decay-side nuisance (~+/-10%; audit `visible_branching_fraction` = up to
+  0.13 dex on the LOWER edge, from the HNLCalc/FairShip decay BRs + form factors)
+  is NOT covered by the duality band above. It groups with the lower-edge
+  normalizations (item 13 form factors, item 9 Bc). Also open: pin the FairShip
+  revision + manifest, the GRENDEL visible definition, finite-template statistics.
+
+**Known result feature (document for referees, 2026-06-25):** the `Umu` limit
+degrades sharply below `m_N ~= 0.25 GeV` (e.g. `u2_min` at 0.2 GeV is ~10x
+weaker for `Umu` than `Ue`). This is **correct physics, not a bug**: the
+dominant visible 2-charged-track decay `N -> mu+- pi-+` closes below
+`m_mu + m_pi = 0.245 GeV`, so the `Umu` visible fraction collapses (only the
+softer 3-body `N -> mu e nu` survives), whereas `N -> e+- pi-+` keeps the `Ue`
+channel open down to ~0.14 GeV. Expect a visible step/weakening in the low-mass
+`Umu` (and analogously the `Utau`) contour at the corresponding meson threshold;
+state it explicitly so it is not read as an artifact.
 
 **Required work:**
 
@@ -547,9 +594,26 @@ Channel combination is strict by default everywhere since 2026-06-11:
 zero-byte closed-channel sentinels, partial runs must opt in via
 `--allow-missing`, and `run_full_all.sh` therefore fails on an incomplete run.
 
+**Negative optimization result (2026-06-25):** do **not** reuse the central
+monolithic geometry cache row-for-row across FONLL variation runs. The audit in
+`geometry_reuse_study/` compared exact geometry caches for two scale variations
+against the central cache and found large hit-mask disagreement:
+`xor_hits / variation_hits ~= 0.90` median for the full combined samples. The
+regenerated FONLL channels (`Bmeson`, `Dmeson`, `Bbaryon`) are the failure mode,
+with median mismatch around `1.8--2.0` per variation hit; row `i` in a varied
+grid is not the same trajectory as row `i` in the central grid. Blind cache
+copying would therefore invent and miss detector crossings. The hardlinked
+FONLL-independent channels checked in the audit (`Bc`, `WZ`) matched exactly,
+so a future speedup may be channel-aware: reuse central geometry only for
+hardlinked frozen channels (`Bc`, `Kmeson`, `tau`, `WZ`) and ray-cast
+regenerated channels normally. That is a useful geometry-stage optimization,
+not a replacement for exact per-variation geometry.
+
 **Required work:**
 
 - key caches by input checksum and geometry/analysis configuration;
+- if geometry reuse is introduced, make it channel-aware and prove row identity
+  for each reused channel;
 - write a run manifest with code revision, environment, seeds, input
   checksums, channel row counts, and summed weights;
 - verify that no stale channel or cache from another run tag is consumed.
@@ -593,21 +657,32 @@ stale future-dated test metadata has been removed.
 
 ### 22. Propagate all variations into final plots and tables
 
-**Current code:** `plot_exclusion.py` draws only central connected curves. It
-does not show theory, detector, background, numerical, or luminosity bands,
-nor does it overlay external constraints. Run metadata does not identify all
-inputs used.
+**Current code:** `plot_exclusion.py` draws the central connected curves with
+honest open-boundary handling (fills to the axis edge, no false closing line,
+marks the open direction, never bridges insensitive masses). The GRENDEL "money
+plot" (`analysis/plot_money.py`) builds on it and overlays the in-scope
+production+decay bands: FONLL theory (item 5), direct-Bc normalization
+(`bc_nuisance.py`, item 9), and the decay-model width band (`decay_model_band.py`,
+item 15). Detector, background, numerical, and luminosity bands are still absent
+(P0 items 1-3), and external constraints are not overlaid.
+
+**Progress (2026-06-26): money-plot deliverable.** `analysis/plot_money.py`
+produces the single-flavor (m_N, |U|^2) projection with: the FONLL/Bc/decay-model
+bands above; a `band_registry`-driven combination (`combine_band.py`); a
+high-mass closure cap that pinches each dome to its interpolated production/
+lifetime crossing (~3.7 GeV) instead of a blunt residual-gap wall; a
+hypothesis/scope `run_metadata.json` (Majorana, single-flavor, N>=3, idealized
+partner handoff); and a machine-readable bundle (central + per-band CSVs). It is
+run on demand into `tmp/runs/` (git-ignored); the code path is tracked. Still
+open: detector/background/luminosity/numerical bands, a formal correlated
+combination across all axes, and external-constraint overlays.
 
 **Required work:**
 
-- define a variation registry and correlated combination procedure;
-- save central, individual variation, and combined-envelope boundaries at
-  every calculated mass;
-- show open scan boundaries honestly and avoid interpolation across missing or
-  insensitive masses;
-- include input/version metadata and, if required for the intended figure,
-  current external constraints with source/version tracking;
-- publish machine-readable result tables in addition to PDF/PNG figures.
+- add the detector, background, numerical, and luminosity bands once those
+  inputs exist (P0 items 1-3, items 17-18);
+- include external constraints with source/version tracking if required for the
+  intended figure.
 
 **Completion test:** every visible band can be traced to stored variation
 outputs and regenerated from the run manifest.
@@ -641,9 +716,15 @@ and part of item 6. Status as of 2026-06-23:
    grids are generated -- `as_01170`/`as_01190` central grids for both quarks --
    and `combine_alphas.py` writes the PDF4LHC alpha_s envelope to
    `output/envelopes/alphas_manifest.json` (diagnostic-only, refused by the
-   sampler; only the three coherent central grids are sampled). Still
-   outstanding: extended `pT`/rapidity coverage to bound the GRENDEL-accepted
-   tail (item 6), and per-species fragmentation outputs/variations (item 8).
+   sampler; only the three coherent central grids are sampled). On the HNL side
+   the alpha_s term is now folded by **tracked** code:
+   `analysis/combine_band.py --alphas-lo/--alphas-hi` adds the PDF4LHC
+   half-difference of the `as_01170`/`as_01190` companion curves in quadrature
+   into the band (retiring the earlier `/tmp/fold_alphas.py` side script).
+   Outstanding: a tracked driver for the companion production+analysis chains
+   (currently run by hand via the `run_variation_band` pattern); extended
+   `pT`/rapidity coverage to bound the GRENDEL-accepted tail (item 6); and
+   per-species fragmentation outputs/variations (item 8).
 
 A full replica campaign takes days and produces large logs unless run with
 `--compress-logs`; it is resumable via `--reuse-existing-grids`.

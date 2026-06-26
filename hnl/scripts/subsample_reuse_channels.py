@@ -10,8 +10,8 @@ FONLL/independent dilution) is preserved -- only the Monte-Carlo variance grows.
 
 Zero-byte closed-channel sentinels are copied verbatim.
 
-    python scripts/subsample_reuse_channels.py --src full_20260606_all \
-        --dst full_20260606_light --rows 10000
+    python scripts/subsample_reuse_channels.py --src <full_run_tag> \
+        --dst <full_run_tag>_light --rows 10000
 """
 from __future__ import annotations
 
@@ -57,7 +57,8 @@ def subsample_file(src: Path, dst: Path, k: int, rng) -> tuple[int, int]:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--src", required=True, help="source run tag (e.g. full_20260606_all)")
+    ap.add_argument("--src", required=True,
+                    help="source run tag (a complete run with current channel physics)")
     ap.add_argument("--dst", required=True, help="destination run tag (the light copy)")
     ap.add_argument("--rows", type=int, default=10000, help="max rows kept per channel CSV")
     ap.add_argument("--seed", type=int, default=12345)

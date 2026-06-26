@@ -112,7 +112,7 @@ def test_scan_u2_has_interior_lifetime_peak():
     p4s = np.array(p4s); dirs = np.array(dirs); ent = np.array(ent); exi = np.array(exi)
     bg = np.array([np.linalg.norm(p[1:]) / m for p in p4s])
     T = _synthetic_templates()
-    d, passed = dra.build_event_mc(p4s, dirs, ent, exi, T, n_samples=40, rng=rng)
+    d, passed, _tmpl_idx = dra.build_event_mc(p4s, dirs, ent, exi, T, n_samples=40, rng=rng)
     u2 = np.logspace(-9, -1, 30)
     u2, N = dra.scan_u2(d, passed, exi - ent, np.ones(len(p4s)), bg,
                         ctau_u2_1=1e-3, L_int_pb=3e6, u2_grid=u2)

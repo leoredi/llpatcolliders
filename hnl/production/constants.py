@@ -21,10 +21,16 @@ M_LAMBDA_B = Particle.from_pdgid(5122).mass * 1e-3  # Lambda_b0
 M_LAMBDA_C = Particle.from_pdgid(4122).mass * 1e-3  # Lambda_c+
 
 # Inclusive pp -> Bc+ + Bc-; already both charges, so no downstream factor 2.
-# This is a model input, not a measured inclusive 14 TeV cross section. Replace
-# it together with the borrowed bottom shape when a dedicated Bc grid is
-# supplied (`REMAINING_WORK.md`).
+# Anchored to LHCb f(Bc)/(f(B-)+f(B0bar)) ~= 3.7e-3 at 13 TeV (arXiv:1910.13404,
+# PRD 100 112006): with sigma(B+) ~ 2e8 pb this gives sigma(Bc) ~ 0.8e6 pb, so
+# the value below is LHCb-consistent (~16% high). The pT-y shape is still
+# borrowed from bottom (a dedicated Bc grid is item 9 in `REMAINING_WORK.md`).
 SIGMA_BC_PB = 0.9e6
+# Bc production-normalization uncertainty (the B4 nuisance). Conservative for a
+# projection: ~25% from BR(Bc->J/psi mu nu) theory folded into the LHCb
+# fraction + its pT dependence, in quadrature with ~20% from the borrowed
+# bottom shape (Bc is heavier -> harder spectrum -> different acceptance).
+SIGMA_BC_REL_UNCERT = 0.40
 
 # QCD K-factor applied to the LO MadGraph electroweak rates. The single
 # inclusive value below is a documented approximation; a process- and

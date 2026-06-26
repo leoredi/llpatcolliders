@@ -382,10 +382,16 @@ compatibility module.
   `data/production/fonll/central/`, generated in the external workspace
   `/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local`.
 - The FONLL tables stop at `pT = 50 GeV`. The central curve uses one central
-  scale/PDF choice; scale/PDF/mass/alpha_s variation grids are produced in that
-  external FONLL workspace and propagated into a band via
-  `run_variation_band.py` (`--grid-dir`, default `tmp/fonll/output`), but are
-  not folded into the central run (see `REMAINING_WORK.md`).
+  scale/PDF choice; scale/PDF/mass variation grids are produced in that external
+  FONLL workspace and propagated into a band via `run_variation_band.py`
+  (`--grid-dir`, default `tmp/fonll/output`) + `analysis/combine_band.py`; the
+  latter also folds the PDF4LHC alpha_s term from companion curves
+  (`--alphas-lo/--alphas-hi`). The full 111-variation band has been propagated
+  and is overlaid on both exclusion boundaries by `analysis/plot_money.py` (the
+  GRENDEL "money plot"); it is ~0.24 dex (lower, scale-dominated) / ~0.27 dex
+  (upper, scale + `m_Q` with spectral-shape effect) median, PDF sub-dominant. The
+  band is a generated overlay, not folded into the committed central run (see
+  `REMAINING_WORK.md` items 5 and 22).
 - Charm and bottom species share one heavy-flavor shape per table; species
   fractions are applied in the event weights. `Bc` reuses the bottom shape at
   the Bc mass. Per-species and dedicated-Bc shapes are planned
@@ -413,6 +419,12 @@ compatibility module.
   channels retain HNLCalc's absolute normalization. The vendored fork also
   corrects four upstream HNLCalc bugs, so it deviates from the citable release
   until those are upstreamed (see `vendored/PROVENANCE.md`, `REMAINING_WORK.md`).
+- The HNL total-width / lifetime quark-hadron duality is propagated as a separate
+  seam-derived decay-model band `delta(m)` (`analysis/width_band.py` +
+  `analysis/decay_model_band.py`), driven coherently through `ctau` and
+  `vis_frac` (the composition leg self-cancels to ~1%); it owns the upper edge /
+  dome (~0.08 dex). The *absolute* visible-BR normalization is a distinct,
+  still-unpropagated decay nuisance (see `REMAINING_WORK.md` item 15).
 - The electroweak K-factor is a per-process table whose entries all currently
   hold the inclusive `1.3` constant; differential NLO/LO values are an optional
   upgrade (see `REMAINING_WORK.md`).

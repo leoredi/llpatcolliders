@@ -263,20 +263,46 @@ def build_event_mc(p4, direction, entry_d, exit_d, templates, n_samples, rng,
         mc = reconstruct_decays(vtx[valid], dir1[valid], dir2[valid],
                                 psoft[valid], sigma_hit, sigma_t, rng)
         passed[valid] = selection_mask(mc)
-    return d, passed.reshape(n_ev, n_samples)
+    # tmpl_idx is returned so the decay-model composition leg can reweight each
+    # sample's contribution by its decay mode (hadronic vs leptonic) WITHOUT
+    # re-sampling geometry or re-running the reco -- ``passed`` stays frozen.
+    return (d, passed.reshape(n_ev, n_samples),
+            tmpl_idx.reshape(n_ev, n_samples))
+
+
+def classify_template_modes(templates):
+    """Per-template hadronic flag (length n_templates): True if the decay's
+    daughters include any hadron (|pdg| > 100), else leptonic (leptons /
+    neutrinos / photon only). Drives the composition-leg reweight: a width-band
+    shift moves Gamma_had, hence the hadronic/leptonic mix, hence vis_frac."""
+    counts = np.asarray(templates["daughter_counts"])
+    pdg = np.abs(np.asarray(templates["pdg"]))
+    off = np.concatenate([[0], np.cumsum(counts)])
+    is_had = np.zeros(len(counts), dtype=bool)
+    for i in range(len(counts)):
+        seg = pdg[off[i]:off[i + 1]]
+        is_had[i] = bool(seg.size and seg.max() > 100)
+    return is_had
 
 
 def scan_u2(d, passed, path_len, weight, beta_gamma, ctau_u2_1,
-            L_int_pb, u2_grid):
+            L_int_pb, u2_grid, sample_w=None):
     """N_signal(U^2) by reweighting the once-built MC.
 
     For each event the decay-and-pass probability is the MC estimate of
     ``int (1/lam) e^{-x/lam} [pass] dx`` with ``lam = beta*gamma * ctau_u2_1/U^2``;
     ``N = L_int * U^2 * sum_events weight * P``. ``d``/``passed`` are
-    ``(n_events, n_samples)`` from :func:`build_event_mc`.
+    ``(n_events, n_samples)`` from :func:`build_event_mc``.
+
+    ``sample_w`` (optional, same shape as ``passed``) multiplies each sample's
+    contribution -- used by the decay-model composition leg to reweight the
+    per-sample decay mode (hadronic vs leptonic) under a width-band shift, with
+    the reco ``passed`` held frozen.
     """
     n_ev, n_samples = d.shape
     pw = passed.astype(float)
+    if sample_w is not None:
+        pw = pw * np.asarray(sample_w, float)
     weight = np.asarray(weight, float)
     bg = np.asarray(beta_gamma, float)
     per_sample = (np.asarray(path_len, float) / n_samples)[:, None]

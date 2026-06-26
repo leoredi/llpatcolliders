@@ -267,7 +267,8 @@ def main(argv=None) -> int:
     ap.add_argument("--reuse-from", default=None,
                     help="run tag of an existing complete run whose Bc/Kmeson/tau/WZ "
                          "channels are hardlinked into every variation (incl central), "
-                         "so MadGraph is never re-run (e.g. full_20260606_all)")
+                         "so MadGraph is never re-run. Must be a run with CURRENT "
+                         "channel physics -- a stale tag silently reuses old WZ/Bc/etc.")
     ap.add_argument("--fonll-channels-only", action="store_true",
                     help="smoke test: skip MadGraph/kaon reuse; band uses only the "
                          "4 FONLL channels (incomplete physics, validates plumbing)")
