@@ -29,7 +29,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from analysis.plot_exclusion import _plot_single_panel, PLOT_U2_MIN, PLOT_U2_MAX  # noqa: E402
+from analysis.plot_exclusion import _plot_single_panel, _closure_vertex, _closure_arc, PLOT_U2_MIN, PLOT_U2_MAX  # noqa: E402
 
 HNL_ROOT = Path(__file__).resolve().parent.parent
 RUNS = HNL_ROOT / "tmp" / "runs"
@@ -45,35 +45,62 @@ def _provenance(have_fonll):
         "NOT banded (named limitations): production form factors, absolute visible-BR norm, kaon flux, FONLL αs.  "
         "Reconstruction / detector / background / statistics IDEALIZED at the partner handoff (background-free, N≥3).  "
         "Island closes at the production/lifetime pinch ~3.7 GeV (last sensitive grid mass 3.6 GeV, gap 0.28 dex; "
-        "3.8 GeV grid point insensitive -> physical closure; the plotted tip is a linear log-edge extrapolation)."
+        "3.8 GeV grid point insensitive -> physical closure; the plotted tip is a rounded extrapolation to the interpolated pinch)."
     )
 
 
-def _fonll_dense(band_df, central_df, flavor):
-    """Interpolate the (coarse) FONLL band onto the central fine grid in
-    log10(U^2) so the orange ribbon is continuous, not sampled at band masses."""
-    cm = np.sort(central_df.loc[central_df.flavor == flavor, "mass_GeV"].unique())
-    b = band_df[band_df.flavor == flavor].sort_values("mass_GeV")
-    out = {"flavor": flavor, "mass_GeV": cm}
-    for col in ("u2_min", "u2_max"):
-        for side in ("band_lo", "band_hi"):
-            y = b[f"{col}_{side}"].to_numpy(float)
-            x = b["mass_GeV"].to_numpy(float)
-            ok = np.isfinite(y) & (y > 0)
-            out[f"{col}_{side}"] = (
-                10.0 ** np.interp(cm, x[ok], np.log10(y[ok]), left=np.nan, right=np.nan)
-                if ok.sum() >= 2 else np.full(len(cm), np.nan))
-    return pd.DataFrame(out)
+def _dex_densify(bm, b_cen, b_lo, b_hi, cm, c_edge, tail=None):
+    """Densify one band edge onto the fine central grid.
+
+    The ~18 band anchors are too coarse to plot as absolute edges -- straight
+    log-segments between anchors detach from the wiggly dense central line. So we
+    interpolate the band *width in dex* (relative to the band-run central) and
+    re-apply it to the dense plotted central ``c_edge``, so the ribbon hugs every
+    wiggle of the red curve. ``tail = (mass_arc, edge_arc)`` optionally appends the
+    rounded closure-nose path so the ribbon collapses onto, and tapers shut with,
+    the island's rounded edge instead of poking past it.
+    """
+    ok = (np.isfinite(b_cen) & (b_cen > 0) & np.isfinite(b_lo) & (b_lo > 0)
+          & np.isfinite(b_hi) & (b_hi > 0))
+    if ok.sum() >= 2:
+        dex_lo = np.log10(b_cen[ok] / b_lo[ok])     # downward half-width [dex]
+        dex_hi = np.log10(b_hi[ok] / b_cen[ok])     # upward half-width   [dex]
+        lo = c_edge * 10.0 ** (-np.interp(cm, bm[ok], dex_lo))
+        hi = c_edge * 10.0 ** (+np.interp(cm, bm[ok], dex_hi))
+    else:
+        lo = np.full(len(cm), np.nan)
+        hi = np.full(len(cm), np.nan)
+    m = cm
+    if tail is not None and tail[0] is not None:
+        tm, ty = tail
+        m = np.append(cm, tm)
+        lo = np.append(lo, ty)
+        hi = np.append(hi, ty)
+    return m, lo, hi
 
 
-def _overlay(ax, band_df, flavor, lo_col, hi_col, color, label):
-    b = band_df[band_df.flavor == flavor].sort_values("mass_GeV")
-    m = b["mass_GeV"].to_numpy(float)
-    lo, hi = b[lo_col].to_numpy(float), b[hi_col].to_numpy(float)
-    good = np.isfinite(lo) & np.isfinite(hi)
+def _ribbon(ax, m, lo, hi, color, label, zorder):
+    good = np.isfinite(lo) & np.isfinite(hi) & (lo > 0) & (hi > 0)
     if good.any():
         ax.fill_between(m, np.where(good, lo, np.nan), np.where(good, hi, np.nan),
-                        alpha=0.55, color=color, linewidth=0, zorder=8, label=label)
+                        alpha=0.5, color=color, linewidth=0, zorder=zorder, label=label)
+
+
+def _closure_pinch(full_flavor_df):
+    """Return the (m_star, u2_star) closure vertex for one flavor's curve, matching
+    what `_plot_single_panel(close_island=True)` appends, or None if it does not
+    close just past the grid."""
+    sens = full_flavor_df[full_flavor_df["has_sensitivity"] == True]   # noqa: E712
+    cm = sens["mass_GeV"].to_numpy(float)
+    if len(cm) < 2:
+        return None
+    later = full_flavor_df[full_flavor_df["mass_GeV"] > cm[-1]]
+    if later.empty or bool(later.iloc[0]["has_sensitivity"]):
+        return None
+    cv = _closure_vertex(cm, sens["u2_min"].to_numpy(float), sens["u2_max"].to_numpy(float))
+    if cv is not None and cm[-1] < cv[0] <= float(later.iloc[0]["mass_GeV"]):
+        return cv
+    return None
 
 
 def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
@@ -107,9 +134,9 @@ def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
                            "real physics (REMAINING_WORK item 15)",
                            "island closes at the production/lifetime pinch ~3.68-3.75 GeV (Ue/Umu/Utau): "
                            "last sensitive grid mass 3.6 GeV (0.28 dex gap), 3.8 GeV insensitive -> physical "
-                           "closure; the plotted tip is a linear log-edge extrapolation of the two boundaries"],
+                           "closure; the plotted tip is a rounded extrapolation to the interpolated pinch"],
         "generated": str(date.today()),
-        "reproduce": {"env": "HNL_TMP_DIR=tmp HNL_RUN_TAG=<run> HNL_P_CUT=0.600 (hnl conda env)",
+        "reproduce": {"env": f"HNL_TMP_DIR=tmp HNL_RUN_TAG=<run> HNL_P_CUT={p_cut_mev/1000:.3f} (hnl conda env)",
                       "steps": ["python -m analysis.run_sensitivity",
                                 "run_variation_band.py + python -m analysis.combine_band  # FONLL band -> hnl_band.csv",
                                 "python -m analysis.decay_model_band",
@@ -122,20 +149,22 @@ def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
+    # P>100 MeV is the default cut (exact_100); P>600 is legacy (pass
+    # --central-csv .../analysis_exact_600/... --p-cut-mev 600 --decay-band ...
+    # --bc-band ... to rebuild it).
     ap.add_argument("--run", default="central_newgrids_20260623")
     ap.add_argument("--central-csv", default=None)
     ap.add_argument("--fonll-band", default=str(RUNS / "hnl_band.csv"))
-    ap.add_argument("--decay-band", default=str(RUNS / "decay_model_band_combined.csv"))
-    ap.add_argument("--bc-band", default=str(RUNS / "bc_nuisance_band.csv"))
+    ap.add_argument("--decay-band", default=str(RUNS / "decay_model_band_100.csv"))
+    ap.add_argument("--bc-band", default=str(RUNS / "bc_nuisance_band_100.csv"))
     ap.add_argument("--breakdown", default=str(RUNS / "channel_breakdown_u2min.csv"))
     ap.add_argument("--l-int-fb", type=float, default=3000.0)
-    ap.add_argument("--p-cut-mev", type=int, default=600)
+    ap.add_argument("--p-cut-mev", type=int, default=100)
     ap.add_argument("--out-dir", default=str(RUNS / "v1_bundle"))
     a = ap.parse_args(argv)
 
-    central_csv = a.central_csv or str(RUNS / a.run / "analysis_exact_600" / "hnl_sensitivity.csv")
-    cen = pd.read_csv(central_csv)
-    cen = cen[cen.has_sensitivity == True]                                  # noqa: E712
+    central_csv = a.central_csv or str(RUNS / a.run / "analysis_exact_100" / "hnl_sensitivity.csv")
+    cen = pd.read_csv(central_csv)   # keep insensitive rows so close_island can pinch the dome
     have_fonll = Path(a.fonll_band).exists()
     fonll = pd.read_csv(a.fonll_band) if have_fonll else None
     dm = pd.read_csv(a.decay_band)
@@ -143,11 +172,53 @@ def main(argv=None) -> int:
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5.6), sharey=True)
     for ax, fl in zip(axes, ["Ue", "Umu", "Utau"]):
-        band_df = _fonll_dense(fonll, cen, fl) if have_fonll else None
-        _plot_single_panel(ax, cen, fl, is_leftmost=(fl == "Ue"), band_df=band_df,
+        full = cen[cen.flavor == fl].sort_values("mass_GeV")
+        sens = full[full.has_sensitivity == True]                            # noqa: E712
+        cm = sens["mass_GeV"].to_numpy(float)
+        c_min = sens["u2_min"].to_numpy(float)
+        c_max = sens["u2_max"].to_numpy(float)
+        # Rounded closure nose (same pinch _plot_single_panel draws); the bands
+        # collapse onto its lower/upper arc so nothing pokes past the red island.
+        vtx = _closure_pinch(full)
+        arc_m = arc_lo = arc_hi = None
+        if vtx is not None:
+            arc_m, arc_lo, arc_hi = _closure_arc(cm[-1], c_min[-1], c_max[-1], vtx[0], vtx[1])
+        tail_lo = (arc_m, arc_lo)   # for lower-edge bands
+        tail_hi = (arc_m, arc_hi)   # for upper-edge bands
+
+        # Red central island (+ its rounded closure); bands drawn below by us.
+        _plot_single_panel(ax, cen, fl, is_leftmost=(fl == "Ue"), band_df=None,
                            close_island=True)
-        _overlay(ax, dm, fl, "u2_max_dm_lo", "u2_max_dm_hi", "steelblue", "decay-model band (upper)")
-        _overlay(ax, bc, fl, "u2_min_bc_lo", "u2_min_bc_hi", "teal", "Bc band (lower)")
+
+        # FONLL production band on both edges (hugs the dense central, follows nose).
+        if have_fonll:
+            bsub = fonll[fonll.flavor == fl].sort_values("mass_GeV")
+            bm = bsub["mass_GeV"].to_numpy(float)
+            labelled = False
+            for col, c_edge, tail in (("u2_min", c_min, tail_lo), ("u2_max", c_max, tail_hi)):
+                m, lo, hi = _dex_densify(
+                    bm, bsub[f"{col}_central"].to_numpy(float),
+                    bsub[f"{col}_band_lo"].to_numpy(float),
+                    bsub[f"{col}_band_hi"].to_numpy(float),
+                    cm, c_edge, tail=tail)
+                _ribbon(ax, m, lo, hi, "orange",
+                        None if labelled else "FONLL theory band", zorder=4)
+                labelled = True
+
+        # Decay-model width band (upper edge) and Bc normalization band (lower edge).
+        dmf = dm[dm.flavor == fl].sort_values("mass_GeV")
+        m, lo, hi = _dex_densify(
+            dmf["mass_GeV"].to_numpy(float), dmf["u2_max"].to_numpy(float),
+            dmf["u2_max_dm_lo"].to_numpy(float), dmf["u2_max_dm_hi"].to_numpy(float),
+            cm, c_max, tail=tail_hi)
+        _ribbon(ax, m, lo, hi, "steelblue", "decay-model band (upper)", zorder=4)
+        bcf = bc[bc.flavor == fl].sort_values("mass_GeV")
+        m, lo, hi = _dex_densify(
+            bcf["mass_GeV"].to_numpy(float), bcf["u2_min"].to_numpy(float),
+            bcf["u2_min_bc_lo"].to_numpy(float), bcf["u2_min_bc_hi"].to_numpy(float),
+            cm, c_min, tail=tail_lo)
+        _ribbon(ax, m, lo, hi, "teal", "Bc band (lower)", zorder=4)
+
         ax.set_title(f"HNL {LAB[fl]}", fontsize=13)
         if fl in ("Umu", "Utau"):
             ax.annotate(r"$N\to\ell\pi$ closes" + "\n→ weaker limit", xy=(0.25, 3e-6),

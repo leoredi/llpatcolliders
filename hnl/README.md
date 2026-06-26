@@ -334,6 +334,44 @@ the open direction.
 Use `--plot-only` to regenerate the plot from an existing sensitivity CSV and
 `--force-geometry` to rebuild cached ray intersections.
 
+## Downstream / handoff (who consumes the curve)
+
+This repository **only produces the GRENDEL curve.** The final comparison
+figures -- GRENDEL overlaid on the PBC BC7 contours and the HNLimits community
+compilation of existing exclusions + competitor projections -- are made in the
+**sibling `../curves_PBC` repository**, which reads our curve as input.
+
+The contract is a single CSV with (at minimum) the columns
+`mass_GeV, flavor, u2_min, u2_max` (plus `has_sensitivity`, `u2_max_open`),
+exactly the schema `run_sensitivity.py` writes. `u2_min`/`u2_max` are the lower
+and upper mixing edges of the excluded island; a blank/`NaN` `u2_max` with
+`u2_max_open = True` means the island is open upward.
+
+Because each analysis run lands in a per-run, git-ignored
+`tmp/runs/<tag>/analysis/hnl_sensitivity.csv` (the tag changes every run and the
+directory is eventually cleaned up), the canonical curve is **published to a
+stable, committed path**:
+
+```text
+data/published/grendel_hnl_sensitivity.csv   # the curve consumers read
+data/published/MANIFEST.json                 # provenance: run, sha, cut, reach
+data/published/README.md                     # how to re-publish
+```
+
+`curves_PBC` points its default `GRENDEL_CSV` at this file (overridable with the
+`CURVES_PBC_GRENDEL_CSV` env var). After producing a better run, re-publish by
+copying its `hnl_sensitivity.csv` into `data/published/` and refreshing the
+manifest (see `data/published/README.md`); do **not** point the consumer at a
+`tmp/runs/<tag>` path.
+
+The current published curve is the `central_newgrids_20260623/analysis_exact_100`
+run (`P > 100 MeV` track cut, the deepest/latest). Note for the figure caption:
+the high-mass island closes near `m_N ~ 3.6 GeV` because of the `ctau ~ 1/m_N^5`
+lifetime law (peak yield `~ sigma * beta*gamma / m_N^5`), **not** a B-meson /
+`|V_ub|^2` production cutoff -- `W/Z` produce `N` out to 10 GeV but those are too
+short-lived to reach a 22 m displaced detector (that regime belongs to prompt /
+near-IP displaced-vertex searches).
+
 ## Paths and Files
 
 Path defaults are centralized in `production/paths.py`. Supported overrides

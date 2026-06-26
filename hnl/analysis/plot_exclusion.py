@@ -101,6 +101,22 @@ def _closure_vertex(mass, u2_min, u2_max):
     return m_star, 10.0 ** (l2 + s_lo * (m_star - mass[-1]))
 
 
+def _closure_arc(m_last, u2min_last, u2max_last, m_star, u2_star, n=16):
+    """Rounded closing nose instead of a sharp linear V.
+
+    The two edges follow quarter-ellipses that meet at the pinch ``(m_star,
+    u2_star)`` with a vertical tangent, so the island closes like the physical
+    ~sqrt(m_close - m) narrowing rather than an unphysical arrowhead. Returns
+    ``(mass, u2_min, u2_max)`` arrays for the arc (excluding the start point,
+    which is already the last data point)."""
+    yL, yU, yS = np.log10(u2min_last), np.log10(u2max_last), np.log10(u2_star)
+    phi = np.linspace(0.0, np.pi / 2.0, n)[1:]
+    x = m_last + (m_star - m_last) * np.sin(phi)
+    lo = 10.0 ** (yS + (yL - yS) * np.cos(phi))
+    hi = 10.0 ** (yS + (yU - yS) * np.cos(phi))
+    return x, lo, hi
+
+
 def _band_ribbons(ax, flavor, mass, band_df, labelled):
     """Overlay theory-uncertainty ribbons on the two boundaries for one segment."""
     if band_df is None:
@@ -144,11 +160,12 @@ def _plot_single_panel(ax, df, flavor, is_leftmost=True, band_df=None,
             if not later.empty and not bool(later.iloc[0]["has_sensitivity"]):
                 cv = _closure_vertex(mass, u2_min, u2_max)
                 if cv is not None and mass[-1] < cv[0] <= float(later.iloc[0]["mass_GeV"]):
-                    mass = np.append(mass, cv[0])
-                    u2_min = np.append(u2_min, cv[1])
-                    u2_max = np.append(u2_max, cv[1])
-                    min_open = np.append(min_open, False)
-                    max_open = np.append(max_open, False)
+                    am, alo, ahi = _closure_arc(mass[-1], u2_min[-1], u2_max[-1], cv[0], cv[1])
+                    mass = np.append(mass, am)
+                    u2_min = np.append(u2_min, alo)
+                    u2_max = np.append(u2_max, ahi)
+                    min_open = np.append(min_open, np.zeros(len(am), dtype=bool))
+                    max_open = np.append(max_open, np.zeros(len(am), dtype=bool))
 
         # FONLL theory ribbons sit under the central fill so the excluded
         # region stays legible while the boundary uncertainty shows through.

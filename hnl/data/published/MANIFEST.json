@@ -1,0 +1,66 @@
+{
+  "artifact": "GRENDEL HNL single-flavor sensitivity (canonical published curve)",
+  "producer_repo": "llpatcolliders_HNL_PR1",
+  "producer_git_sha": "8eaf8b9",
+  "producer_branch": "hnl-production-mesons-ew",
+  "source_run": "central_newgrids_20260623/analysis_exact_100",
+  "generated_from": "tmp/runs/central_newgrids_20260623/analysis_exact_100/hnl_sensitivity.csv",
+  "csv_sha256": "9698bd68caf182e3173994cf7c3b7cb661982004d2fc90357010b2b12695de20",
+  "date_published": "2026-06-26",
+  "hypothesis": {
+    "mixing": "single-flavor",
+    "flavors": [
+      "Ue",
+      "Umu",
+      "Utau"
+    ],
+    "nature": "Majorana",
+    "observable": "|U_alpha|^2"
+  },
+  "analysis": {
+    "beam": "pp 14 TeV (HL-LHC)",
+    "L_int_fb": 3000.0,
+    "criterion": "N_signal >= 3 (background-free, 95% CL)",
+    "track_momentum_cut_MeV": 100,
+    "note_cut": "P>100 MeV is the deeper/latest run; the conservative P>600 MeV variant is exact_600."
+  },
+  "column_contract": {
+    "required_by_consumer": [
+      "mass_GeV",
+      "flavor",
+      "u2_min",
+      "u2_max"
+    ],
+    "u2_min": "lower mixing edge of the excluded island",
+    "u2_max": "upper mixing edge (blank/NaN => open; see u2_max_open)",
+    "has_sensitivity": "False => no excluded island at that mass"
+  },
+  "high_mass_closure": {
+    "closure_mass_GeV": 3.6,
+    "physics": "Island pinches because peak yield ~ sigma*beta*gamma*ctau(U^2=1) ~ sigma*bg/m_N^5 (ctau ~ 1/m_N^5). NOT a B-meson/|Vub| effect: W/Z produce N to 10 GeV but at any probeable mixing a 5-10 GeV N decays mm-m from the IP, not at the 22 m detector. High mass = prompt/near-IP (ATLAS/CMS DV) territory."
+  },
+  "headline_reach": {
+    "Ue": {
+      "best_u2_min": 4.961788919678049e-09,
+      "best_u2_min_at_mass_GeV": 0.395,
+      "mass_lo_GeV": 0.2,
+      "mass_hi_closure_GeV": 3.6,
+      "n_sensitive_points": 89
+    },
+    "Umu": {
+      "best_u2_min": 6.572732412739191e-09,
+      "best_u2_min_at_mass_GeV": 0.335,
+      "mass_lo_GeV": 0.2,
+      "mass_hi_closure_GeV": 3.6,
+      "n_sensitive_points": 89
+    },
+    "Utau": {
+      "best_u2_min": 2.823027043798889e-07,
+      "best_u2_min_at_mass_GeV": 2.8,
+      "mass_lo_GeV": 0.2,
+      "mass_hi_closure_GeV": 3.6,
+      "n_sensitive_points": 89
+    }
+  },
+  "consumer": "../curves_PBC (digitize/make_plots_three_flavor.py overlays PBC BC7 + HNLimits)"
+}
