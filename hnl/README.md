@@ -13,7 +13,8 @@ This package runs the full GRENDEL HNL chain for proton-proton collisions at
 5. scan the active-flavor mixing and produce sensitivity tables and plots.
 
 The supported flavor hypotheses are `Ue`, `Umu`, and `Utau`. The committed
-mass grid contains 116 points from 0.2 to 10 GeV.
+mass grid contains 123 points from 0.2 to 10 GeV (incl. a 3.62-3.70 GeV
+refinement that resolves where the exclusion islands pinch shut).
 
 ## Layout
 

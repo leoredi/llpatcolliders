@@ -4,12 +4,13 @@ hnl/config_mass_grid.py
 
 HNL mass grid used by the production drivers.
 
-The grid (116 points, 0.20 - 10.00 GeV) is denser where the physics changes
+The grid (119 points, 0.20 - 10.00 GeV) is denser where the physics changes
 fastest:
 
 - 0.200 - 0.500 GeV step 15 MeV    21 points   kaon-threshold region
 - 0.525 - 2.000 GeV step 25 MeV    60 points   charm and tau thresholds
-- 2.200 - 8.000 GeV mostly 200 MeV 31 points   bottom and Bc production
+- 2.200 - 8.000 GeV mostly 200 MeV 36 points   bottom and Bc production
+  (incl. 3.62-3.70 closure refinement where the islands pinch shut)
 - 8.500 - 10.00 GeV step 500 MeV    4 points   electroweak tail
 
 The same grid is used by production, channel combination, and analysis.
@@ -33,7 +34,9 @@ MASS_GRID = sorted([
     1.525, 1.550, 1.575, 1.600, 1.625, 1.650, 1.675, 1.700,
     1.725, 1.750, 1.775, 1.800, 1.825, 1.850, 1.875, 1.900,
     1.925, 1.950, 1.975, 2.000,
-    2.20, 2.40, 2.60, 2.80, 3.00, 3.20, 3.40, 3.60, 3.80, 4.00,
+    2.20, 2.40, 2.60, 2.80, 3.00, 3.20, 3.40, 3.60,
+    3.62, 3.63, 3.64, 3.65, 3.675, 3.685, 3.70,   # closure refinement: islands pinch (peak_N=3) ~3.63 (e/mu) - 3.69 (tau) GeV
+    3.80, 4.00,
     4.20, 4.40, 4.60, 4.80, 5.00,
     5.20, 5.40, 5.50, 5.60, 5.80, 6.00,
     6.20, 6.40, 6.60, 6.80, 7.00,
