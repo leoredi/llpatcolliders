@@ -29,6 +29,7 @@ dependencies:
   - scipy
   - pandas
   - pytest
+  - ruff            # linter (unused imports / style); run: ruff check hnl/
   # Vendored HNLCalc dependencies
   - sympy
   - mpmath

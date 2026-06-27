@@ -29,7 +29,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from analysis.plot_exclusion import _plot_single_panel, _closure_vertex, _closure_arc, PLOT_U2_MIN, PLOT_U2_MAX  # noqa: E402
+from analysis.plot_exclusion import _plot_single_panel, _closure_vertex, _closure_arc  # noqa: E402
 
 HNL_ROOT = Path(__file__).resolve().parent.parent
 RUNS = HNL_ROOT / "tmp" / "runs"
@@ -154,7 +154,7 @@ def main(argv=None) -> int:
     # --bc-band ... to rebuild it).
     ap.add_argument("--run", default="central_newgrids_20260623")
     ap.add_argument("--central-csv", default=None)
-    ap.add_argument("--fonll-band", default=str(RUNS / "hnl_band.csv"))
+    ap.add_argument("--fonll-band", default=str(RUNS / "hnl_band_100.csv"))
     ap.add_argument("--decay-band", default=str(RUNS / "decay_model_band_100.csv"))
     ap.add_argument("--bc-band", default=str(RUNS / "bc_nuisance_band_100.csv"))
     ap.add_argument("--breakdown", default=str(RUNS / "channel_breakdown_u2min.csv"))

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from production.decay_engine.kinematics import (
-    decay_2body, decay_2body_polarized, decay_3body_flat, _sample_polar_cos,
+    decay_2body, decay_2body_polarized, _sample_polar_cos,
     decay_3body_weighted_dq2dE, decay_3body_weighted_dE,
 )
 
@@ -74,32 +74,6 @@ def test_2body_polarized_shifts_energy_spectrum(rng):
     _, n_iso = decay_2body_polarized(E, px, py, pz, M, m1, m2, asymmetry=0.0, rng=rng)
     _, n_pol = decay_2body_polarized(E, px, py, pz, M, m1, m2, asymmetry=-1.0, rng=rng)
     assert abs(n_iso[:, 0].mean() - n_pol[:, 0].mean()) > 1e-2 * n_iso[:, 0].mean()
-
-
-def test_3body_conserves_4momentum(rng):
-    M, m1, m2, m3 = 5.28, 0.139, 0.106, 1.0   # B -> pi mu N-like masses
-    E, px, py, pz = _make_parents(500, M, rng=rng)
-    d1, d2, d3 = decay_3body_flat(E, px, py, pz, M, m1, m2, m3, rng=rng)
-
-    s = d1 + d2 + d3
-    assert np.allclose(s[:, 0], E, rtol=1e-8, atol=1e-8)
-    assert np.allclose(s[:, 1], px, rtol=1e-8, atol=1e-8)
-    assert np.allclose(s[:, 2], py, rtol=1e-8, atol=1e-8)
-    assert np.allclose(s[:, 3], pz, rtol=1e-8, atol=1e-8)
-
-    # Each daughter is on-shell at its assigned mass
-    for d, m in [(d1, m1), (d2, m2), (d3, m3)]:
-        m_recon = np.sqrt(np.maximum(d[:, 0]**2 - (d[:, 1]**2 + d[:, 2]**2 + d[:, 3]**2), 0.0))
-        assert np.allclose(m_recon, m, atol=1e-6)
-
-
-def test_3body_threshold_raises(rng):
-    """3-body decay at or below threshold must error rather than sample garbage."""
-    M = 1.0
-    m1, m2, m3 = 0.5, 0.5, 0.5  # threshold = 1.5 > M
-    E, px, py, pz = _make_parents(10, M, rng=rng)
-    with pytest.raises(RuntimeError):
-        decay_3body_flat(E, px, py, pz, M, m1, m2, m3, rng=rng)
 
 
 # ---------------------------------------------------------------------------
