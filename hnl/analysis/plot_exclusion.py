@@ -184,6 +184,15 @@ def _plot_single_panel(ax, df, flavor, is_leftmost=True, band_df=None,
         ax.plot(mass, lower_line, "r-", linewidth=1.8, zorder=6)
         ax.plot(mass, upper_line, "r-", linewidth=1.8, zorder=6)
 
+        # Close the red outline where the island physically shuts: join the lower
+        # and upper edges with a vertical cap at any segment end where both edges
+        # are sensitive (not open). This matches the filled region (whose polygon
+        # already closes there) -- no extrapolation, just the real closing edge.
+        for end in (0, -1):
+            if not min_open[end] and not max_open[end]:
+                ax.plot([mass[end], mass[end]], [u2_min[end], u2_max[end]],
+                        "r-", linewidth=1.8, zorder=6)
+
         if np.any(min_open):
             ax.scatter(
                 mass[min_open], np.full(min_open.sum(), PLOT_U2_MIN),
