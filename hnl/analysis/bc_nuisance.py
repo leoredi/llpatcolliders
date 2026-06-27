@@ -44,7 +44,7 @@ from analysis.constants import (                                      # noqa: E4
 from analysis.exclusion import find_exclusion_band                   # noqa: E402
 from analysis.format_bridge import load_combined_csv                 # noqa: E402
 from analysis.decay_reco_acceptance import build_event_mc, scan_u2   # noqa: E402
-from analysis.run_sensitivity import (                               # noqa: E402
+from analysis._engine import (                               # noqa: E402
     _get_mesh, _select_hit_sample, _seed_for, _eta_phi_to_directions_batch,
     compute_geometry, load_decay_templates)
 

@@ -34,7 +34,7 @@ if str(HNL_ROOT) not in sys.path:
     sys.path.insert(0, str(HNL_ROOT))
 
 from analysis import width_band                                    # noqa: E402
-from analysis.run_sensitivity import process_mass_point, _get_mesh  # noqa: E402
+from analysis._engine import process_mass_point, _get_mesh  # noqa: E402
 
 # densified at 3.0-4.4 GeV where the dome closes (band changes fast there).
 # All entries MUST be in config_mass_grid.MASS_GRID or the central run has no
