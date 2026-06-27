@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from analysis.exclusion import find_exclusion_band
-from analysis.plot_exclusion import _sensitive_segments
+from analysis.plot_exclusion import _sensitive_segments, _thin_marker_mask
 
 
 def test_closed_exclusion_band_has_two_resolved_edges():
@@ -57,6 +57,18 @@ def test_no_sensitivity_has_no_open_edges():
     assert not result["u2_max_open"]
     assert np.isnan(result["u2_min"])
     assert np.isnan(result["u2_max"])
+
+
+def test_open_edge_markers_thin_to_sparse_evenly_spaced_subset():
+    open_mask = np.ones(40, dtype=bool)
+
+    thinned = _thin_marker_mask(open_mask, max_markers=12)
+
+    assert thinned.sum() == 12
+    assert thinned[0] and thinned[-1]          # keep the span endpoints
+    # a short fully-open span is left untouched (nothing to thin)
+    short = np.ones(5, dtype=bool)
+    assert _thin_marker_mask(short, max_markers=12) is short
 
 
 def test_plot_segments_do_not_bridge_insensitive_mass_points():

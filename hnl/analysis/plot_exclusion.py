@@ -117,6 +117,23 @@ def _closure_arc(m_last, u2min_last, u2max_last, m_star, u2_star, n=16):
     return x, lo, hi
 
 
+def _thin_marker_mask(open_mask, max_markers=12):
+    """Sparse, evenly-spaced subset of an open-edge mask.
+
+    When an exclusion boundary runs off the scan ceiling/floor across many dense
+    grid points, drawing an open-arrow at every point piles them into an
+    overlapping sawtooth. Keep at most ``max_markers`` evenly spaced ones so the
+    row still reads as "boundary open beyond the axis" without the clutter.
+    """
+    idx = np.flatnonzero(open_mask)
+    if idx.size <= max_markers:
+        return open_mask
+    keep = idx[np.linspace(0, idx.size - 1, max_markers).round().astype(int)]
+    thinned = np.zeros_like(open_mask)
+    thinned[keep] = True
+    return thinned
+
+
 def _band_ribbons(ax, flavor, mass, band_df, labelled):
     """Overlay theory-uncertainty ribbons on the two boundaries for one segment."""
     if band_df is None:
@@ -193,14 +210,16 @@ def _plot_single_panel(ax, df, flavor, is_leftmost=True, band_df=None,
                 ax.plot([mass[end], mass[end]], [u2_min[end], u2_max[end]],
                         "r-", linewidth=1.8, zorder=6)
 
-        if np.any(min_open):
+        min_mark = _thin_marker_mask(min_open)
+        if np.any(min_mark):
             ax.scatter(
-                mass[min_open], np.full(min_open.sum(), PLOT_U2_MIN),
+                mass[min_mark], np.full(min_mark.sum(), PLOT_U2_MIN),
                 marker="v", s=18, facecolors="none", edgecolors="red",
                 linewidths=0.8, clip_on=False, zorder=7)
-        if np.any(max_open):
+        max_mark = _thin_marker_mask(max_open)
+        if np.any(max_mark):
             ax.scatter(
-                mass[max_open], np.full(max_open.sum(), PLOT_U2_MAX),
+                mass[max_mark], np.full(max_mark.sum(), PLOT_U2_MAX),
                 marker="^", s=18, facecolors="none", edgecolors="red",
                 linewidths=0.8, clip_on=False, zorder=7)
 
