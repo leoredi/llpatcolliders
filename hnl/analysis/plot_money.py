@@ -33,6 +33,8 @@ from analysis.plot_exclusion import _plot_single_panel  # noqa: E402
 
 HNL_ROOT = Path(__file__).resolve().parent.parent
 RUNS = HNL_ROOT / "tmp" / "runs"
+PUBLISHED = HNL_ROOT / "data" / "published"   # version-controlled, survives a clean clone
+BUNDLE = PUBLISHED / "bundle"                  # tracked money-plot input CSVs (see its README)
 LAB = {"Ue": r"$|U_e|^2$", "Umu": r"$|U_\mu|^2$", "Utau": r"$|U_\tau|^2$"}
 
 
@@ -125,26 +127,27 @@ def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    # P>100 MeV is the default cut (exact_100); P>600 is legacy (pass
+    # Defaults read the tracked published bundle (P>100 MeV cut), so a fresh clone
+    # reproduces the figure with no tmp/ run tree. P>600 is legacy (pass
     # --central-csv .../analysis_exact_600/... --p-cut-mev 600 --decay-band ...
     # --bc-band ... to rebuild it).
     ap.add_argument("--run", default="central_newgrids_20260623")
     ap.add_argument("--central-csv", default=None)
-    ap.add_argument("--fonll-band", default=str(RUNS / "hnl_band_100.csv"))
-    ap.add_argument("--decay-band", default=str(RUNS / "decay_model_band_100.csv"))
-    ap.add_argument("--bc-band", default=str(RUNS / "bc_nuisance_band_100.csv"))
-    ap.add_argument("--breakdown", default=str(RUNS / "channel_breakdown_u2min.csv"))
+    ap.add_argument("--fonll-band", default=str(BUNDLE / "hnl_band_fonll.csv"))
+    ap.add_argument("--decay-band", default=str(BUNDLE / "decay_model_band.csv"))
+    ap.add_argument("--bc-band", default=str(BUNDLE / "bc_nuisance_band.csv"))
+    ap.add_argument("--breakdown", default=str(BUNDLE / "channel_breakdown_u2min.csv"))
     ap.add_argument("--l-int-fb", type=float, default=3000.0)
     ap.add_argument("--p-cut-mev", type=int, default=100)
     ap.add_argument("--out-dir", default=str(RUNS / "v1_bundle"))
     a = ap.parse_args(argv)
 
-    central_csv = a.central_csv or str(RUNS / a.run / "analysis_exact_100_closed" / "hnl_sensitivity.csv")
-    cen = pd.read_csv(central_csv)   # keep insensitive rows so close_island can pinch the dome
+    central_csv = a.central_csv or str(PUBLISHED / "grendel_hnl_sensitivity.csv")
+    cen = pd.read_csv(central_csv)
     have_fonll = Path(a.fonll_band).exists()
     fonll = pd.read_csv(a.fonll_band) if have_fonll else None
-    dm = pd.read_csv(a.decay_band)
-    bc = pd.read_csv(a.bc_band)
+    dm = pd.read_csv(a.decay_band) if Path(a.decay_band).exists() else None
+    bc = pd.read_csv(a.bc_band) if Path(a.bc_band).exists() else None
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5.6), sharey=True)
     for ax, fl in zip(axes, ["Ue", "Umu", "Utau"]):
@@ -156,8 +159,7 @@ def main(argv=None) -> int:
         # The island closes on REAL refined grid points (config_mass_grid
         # 3.62-3.70, where peak_N crosses 3): no synthetic pinch/extrapolation --
         # the contour and the bands both simply end on the last sensitive point.
-        _plot_single_panel(ax, cen, fl, is_leftmost=(fl == "Ue"), band_df=None,
-                           close_island=False)
+        _plot_single_panel(ax, cen, fl, is_leftmost=(fl == "Ue"), band_df=None)
 
         # FONLL production band on both edges (hugs the dense central, follows nose).
         if have_fonll:
@@ -175,18 +177,20 @@ def main(argv=None) -> int:
                 labelled = True
 
         # Decay-model width band (upper edge) and Bc normalization band (lower edge).
-        dmf = dm[dm.flavor == fl].sort_values("mass_GeV")
-        m, lo, hi = _dex_densify(
-            dmf["mass_GeV"].to_numpy(float), dmf["u2_max"].to_numpy(float),
-            dmf["u2_max_dm_lo"].to_numpy(float), dmf["u2_max_dm_hi"].to_numpy(float),
-            cm, c_max)
-        _ribbon(ax, m, lo, hi, "steelblue", "decay-model band (upper)", zorder=4)
-        bcf = bc[bc.flavor == fl].sort_values("mass_GeV")
-        m, lo, hi = _dex_densify(
-            bcf["mass_GeV"].to_numpy(float), bcf["u2_min"].to_numpy(float),
-            bcf["u2_min_bc_lo"].to_numpy(float), bcf["u2_min_bc_hi"].to_numpy(float),
-            cm, c_min)
-        _ribbon(ax, m, lo, hi, "teal", "Bc band (lower)", zorder=4)
+        if dm is not None:
+            dmf = dm[dm.flavor == fl].sort_values("mass_GeV")
+            m, lo, hi = _dex_densify(
+                dmf["mass_GeV"].to_numpy(float), dmf["u2_max"].to_numpy(float),
+                dmf["u2_max_dm_lo"].to_numpy(float), dmf["u2_max_dm_hi"].to_numpy(float),
+                cm, c_max)
+            _ribbon(ax, m, lo, hi, "steelblue", "decay-model band (upper)", zorder=4)
+        if bc is not None:
+            bcf = bc[bc.flavor == fl].sort_values("mass_GeV")
+            m, lo, hi = _dex_densify(
+                bcf["mass_GeV"].to_numpy(float), bcf["u2_min"].to_numpy(float),
+                bcf["u2_min_bc_lo"].to_numpy(float), bcf["u2_min_bc_hi"].to_numpy(float),
+                cm, c_min)
+            _ribbon(ax, m, lo, hi, "teal", "Bc band (lower)", zorder=4)
 
         ax.set_title(f"HNL {LAB[fl]}", fontsize=13)
         if fl in ("Umu", "Utau"):

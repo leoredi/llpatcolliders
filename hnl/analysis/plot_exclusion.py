@@ -77,46 +77,6 @@ def _sensitive_segments(sel):
         yield segment
 
 
-def _closure_vertex(mass, u2_min, u2_max):
-    """High-mass pinch where the rising lower edge meets the falling upper edge.
-
-    Linearly extrapolates log10(u2_min) and log10(u2_max) from the last two
-    sensitive points to their crossing. Returns ``(m_star, u2_star)`` or
-    ``None`` when the edges are not converging to a crossing just past the grid.
-    """
-    if len(mass) < 2:
-        return None
-    dm = mass[-1] - mass[-2]
-    if dm <= 0:
-        return None
-    l1, l2 = np.log10(u2_min[-2]), np.log10(u2_min[-1])
-    h1, h2 = np.log10(u2_max[-2]), np.log10(u2_max[-1])
-    s_lo = (l2 - l1) / dm          # lower edge: rising  -> s_lo > 0
-    s_hi = (h2 - h1) / dm          # upper edge: falling -> s_hi < 0
-    if not (s_lo > 0 > s_hi):
-        return None
-    m_star = mass[-1] + (h2 - l2) / (s_lo - s_hi)
-    if m_star <= mass[-1]:
-        return None
-    return m_star, 10.0 ** (l2 + s_lo * (m_star - mass[-1]))
-
-
-def _closure_arc(m_last, u2min_last, u2max_last, m_star, u2_star, n=16):
-    """Rounded closing nose instead of a sharp linear V.
-
-    The two edges follow quarter-ellipses that meet at the pinch ``(m_star,
-    u2_star)`` with a vertical tangent, so the island closes like the physical
-    ~sqrt(m_close - m) narrowing rather than an unphysical arrowhead. Returns
-    ``(mass, u2_min, u2_max)`` arrays for the arc (excluding the start point,
-    which is already the last data point)."""
-    yL, yU, yS = np.log10(u2min_last), np.log10(u2max_last), np.log10(u2_star)
-    phi = np.linspace(0.0, np.pi / 2.0, n)[1:]
-    x = m_last + (m_star - m_last) * np.sin(phi)
-    lo = 10.0 ** (yS + (yL - yS) * np.cos(phi))
-    hi = 10.0 ** (yS + (yU - yS) * np.cos(phi))
-    return x, lo, hi
-
-
 def _thin_marker_mask(open_mask, max_markers=12):
     """Sparse, evenly-spaced subset of an open-edge mask.
 
@@ -153,8 +113,7 @@ def _band_ribbons(ax, flavor, mass, band_df, labelled):
     return labelled
 
 
-def _plot_single_panel(ax, df, flavor, is_leftmost=True, band_df=None,
-                       close_island=False):
+def _plot_single_panel(ax, df, flavor, is_leftmost=True, band_df=None):
     sel = df[df["flavor"] == flavor].sort_values("mass_GeV")
     plotted = False
     band_labelled = False
@@ -167,22 +126,6 @@ def _plot_single_panel(ax, df, flavor, is_leftmost=True, band_df=None,
             valid, "u2_min_open", "u2_min", PLOT_U2_MIN)
         max_open = _open_flags(
             valid, "u2_max_open", "u2_max", PLOT_U2_MAX)
-
-        # Close the high-mass dome to its interpolated pinch when the next grid
-        # mass is insensitive (the island physically shut between the two), so
-        # the contour ends in a point instead of a blunt residual-gap wall.
-        if (close_island and len(mass) >= 2
-                and not min_open[-1] and not max_open[-1]):
-            later = sel[sel["mass_GeV"] > mass[-1]]
-            if not later.empty and not bool(later.iloc[0]["has_sensitivity"]):
-                cv = _closure_vertex(mass, u2_min, u2_max)
-                if cv is not None and mass[-1] < cv[0] <= float(later.iloc[0]["mass_GeV"]):
-                    am, alo, ahi = _closure_arc(mass[-1], u2_min[-1], u2_max[-1], cv[0], cv[1])
-                    mass = np.append(mass, am)
-                    u2_min = np.append(u2_min, alo)
-                    u2_max = np.append(u2_max, ahi)
-                    min_open = np.append(min_open, np.zeros(len(am), dtype=bool))
-                    max_open = np.append(max_open, np.zeros(len(am), dtype=bool))
 
         # FONLL theory ribbons sit under the central fill so the excluded
         # region stays legible while the boundary uncertainty shows through.
