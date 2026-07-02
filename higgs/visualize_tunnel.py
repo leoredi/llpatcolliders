@@ -45,6 +45,24 @@ def _profile_ring_3d(path_3d, idx, profile_2d):
     return np.vstack([pts, pts[0]])
 
 
+def set_equal_aspect_3d(ax, expand=(1.0, 1.0, 1.0)):
+    """Make 1 m the same length on all three 3D axes (no stretching).
+
+    Sets the box aspect proportional to the autoscaled data extents, so the
+    tunnel keeps its true proportions instead of being forced into a cube.
+    `expand` grows each axis range about its centre before fixing the aspect
+    (e.g. 1.2 on the CMS-Z/beam axis = +20% range). Axis order is the matplotlib
+    (x, y, z) display order: here x=X, y=Z (beam), z=Y (up)."""
+    setters = (ax.set_xlim3d, ax.set_ylim3d, ax.set_zlim3d)
+    lims = (ax.get_xlim3d(), ax.get_ylim3d(), ax.get_zlim3d())
+    ranges = []
+    for (lo, hi), f, setter in zip(lims, expand, setters):
+        c, h = 0.5 * (lo + hi), 0.5 * (hi - lo) * f
+        setter(c - h, c + h)
+        ranges.append(2 * h)
+    ax.set_box_aspect(ranges)
+
+
 # ── build mesh vertices for the interactive plot ─────────────────────
 
 profile_outer = tunnel_profile_points(inset=0)
@@ -91,6 +109,7 @@ ax1.set_ylabel('Z (beam, m)')
 ax1.set_zlabel('Y (up, m)')
 ax1.set_title('3D Active Decay Volume (inner tracker boundary)')
 ax1.legend(fontsize=8)
+set_equal_aspect_3d(ax1, expand=(1.0, 1.2, 1.0))  # +20% on CMS-Z (beam)
 
 # ── Panel 2: Top view (X-Z plane, bird's eye) ───────────────────────
 
@@ -308,7 +327,7 @@ ax.set_zlabel('Y (up, m)', fontsize=10)
 ax.set_title('GRENDEL Tunnel — Active Decay Volume (inner tracker layer extrusion)',
              fontsize=13)
 ax.view_init(elev=20, azim=45)
-ax.set_box_aspect([1, 1, 0.5])
+set_equal_aspect_3d(ax, expand=(1.0, 1.2, 1.0))  # +20% on CMS-Z (beam)
 ax.legend(fontsize=10)
 
 plt.show()
