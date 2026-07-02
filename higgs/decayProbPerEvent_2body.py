@@ -32,7 +32,9 @@ from reco_common import SIGMA_T_DEFAULT, CHI2_TIMING_MAX
 M_ELECTRON = 0.000511  # GeV/c²
 
 # Analysis cuts
-P_CUT   = 0.600    # GeV/c — minimum electron momentum
+P_CUT   = 0.100    # GeV/c — minimum electron momentum (track must be energetic
+                   # enough to reconstruct as a straight track despite multiple
+                   # scattering in the scintillator; ~2 deg Highland angle at 100 MeV)
 SEP_MIN = 0.01    # m — minimum separation at detector (1 cm)
 SEP_MAX = 10.0      # m — maximum separation at detector
 DCA_CUT = 0.1  # m (10 cm) — maximum DCA between reconstructed tracks
@@ -92,7 +94,7 @@ SEP_IN_POINT_GATE   = 0.10   # m (10 cm) — pointing cut applies only when sep_
 # background (single source).
 POINT_GLOBAL = 0.8   # rad (800 mrad)
 
-outString = "15GeVPostTimingUpdate"
+outString = "15GeVFixANUBIS"
 sample_csv = "LLPSmall.csv"
 
 # Tracking resolution
@@ -1894,7 +1896,7 @@ if __name__ == "__main__":
     ax4.loglog(lifetimes * SPEED_OF_LIGHT, mc_scan['exclusion'],
                color='blue', linewidth=2, label="GRENDEL (full selection)")
     ax4.loglog(lifetimes * SPEED_OF_LIGHT, scan['exclusion'],
-               color='blue', linewidth=2, linestyle='--', alpha=0.5,
+               color='blue', linewidth=2, linestyle=':', alpha=0.5,
                label="GRENDEL (acceptance only)")
     ax4.set_xlabel(r'$c\tau$ (m)')
     ax4.set_ylabel('BR')
@@ -1905,26 +1907,23 @@ if __name__ == "__main__":
         ext["MATHUSLA"] = np.loadtxt("external/MATHUSLA.csv", delimiter=",")
         ext["CODEX"] = np.loadtxt("external/CODEX.csv", delimiter=",")
         ext["CMS"] = np.loadtxt("external/CMS.csv", delimiter=",")
-        # ext["ANUBISOpt"] = np.loadtxt("external/ANUBISOpt.csv", delimiter=",")
-        ext["ANUBISCons"] = np.loadtxt("external/ANUBISUpdateCons.csv", delimiter=",")
-    
+        ext["ANUBISOpt"] = np.loadtxt("external/ANUBISPBC.csv", delimiter=",")
+
         ax4.loglog(ext["MATHUSLA"][:, 0], ext["MATHUSLA"][:, 1],
-                   color="green", linewidth=2, label="MATHUSLA")
+                   color="green", linewidth=2, linestyle="--", label="MATHUSLA")
         ax4.loglog(ext["CODEX"][:, 0], ext["CODEX"][:, 1],
-                   color="cyan", linewidth=2, label="CODEX-b")
-        ax4.loglog(ext["CMS"][:, 0], ext["CMS"][:, 1],
-                   color="purple", linewidth=2, label="CMS")
-        # ax4.loglog(ext["ANUBISOpt"][:, 0], ext["ANUBISOpt"][:, 1],
-        #            color="purple", linewidth=2, linestyle="--", label="ANUBIS Opt")
-        ax4.loglog(ext["ANUBISCons"][:, 0], ext["ANUBISCons"][:, 1],
-                   color="magenta", linewidth=2, linestyle="--", label="ANUBIS Cons")
+                   color="cyan", linewidth=2, linestyle="--",label="CODEX-b")
+        # ax4.loglog(ext["CMS"][:, 0], ext["CMS"][:, 1],
+        #            color="purple", linewidth=2, label="CMS")
+        ax4.loglog(ext["ANUBISOpt"][:, 0], ext["ANUBISOpt"][:, 1],
+                    color="magenta", linewidth=2, linestyle="--", label="ANUBIS (PBC)")
         ax4.legend(fontsize=8, loc='lower right')
         ax4.set_ylim([1E-5,1])
     elif df_results['mass'].iloc[0] == 0.5:
         ext["CODEX"] = np.loadtxt("external/CODEX0p5.csv", delimiter=",")
     
         ax4.loglog(ext["CODEX"][:, 0], ext["CODEX"][:, 1],
-                   color="cyan", linewidth=2, label="CODEX-b")
+                   color="cyan", linewidth=2,linestyle="--", label="CODEX-b")
         ax4.legend(fontsize=8, loc='lower right')
         
     plt.tight_layout()
