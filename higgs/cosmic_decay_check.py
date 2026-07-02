@@ -1514,6 +1514,10 @@ def parse_args():
                         '(signal-style), with the active cut thresholds drawn.')
     p.add_argument('--n-displays', type=int, default=4,
                    help='Number of passing-event displays to draw (0 = none).')
+    p.add_argument('--displays-pre-timing', action='store_true',
+                   help='Draw displays of events that pass everything EXCEPT '
+                        'the timing chi2 cut (the pre-timing sample) instead of '
+                        'the fully-selected sample.')
     p.add_argument('--display-dir', default='cosmic_decay_event_displays')
     p.add_argument('--horseshoe-out', default='cosmic_decay_horseshoe.png')
     p.add_argument('--collin-plot-out', default='cosmic_decay_collin_sepout.png')
@@ -1648,9 +1652,12 @@ def main():
                              interactive=args.interactive)
 
     if args.n_displays > 0:
-        print(f"\nDrawing up to {args.n_displays} passing-event displays "
-              f"(of {int(passmask.sum())} that pass) -> {args.display_dir}/")
-        make_cosmic_displays(r, passmask, args.n_displays, args.display_dir,
+        disp_mask = pre_timing if args.displays_pre_timing else passmask
+        disp_label = ('pre-timing (all cuts except timing chi2)'
+                      if args.displays_pre_timing else 'fully-selected')
+        print(f"\nDrawing up to {args.n_displays} {disp_label} event displays "
+              f"(of {int(disp_mask.sum())} that pass) -> {args.display_dir}/")
+        make_cosmic_displays(r, disp_mask, args.n_displays, args.display_dir,
                              seed=args.seed)
 
 

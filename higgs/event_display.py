@@ -149,7 +149,16 @@ def _centerline_at(s):
 
 
 def _draw_local_section(mc, idxs, ax_local):
-    """Bottom panel: cavern cross-section + layer 1/2 at the wall hits."""
+    """Bottom panel: cavern cross-section + layer 1/2 at the wall hits.
+
+    The cross-section is drawn at the average DECAY VERTEX's s along the
+    centreline (not the wall hit's s). This way the decay vertex sits in
+    its own perpendicular plane and lands inside the fiducial outline as
+    it physically should. The wall hits are typically at slightly larger
+    s (daughters travel forward), and are projected onto the decay's
+    cross-section for context — for long LLP paths through the fiducial
+    they may not coincide exactly with the drawn profile.
+    """
     hits3d = []
     for idx in idxs:
         for k in (1, 2):
@@ -161,10 +170,18 @@ def _draw_local_section(mc, idxs, ax_local):
         return
     hits3d = np.array(hits3d)
 
-    # Local basis at the average hit position
+    # Reference s = average decay vertex along the centreline, so decays
+    # are drawn in their own cross-section.
+    decay_arr = np.array([mc['decay_pos'][idx] for idx in idxs])
+    decay_avg = decay_arr.mean(axis=0)
+    _, s_dec, _, _, _ = classify_points_with_basis(decay_avg[None, :])
+    s_ref = float(s_dec[0])
+
+    # For context, also report the average wall-hit s.
     hit_avg = hits3d.mean(axis=0)
-    _, s_arr, _, _, _ = classify_points_with_basis(hit_avg[None, :])
-    s_ref = float(s_arr[0])
+    _, s_hit_arr, _, _, _ = classify_points_with_basis(hit_avg[None, :])
+    s_hit_avg = float(s_hit_arr[0])
+
     cl_point, _, right, up = _centerline_at(s_ref)
 
     def to_local(p3d):
@@ -248,9 +265,10 @@ def _draw_local_section(mc, idxs, ax_local):
     ax_local.set_aspect('equal')
     ax_local.set_xlabel('x_local (m)')
     ax_local.set_ylabel('y_local (m)')
+    ds = s_hit_avg - s_ref
     ax_local.set_title(
-        f'Local cross-section at s = {s_ref:.1f} m '
-        f'(zoom ±{span:.1f} m)')
+        f'Local cross-section at decay s = {s_ref:.1f} m '
+        f'(hit s = {s_hit_avg:.1f} m, Δs = {ds:+.1f} m; zoom ±{span:.1f} m)')
     ax_local.legend(fontsize=8, loc='upper right')
     ax_local.grid(True, alpha=0.3)
 
@@ -372,13 +390,22 @@ def make_event_displays(mc, selections, n_per=3,
             particles = np.unique(pid[ev_mask])
 
             # Pick one representative sample per particle inside the
-            # selection mask
+            # selection mask. Sample weight-proportionally — picking the
+            # argmax instead biases the representative to the smallest-d
+            # passing sample (since w ∝ exp(-d/λ) is monotone in d, the
+            # max sits at the lowest d, putting the displayed vertex
+            # right at LLP entry for every event).
             rep_idxs = []
             for p_id in particles:
                 p_mask = (pid == p_id) & ev_mask & sel_mask
                 if not p_mask.any():
                     continue
-                rep_idxs.append(int(np.argmax(np.where(p_mask, weights, 0))))
+                idxs_p = np.where(p_mask)[0]
+                w_p = weights[idxs_p]
+                if w_p.sum() <= 0:
+                    rep_idxs.append(int(rng.choice(idxs_p)))
+                else:
+                    rep_idxs.append(int(rng.choice(idxs_p, p=w_p / w_p.sum())))
             if not rep_idxs:
                 continue
 
