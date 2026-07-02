@@ -84,7 +84,17 @@ def compute_geometry(eta, phi, mesh, origin=CMS_ORIGIN, batch_label=""):
     exit_d = np.full(n, np.nan)
 
     directions = _eta_phi_to_directions_batch(eta, phi)
-    candidates = np.where(directions[:, 1] > 0.01)[0]
+    # Pre-filter: only cast directions that can geometrically reach the mesh.
+    # The threshold is derived from the mesh itself (the minimum upward
+    # direction-cosine of any mesh vertex seen from the origin, minus a
+    # margin) rather than hard-coded, so a geometry edit cannot silently drop
+    # rays that would have hit. For the current overhead tunnel this
+    # reproduces the old y > 0.01 cut; for a mesh reaching the horizon the
+    # filter relaxes automatically.
+    vdir = mesh.vertices - origin_arr[None, :]
+    vdir = vdir / np.linalg.norm(vdir, axis=1)[:, None]
+    y_thresh = max(float(vdir[:, 1].min()) - 0.01, -1.0)
+    candidates = np.where(directions[:, 1] > y_thresh)[0]
     n_cand = len(candidates)
     if n_cand == 0:
         return hits, entry_d, exit_d
@@ -133,8 +143,15 @@ def compute_geometry(eta, phi, mesh, origin=CMS_ORIGIN, batch_label=""):
         orig_idx = candidates[ray_local]
         s = valid_starts[i]
         e = s + valid_counts[i]
-        ray_dists = sorted_dists[s:e]
-        ray_dists.sort()
+        ray_dists = np.sort(sorted_dists[s:e])
+        # trimesh reports duplicate intersections where a ray crosses a shared
+        # triangle edge; without deduplication a duplicated entry point makes
+        # exit ~= entry and the event contributes ~zero decay path. Keep only
+        # crossings separated by > 1 um.
+        keep = np.concatenate([[True], np.diff(ray_dists) > 1e-6])
+        ray_dists = ray_dists[keep]
+        if len(ray_dists) < 2:
+            continue    # tangent / duplicate-only: no through-going path
         hits[orig_idx] = True
         entry_d[orig_idx] = ray_dists[0]
         exit_d[orig_idx] = ray_dists[1]
@@ -247,7 +264,8 @@ def process_mass_point(flavor, mass, mesh,
             "u2_min": np.nan, "u2_max": np.nan,
             "u2_min_open": False, "u2_max_open": False,
             "peak_N": 0.0, "peak_u2": np.nan,
-            "has_sensitivity": False, "n_events": n_events, "n_hits": 0,
+            "has_sensitivity": False, "n_islands": 0,
+            "n_events": n_events, "n_hits": 0,
         }
 
     templates = load_decay_templates(flavor, mass_label)

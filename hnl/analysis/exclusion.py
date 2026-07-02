@@ -49,11 +49,28 @@ def find_exclusion_band(u2_grid, N_grid, N_threshold=N_THRESHOLD):
             "u2_min": np.nan, "u2_max": np.nan,
             "u2_min_open": False, "u2_max_open": False,
             "peak_N": peak_N, "peak_u2": peak_u2,
-            "has_sensitivity": False,
+            "has_sensitivity": False, "n_islands": 0,
         }
 
     idx = np.where(mask)[0]
-    i_lo, i_hi = idx[0], idx[-1]
+    # The scan can in principle be above threshold on more than one disjoint
+    # U^2 interval (e.g. production channels with very different parent boosts
+    # peaking at different U^2). Reporting idx[0]..idx[-1] would silently
+    # claim the below-threshold gap between islands as excluded, so detect
+    # islands and report the one containing the sensitivity peak; the count is
+    # returned as ``n_islands`` so downstream tables can flag the others.
+    breaks = np.where(np.diff(idx) > 1)[0]
+    n_islands = int(len(breaks) + 1)
+    if n_islands > 1:
+        import sys as _sys
+        print(f"WARNING: N_signal(U^2) crosses N >= {N_threshold} on "
+              f"{n_islands} disjoint islands; [u2_min, u2_max] reports only "
+              "the island containing the peak.", file=_sys.stderr)
+        segments = np.split(idx, breaks + 1)
+        seg = next(s for s in segments if s[0] <= peak_idx <= s[-1])
+        i_lo, i_hi = seg[0], seg[-1]
+    else:
+        i_lo, i_hi = idx[0], idx[-1]
 
     u2_min_open = i_lo == 0
     u2_max_open = i_hi == len(u2_grid) - 1
@@ -70,7 +87,7 @@ def find_exclusion_band(u2_grid, N_grid, N_threshold=N_THRESHOLD):
         "u2_min": u2_min, "u2_max": u2_max,
         "u2_min_open": u2_min_open, "u2_max_open": u2_max_open,
         "peak_N": peak_N, "peak_u2": peak_u2,
-        "has_sensitivity": True,
+        "has_sensitivity": True, "n_islands": n_islands,
     }
 
 
