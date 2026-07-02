@@ -1,0 +1,38 @@
+# ---- OS / editor cruft ----
+.DS_Store
+*.sw[nop]
+*~
+
+# ---- Python ----
+__pycache__/
+*.py[co]
+
+# ---- Generated plots / animations ----
+*.png
+*.gif
+
+# ---- Logs ----
+*.log
+
+# ---- Cached / binary data products ----
+*.npz
+*.so
+
+# ---- Per-mass and MC output directories ----
+0p5GeV*/
+1GeV*/
+15GeV*/
+40GeV*/
+cosmic_g16*/
+cosmic_decay_event_displays/
+geometry/
+
+# ---- Generated output CSVs ----
+# (external/ comparison curves and LLP*.csv inputs stay tracked)
+cutflow_*.csv
+jet*.csv
+*_per_jet.csv
+*_perjet.csv
+cosmic_decay_collin_passers*.csv
+event_decay_statistics*.csv
+particle_decay_results*.csv
