@@ -39,20 +39,37 @@ def test_best_two_directions_picks_leading_charged():
     # 3 charged + 1 neutral; expect the two highest-|p| charged, unit dirs
     px = np.array([5.0, 0.0, 3.0, 0.0]); py = np.array([0.0, 4.0, 0.0, 9.0])
     pz = np.array([0.0, 0.0, 0.0, 0.0])
+    E = np.sqrt(px**2 + py**2 + pz**2)      # massless -> beta = 1
     charge = np.array([1.0, -1.0, 1.0, 0.0]); stable = np.array([1, 1, 1, 1])
-    out = dra.best_two_directions(px, py, pz, charge, stable)
+    out = dra.best_two_directions(px, py, pz, E, charge, stable)
     assert out is not None
-    d1, d2, p_soft = out
+    d1, d2, p_soft, b1, b2 = out
     assert np.allclose(np.linalg.norm(d1), 1.0)
     assert np.allclose(d1, [1, 0, 0])          # |p|=5 leading
     assert np.allclose(d2, [0, 1, 0])          # |p|=4 second (neutral 9 excluded)
     assert p_soft == pytest.approx(4.0)
+    assert b1 == pytest.approx(1.0) and b2 == pytest.approx(1.0)
+
+
+def test_best_two_directions_returns_true_beta_for_massive_tracks():
+    # two charged pions at |p| = 0.2 GeV: beta = p/E = 0.2/sqrt(0.2^2+m_pi^2)
+    m_pi = 0.13957
+    px = np.array([0.2, -0.2]); py = np.zeros(2); pz = np.zeros(2)
+    E = np.sqrt(px**2 + m_pi**2)
+    charge = np.array([1.0, -1.0]); stable = np.array([1, 1])
+    out = dra.best_two_directions(px, py, pz, E, charge, stable)
+    assert out is not None
+    _, _, _, b1, b2 = out
+    beta_true = 0.2 / np.sqrt(0.2**2 + m_pi**2)   # ~0.82
+    assert b1 == pytest.approx(beta_true, rel=1e-9)
+    assert b2 == pytest.approx(beta_true, rel=1e-9)
 
 
 def test_best_two_directions_needs_two_above_cut():
     px = np.array([5.0, 0.1]); py = np.zeros(2); pz = np.zeros(2)
+    E = np.sqrt(px**2 + py**2 + pz**2)
     charge = np.array([1.0, -1.0]); stable = np.array([1, 1])
-    assert dra.best_two_directions(px, py, pz, charge, stable) is None  # 2nd below P_CUT
+    assert dra.best_two_directions(px, py, pz, E, charge, stable) is None  # 2nd below P_CUT
 
 
 def _hitting_vertex(rng):
@@ -82,6 +99,30 @@ def test_reconstruct_and_select_smoke():
         assert k in mc and len(mc[k]) == N
     sel = dra.selection_mask(mc)
     assert sel.dtype == bool and len(sel) == N
+
+
+def test_timing_chi2_penalizes_slow_daughters():
+    # Same geometry, same smear noise (fresh identically-seeded rng per call):
+    # daughters at beta = 0.5 arrive late relative to the c-hypothesis, so the
+    # timing chi2 must grow vs the beta = 1 baseline. Guards the fix that
+    # threads real daughter betas into timing_chi2_4hit.
+    rng0 = np.random.default_rng(3)
+    vtx, d = _hitting_vertex(rng0)
+    e1 = np.cross(d, [0, 0, 1.0]); e1 /= np.linalg.norm(e1)
+    dir1 = d + 0.05 * e1; dir1 /= np.linalg.norm(dir1)
+    dir2 = d - 0.05 * e1; dir2 /= np.linalg.norm(dir2)
+    N = 32
+    args = (np.tile(vtx, (N, 1)), np.tile(dir1, (N, 1)), np.tile(dir2, (N, 1)),
+            np.full(N, 5.0), dra.HIT_RESOLUTION, dra.SIGMA_T_DEFAULT)
+    mc_fast = dra.reconstruct_decays(*args, np.random.default_rng(7))
+    mc_slow = dra.reconstruct_decays(*args, np.random.default_rng(7),
+                                     beta1=np.full(N, 0.5),
+                                     beta2=np.full(N, 0.5))
+    ok = np.isfinite(mc_fast['timing_chi2']) & np.isfinite(mc_slow['timing_chi2'])
+    if not ok.any():
+        pytest.skip("no reconstructable decays for this geometry draw")
+    assert (np.median(mc_slow['timing_chi2'][ok])
+            > np.median(mc_fast['timing_chi2'][ok]))
 
 
 def _synthetic_templates():
