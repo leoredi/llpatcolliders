@@ -1,51 +1,57 @@
-# External inputs needed — BC10 fermiophilic ALP
+# External inputs — BC10 fermiophilic ALP
 
-The model layer (`model.py`) uses standard analytic formulae from the
-fermiophilic-ALP literature with every constant made explicit. Two pieces are
-genuine **external data products** that should be supplied to replace the
-documented analytic placeholders before the island is quoted as final. They are
-NOT fabricated here; the placeholders are clearly bounded and their effect on
-the reach is stated.
+_Updated 2026-07-08._ The two physics inputs originally flagged here as
+analytic placeholders have been **replaced by external data products**; what
+remains below is the residual systematics they carry and the (deliberately
+dropped) overlay curves.
 
-## 1. Absolute B → K a production normalization
-`model.h_sb` / `model.width_B_to_K_a` implement the top-W penguin at
-**leading log** with an O(1) coefficient `C_TOP = 1` and a fixed UV scale
-`LAMBDA_UV = 1 TeV`, plus a single-pole B→K scalar form factor
-`f_0(q²)` (`F0_B_K_AT_0 = 0.33`, pole² = 37.5 GeV²).
+## 1. Absolute B → K a production normalization — SATISFIED
 
-Needed: the BC10 value of BR(B→K a)(1/f) as tabulated in the unified FIP
-calculation **arXiv:2311.00507** (the source the 2025 PBC report
-arXiv:2505.00947 uses), or equivalently the matched Wilson coefficient and the
-lattice f_0(q²) (e.g. ALPINIST, arXiv:2105.10806; HPQCD B→K form factors).
+The leading-log placeholder (`C_TOP = 1`) was replaced by the one-loop RG
+coefficient of GKOZ (arXiv:2310.03524), evaluated with ALPINIST's
+implementation (`tools/compute_cbs_alpinist.py`, BSD-3 port; pinned commit in
+`data/alpinist/COMMIT_SHA.txt`):
 
-Impact: BR(B→K a) ∝ (C_TOP · f_0)², so the **production yield ∝ (C_TOP f_0)²**
-and the island's coupling edges move as `1/f ∝ (C_TOP f_0)^{-1}`. A factor-2
-error in C_TOP·f_0 shifts the whole island by ~2× in 1/f. The reported reach
-should be read with this scaling until the normalization is matched.
+    g_bs = CBS_EFF * (1/f),  CBS_EFF = 3.518383e-4  at Lambda_UV = 1 TeV.
 
-Extension (uplift, not included): the vector channels B→K\* a and B_s→φ a add an
-O(1) factor to the production rate; only the pseudoscalar B→K a channels (B⁺→K⁺,
-B⁰→K⁰) are in the baseline.
+The finite one-loop + RG terms partially cancel the small log at 1 TeV: the
+proper coefficient is ~2.5x *smaller* in amplitude (6.3x in rate) than the
+leading-log placeholder. Production now also spans the **full kaon tower**
+(K, K0*(700/1430), K*(892/1410/1680), K1(1270/1400), K2*(1430)) for B+ and B0
+with the Boiarska et al. (arXiv:1904.10447) form factors — GKOZ's "almost 4x"
+uplift over K + K*(892) (we get 3.9-4.1x depending on m_a).
 
-## 2. Data-driven hadronic width / spectral function (0.3–~2 GeV)
-`model.alp_partial_widths["hadronic"]` is the **perturbative quark-level** sum
-(N_c=3, current masses, 1+α_s/π), gated at m_a > 2 m_π. In the resonance region
-the true a→hadrons rate is data-driven (ALP–π⁰/η/η′ mixing, R-ratio), which is
-what arXiv:2311.00507 provides.
+**Residual:** cross-checking CBS_EFF against GKOZ Table 1 (|C_bs| = 1.8e-3 at
+f_GKOZ = 1 GeV) agrees to 6-20% in amplitude depending on the m_b scheme used
+to unfold their C_bs = c_bs m_b/2f definition. The island's lower
+(production-limited) edge inherits <~20% in 1/f. Bs → phi a is not included
+(matching ALPINIST); it would add O(10%) production.
 
-Needed: the data-driven a→hadrons partial width (or the hadronic R-ratio /
-exclusive ChPT modes π⁺π⁻π⁰, ηππ, …) vs m_a.
+## 2. Data-driven hadronic width — SATISFIED
 
-Impact: this sets cτ and the visible-track mix above 2 m_π. The perturbative
-model has a **sharp, artificial cc̄ onset at m_a ≈ 2 m_c ≈ 2.55 GeV** that
-over-shortens cτ and pinches the island closed near 2.5–3 GeV. The
-**clean, robust part of the result is the low-mass μμ-dominated window**
-(2 m_μ ≲ m_a ≲ 1 GeV, and especially the pure-dimuon 2 m_μ–2 m_π band); above
-~2.5 GeV the upper island edge is placeholder-limited.
+`model.alp_partial_widths` now reads the digitized GKOZ per-channel width
+tables (via ALPINIST, `data/alpinist/`, provenance + normalisation
+cross-checks in `data/alpinist/PROVENANCE.md`): total hadronic + gamma gamma
+over 0.01-3.01 GeV, with the physical eta/eta' mixing poles and the 2 m_c
+onset. Above 3.01 GeV the perturbative quark-level sum continues the width,
+normalised to the table at the seam (raw mismatch ~1.5x, charm mass-scheme).
+All-neutral final states (3pi0, K0 K0bar pi0, pi0 pi0 eta(') with neutral
+eta(') decays) are excluded from the visible channels
+(`model.visible_fraction`, 0.77-1.0 across the island).
 
-## 3. Competitor + existing-bound curves for the overlay plot
-`plot.py` draws the GRENDEL island and overlays curves from an optional
-long-format CSV (`curve, m_a_GeV, invf_GeV_inv`). The unified-calc competitor
-(arXiv:2311.00507) and the existing-bound contours (CHARM/E137 beam dumps,
-LHCb/Belle II B→K(\*)μμ & B→K+inv, etc.) are external digitizations to drop in
-there. Without them the plot shows only the GRENDEL island.
+**Residual:** the sharp artificial 2 m_c cliff of the old perturbative
+placeholder is gone (the island's upper edge is now data-driven up to
+3.01 GeV); above 3.01 GeV the upper edge still rests on the matched
+perturbative continuation.
+
+**Convention note (for future overlays / axis labels):** our 1/f axis is the
+BNT (arXiv:1708.00443) convention g_aff = c_f m_f / f with c_f = 1. GKOZ
+normalise with 1/(2 f_GKOZ), so 1/f_here = 2/f_GKOZ. Any comparison curve
+digitized from GKOZ/PBC BC10 figures must be mapped accordingly.
+
+## 3. Competitor + existing-bound curves — DROPPED (by decision)
+
+The GRENDEL island is the deliverable; overlay curves (unified-calc
+competitors, CHARM/E137, LHCb/Belle II B→K(*) mumu / B→K+inv) are not part of
+it. `plot.py` still accepts an optional long-format overlay CSV
+(`curve, m_a_GeV, invf_GeV_inv`) if that decision is ever revisited.

@@ -2,9 +2,10 @@
 
 A pseudoscalar axion-like particle `a` with **universal coupling to SM
 fermions** (single parameter `1/f`, Wilson coefficients `c_f = 1`), produced in
-**B → K a** (the flavour-violating `b → s a` top penguin) and decaying to the
-heaviest kinematically open charged fermions (`a → μμ, ττ, cc/ss …`). This is
-the genuine charged-track "ALP" benchmark.
+**B → K⁽ⁱ⁾ a** (the flavour-violating `b → s a` penguin, summed over the full
+kaon tower as in GKOZ arXiv:2310.03524) and decaying to leptons and — via the
+data-driven GKOZ spectral tables — to hadrons. This is the genuine
+charged-track "ALP" benchmark.
 
 BC10 is **coupling-controlled**: the single `1/f` fixes the production yield, the
 lifetime cτ, and the visible branching ratios *simultaneously*. The limit is
@@ -34,14 +35,17 @@ extraction.
 ## Layout
 ```
 alp_fermion/
-  model.py          model layer: a→ff widths, Γ_tot, cτ, BRs, BR(B→K a) (b→s a penguin)
-  alp_production.py B (FONLL) → B→K a → a four-vector CSVs (weight,E,px,py,pz), weighted by BR(B→K a)
-  templates.py      per-mass ALP rest-frame decay templates (channels ∝ BR), FairShip-compatible npz
+  model.py          model layer: a→ff/γγ/hadrons widths (GKOZ tables), Γ_tot, cτ, BRs,
+                    BR(B→K⁽ⁱ⁾ a) over the kaon tower (b→s a penguin, one-loop RG coefficient)
+  alp_production.py B (FONLL) → B→K⁽ⁱ⁾ a → a four-vector CSVs (weight,E,px,py,pz)
+  templates.py      per-mass ALP rest-frame decay templates (channels ∝ visible BR)
   sensitivity.py    (m_a, 1/f) closed-island scan; N_signal ≥ 3, 3000 fb⁻¹
   plot.py           BC10 island in the (m_a, 1/f) plane (+ optional overlay curves)
   paths.py          output-dir policy (ALP_TMP_DIR override) + hnl/ import shim
+  data/alpinist/    digitized GKOZ decay-width tables via ALPINIST (PROVENANCE.md, pinned SHA)
+  tools/compute_cbs_alpinist.py  regenerates the b→s a RG coefficient (BSD-3 ALPINIST port)
   tests/test_model.py
-  EXTERNAL_INPUTS_NEEDED.md   (B→K a normalization, data-driven hadronic width, overlay curves)
+  EXTERNAL_INPUTS_NEEDED.md   (input provenance + residual systematics; overlays dropped)
 ```
 
 ## Run (use the `hnl` conda env — has trimesh + networkx)
@@ -56,12 +60,19 @@ Outputs go to `alp_fermion/tmp/` (gitignored): `analysis/bc10_sensitivity.csv`
 and `analysis/bc10_island.{png,pdf}`.
 
 ## Model layer references
-- a→f f̄ widths and L_int: Bauer–Neubert–Thamm, JHEP 12 (2017) 044
-  (arXiv:1708.00443); EFT review arXiv:2012.12272.
-- b→s a top penguin (B→K a): BNT and "Flavour probes of ALPs"
-  (arXiv:2110.10698); ALPINIST (arXiv:2105.10806).
-- Benchmark definition / curves: 2025 PBC report (arXiv:2505.00947), using the
-  unified FIP calculation (arXiv:2311.00507).
-See `EXTERNAL_INPUTS_NEEDED.md` for the two analytic placeholders (B→K a
-absolute normalization; data-driven hadronic width above 2 m_π) and the overlay
-curves.
+- Coupling convention + a→f f̄ widths: Bauer–Neubert–Thamm, JHEP 12 (2017) 044
+  (arXiv:1708.00443). Our 1/f axis is the BNT `g_aff = c_f m_f/f` convention
+  (= 2/f in the GKOZ normalisation).
+- Production + decay phenomenology: GKOZ, "ALPs with universal fermion
+  couplings — revisited" (arXiv:2310.03524), via the ALPINIST implementation
+  (arXiv:2105.10806, BSD-3, pinned SHA in `data/alpinist/COMMIT_SHA.txt`):
+  one-loop RG b→s a coefficient (`tools/compute_cbs_alpinist.py`), kaon-tower
+  form factors (Boiarska et al., arXiv:1904.10447), digitized hadronic + γγ
+  width tables (`data/alpinist/PROVENANCE.md` — incl. the normalisation
+  cross-checks).
+- Benchmark definition: 2025 PBC report (arXiv:2505.00947); unified FIP
+  calculation arXiv:2311.00507; state-of-the-art hadronic treatment
+  arXiv:2501.04525.
+See `EXTERNAL_INPUTS_NEEDED.md` for residual systematics (production
+normalisation <~20% in 1/f; >3 GeV width from the matched perturbative
+continuation) and the dropped overlay curves.

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""BC10 production: FONLL B mesons -> B -> K a -> a four-vector CSVs.
+"""BC10 production: FONLL B mesons -> B -> K^(i) a -> a four-vector CSVs.
 
 Reuses the HNL FONLL bottom sampler (``hnl/production/fonll``) for the parent B
-kinematics at 14 TeV, then does the two-body B -> K a decay (HNL
-``decay_engine.kinematics.decay_2body``) and keeps the ALP four-vector.  One CSV
-per ALP mass, in the HNL combined format
+kinematics at 14 TeV, then does the two-body B -> K_i a decay (HNL
+``decay_engine.kinematics.decay_2body``) for every channel of the kaon tower
+(model.KAON_TOWER: K, K0*, K*, K1, K2* -- the GKOZ arXiv:2310.03524 channel
+set) for both B+ and B0, and keeps the ALP four-vector.  One CSV per ALP mass,
+in the HNL combined format
 
     weight, E, px, py, pz            (headerless, pb at the reference coupling)
 
@@ -13,7 +15,7 @@ so the downstream analysis can consume it through the imported
 per-row weight is the production cross section (pb) at the reference inverse
 decay constant ``model.INV_F_REF``:
 
-    weight = 2 * sigma_FONLL(bottom) * frag(B) * BR(B->K a)|_ref / n_sampled
+    weight = 2 * sigma_FONLL(bottom) * frag(B) * BR(B->K_i a)|_ref / n_channel
 
 (the factor 2 covers b and bbar).  Production scales as (1/f)^2, so the
 sensitivity scan rescales this single reference weight by u2 = (1/f / 1/f_ref)^2
@@ -80,22 +82,26 @@ def generate(masses, n_pool, seed=42):
     sigma_b = get_sigma_total("bottom")
     print(f"  sigma_FONLL(bottom) = {sigma_b:.4e} pb", flush=True)
 
-    parents = [p for p in model.PRODUCTION_PARENTS]  # (label, pdg, m_K, m_B)
-    n_each = max(1, n_pool // len(parents))
+    channels = [(label, pdg, kaon)
+                for label, pdg in model.PRODUCTION_PARENTS
+                for kaon in model.KAON_TOWER]
+    n_each = max(1, n_pool // len(channels))
 
     for m_a in masses:
         all_w, all_E, all_px, all_py, all_pz = [], [], [], [], []
-        for label, pdg, m_K, m_B in parents:
+        for label, pdg, kaon in channels:
+            m_B = model.M_BPLUS if label == "B+" else model.M_B0
+            m_K = model.kaon_mass(kaon, label)
             if m_a >= m_B - m_K:
                 continue
-            br = model.br_B_to_K_a(m_a, model.INV_F_REF, parent=label)
+            br = model.br_B_to_Ka(m_a, model.INV_F_REF, parent=label, kaon=kaon)
             if br <= 0.0:
                 continue
             frag = FRAG_B[pdg]
             idx = rng.integers(0, n_pool, size=n_each)
             v = meson_4vec_from_kinematics(
                 pool["pt"][idx], pool["y"][idx], pool["phi"][idx], m_B)
-            # two-body B -> K(m_K) + a(m_a); decay_2body returns (d1=K, d2=a)
+            # two-body B -> K_i(m_K) + a(m_a); decay_2body returns (d1=K, d2=a)
             _, a4 = decay_2body(v["E"], v["px"], v["py"], v["pz"],
                                 m_B, m_K, m_a, rng=rng)
             w = 2.0 * sigma_b * frag * br / n_each

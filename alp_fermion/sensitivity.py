@@ -126,9 +126,15 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
     d, passed, _ = build_event_mc(p4, direction, entry_d[idx], exit_d[idx],
                                   templates, decay_samples, rng, origin=CMS_ORIGIN)
 
+    # Visible-BR factor: templates span only the >=2-charged-track channels
+    # (their mix is BR-weighted), so the absolute BR into those channels
+    # multiplies the yield here.  Ratio of (1/f)^2-scaling widths -> coupling
+    # independent, hence a constant per mass.
+    weights = data["weight"][idx] * model.visible_fraction(m_a)
+
     u2_grid = np.logspace(LOG_U2_MIN, LOG_U2_MAX, N_U2)
     u2_grid, N_grid = scan_u2(
-        d, passed, exit_d[idx] - entry_d[idx], data["weight"][idx],
+        d, passed, exit_d[idx] - entry_d[idx], weights,
         data["beta_gamma"][idx], ctau_ref, L_INT_PB, u2_grid)
 
     band = find_exclusion_band(u2_grid, N_grid, N_THRESHOLD)

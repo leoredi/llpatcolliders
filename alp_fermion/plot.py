@@ -75,7 +75,7 @@ def plot_island(results_csv, output_dir=None, basename="bc10_island",
     ax.set_ylim(PLOT_INVF_MIN, PLOT_INVF_MAX)
     ax.set_xlabel(r"$m_a$ [GeV]", fontsize=13)
     ax.set_ylabel(r"$1/f$ [GeV$^{-1}$]  ($c_f=1$, fermiophilic ALP)", fontsize=13)
-    ax.set_title("BC10: fermiophilic ALP, $B\\to K\\,a$, $a\\to$ charged tracks",
+    ax.set_title("BC10: fermiophilic ALP, $B\\to K^{(i)}\\,a$, $a\\to$ charged tracks",
                  fontsize=12)
     ax.grid(True, which="both", alpha=0.2, lw=0.5)
     if plotted or overlay_csv:
