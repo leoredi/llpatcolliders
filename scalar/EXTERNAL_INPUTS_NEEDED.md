@@ -1,9 +1,14 @@
-# External inputs needed — BC4 dark scalar (`scalar/`)
+# External inputs — BC4 dark scalar (`scalar/`)
 
-The package runs end-to-end today, but two physics inputs are external data
-products (not things to invent). They are requested here rather than fabricated.
+_Updated 2026-07-08: input 1 is satisfied (digitized table in place since
+2026-07-02); input 2 is dropped by decision (GRENDEL curve only — see
+STATUS.md)._
 
-## 1. Winkler dispersive hadronic width table (improves the model, 0.5–2 GeV)
+## 1. Winkler dispersive hadronic width table — SATISFIED
+
+`scalar/data/winkler_widths.csv` (digitized Winkler arXiv:1809.01876 Fig. 4)
+is in place and `model.partial_widths` reads it below the 2 GeV spectator
+hand-over. The paragraphs below record the original request for provenance.
 
 `scalar/model.py` computes the `pi pi` / `K K` widths in `2 m_pi < m_S < 2 GeV`
 with **leading-order ChPT form factors** (Winkler arXiv:1809.01876 eq. 21 → 15;
@@ -21,7 +26,10 @@ arXiv:1809.01876 supplementary / the unified FIP calculation arXiv:2311.00507
 `scalar/data/winkler_widths.csv` and switch `model.partial_widths` to read it
 below 2 GeV.
 
-## 2. BC4 competitor / existing-bound curves (for the money plot)
+## 2. BC4 competitor / existing-bound curves — DROPPED (by decision)
+
+The GRENDEL exclusion curve is the deliverable; overlays are not part of it.
+The mechanism below stays functional if the decision is ever revisited.
 
 `scalar/plot_exclusion.py` overlays competitor curves if present in
 `scalar/data/competitors/<name>.csv` (columns `m_S_GeV,sin2theta`). They are

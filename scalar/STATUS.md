@@ -1,6 +1,21 @@
-# BC4 (light dark scalar) — status & todo
+# BC4 (light dark scalar) — status: GRENDEL curve FINAL
 
-_Last updated 2026-07-03. Worktree `../bc4-scalar`, branch `bc4-scalar`, package `scalar/`._
+_Last updated 2026-07-08. Worktree `../bc4-scalar`, branch `bc4-scalar`, package `scalar/`._
+
+**2026-07-08 close-out.** The deliverable is the GRENDEL exclusion curve; the
+former TODOs are resolved as follows (details in the TODO section):
+- **gg→S: out of scope for BC4.** The competitor projections define the
+  benchmark as B-meson production only — Evans (arXiv:1708.08503, the MATHUSLA
+  scalar treatment: inclusive BR(B→X_s S) ≈ 6.2 (1−m_S²/m_B²)² sin²θ, kaons a
+  "small correction", no gluon fusion) and the CODEX-b physics case
+  (arXiv:1911.00481: b→s penguin dominant; direct Higgs production only enters
+  the non-minimal quartic scenario = BC5). Our inclusive b→X_s S with Winkler
+  dispersive widths meets or exceeds that standard; the ~3.8 GeV meson ceiling
+  is the benchmark's own ceiling.
+- **Competitor overlays: dropped by decision** (GRENDEL curve only).
+- **Committed** as 6dc4a74 on `bc4-scalar`, pushed to leoredi/llpatcolliders.
+The curve in `scalar/tmp/bc4_exclusion.{png,pdf}` / `bc4_island.csv` (full run
+2026-07-02) is the final BC4 result.
 
 ## What BC4 is
 Coupling-controlled, model-complete GRENDEL sensitivity for the PBC **BC4** benchmark
@@ -41,16 +56,17 @@ Above ~3.8 GeV: rate-starved (peak_N → 1 as m_S → m_B) — meson ceiling is 
 Outputs: `scalar/tmp/bc4_exclusion.{png,pdf}`, `scalar/tmp/bc4_island.csv`.
 Superseded (exclusive) outputs preserved in `scalar/tmp/pre_inclusive/`.
 
-## TODO
-- [ ] **gg→S direct production** (only way past the ~3.8 GeV meson ceiling).
-      Non-mesonic, θ²-suppressed, Higgs-like. Needs a real σ(gg→S) source — do NOT
-      fabricate (see `EXTERNAL_INPUTS_NEEDED.md`). Decision pending: build it, or
-      hold BC4 as the ≤3.8 GeV inclusive-meson benchmark.
-- [ ] **Competitor / existing-bound overlays** for the plot: CHARM, LHCb (B→Kμμ),
-      MATHUSLA, CODEX-b, ANUBIS, SHiP. Digitized CSVs → `scalar/data/competitors/`
-      (`plot_exclusion` already skips them gracefully when absent).
-- [ ] **Commit / PR decision** — branch `bc4-scalar` is uncommitted; outputs in `tmp/`.
-      Port onto `main` as a purely-additive package mirroring `hnl/` when ready.
+## TODO — all resolved 2026-07-08
+- [x] **gg→S direct production** — RESOLVED: out of scope. The BC4 standard set
+      by the competitor studies (Evans arXiv:1708.08503 / MATHUSLA; CODEX-b
+      arXiv:1911.00481) is B-meson production only; none include gg→S. BC4 is
+      held as the ≤3.8 GeV inclusive-meson benchmark.
+- [x] **Competitor / existing-bound overlays** — DROPPED by decision: the
+      GRENDEL curve is the deliverable. (`plot_exclusion` still picks up
+      `scalar/data/competitors/*.csv` if that is ever revisited.)
+- [x] **Commit / PR decision** — committed as 6dc4a74 on `bc4-scalar`, pushed
+      to leoredi/llpatcolliders. Upstream PR deferred until the paper decides
+      which benchmarks it carries.
 
 ## Related (portal-wide)
 - **BC10 fermiophilic ALP** — worktree `../bc10-alp`, package `alp_fermion/`. Built,
