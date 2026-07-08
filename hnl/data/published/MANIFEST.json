@@ -1,12 +1,13 @@
 {
   "artifact": "GRENDEL HNL single-flavor sensitivity (canonical published curve)",
   "producer_repo": "llpatcolliders_HNL_PR1",
-  "producer_git_sha": "8eaf8b9",
+  "producer_git_sha": "f3d69bc",
   "producer_branch": "hnl-production-mesons-ew",
-  "source_run": "central_newgrids_20260623/analysis_exact_100 + analysis_closure (closure refinement 3.62-3.70)",
-  "generated_from": "tmp/runs/central_newgrids_20260623/analysis_exact_100/hnl_sensitivity.csv",
-  "csv_sha256": "fcdaa675d54360fdcf0f3da5ccb14eab25c2b0d7c24bfc083f340d02b8c7dd37",
-  "date_published": "2026-06-27",
+  "source_run": "central_newgrids_20260623/analysis_exact_100_betafix (timing-chi2 beta=p/E fix, full 123-mass grid incl. closure 3.62-3.70; reuses the same production 4-vectors as the pre-fix run)",
+  "generated_from": "tmp/runs/central_newgrids_20260623/analysis_exact_100_betafix/hnl_sensitivity.ALL3_betafix.csv",
+  "csv_sha256": "43d16bc23259664b4efc46bc0128119c09c0310f548e3d736d93eb5492268a01",
+  "date_published": "2026-07-07",
+  "correction": "Timing chi2 now uses each daughter's true beta=p/E instead of a hardcoded beta=1 (PR #15, commit f3d69bc). This is an analysis-stage fix (production unchanged); it imposes a species-dependent effective momentum floor above the 100 MeV track cut. Effect vs the previous publish: no mass points lost, closure unchanged, u2_min degrades modestly (median +3.7/+4.5/+9.0% for Ue/Umu/Utau, worst +33% at low mass). The FONLL/decay-model/Bc uncertainty ribbons are NOT re-derived: they are built as dex (log10 U^2) half-widths and re-anchored onto this central by plot_money._dex_densify, which is beta-fix-invariant to second order.",
   "hypothesis": {
     "mixing": "single-flavor",
     "flavors": [
@@ -41,21 +42,21 @@
   },
   "headline_reach": {
     "Ue": {
-      "best_u2_min": 4.961788919678049e-09,
+      "best_u2_min": 5.91009901494553e-09,
       "best_u2_min_at_mass_GeV": 0.395,
       "mass_lo_GeV": 0.2,
       "mass_hi_closure_GeV": 3.62,
       "n_sensitive_points": 90
     },
     "Umu": {
-      "best_u2_min": 6.572732412739191e-09,
-      "best_u2_min_at_mass_GeV": 0.335,
+      "best_u2_min": 8.40006916975164e-09,
+      "best_u2_min_at_mass_GeV": 0.365,
       "mass_lo_GeV": 0.2,
       "mass_hi_closure_GeV": 3.62,
       "n_sensitive_points": 90
     },
     "Utau": {
-      "best_u2_min": 2.823027043798889e-07,
+      "best_u2_min": 2.96639672250831e-07,
       "best_u2_min_at_mass_GeV": 2.8,
       "mass_lo_GeV": 0.2,
       "mass_hi_closure_GeV": 3.685,

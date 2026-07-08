@@ -100,9 +100,17 @@ def boost_rest_to_lab(parent_p4, rest_px, rest_py, rest_pz, rest_E):
     return lab_p[:, 0], lab_p[:, 1], lab_p[:, 2], lab_E
 
 
-def best_two_directions(px, py, pz, charge, stable, p_cut=P_CUT):
+def best_two_directions(px, py, pz, E, charge, stable, p_cut=P_CUT):
     """From one decay's lab daughters, pick the two highest-momentum charged
-    stable tracks above p_cut. Returns (dir1, dir2, p_soft) or None if <2."""
+    stable tracks above p_cut. Returns (dir1, dir2, p_soft, beta1, beta2) or
+    None if <2.
+
+    beta_i = |p_i| / E_i of the chosen tracks feeds the timing model: HNL
+    daughters can be genuinely slow (a 100 MeV pion has beta ~ 0.58, a 100 MeV
+    muon ~ 0.69), and the timing chi2 tests consistency with travel at c --
+    hard-coding beta = 1 would let decays pass the MC that the real cut
+    rejects, overestimating the acceptance exactly for the soft tracks that
+    P_CUT = 100 MeV admits."""
     p = np.sqrt(px**2 + py**2 + pz**2)
     sel = (np.abs(charge) > 0.5) & stable.astype(bool) & (p > p_cut)
     if int(sel.sum()) < 2:
@@ -112,11 +120,14 @@ def best_two_directions(px, py, pz, charge, stable, p_cut=P_CUT):
     i1, i2 = order[0], order[1]
     d1 = np.array([px[i1], py[i1], pz[i1]]) / p[i1]
     d2 = np.array([px[i2], py[i2], pz[i2]]) / p[i2]
-    return d1, d2, float(min(p[i1], p[i2]))
+    E = np.asarray(E, float)
+    b1 = float(p[i1] / max(E[i1], p[i1]))   # guard against E < |p| roundoff
+    b2 = float(p[i2] / max(E[i2], p[i2]))
+    return d1, d2, float(min(p[i1], p[i2])), b1, b2
 
 
 def reconstruct_decays(decay_pos, dir1, dir2, p_soft, sigma_hit, sigma_t, rng,
-                       mesh=mesh_fiducial):
+                       beta1=None, beta2=None, mesh=mesh_fiducial):
     """Build the selection ``mc`` dict for N decays from their vertex + the two
     daughter directions (the shared geometry->reco core, mirroring higgs
     sample_separations lines 619-736). All inputs (N,3)/(N,)."""
@@ -154,8 +165,15 @@ def reconstruct_decays(decay_pos, dir1, dir2, p_soft, sigma_hit, sigma_t, rng,
         nf = int(fin.sum())
         true_hits = np.stack([out1[fin], in1[fin], in2[fin], out2[fin]], 1)
         smeared = np.stack([g['H_out1'], g['H_in1'], g['H_in2'], g['H_out2']], 1)
+        # Hit order is [out1, in1, in2, out2]: hits 0-1 belong to track 1,
+        # hits 2-3 to track 2, so beta4 = [b1, b1, b2, b2]. Signs are all +1
+        # (decay daughters are outgoing); beta defaults to 1 only when the
+        # caller supplies nothing (relativistic-daughter approximation).
+        b1 = np.ones(n) if beta1 is None else np.asarray(beta1, float)
+        b2 = np.ones(n) if beta2 is None else np.asarray(beta2, float)
+        beta4 = np.column_stack([b1[fin], b1[fin], b2[fin], b2[fin]])
         tchi2, _, _, _ = _rc.timing_chi2_4hit(
-            true_hits, decay_pos[fin], np.ones((nf, 4)), np.ones((nf, 4)),
+            true_hits, decay_pos[fin], beta4, np.ones((nf, 4)),
             smeared, g['V_reco'], sigma_t, rng)
         timing[fin] = tchi2
     on_tracker = on_tracker & fin
@@ -245,23 +263,25 @@ def build_event_mc(p4, direction, entry_d, exit_d, templates, n_samples, rng,
     vtx = origin[None, :] + d.reshape(M, 1) * np.repeat(direction, n_samples, axis=0)
 
     dir1 = np.empty((M, 3)); dir2 = np.empty((M, 3)); psoft = np.zeros(M)
+    beta1 = np.ones(M); beta2 = np.ones(M)
     valid = np.zeros(M, dtype=bool)
     tmpl_idx = rng.integers(0, n_tmpl, size=M)
     for k in range(M):
         ti = tmpl_idx[k]
         s, e = off[ti], off[ti + 1]
         ev = k // n_samples
-        lx, ly, lz, _ = boost_rest_to_lab(
+        lx, ly, lz, lE = boost_rest_to_lab(
             p4[ev], t_px[s:e], t_py[s:e], t_pz[s:e], t_E[s:e])
-        bt = best_two_directions(lx, ly, lz, t_charge[s:e], t_stable[s:e])
+        bt = best_two_directions(lx, ly, lz, lE, t_charge[s:e], t_stable[s:e])
         if bt is not None:
-            dir1[k], dir2[k], psoft[k] = bt
+            dir1[k], dir2[k], psoft[k], beta1[k], beta2[k] = bt
             valid[k] = True
 
     passed = np.zeros(M, dtype=bool)
     if valid.any():
         mc = reconstruct_decays(vtx[valid], dir1[valid], dir2[valid],
-                                psoft[valid], sigma_hit, sigma_t, rng)
+                                psoft[valid], sigma_hit, sigma_t, rng,
+                                beta1=beta1[valid], beta2=beta2[valid])
         passed[valid] = selection_mask(mc)
     # tmpl_idx is returned so the decay-model composition leg can reweight each
     # sample's contribution by its decay mode (hadronic vs leptonic) WITHOUT
