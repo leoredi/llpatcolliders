@@ -142,7 +142,12 @@ or asymptotic validation, and produces expected limits with uncertainty bands.
 single-flavor patterns `Ue`, `Umu`, and `Utau`. The exclusion labels only
 `|U|^2`; the Majorana/Dirac convention, charge-conjugate counting, and the
 relationship between production mixing and total lifetime are not stated in
-the result metadata.
+the result metadata. The convention itself is, however, no longer open: both
+the HeavyN UFO (`N1` self-conjugate) and HNLCalc (charge-conjugate modes summed
+per channel) are Majorana, so the result is self-consistently Majorana, matching
+PBC BC6/7/8 and ANUBIS (see the 2026-06-29 resolution under the appended note).
+The outstanding work is to state Majorana in the metadata and audit the
+remaining factors of two under that convention -- not to choose it.
 
 **Required work:**
 
@@ -743,3 +748,97 @@ A full replica campaign takes days and produces large logs unless run with
 Until the P0 items are resolved, curve-shift estimates for the remaining items
 are diagnostics of the current simplified analysis, not uncertainties on a
 fully defined experimental exclusion.
+
+## Appended note: production-definition mismatch in comparison plots
+
+The current published GRENDEL HNL curve is inclusive in production: it combines
+mesons, kaons, baryons, induced taus, prompt taus, and direct electroweak `WZ`
+samples. External proposal curves are not necessarily inclusive in the same
+way, so overlays against ANUBIS, FASER/FASER2, SHiP, CODEX-b, or similar
+proposals can become a result-definition problem rather than a simple
+sensitivity comparison.
+
+The immediate ANUBIS issue is important. The current GRENDEL `WZ` channel
+contains explicit MadGraph decay-chain samples `pp -> W -> ell N` and
+`pp -> Z -> nu N`, merged under one channel. The newer SET-ANUBIS HNL study
+uses direct electroweak production through charged-current Drell-Yan,
+neutral-current Drell-Yan, and `W gamma` fusion, and leaves hadronic HNL
+production for future work. Therefore the current GRENDEL `WZ` sample overlaps
+with the ANUBIS electroweak category, but it is not the same production model:
+it is missing `W gamma` fusion and does not keep per-row W/Z/process tags.
+
+Comparison plots should be split by production class before making strong
+claims:
+
+- meson/tau-only GRENDEL for forward or beam-dump-like comparisons such as
+  FASER/FASER2 and SHiP;
+- electroweak-only GRENDEL for ANUBIS/ATLAS/CMS displaced-style comparisons;
+- inclusive GRENDEL as a separately labeled "all production modes included"
+  result;
+- a channel-dominance diagnostic along the exclusion boundary, so each part of
+  the contour can be interpreted by its controlling production mode.
+
+Required follow-up:
+
+- publish separate inclusive, meson/tau-only, and electroweak-only sensitivity
+  CSVs, or add a channel-filter option to the sensitivity and plotting paths;
+- add `W gamma` fusion to the direct-electroweak production set, or quantify
+  its absence before using ANUBIS as an electroweak benchmark;
+- carry direct-electroweak process identity through LHE-to-CSV conversion so
+  W, Z, and future `W gamma` rows can be reweighted and plotted separately;
+- update comparison captions so they state the production classes being
+  compared, and avoid claiming "GRENDEL competes with ANUBIS/FASER" from the
+  inclusive envelope alone.
+
+**Completion test:** the comparison repository can produce committed overlays
+for inclusive, meson/tau-only, and electroweak-only GRENDEL curves, plus a
+channel-dominance diagnostic. Any ANUBIS comparison either includes
+CCDY/NCDY/`W gamma` in the GRENDEL electroweak sample, or carries an explicit
+caveat quantifying the missing `W gamma` component.
+
+### Resolution (2026-06-29): PBC conformance, Majorana convention, CL, EW K-factor
+
+Cross-checked against the PBC summary report (arXiv:2505.00947, Fig. 23, BC7
+muon-coupled HNL) and the SET-ANUBIS HNL study. Three points that looked like
+open conformance gaps are now settled; one production gap (`W gamma` fusion,
+per-row W/Z tags, mass-range) remains as written above.
+
+- **Majorana/Dirac (settled: Majorana, self-consistent).** GRENDEL is already
+  Majorana on both sides, so this is not a free choice. Production: the HeavyN
+  UFO declares `N1` self-conjugate (`name == antiname == 'N1'` in
+  `vendored/SM_HeavyN_CKM_AllMasses_LO/particles.py`). Decay/lifetime: HNLCalc
+  sums each charged-current mode together with its charge conjugate
+  (`HNLCalc.py` ~L1690-1762: `lP`, `lV`, `lud`, `lhad` each append both `mode`
+  and `conjugate(mode)`; `llnu` lists both orderings), i.e. a single `N` decays
+  to lepton-number +1 and -1 final states -- the Majorana ~2x-width convention,
+  not Dirac. This matches BC7 (defined as one Majorana HNL) and ANUBIS's
+  minimal-Majorana BC7. P0 item 4 therefore reduces from "determine the
+  convention" to "declare Majorana in the result metadata and audit the
+  remaining factors of two under it"; the convention itself is no longer open.
+
+- **Confidence level (settled: no change; keep zero-background `N >= 3`).** In
+  PBC Fig. 23 the *existing* upper limits carry mixed CLs (90% for the
+  beam-dump/fixed-target set, 95% for ATLAS/CMS), but the *projection* curves we
+  sit among (ANUBIS, CODEX-b, FLArE, FASER2, SHiP) are not held to a common CL:
+  the caption uses line style for background-estimate maturity (solid = data
+  extrapolation, dashed = full MC, dotted = toy MC / negligible background), not
+  a confidence level. A zero-background `N >= 3` (95%) contour is a legitimate
+  member of that set, and `N >= 3` vs `N >= 2.3` (90%) is a ~30% yield shift --
+  invisible on a log-log reach boundary. Conformance work is therefore labeling,
+  not recomputation: state our contour definition explicitly, and tag GRENDEL's
+  curve at the **dotted** maturity tier (zero background assumed; the cosmic
+  decay-in-flight is modelled in `../higgs/` but not yet folded into the limit,
+  P0 item 3), promoting to dashed only once that background enters the limit.
+
+- **Electroweak K-factor (settled: flat 1.3 for W and Z is sound).**
+  `K_FACTOR_EW = 1.3` is an upper-but-in-band NLO single-boson on-peak value;
+  W and Z K-factors are driven by the same `q qbar -> V` QCD and differ by only
+  a few percent, so a common value is well justified (the W/Z gap is far below
+  the order/PDF ambiguity). The mass grid stops at 10 GeV, far below
+  `m_W ~ 80.4` / `m_Z ~ 91.2`, so the W/Z are on-shell across the whole grid and
+  the on-peak 1.3 is mass-independent here (the off-shell/high-mass K-factor
+  rise only matters if the grid is extended toward and above the boson pole).
+  Consequently the "unsplit Z scaled by the W K-factor" caveat above is a
+  sub-few-percent normalization effect, not a normalization error: the per-row
+  W/Z tag is needed for the EW-only-vs-inclusive comparison split and for future
+  `W gamma` tagging, not to correct the inclusive normalization.
