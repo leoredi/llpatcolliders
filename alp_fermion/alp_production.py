@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""BC10 production: FONLL B mesons -> B -> K a -> a four-vector CSVs.
+
+Reuses the HNL FONLL bottom sampler (``hnl/production/fonll``) for the parent B
+kinematics at 14 TeV, then does the two-body B -> K a decay (HNL
+``decay_engine.kinematics.decay_2body``) and keeps the ALP four-vector.  One CSV
+per ALP mass, in the HNL combined format
+
+    weight, E, px, py, pz            (headerless, pb at the reference coupling)
+
+so the downstream analysis can consume it through the imported
+``analysis.format_bridge.load_combined_csv`` + ``scan_u2`` chain unchanged.  The
+per-row weight is the production cross section (pb) at the reference inverse
+decay constant ``model.INV_F_REF``:
+
+    weight = 2 * sigma_FONLL(bottom) * frag(B) * BR(B->K a)|_ref / n_sampled
+
+(the factor 2 covers b and bbar).  Production scales as (1/f)^2, so the
+sensitivity scan rescales this single reference weight by u2 = (1/f / 1/f_ref)^2
+(see sensitivity.py).  This is the coupling -> production half of the BC10 model
+layer; the lifetime + visible-BR halves live in model.py / templates.py.
+
+NOTE on columns: the prompt's nominal schema (event,id,pt,eta,phi,momentum,mass)
+is the *unweighted* higgs/LLP format.  BC10 is coupling-controlled, so each a
+MUST carry a production weight; the HNL (weight,E,px,py,pz) format is therefore
+the canonical input and is what the reused load_combined_csv reads.
+
+Usage:
+    python -m alp_fermion.alp_production --n-pool 200000
+    python -m alp_fermion.alp_production --mass 0.5 1.0 2.0
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+
+_ALP_ROOT = Path(__file__).resolve().parent
+if str(_ALP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ALP_ROOT))
+
+import model  # noqa: E402
+from paths import LLP_VECTORS_DIR, add_hnl_to_path  # noqa: E402
+
+add_hnl_to_path()
+
+from config_mass_grid import format_mass_for_filename  # noqa: E402
+from production.constants import FRAG_B  # noqa: E402
+from production.fonll.fonll_parser import get_sigma_total  # noqa: E402
+from production.fonll.meson_sampler import (  # noqa: E402
+    sample_meson_4vectors, meson_4vec_from_kinematics,
+)
+from production.decay_engine.kinematics import decay_2body  # noqa: E402
+from production.io import write_llp_csv, write_empty_csv  # noqa: E402
+
+
+# Default ALP mass grid for the BC10 island: from just above 2 m_mu up to the
+# B -> K a kinematic edge (m_B - m_K ~ 4.79 GeV).  Denser at low mass where the
+# muon channel + lifetime change fastest.
+ALP_MASS_GRID = [
+    0.22, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.60, 0.70, 0.80, 0.90,
+    1.00, 1.20, 1.40, 1.60, 1.80, 2.00, 2.20, 2.50, 2.80,
+    3.00, 3.20, 3.40, 3.60, 3.80, 4.00, 4.20, 4.40, 4.60,
+]
+
+
+def alp_csv_path(mass, base=LLP_VECTORS_DIR):
+    path = base / f"mA_{format_mass_for_filename(mass)}.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def generate(masses, n_pool, seed=42):
+    rng = np.random.default_rng(seed)
+    print(f"Sampling {n_pool} FONLL bottom (pt,y,phi) shape events...", flush=True)
+    pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
+    sigma_b = get_sigma_total("bottom")
+    print(f"  sigma_FONLL(bottom) = {sigma_b:.4e} pb", flush=True)
+
+    parents = [p for p in model.PRODUCTION_PARENTS]  # (label, pdg, m_K, m_B)
+    n_each = max(1, n_pool // len(parents))
+
+    for m_a in masses:
+        all_w, all_E, all_px, all_py, all_pz = [], [], [], [], []
+        for label, pdg, m_K, m_B in parents:
+            if m_a >= m_B - m_K:
+                continue
+            br = model.br_B_to_K_a(m_a, model.INV_F_REF, parent=label)
+            if br <= 0.0:
+                continue
+            frag = FRAG_B[pdg]
+            idx = rng.integers(0, n_pool, size=n_each)
+            v = meson_4vec_from_kinematics(
+                pool["pt"][idx], pool["y"][idx], pool["phi"][idx], m_B)
+            # two-body B -> K(m_K) + a(m_a); decay_2body returns (d1=K, d2=a)
+            _, a4 = decay_2body(v["E"], v["px"], v["py"], v["pz"],
+                                m_B, m_K, m_a, rng=rng)
+            w = 2.0 * sigma_b * frag * br / n_each
+            all_w.append(np.full(n_each, w))
+            all_E.append(a4[:, 0]); all_px.append(a4[:, 1])
+            all_py.append(a4[:, 2]); all_pz.append(a4[:, 3])
+
+        path = alp_csv_path(m_a)
+        if all_w:
+            weights = np.concatenate(all_w)
+            write_llp_csv(path, weights, np.concatenate(all_E),
+                          np.concatenate(all_px), np.concatenate(all_py),
+                          np.concatenate(all_pz))
+            print(f"  m_a={m_a:.3f}: {len(weights)} a, "
+                  f"sigma_ref={weights.sum():.3e} pb -> {path.name}", flush=True)
+        else:
+            write_empty_csv(path)
+            print(f"  m_a={m_a:.3f}: 0 (above B->K a threshold)", flush=True)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="BC10 a four-vector production")
+    ap.add_argument("--mass", type=float, nargs="+", default=None)
+    ap.add_argument("--n-pool", type=int, default=200_000)
+    ap.add_argument("--seed", type=int, default=42)
+    args = ap.parse_args(argv)
+    masses = args.mass if args.mass else ALP_MASS_GRID
+    print(f"BC10 production: {len(masses)} masses, n_pool={args.n_pool}")
+    print(f"  output -> {LLP_VECTORS_DIR}")
+    generate(masses, args.n_pool, args.seed)
+    print("Done.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
