@@ -1,0 +1,144 @@
+"""BC4 production: inclusive b-hadron -> X_s S four-vectors from the hnl FONLL sampler.
+
+Mirrors ``hnl/production/decay_engine/generate_meson_csvs.py`` (the non-Bc
+branch): sample the bottom-meson (pT, y, phi) pool from the *imported* FONLL
+spectra at 14 TeV, rebuild the B+/B0/Bs four-vectors, do the two-body decay
+b-hadron -> X_s S, and write the S four-vectors weighted by sigma_FONLL * f_frag *
+BR(b -> X_s S) evaluated at ``sin^2 theta = 1`` (the coupling is factored out and
+re-applied by the sensitivity scan, exactly as the HNL factors out ``U^2``).
+Inclusive production is used because GRENDEL reconstructs only the S decay
+vertex -- the prompt X_s system is invisible, so we sum over it (as for HNLs).
+
+The FONLL sampler, fragmentation fractions and 2-body decay kinematics are
+imported from ``hnl/`` -- never copied.  Output CSV columns are the hnl combined
+format ``weight, E, px, py, pz`` (read by ``hnl/analysis/format_bridge``); the
+per-event production weight (absent from the unweighted higgs
+``event,id,pt,eta,phi,momentum,mass`` schema) is what makes the coupling-
+controlled N_signal absolute, so the weighted format is the pipeline input.
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import numpy as np
+
+_SCALAR_ROOT = Path(__file__).resolve().parent
+_REPO_ROOT = _SCALAR_ROOT.parent
+_HNL_ROOT = _REPO_ROOT / "hnl"
+for _p in (str(_REPO_ROOT), str(_HNL_ROOT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from production.constants import FRAG_B                      # noqa: E402
+from production.fonll.fonll_parser import get_sigma_total    # noqa: E402
+from production.fonll.meson_sampler import (                 # noqa: E402
+    sample_meson_4vectors, meson_4vec_from_kinematics)
+from production.decay_engine.kinematics import decay_2body   # noqa: E402
+
+from scalar import model                                     # noqa: E402
+
+# Scalar mass grid for the BC4 scan: dense where the visible BR changes fastest
+# (mu mu / pi pi / K K thresholds below 2 GeV), coarser up to the B -> K S
+# kinematic ceiling (~4.79 GeV).
+MASS_GRID = [round(x, 3) for x in (
+    list(np.arange(0.220, 0.500, 0.020)) +     # 2 m_mu -> ~K K region
+    list(np.arange(0.500, 1.000, 0.025)) +
+    list(np.arange(1.000, 2.000, 0.050)) +
+    list(np.arange(2.000, 3.600, 0.100)) +
+    list(np.arange(3.600, 4.700, 0.100)) + [4.700]
+)]
+
+# Inclusive b -> s S is a b-quark process, so every b-hadron contributes; we sum
+# over B+, B0, Bs (the hnl inclusive bottom set -- b-baryons omitted, as there).
+# GRENDEL reconstructs only the S vertex, so the prompt X_s system is invisible;
+# the S spectrum is insensitive to the recoil mass at a ~5.3 GeV parent, so a
+# kaon-mass recoil sets the two-body kinematics for all species.
+# PDG id -> (parent tag, m_parent, m_recoil, fragmentation frac).
+B_SPECIES = {
+    521: ("B+", model.M_BPLUS, model.M_KPLUS, FRAG_B[521]),
+    511: ("B0", model.M_B0,    model.M_K0,    FRAG_B[511]),
+    531: ("Bs", model.M_BS,    model.M_KPLUS, FRAG_B[531]),
+}
+
+N_POOL_DEFAULT = 200_000
+
+
+def generate_scalar_4vectors(m_S, n_pool, rng, sigma_bottom=None, pool=None):
+    """S four-vectors + production weights (at sin^2 theta = 1) for mass ``m_S``.
+
+    Returns ``(weights, E, px, py, pz)`` arrays (empty if production is closed).
+    """
+    if m_S >= model.M_S_MAX_BTOK:
+        return (np.empty(0),) * 5
+    if sigma_bottom is None:
+        sigma_bottom = get_sigma_total("bottom")
+    if pool is None:
+        pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
+    n_each = len(pool["pt"])
+
+    weights, E, px, py, pz = [], [], [], [], []
+    for pdg, (parent, m_B, m_K, frag) in B_SPECIES.items():
+        if m_S >= m_B - m_K:
+            continue
+        br = float(model.br_B_to_Xs_S(m_S, parent=parent, sin2theta=1.0))
+        if br <= 0:
+            continue
+        v = meson_4vec_from_kinematics(pool["pt"], pool["y"], pool["phi"], m_B)
+        # Two-body b-hadron -> X_s(m_K proxy) S(m_S); decay_2body returns (d1, d2=S).
+        _, s4 = decay_2body(v["E"], v["px"], v["py"], v["pz"], m_B, m_K, m_S, rng=rng)
+        # factor 2: b and bbar both hadronize to a B (matches hnl convention).
+        w = 2.0 * sigma_bottom * frag * br / n_each
+        weights.append(np.full(n_each, w))
+        E.append(s4[:, 0]); px.append(s4[:, 1]); py.append(s4[:, 2]); pz.append(s4[:, 3])
+
+    if not weights:
+        return (np.empty(0),) * 5
+    return (np.concatenate(weights), np.concatenate(E),
+            np.concatenate(px), np.concatenate(py), np.concatenate(pz))
+
+
+def _mass_label(m_S):
+    return f"{m_S:.3f}".replace(".", "p")
+
+
+def write_scalar_csv(m_S, out_dir, n_pool, rng, sigma_bottom=None, pool=None):
+    """Generate and write the S four-vector CSV for ``m_S`` (hnl format)."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"mS_{_mass_label(m_S)}.csv"
+    w, E, px, py, pz = generate_scalar_4vectors(
+        m_S, n_pool, rng, sigma_bottom=sigma_bottom, pool=pool)
+    if len(w) == 0:
+        path.write_text("")
+    else:
+        np.savetxt(path, np.column_stack([w, E, px, py, pz]),
+                   delimiter=",", fmt="%.8e")
+    return path, len(w)
+
+
+def main(argv=None):
+    import argparse
+
+    p = argparse.ArgumentParser(description="Generate BC4 B -> K S four-vector CSVs")
+    p.add_argument("--out-dir", default=str(_SCALAR_ROOT / "tmp" / "llp_4vectors"))
+    p.add_argument("--n-pool", type=int, default=N_POOL_DEFAULT)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--masses", type=float, nargs="+", default=None)
+    args = p.parse_args(argv)
+
+    rng = np.random.default_rng(args.seed)
+    masses = args.masses if args.masses else MASS_GRID
+    sigma_bottom = get_sigma_total("bottom")
+    print(f"sigma_FONLL(bottom) = {sigma_bottom:.3e} pb;  {len(masses)} masses")
+    # One shared (pT, y, phi) pool serves every mass (the boost spectrum is
+    # mass-independent in the shared-shape FONLL approximation hnl also uses).
+    pool = sample_meson_4vectors(args.n_pool, "bottom", rng=rng)
+    for m_S in masses:
+        path, n = write_scalar_csv(m_S, args.out_dir, args.n_pool, rng,
+                                   sigma_bottom=sigma_bottom, pool=pool)
+        print(f"  m_S={m_S:.3f}: {n} events -> {path.name}")
+
+
+if __name__ == "__main__":
+    main()

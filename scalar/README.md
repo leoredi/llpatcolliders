@@ -1,0 +1,70 @@
+# BC4 — light dark scalar mixing with the Higgs (GRENDEL)
+
+Purely-additive package implementing the PBC benchmark **BC4**: a light scalar
+`S` that mixes with the Higgs through one angle `theta` (`sin^2 theta`),
+produced in `B -> K S` and decaying `S -> SM` via the mixing. This is the
+low-mass partner of the already-done BC5 (`higgs/`, `h -> SS`).
+
+Everything geometric and reconstruction-related is **imported, not copied**, from
+the shared single sources:
+
+* `higgs/grendel_geometry.py` — GRENDEL PX56 mesh, ray-casting, `points_on_tracker`.
+* `higgs/reco_common.py` — bounded 4-hit two-track vertex reco + timing chi^2.
+* `hnl/analysis/decay_reco_acceptance.py` — `reconstruct_decays`, `selection_mask`
+  (PR #13 selection), and `scan_u2` (the coupling reweighting).
+* `hnl/production/fonll/` + `hnl/production/decay_engine/kinematics.py` — the FONLL
+  B-meson sampler and 2-body decay used for the parent kinematics.
+
+## Why the limit is set differently from `higgs/` (BC5)
+
+BC5 is set model-agnostically by scanning `(BR, c*tau)` independently. **BC4 is
+coupling-controlled**: the single `sin^2 theta`, at fixed `m_S`, fixes the
+production rate, the lifetime `c*tau`, *and* the visible BR simultaneously. So,
+like the HNL, the limit is set **model-completely**: for each `(m_S, sin^2 theta)`
+we evaluate the actual `c*tau`, production yield and visible BR, require
+`N_signal >= 3` (background-free, 3000 fb^-1), and report a **closed island** in
+`(m_S, sin^2 theta)` with a lower edge (too little production) and an upper edge
+(decays before reaching the detector).
+
+## Layout
+
+| file | role |
+|------|------|
+| `model.py` | **model layer** (the core deliverable): `c*tau(m_S, theta)`, `BR(B->K S)` / `B->X_s S` / `K->pi S`, and the visible BRs (`mu mu, ee, tau tau, pi pi, K K, s s, c c, g g`) from Winkler arXiv:1809.01876. The BC4 analogue of HNLCalc. |
+| `production.py` | FONLL bottom pool → `B+/B0 -> K S` two-body → weighted `S` four-vector CSVs. |
+| `acceptance.py` | scalar decay engine → best-two-track → shared reco → PR#13 `selection_mask`; folds the visible BR in via the decay outcome (neutral sub-modes fail). |
+| `run_sensitivity.py` | driver: produce → coupling scan (`N_signal >= 3`) → island CSV → plot. |
+| `plot_exclusion.py` | `(m_S, sin^2 theta)` island + competitor overlays. |
+| `tests/test_model.py` | model-layer validation against published numbers. |
+
+## Run
+
+```
+# full grid: produce 4-vectors, scan sin^2 theta, write the island + plot
+/Volumes/sandbox/conda/envs/hnl/bin/python -m scalar.run_sensitivity
+
+# a few masses / re-plot only
+python -m scalar.run_sensitivity --masses 0.5 1.0 2.0 --n-pool 100000
+python -m scalar.run_sensitivity --plot-only
+
+python -m pytest scalar/tests
+```
+
+Outputs land in `scalar/tmp/` (4-vector CSVs, `bc4_island.csv`,
+`bc4_exclusion.{png,pdf}`).
+
+## References & caveats
+
+* Winkler, Phys. Rev. D 99 (2019) 015018, arXiv:1809.01876 — scalar widths
+  (eq. 12, 15, 21, 30-33), production (eqs. A2-A9).
+* Unified FIP calculation arXiv:2311.00507 (used by the 2025 PBC report
+  arXiv:2505.00947) — BC4 conventions and competitor curves.
+
+Caveats, and the external data products needed to remove them, are in
+`EXTERNAL_INPUTS_NEEDED.md`: (1) the `pi pi`/`K K` widths in 0.5-2 GeV use
+LO-ChPT form factors (missing the `f0(980)` enhancement and leaving a seam at
+the 2 GeV spectator hand-over); (2) production uses the **exclusive** `B -> K S`
+rate (the inclusive `B -> X_s S` is ~10x larger at low mass — a conservative
+choice that would extend the mass reach); (3) competitor curves must be digitized
+into `data/competitors/`. The `K -> pi S` production channel is implemented in
+the model layer but kaon-flux sampling at the LHC IP is deferred.
