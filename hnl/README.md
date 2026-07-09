@@ -373,6 +373,41 @@ lifetime law (peak yield `~ sigma * beta*gamma / m_N^5`), **not** a B-meson /
 short-lived to reach a 22 m displaced detector (that regime belongs to prompt /
 near-IP displaced-vertex searches).
 
+### Why the island closes at 3.6 GeV (quantitative)
+
+The published run itself demonstrates the mechanism; all numbers below are
+read directly from `data/published/`:
+
+- **It is not missing production.** At the closure point the electroweak
+  channel already dominates: `bundle/channel_breakdown_u2min.csv` gives the
+  `WZ` channel **89.5% of the peak yield at 3.6 GeV (Umu)** (Bmeson 5.9%,
+  Bc 4.6%). Adding more W/Z statistics or channels cannot reopen the island.
+- **The collapse is the m^-6 lifetime wall.** `peak_N` in
+  `grendel_hnl_sensitivity.csv` is the yield at the *optimal* mixing, i.e.
+  the best GRENDEL can do at that mass: 3.02 at 3.62 GeV (last point with
+  `N >= 3`), 1.63 at 4 GeV, 0.40 at 5 GeV, 0.022 at 8 GeV, 0.0056 at 10 GeV.
+  From 4 to 8 GeV both `peak_N` and `peak_u2` fall by ~70 = 2^6: five powers
+  of m from `Gamma_N ~ G_F^2 U^2 m^5`, one from the boost `beta*gamma ~ E/m`
+  at the roughly mass-independent `E ~ m_W/2` of on-shell `W -> l N`.
+- **Analytic form.** For a shell detector at distance `d` with fiducial depth
+  `dL`, writing `lambda_1 = beta*gamma * ctau(U^2=1) ~ m^-6`, the scan
+  `N(U^2) = sigma_1 U^2 L * (dL U^2/lambda_1) exp(-d U^2/lambda_1)` peaks at
+  `U^2_opt = 2 lambda_1/d` with `N_max ~ sigma_W L dL lambda_1 / d^2`. At
+  10 GeV even the optimal coupling (`peak_u2 = 9.7e-10`) yields only ~60
+  produced HNLs in all of 3 ab^-1, before any acceptance.
+- **Geometry enters only as the 1/6 power.** The closure mass scales as
+  `(sigma L dL / d^2)^(1/6)`, so it is brutally insensitive to detector
+  placement. Digitized competitor projections (HNLimits compilation) confirm
+  the family pattern (Umu): CODEX-b ~3.0-3.3 GeV, **GRENDEL 3.63-3.69 GeV**,
+  MATHUSLA 4.05 GeV, SHiP 5.1-5.8 GeV (beam-dump flux), ANUBIS 6.8-7.7 GeV
+  (starts ~5-20 m from the IP with larger solid angle). Only FCC-ee reaches
+  61 GeV -- a detector *at* the IP. Moving GRENDEL's closure from 3.63 to
+  10 GeV would need `(10/3.63)^6 ~ 440x` more peak yield; no transverse
+  tunnel geometry provides that. The "on-shell W/Z" regime above 10 GeV in
+  the generic mass-coupling cartoons sits at `ctau << 1 m` and is the domain
+  of ATLAS/CMS near-IP displaced-vertex searches and EWPD, not of any
+  O(20 m)-distant detector.
+
 ## Paths and Files
 
 Path defaults are centralized in `production/paths.py`. Supported overrides
