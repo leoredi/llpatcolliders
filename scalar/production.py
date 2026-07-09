@@ -41,13 +41,15 @@ from scalar import model                                     # noqa: E402
 # Scalar mass grid for the BC4 scan: dense where the visible BR changes fastest
 # (mu mu / pi pi / K K thresholds below 2 GeV), coarser up to the B -> K S
 # kinematic ceiling (~4.79 GeV).
-MASS_GRID = [round(x, 3) for x in (
+# sorted-set dedupe: np.arange float accumulation can leak a point that
+# rounds onto the next segment's start (0.4999... -> 0.500).
+MASS_GRID = sorted({round(x, 3) for x in (
     list(np.arange(0.220, 0.500, 0.020)) +     # 2 m_mu -> ~K K region
     list(np.arange(0.500, 1.000, 0.025)) +
     list(np.arange(1.000, 2.000, 0.050)) +
     list(np.arange(2.000, 3.600, 0.100)) +
     list(np.arange(3.600, 4.700, 0.100)) + [4.700]
-)]
+)})
 
 # Inclusive b -> s S is a b-quark process, so every b-hadron contributes; we sum
 # over B+, B0, Bs (the hnl inclusive bottom set -- b-baryons omitted, as there).

@@ -9,7 +9,9 @@ The result is a CLOSED ISLAND in (m_S, sin^2 theta): a lower edge (too little
 production) and an upper edge (decays before reaching GRENDEL).
 
 Usage:
-    python -m scalar.run_sensitivity                 # full grid (produce + scan + plot)
+    python -m scalar.run_sensitivity                 # full grid; produces only missing
+                                                     # CSVs, reuses cached ray-casts
+    python -m scalar.run_sensitivity --force-produce # regenerate the four-vector CSVs
     python -m scalar.run_sensitivity --plot-only     # re-plot from the island CSV
     python -m scalar.run_sensitivity --masses 0.5 1 2 --n-pool 100000
 """
@@ -43,18 +45,32 @@ VEC_DIR = OUT_DIR / "llp_4vectors"
 ISLAND_CSV = OUT_DIR / "bc4_island.csv"
 
 
-def run(masses, n_pool, seed, n_samples, produce=True):
+def run(masses, n_pool, seed, n_samples, force_produce=False):
+    """Produce-if-missing + cached ray-casts (the BC10/HNL pattern): the
+    four-vector CSVs are only (re)generated for masses that have none, or for
+    all masses with ``force_produce``; untouched CSVs keep their mtime so the
+    geometry cache in ``acceptance._geometry`` stays valid and a re-scan only
+    redoes the decay MC + reconstruction + coupling scan."""
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     s2t_grid = np.logspace(LOG_S2T_MIN, LOG_S2T_MAX, N_S2T)
     rng = np.random.default_rng(seed)
 
-    if produce:
+    if force_produce:
+        to_produce = list(masses)
+    else:
+        to_produce = [m for m in masses
+                      if not (VEC_DIR / f"mS_{prod._mass_label(m)}.csv").exists()]
+    if to_produce:
         sigma_bottom = get_sigma_total("bottom")
         pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
-        print(f"sigma_FONLL(bottom) = {sigma_bottom:.3e} pb; producing {len(masses)} masses")
-        for m_S in masses:
+        print(f"sigma_FONLL(bottom) = {sigma_bottom:.3e} pb; "
+              f"producing {len(to_produce)}/{len(masses)} masses")
+        for m_S in to_produce:
             prod.write_scalar_csv(m_S, VEC_DIR, n_pool, rng,
                                   sigma_bottom=sigma_bottom, pool=pool)
+    else:
+        print(f"reusing existing four-vector CSVs for all {len(masses)} masses "
+              "(--force-produce to regenerate)")
 
     rows = []
     for i, m_S in enumerate(masses):
@@ -97,6 +113,10 @@ def main(argv=None):
     p.add_argument("--n-samples", type=int, default=100)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--plot-only", action="store_true")
+    p.add_argument("--force-produce", action="store_true",
+                   help="regenerate the four-vector CSVs even where they exist "
+                        "(default: produce only missing masses and reuse the "
+                        "geometry cache)")
     args = p.parse_args(argv)
 
     if args.plot_only:
@@ -104,7 +124,8 @@ def main(argv=None):
         return 0
 
     masses = args.masses if args.masses else prod.MASS_GRID
-    run(masses, args.n_pool, args.seed, args.n_samples)
+    run(masses, args.n_pool, args.seed, args.n_samples,
+        force_produce=args.force_produce)
     return 0
 
 

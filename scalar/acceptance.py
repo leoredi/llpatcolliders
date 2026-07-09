@@ -131,15 +131,38 @@ def build_event_mc(p4, direction, entry_d, exit_d, m_S, n_samples, rng,
         dir1 = d1[:, 1:] / p1[:, None]
         dir2 = d2[:, 1:] / p2[:, None]
         p_soft = np.minimum(p1, p2)
+        # Daughter speeds beta = |p|/E feed the timing model (soft pions/kaons
+        # are genuinely slow; beta = 1 would overestimate the timing-cut
+        # acceptance -- same fix as the HNL chain). Guard against E < |p|
+        # roundoff after the boost.
+        b1 = p1 / np.maximum(d1[:, 0], p1)
+        b2 = p2 / np.maximum(d2[:, 0], p2)
         # Both daughters must clear the track momentum floor (mirrors best-two).
         ok = (p_soft > P_CUT)
         if ok.any():
             sub = idx[ok]
             mc = reconstruct_decays(vtx[sub], dir1[ok], dir2[ok], p_soft[ok],
-                                    sigma_hit, sigma_t, rng)
+                                    sigma_hit, sigma_t, rng,
+                                    beta1=b1[ok], beta2=b2[ok])
             passed[sub] = selection_mask(mc)
 
     return d, passed.reshape(n_ev, n_samples)
+
+
+def _geometry(csv_path, m_S, eta, phi, mesh):
+    """Ray-cast with an on-disk cache per mass (mirrors the BC10/HNL pattern):
+    the npz sits next to the four-vector CSVs and is invalidated whenever the
+    CSV is newer (a regenerated pool must force a fresh ray-cast)."""
+    cache_dir = csv_path.parent.parent / "geometry_cache"
+    cache = cache_dir / f"geom_{csv_path.stem}.npz"
+    if cache.exists() and cache.stat().st_mtime >= csv_path.stat().st_mtime:
+        d = np.load(cache)
+        return d["hits"].astype(bool), d["entry_d"], d["exit_d"]
+    hits, entry_d, exit_d = compute_geometry(
+        eta, phi, mesh, CMS_ORIGIN, batch_label=f"[mS={m_S:.3f}]")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(cache, hits=hits, entry_d=entry_d, exit_d=exit_d)
+    return hits, entry_d, exit_d
 
 
 def process_mass_point(m_S, mesh, csv_path, sin2theta_grid, n_samples=100,
@@ -156,8 +179,8 @@ def process_mass_point(m_S, mesh, csv_path, sin2theta_grid, n_samples=100,
     if rng is None:
         rng = np.random.default_rng(12345)
 
-    hits, entry_d, exit_d = compute_geometry(
-        data["eta"], data["phi"], mesh, CMS_ORIGIN, batch_label=f"[mS={m_S:.3f}]")
+    hits, entry_d, exit_d = _geometry(csv_path, m_S, data["eta"], data["phi"],
+                                      mesh)
     idx = np.where(hits & np.isfinite(entry_d) & np.isfinite(exit_d))[0]
     n_hits = len(idx)
     base = {"mass_GeV": m_S, "n_events": int(len(data["weight"])), "n_hits": n_hits}
