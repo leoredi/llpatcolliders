@@ -1,6 +1,6 @@
 # BC4 (light dark scalar) — status: GRENDEL curve FINAL
 
-_Last updated 2026-07-09. Worktree `../bc4-scalar`, branch `bc4-scalar`, package `scalar/`._
+_Last updated 2026-07-09. Worktree `aaaPHYSICSaaa/bc4-scalar` (top level, sibling of `bc10-alp`), branch `bc4-scalar`, package `scalar/`._
 
 **2026-07-09 β-fix republish.** The PR #15 timing-χ² fix (daughter β = p/E
 instead of β = 1) is now propagated through the BC4 acceptance (commit
