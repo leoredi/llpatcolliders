@@ -1,0 +1,46 @@
+{
+  "artifact": "GRENDEL BC10 fermiophilic-ALP sensitivity (canonical published curve)",
+  "producer_repo": "llpatcolliders (branch bc10-alp)",
+  "producer_git_sha": "adfca31",
+  "source_run": "tmp/analysis rerun of 2026-07-08 on the PR #15-synced hnl/ subtree (timing-chi2 beta=p/E fix included)",
+  "generated_from": "alp_fermion/tmp/analysis/bc10_sensitivity.csv",
+  "csv_sha256": "d9d09a781fa99992f70b5fb5ceaa74d0a56a9d6e7e169b8be53b2e1a9f3af92d",
+  "date_published": "2026-07-09",
+  "hypothesis": {
+    "model": "PBC BC10: pseudoscalar ALP with universal SM-fermion couplings",
+    "coupling": "g_aff = c_f m_f / f with c_f = 1 (BNT arXiv:1708.00443 convention)",
+    "convention_note": "1/f here = 2/f_GKOZ (arXiv:2310.03524); map any GKOZ/PBC comparison curve accordingly",
+    "observable": "1/f [GeV^-1]"
+  },
+  "physics_inputs": {
+    "production": "b -> s a penguin as B -> K^(i) a summed over the kaon tower (K, K*, K0*, K1, K2*) per GKOZ arXiv:2310.03524; FONLL 14 TeV bottom kinematics (NNPDF4.0 NLO)",
+    "decays": "GKOZ data-driven spectral tables (leptons, photons, hadrons) via ALPINIST (arXiv:2201.05170), pinned in alp_fermion/data/alpinist/"
+  },
+  "analysis": {
+    "beam": "pp 14 TeV (HL-LHC)",
+    "L_int_fb": 3000.0,
+    "criterion": "N_signal >= 3 (background-free, 95% CL)",
+    "reconstruction": "shared GRENDEL 4-hit two-track vertex reco + PR #13 selection, imported from higgs/ and hnl/ (timing chi2 with daughter beta = p/E)"
+  },
+  "column_contract": {
+    "required_by_consumer": [
+      "mass_GeV",
+      "invf_min",
+      "invf_max"
+    ],
+    "invf_min": "lower 1/f edge of the excluded island [GeV^-1]",
+    "invf_max": "upper 1/f edge of the excluded island [GeV^-1]",
+    "has_sensitivity": "False => no excluded island at that mass (peak_N < 3)",
+    "peak_N": "signal yield at the optimal coupling (max over the 1/f scan)",
+    "peak_invf": "the optimal 1/f [GeV^-1]"
+  },
+  "headline_reach": {
+    "best_invf_min_GeV_inv": 1.0993569125860519e-08,
+    "best_invf_min_at_mass_GeV": 1.4,
+    "mass_lo_GeV": 0.22,
+    "mass_hi_closure_GeV": 2.5,
+    "n_sensitive_points": 19,
+    "n_grid_points": 29
+  },
+  "closure_note": "The island closes at m_a ~ 2.5 GeV, well below the B -> K a endpoint (m_B - m_K ~ 4.8 GeV): the growing hadronic width shortens the lifetime at fixed coupling faster than the coupling can be reduced while retaining N >= 3. The near-pinch at 1.6-1.8 GeV (peak_N ~ 3.2-3.5) is resolved on real grid points."
+}

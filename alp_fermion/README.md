@@ -43,6 +43,7 @@ alp_fermion/
   plot.py           BC10 island in the (m_a, 1/f) plane (+ optional overlay curves)
   paths.py          output-dir policy (ALP_TMP_DIR override) + hnl/ import shim
   data/alpinist/    digitized GKOZ decay-width tables via ALPINIST (PROVENANCE.md, pinned SHA)
+  data/published/   canonical published sensitivity curve (CSV + MANIFEST; see its README)
   tools/compute_cbs_alpinist.py  regenerates the b→s a RG coefficient (BSD-3 ALPINIST port)
   tests/test_model.py
   EXTERNAL_INPUTS_NEEDED.md   (input provenance + residual systematics; overlays dropped)
