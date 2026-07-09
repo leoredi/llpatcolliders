@@ -1,0 +1,44 @@
+{
+  "artifact": "GRENDEL BC4 dark-scalar sensitivity (canonical published curve)",
+  "producer_repo": "llpatcolliders (branch bc4-scalar)",
+  "producer_git_sha": "7f792dc",
+  "source_run": "full-grid rerun finished 2026-07-09 00:58 (scalar/tmp/rerun_betafix2.log) on the PR #15-synced hnl/ subtree; timing-chi2 beta = p/E propagated through the BC4 acceptance",
+  "generated_from": "scalar/tmp/bc4_island.csv",
+  "csv_sha256": "21c1f934a5ce35d7baa00bfb9781b14f0bf9a62c0f91f4b6c0c00771dfb0707b",
+  "date_published": "2026-07-09",
+  "correction": "Supersedes the 2026-07-02 pre-fix run (deepest 7.1e-12, span 0.22-3.8 GeV): with daughter beta = p/E in the timing chi2 the lower edge is ~4% shallower (consistent with the HNL beta-fix median) and the 3.80 GeV point drops below N = 3, so the span ends at 3.70 GeV.",
+  "hypothesis": {
+    "model": "PBC BC4: Higgs-portal dark scalar, mixing only (no quartic)",
+    "observable": "sin^2 theta"
+  },
+  "physics_inputs": {
+    "production": "inclusive b -> X_s S (Winkler arXiv:1809.01876 eq. A7) summed over B+, B0, Bs; FONLL 14 TeV bottom kinematics (NNPDF4.0 NLO); two-body B -> K S recoil",
+    "decays": "Winkler dispersive hadronic widths (digitized Fig. 4) below 2 GeV, perturbative spectator above; analytic leptonic widths"
+  },
+  "analysis": {
+    "beam": "pp 14 TeV (HL-LHC)",
+    "L_int_fb": 3000.0,
+    "criterion": "N_signal >= 3 (background-free, 95% CL)",
+    "reconstruction": "shared GRENDEL 4-hit two-track vertex reco + PR #13 selection, imported from higgs/ and hnl/ (timing chi2 with daughter beta = p/E)"
+  },
+  "column_contract": {
+    "required_by_consumer": [
+      "mass_GeV",
+      "u2_min",
+      "u2_max"
+    ],
+    "u2_min": "lower sin^2 theta edge of the excluded island",
+    "u2_max": "upper sin^2 theta edge of the excluded island",
+    "has_sensitivity": "False => no excluded island at that mass (peak_N < 3)",
+    "ctau_sin2th1_m": "scalar ctau at sin^2 theta = 1, metres"
+  },
+  "headline_reach": {
+    "best_sin2theta_min": 7.358e-12,
+    "best_sin2theta_min_at_mass_GeV": 0.975,
+    "mass_lo_GeV": 0.22,
+    "mass_hi_closure_GeV": 3.7,
+    "n_sensitive_points": 72,
+    "n_grid_points": 82
+  },
+  "closure_note": "The deepest point sits at the f0(980) width peak (~0.98 GeV), where the dispersive hadronic width is largest and the long-lifetime lower edge (proportional to 1/sqrt(Gamma_total)) is correspondingly deepest. The island ends at 3.7 GeV, below the m_B - m_K ~ 4.8 GeV endpoint: the inclusive b -> X_s S rate falls too rapidly as m_S -> m_B to retain N >= 3 at any mixing."
+}

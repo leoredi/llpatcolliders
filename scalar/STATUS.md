@@ -1,6 +1,17 @@
 # BC4 (light dark scalar) — status: GRENDEL curve FINAL
 
-_Last updated 2026-07-08. Worktree `../bc4-scalar`, branch `bc4-scalar`, package `scalar/`._
+_Last updated 2026-07-09. Worktree `../bc4-scalar`, branch `bc4-scalar`, package `scalar/`._
+
+**2026-07-09 β-fix republish.** The PR #15 timing-χ² fix (daughter β = p/E
+instead of β = 1) is now propagated through the BC4 acceptance (commit
+7f792dc) and the full 82-mass grid was rerun (`tmp/rerun_betafix2.log`,
+finished 00:58). The canonical curve now lives at
+`scalar/data/published/bc4_island.csv` (+ MANIFEST): island spans
+**0.22–3.70 GeV**, deepest **sin²θ = 7.4e-12 @ 0.975 GeV**. Versus the
+2026-07-02 pre-fix run: the lower edge is ~4% shallower (consistent with the
+HNL β-fix median) and the 3.80 GeV point drops below N = 3, closing the span
+at 3.70 GeV. The numbers below in "Results" refer to the superseded pre-fix
+run and are kept for the exclusive-vs-inclusive comparison.
 
 **2026-07-08 close-out.** The deliverable is the GRENDEL exclusion curve; the
 former TODOs are resolved as follows (details in the TODO section):

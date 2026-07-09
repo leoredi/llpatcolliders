@@ -51,7 +51,9 @@ python -m pytest scalar/tests
 ```
 
 Outputs land in `scalar/tmp/` (4-vector CSVs, `bc4_island.csv`,
-`bc4_exclusion.{png,pdf}`).
+`bc4_exclusion.{png,pdf}`). The canonical published curve (the one the paper
+quotes) is committed at `scalar/data/published/` (CSV + MANIFEST; see its
+README for the re-publish procedure).
 
 ## References & caveats
 
