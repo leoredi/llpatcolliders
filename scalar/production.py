@@ -44,6 +44,13 @@ from scalar import model                                     # noqa: E402
 # sorted-set dedupe: np.arange float accumulation can leak a point that
 # rounds onto the next segment's start (0.4999... -> 0.500).
 MASS_GRID = sorted({round(x, 3) for x in (
+    # Below the dimuon threshold (2 m_mu = 0.2113) the only visible channel
+    # is S -> e e: no hadronic modes open below 2 m_pi and the leptonic width
+    # is m_e^2-suppressed, so ctau jumps by ~3 orders of magnitude across
+    # 2 m_mu (5.7 m -> 8.2 km at sin^2 theta = 1e-6).  Expect the island to
+    # migrate to much larger sin^2 theta and possibly pinch off; the
+    # acceptance MC uses the two-electron 2-body mode (charged fraction 1).
+    list(np.arange(0.140, 0.220, 0.020)) +     # e e only (below 2 m_mu)
     list(np.arange(0.220, 0.500, 0.020)) +     # 2 m_mu -> ~K K region
     list(np.arange(0.500, 1.000, 0.025)) +
     list(np.arange(1.000, 2.000, 0.050)) +
