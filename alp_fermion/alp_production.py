@@ -62,11 +62,12 @@ from production.io import write_llp_csv, write_empty_csv  # noqa: E402
 # Default ALP mass grid for the BC10 island: from just above 2 m_mu up to the
 # B -> K a kinematic edge (m_B - m_K ~ 4.79 GeV).  Denser at low mass where the
 # muon channel + lifetime change fastest.
-ALP_MASS_GRID = [
-    0.22, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.60, 0.70, 0.80, 0.90,
-    1.00, 1.20, 1.40, 1.60, 1.80, 2.00, 2.20, 2.50, 2.80,
-    3.00, 3.20, 3.40, 3.60, 3.80, 4.00, 4.20, 4.40, 4.60,
-]
+ALP_MASS_GRID = sorted({round(x, 2) for x in (
+    [0.22 + 0.02 * i for i in range(40)] +        # 0.22 - 1.00
+    [1.00 + 0.05 * i for i in range(41)] +        # 1.00 - 3.00
+    [3.00 + 0.10 * i for i in range(17)] +        # 3.00 - 4.60
+    [4.65, 4.70, 4.75]                            # B -> K a edge (4.79)
+)})
 
 
 def alp_csv_path(mass, base=LLP_VECTORS_DIR):

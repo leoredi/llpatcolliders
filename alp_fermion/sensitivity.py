@@ -118,13 +118,31 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
         return None
 
     idx = np.where(hits & np.isfinite(entry_d) & np.isfinite(exit_d))[0]
-    rng = np.random.default_rng(int(round(m_a * 1000)))
     direction = _eta_phi_to_directions_batch(data["eta"][idx], data["phi"][idx])
     p_mag = data["beta_gamma"][idx] * m_a
     energy = data["gamma"][idx] * m_a
     p4 = np.column_stack([energy, p_mag[:, None] * direction])
-    d, passed, _ = build_event_mc(p4, direction, entry_d[idx], exit_d[idx],
-                                  templates, decay_samples, rng, origin=CMS_ORIGIN)
+    # Memory-bounded acceptance MC: one build_event_mc over all hit events
+    # peaks at ~3.5 GB inside the vectorized reconstruction (reco_common
+    # intermediates scale with n_events * n_samples), which does not fit the
+    # 4 GB dense-grid runner.  Chunk the events and give every chunk its own
+    # deterministic sub-seed; results are reproducible (fixed chunk size +
+    # seeds) and statistically identical, but not bit-identical to the
+    # single-call path used for the original 29-point scan.
+    EVENT_CHUNK = 256
+    d_parts, passed_parts = [], []
+    base_seed = int(round(m_a * 1000)) * 100_000
+    for ci, cs in enumerate(range(0, len(idx), EVENT_CHUNK)):
+        ce = min(cs + EVENT_CHUNK, len(idx))
+        rng_c = np.random.default_rng(base_seed + ci)
+        d_c, passed_c, _ = build_event_mc(
+            p4[cs:ce], direction[cs:ce],
+            entry_d[idx[cs:ce]], exit_d[idx[cs:ce]],
+            templates, decay_samples, rng_c, origin=CMS_ORIGIN)
+        d_parts.append(d_c)
+        passed_parts.append(passed_c)
+    d = np.concatenate(d_parts, axis=0)
+    passed = np.concatenate(passed_parts, axis=0)
 
     # Visible-BR factor: templates span only the >=2-charged-track channels
     # (their mix is BR-weighted), so the absolute BR into those channels

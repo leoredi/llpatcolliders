@@ -2,10 +2,10 @@
   "artifact": "GRENDEL BC10 fermiophilic-ALP sensitivity (canonical published curve)",
   "producer_repo": "llpatcolliders (branch bc10-alp)",
   "producer_git_sha": "adfca31",
-  "source_run": "tmp/analysis rerun of 2026-07-08 on the PR #15-synced hnl/ subtree (timing-chi2 beta=p/E fix included)",
+  "source_run": "dense-grid campaign of 2026-07-12: 99-point mass grid (0.22-4.75 GeV; 0.02 GeV steps below 1 GeV, 0.05 to 3 GeV, 0.1 above), memory-bounded acceptance MC (EVENT_CHUNK=256, per-chunk seeds; see sensitivity.py) on the same physics inputs as the 2026-07-09 release",
   "generated_from": "alp_fermion/tmp/analysis/bc10_sensitivity.csv",
-  "csv_sha256": "d9d09a781fa99992f70b5fb5ceaa74d0a56a9d6e7e169b8be53b2e1a9f3af92d",
-  "date_published": "2026-07-09",
+  "csv_sha256": "f5a078bbdc7843f4d5ec46fa878406c532e8411ed7c8cbeeba7f3a490bea2482",
+  "date_published": "2026-07-12",
   "hypothesis": {
     "model": "PBC BC10: pseudoscalar ALP with universal SM-fermion couplings",
     "coupling": "g_aff = c_f m_f / f with c_f = 1 (BNT arXiv:1708.00443 convention)",
@@ -42,5 +42,10 @@
     "n_sensitive_points": 19,
     "n_grid_points": 29
   },
-  "closure_note": "The island closes at m_a ~ 2.5 GeV, well below the B -> K a endpoint (m_B - m_K ~ 4.8 GeV): the growing hadronic width shortens the lifetime at fixed coupling faster than the coupling can be reduced while retaining N >= 3. The near-pinch at 1.6-1.8 GeV (peak_N ~ 3.2-3.5) is resolved on real grid points."
+  "closure_note": "The island closes at m_a ~ 2.5 GeV, well below the B -> K a endpoint (m_B - m_K ~ 4.8 GeV): the growing hadronic width shortens the lifetime at fixed coupling faster than the coupling can be reduced while retaining N >= 3. The near-pinch at 1.6-1.8 GeV (peak_N ~ 3.2-3.5) is resolved on real grid points.",
+  "grid": {
+    "n_masses": 99,
+    "mass_min_GeV": 0.22,
+    "mass_max_GeV": 4.75
+  }
 }
