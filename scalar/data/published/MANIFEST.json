@@ -2,10 +2,10 @@
   "artifact": "GRENDEL BC4 dark-scalar sensitivity (canonical published curve)",
   "producer_repo": "llpatcolliders (branch bc4-scalar)",
   "producer_git_sha": "7f792dc",
-  "source_run": "full-grid rerun finished 2026-07-09 00:58 (scalar/tmp/rerun_betafix2.log) on the PR #15-synced hnl/ subtree; timing-chi2 beta = p/E propagated through the BC4 acceptance",
+  "source_run": "full-grid rerun of 2026-07-12 (run locally by FLR): extends the mass grid below the dimuon threshold (0.14-0.20 GeV, S -> e e only; see production.py MASS_GRID note), 600k-event pool, 86 mass points. Pre-existing rows shift at MC-noise level (per-mass seeds are positional: rng(1000+i)).",
   "generated_from": "scalar/tmp/bc4_island.csv",
-  "csv_sha256": "21c1f934a5ce35d7baa00bfb9781b14f0bf9a62c0f91f4b6c0c00771dfb0707b",
-  "date_published": "2026-07-09",
+  "csv_sha256": "043f1deeadd7abcdebca7487b547ac7ccc677ce0f01d94a1b1c29acc86358526",
+  "date_published": "2026-07-12",
   "correction": "Supersedes the 2026-07-02 pre-fix run (deepest 7.1e-12, span 0.22-3.8 GeV): with daughter beta = p/E in the timing chi2 the lower edge is ~4% shallower (consistent with the HNL beta-fix median) and the 3.80 GeV point drops below N = 3, so the span ends at 3.70 GeV.",
   "hypothesis": {
     "model": "PBC BC4: Higgs-portal dark scalar, mixing only (no quartic)",
