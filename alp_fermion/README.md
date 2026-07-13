@@ -68,6 +68,10 @@ python -m pytest alp_fermion/tests -q
 Outputs go to `alp_fermion/tmp/` (gitignored): `analysis/bc10_sensitivity.csv`
 and `analysis/bc10_island.{png,pdf}`.
 
+Sensitivity rows are checkpointed after every mass. For a long or partitioned
+campaign, select a checkpoint with `--output path.csv`; rerun the same command
+with `--resume` to skip masses already present in that file.
+
 ## Model layer references
 - Coupling convention + a→f f̄ widths: Bauer–Neubert–Thamm, JHEP 12 (2017) 044
   (arXiv:1708.00443). Our 1/f axis is the BNT `g_aff = c_f m_f/f` convention

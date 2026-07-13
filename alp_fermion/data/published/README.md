@@ -26,7 +26,8 @@ cp alp_fermion/tmp/analysis/bc10_sensitivity.csv \
 
 - Source: the 2026-07-13 600k-production campaign with 20,000
   full-branching Pythia templates per supported mass and the decoded
-  arXiv:2501.04525 SensCalc v1.3.3 decay tables.
+  arXiv:2501.04525 SensCalc v1.3.3 decay tables and exact three-body
+  matrix-element reweighting.
 - Reach: the deepest lower edge is `1/f = 1.23e-8 GeV^-1` at 1.5 GeV; the
   final high-mass component closes at approximately 3.292 GeV.
 - Topology: pole gaps and insensitive rows are retained in the CSV so plotters

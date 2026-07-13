@@ -1,10 +1,10 @@
 {
   "artifact": "GRENDEL BC10 fermiophilic-ALP sensitivity (canonical published curve)",
   "producer_repo": "llpatcolliders (branch bc10-alp)",
-  "producer_git_sha": "831171e",
-  "source_run": "publication campaign of 2026-07-13: 99-point mass grid (0.22-4.75 GeV), 600000-event FONLL production pool, 20000 full-branching Pythia8 decay templates per supported mass, and memory-bounded acceptance MC (EVENT_CHUNK=256, per-chunk seeds)",
+  "producer_git_sha": "78e380e",
+  "source_run": "publication campaign of 2026-07-13: 99-point mass grid (0.22-4.75 GeV), 600000-event FONLL production pool, 20000 full-branching Pythia8 decay templates per supported mass, exact SensCalc three-body matrix-element reweighting, and memory-bounded acceptance MC (EVENT_CHUNK=256, per-chunk seeds). The 45 masses with non-unit matrix-element weights were rescanned; rows whose template weights are identically one are retained unchanged.",
   "generated_from": "alp_fermion/tmp/analysis/bc10_sensitivity.csv",
-  "csv_sha256": "a4f11b0dfe2c824294b18ea09eb449bea1cacb0783a5b63e837676ec32d5d473",
+  "csv_sha256": "afdb9739e3cbab2bd54e1b4bdb51adf1a551d55c94ece468ad0781be3782868a",
   "date_published": "2026-07-13",
   "hypothesis": {
     "model": "PBC BC10: pseudoscalar ALP with universal SM-fermion couplings",
@@ -14,7 +14,7 @@
   },
   "physics_inputs": {
     "production": "b -> s a penguin as B -> K^(i) a summed over the kaon tower (K, K*, K0*, K1, K2*) per GKOZ arXiv:2310.03524; FONLL 14 TeV bottom kinematics (NNPDF4.0 NLO)",
-    "decays": "Widths and exclusive branching ratios from arXiv:2501.04525, decoded from pinned SensCalc v1.3.3 inputs; unstable daughters and partonic channels processed with Pythia 8.317 using flat primary multi-body phase space and an equal u/d/s surrogate for the two-gluon channel"
+    "decays": "Widths, exclusive branching ratios, and three-body squared matrix elements from arXiv:2501.04525, decoded from pinned SensCalc v1.3.3 inputs; flat three-body Pythia phase space is reweighted by the exact matrix elements, while unstable daughters and partonic channels are processed with Pythia 8.317 using an equal u/d/s surrogate for the two-gluon channel"
   },
   "analysis": {
     "beam": "pp 14 TeV (HL-LHC)",
@@ -35,12 +35,18 @@
     "peak_invf": "the optimal 1/f [GeV^-1]"
   },
   "headline_reach": {
-    "best_invf_min_GeV_inv": 1.2321367884946184e-08,
+    "best_invf_min_GeV_inv": 1.2337386211335024e-08,
     "best_invf_min_at_mass_GeV": 1.5,
     "mass_lo_GeV": 0.22,
     "mass_hi_closure_GeV": 3.2917434825407237,
     "n_sensitive_points": 77,
     "n_grid_points": 99
+  },
+  "matrix_element_update": {
+    "n_rescanned_masses": 45,
+    "max_abs_peak_yield_fractional_shift": 0.026431863775861375,
+    "max_abs_invf_min_fractional_shift": 0.012888613654946868,
+    "max_abs_invf_max_fractional_shift": 0.014134375359955653
   },
   "closure_note": "The 2501 decay model produces disconnected sensitive runs at 0.22-0.52, 0.56-0.94, 0.98-1.25, 1.40, and 1.50-3.20 GeV. The first two gaps are the explicitly unsupported eta and eta-prime pole windows. Insensitive rows at 1.30, 1.35, and 1.45 GeV are retained as plot boundaries. Log-yield interpolation between 3.20 and 3.30 GeV places the final closure at 3.2917 GeV.",
   "grid": {
