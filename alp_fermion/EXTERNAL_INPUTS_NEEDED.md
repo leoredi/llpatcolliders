@@ -1,9 +1,10 @@
 # External inputs — BC10 fermiophilic ALP
 
-_Updated 2026-07-08._ The two physics inputs originally flagged here as
-analytic placeholders have been **replaced by external data products**; what
-remains below is the residual systematics they carry and the (deliberately
-dropped) overlay curves.
+_Updated 2026-07-13._ The production normalization and the arXiv:2310.03524
+decay baseline have been replaced by external data products. The upgrade to
+the arXiv:2501.04525 decay description and the corresponding production audit
+are in progress; this file distinguishes the published baseline from that
+work rather than treating them as equivalent.
 
 ## 1. Absolute B → K a production normalization — SATISFIED
 
@@ -24,10 +25,17 @@ uplift over K + K*(892) (we get 3.9-4.1x depending on m_a).
 **Residual:** cross-checking CBS_EFF against GKOZ Table 1 (|C_bs| = 1.8e-3 at
 f_GKOZ = 1 GeV) agrees to 6-20% in amplitude depending on the m_b scheme used
 to unfold their C_bs = c_bs m_b/2f definition. The island's lower
-(production-limited) edge inherits <~20% in 1/f. Bs → phi a is not included
-(matching ALPINIST); it would add O(10%) production.
+(production-limited) edge inherits <~20% in 1/f.
 
-## 2. Data-driven hadronic width — SATISFIED
+`B_s -> phi a` is not included. It is also absent from the pinned ALPINIST
+implementation and from the exclusive channel set in GKOZ. Boiarska et al.
+provides the kaon-tower form factors for `B+`/`B0`, but not a corresponding
+`B_s` tower. Therefore an `O(10%)` uplift is not a sourced result of those
+references. Using `f_s/(f_u+f_d) = 0.122` and a ground-state `B_s -> phi` rate
+comparable to `B -> K*(892)` suggests only a few-percent yield correction;
+adding it requires a separately pinned `B_s -> phi` form-factor calculation.
+
+## 2. Data-driven hadronic width — 2310 BASELINE SATISFIED; 2501 UPGRADE OPEN
 
 `model.alp_partial_widths` now reads the digitized GKOZ per-channel width
 tables (via ALPINIST, `data/alpinist/`, provenance + normalisation
@@ -44,12 +52,32 @@ placeholder is gone (the island's upper edge is now data-driven up to
 3.01 GeV); above 3.01 GeV the upper edge still rests on the matched
 perturbative continuation.
 
+The current default is still the arXiv:2310.03524 table. SensCalc `v.1.3.3`
+contains the improved arXiv:2501.04525 description, including heavy
+pseudoscalar mixing and the chiral-rotation-invariant treatment. The pinned
+export path is `tools/export_senscalc_2501.{py,wls}`, with provenance and
+source hashes in `data/senscalc_2501/PROVENANCE.md`. It deliberately exports
+the widths, branching ratios, and squared matrix elements together: changing
+the lifetime without changing the channel mixture and decay kinematics would
+not be a consistent 2501 upgrade.
+
 **Convention note (for future overlays / axis labels):** our 1/f axis is the
 BNT (arXiv:1708.00443) convention g_aff = c_f m_f / f with c_f = 1. GKOZ
 normalise with 1/(2 f_GKOZ), so 1/f_here = 2/f_GKOZ. Any comparison curve
 digitized from GKOZ/PBC BC10 figures must be mapped accordingly.
 
-## 3. Competitor + existing-bound curves — DROPPED (by decision)
+## 3. Production modes discussed in arXiv:2501.04525 — AUDIT OPEN
+
+The current GRENDEL signal contains the exclusive `B+`/`B0` kaon tower only.
+ArXiv:2501.04525 discusses a broader proton-collision production policy:
+exclusive B decays, Drell-Yan/gluon fusion, proton bremsstrahlung, light-meson
+decays, and quark fragmentation using generalized rather than bare meson-ALP
+mixing angles. The latter modes cannot be declared covered by the current
+code. Their relevance must be evaluated with the GRENDEL geometry and LHC
+kinematics; an inclusive production-probability comparison alone is not an
+acceptance calculation. SensCalc `v.1.3.3` is the pinned source for this audit.
+
+## 4. Competitor + existing-bound curves — DROPPED (by decision)
 
 The GRENDEL island is the deliverable; overlay curves (unified-calc
 competitors, CHARM/E137, LHCb/Belle II B→K(*) mumu / B→K+inv) are not part of

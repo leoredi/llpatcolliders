@@ -1,0 +1,194 @@
+#!/usr/bin/env wolframscript
+(* Decode the pinned SensCalc 2501.04525 MX files into reviewable formats. *)
+
+ClearAll[die, render, sha256, checkedImport, evaluateAtMass, writeJSON];
+
+die[message_] := (
+  WriteString[$Output, "error: " <> ToString[message, InputForm] <> "\n"];
+  Exit[1]
+);
+
+render[expression_] := ToString[expression, InputForm, PageWidth -> Infinity];
+sha256[path_] := IntegerString[FileHash[path, "SHA256"], 16, 64];
+
+checkedImport[path_] := Module[{value},
+  value = Quiet[Check[Import[path, "MX"], $Failed]];
+  If[value === $Failed, die["failed to import MX file " <> path]];
+  value
+];
+
+evaluateAtMass[expression_, mass_] := Module[{value},
+  value = expression /. ((symbol_Symbol /;
+       MemberQ[{"ma", "mLLP", "mN"}, SymbolName[Unevaluated[symbol]]]) :> mass);
+  If[MatchQ[value, _Function | _InterpolatingFunction], value = value[mass]];
+  value = Quiet[Check[N[value], Indeterminate]];
+  If[!NumericQ[value] || !TrueQ[Im[N[value]] == 0],
+    die["non-numeric branching ratio at mass " <> ToString[mass] <>
+      ": " <> render[expression]]
+  ];
+  Re[N[value]]
+];
+
+writeJSON[path_, value_] := Module[{result},
+  result = Quiet[Check[Export[path, value, "RawJSON"], $Failed]];
+  If[result === $Failed, die["failed to write " <> path]]
+];
+
+If[Length[$ScriptCommandLine] != 3,
+  die["usage: export_senscalc_2501.wls SENSCALC_ROOT OUTPUT_DIR"]
+];
+
+sensCalcRoot = ExpandFileName[$ScriptCommandLine[[2]]];
+outputDir = ExpandFileName[$ScriptCommandLine[[3]]];
+If[!DirectoryQ[outputDir], CreateDirectory[outputDir, CreateIntermediateDirectories -> True]];
+
+sourceDir = FileNameJoin[{sensCalcRoot, "phenomenology", "ALP-fermion", "decay widths"}];
+sourceFiles = <|
+  "widths" -> "Widths-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
+  "branching_ratios" -> "Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
+  "matrix_elements" -> "Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m"
+|>;
+expectedHashes = <|
+  "widths" -> "d12fb78d28edff0aa081c9fb66d829b42b4ec71202684019d7b9047ecb40b869",
+  "branching_ratios" -> "34a09eed87d081bfffe79b464094741454022f79478c5b28bc236bc361049286",
+  "matrix_elements" -> "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed"
+|>;
+sourcePaths = AssociationMap[FileNameJoin[{sourceDir, #}] &, sourceFiles];
+
+KeyValueMap[
+  Function[{key, path},
+    If[!FileExistsQ[path], die["missing source file " <> path]];
+    If[sha256[path] =!= expectedHashes[key], die["SHA-256 mismatch for " <> path]]
+  ],
+  sourcePaths
+];
+
+widthRaw = checkedImport[sourcePaths["widths"]];
+If[!ListQ[widthRaw] || Length[widthRaw] < 4 || !ListQ[widthRaw[[4]]],
+  die["unexpected widths MX structure"]
+];
+widthPayload = widthRaw[[4]];
+If[Length[widthPayload] < 4, die["widths payload has no numeric rows"]];
+widthSourceHeaders = widthPayload[[1]];
+widthSourceMetadata = Take[widthPayload, 3];
+widthDataRaw = N[Drop[widthPayload, 3]];
+If[!MatrixQ[widthDataRaw, NumericQ], die["widths payload is not a numeric matrix"]];
+
+widthColumnIds = Join[
+  {"mass_GeV"},
+  Table["width_coefficient_" <> IntegerString[index, 10, 3],
+    {index, Length[First[widthDataRaw]] - 1}]
+];
+widthDataBNT = (Prepend[Rest[#]/4., First[#]] &) /@ widthDataRaw;
+Export[
+  FileNameJoin[{outputDir, "widths_raw_senscalc.csv"}],
+  Prepend[widthDataRaw, widthColumnIds],
+  "CSV"
+];
+Export[
+  FileNameJoin[{outputDir, "widths_bnt.csv"}],
+  Prepend[widthDataBNT, widthColumnIds],
+  "CSV"
+];
+writeJSON[
+  FileNameJoin[{outputDir, "widths_metadata.json"}],
+  <|
+    "column_ids" -> widthColumnIds,
+    "source_headers_input_form" -> (render /@ widthSourceHeaders),
+    "source_metadata_rows_input_form" -> (render /@ widthSourceMetadata),
+    "raw_coefficient_definition" -> "Gamma = (gY/(2 vH))^2 * coefficient",
+    "bnt_coefficient_definition" -> "Gamma = (1/f_BNT)^2 * coefficient",
+    "conversion_raw_to_bnt" -> 0.25
+  |>
+];
+
+branchingRaw = checkedImport[sourcePaths["branching_ratios"]];
+If[!ListQ[branchingRaw] || Length[branchingRaw] < 3,
+  die["unexpected branching-ratio MX structure"]
+];
+branchingProcesses = branchingRaw[[1]];
+branchingProducts = branchingRaw[[2]];
+branchingExpressions = branchingRaw[[3]];
+If[Length[branchingProcesses] =!= Length[branchingExpressions],
+  die["branching process and expression counts differ"]
+];
+
+channelIds = Table[
+  "channel_" <> IntegerString[index, 10, 3],
+  {index, Length[branchingProcesses]}
+];
+massGrid = DeleteDuplicates[widthDataRaw[[All, 1]]];
+branchingData = Table[
+  Prepend[evaluateAtMass[#, mass] & /@ branchingExpressions, mass],
+  {mass, massGrid}
+];
+Export[
+  FileNameJoin[{outputDir, "branching_ratios.csv"}],
+  Prepend[branchingData, Join[{"mass_GeV"}, channelIds]],
+  "CSV"
+];
+writeJSON[
+  FileNameJoin[{outputDir, "decay_channels.json"}],
+  MapThread[
+    <|
+      "id" -> #1,
+      "process_input_form" -> render[#2],
+      "decay_products_input_form" -> render[#3],
+      "branching_expression_input_form" -> render[#4]
+    |> &,
+    {channelIds, branchingProcesses, branchingProducts, branchingExpressions}
+  ]
+];
+
+matrixRaw = checkedImport[sourcePaths["matrix_elements"]];
+If[!ListQ[matrixRaw] || Length[matrixRaw] < 3,
+  die["unexpected matrix-element MX structure"]
+];
+matrixProcesses = matrixRaw[[1]];
+matrixMetadata = matrixRaw[[2]];
+matrixExpressions = matrixRaw[[3]];
+If[Length[matrixProcesses] =!= Length[matrixExpressions],
+  die["matrix-element process and expression counts differ"]
+];
+matrixIds = Table[
+  "matrix_element_" <> IntegerString[index, 10, 3],
+  {index, Length[matrixProcesses]}
+];
+writeJSON[
+  FileNameJoin[{outputDir, "matrix_elements.json"}],
+  MapThread[
+    <|
+      "id" -> #1,
+      "process_input_form" -> render[#2],
+      "metadata_input_form" -> render[#3],
+      "expression_input_form" -> render[#4],
+      "expression_c_form" -> ToString[CForm[#4], PageWidth -> Infinity]
+    |> &,
+    {matrixIds, matrixProcesses, matrixMetadata, matrixExpressions}
+  ]
+];
+
+outputFiles = {
+  "widths_raw_senscalc.csv", "widths_bnt.csv", "widths_metadata.json",
+  "branching_ratios.csv", "decay_channels.json", "matrix_elements.json"
+};
+writeJSON[
+  FileNameJoin[{outputDir, "EXPORT_MANIFEST.json"}],
+  <|
+    "senscalc_repository" -> "https://github.com/maksymovchynnikov/SensCalc",
+    "senscalc_tag" -> "v.1.3.3",
+    "senscalc_commit" -> "0bca050633aae16e148d47f21840fa07ff4b8724",
+    "phenomenology" -> "arXiv:2501.04525",
+    "wolfram_version" -> $Version,
+    "wolfram_system_id" -> $SystemID,
+    "exported_utc" -> DateString[TimeZoneConvert[Now, 0], "ISODateTime"],
+    "source_sha256" -> AssociationMap[sha256, sourcePaths],
+    "output_sha256" -> AssociationMap[
+      sha256[FileNameJoin[{outputDir, #}]] &,
+      outputFiles
+    ]
+  |>
+];
+
+WriteString[$Output, "Exported " <> ToString[Length[outputFiles]] <>
+  " SensCalc data files to " <> outputDir <> "\n"];
