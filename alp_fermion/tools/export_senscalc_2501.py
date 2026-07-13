@@ -13,8 +13,10 @@ Example:
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -62,6 +64,21 @@ EXPECTED_OUTPUT_FILES = (
     "matrix_elements.json",
     "EXPORT_MANIFEST.json",
 )
+REQUIRED_WIDTH_CANONICAL_NAMES = {
+    "ee",
+    "mumu",
+    "tautau",
+    "gammagamma",
+    "nonhadronic_total",
+    "hadronic_total",
+    "total",
+}
+REQUIRED_BRANCHING_CANONICAL_NAMES = {
+    "ee",
+    "mumu",
+    "tautau",
+    "gammagamma",
+}
 MACOS_ENGINE_KERNEL = Path(
     "/Applications/Wolfram Engine.app/Contents/Resources/"
     "Wolfram Player.app/Contents/MacOS/WolframKernel"
@@ -141,6 +158,116 @@ def wolfram_environment() -> dict[str, str]:
     return env
 
 
+def _load_json(path: Path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise InputError(f"{path.name} is not valid JSON") from exc
+
+
+def _read_numeric_csv(path: Path) -> tuple[list[str], list[list[float]]]:
+    try:
+        with path.open(newline="") as handle:
+            reader = csv.reader(handle)
+            header = next(reader)
+            rows = [[float(value) for value in row] for row in reader]
+    except (OSError, StopIteration, ValueError) as exc:
+        raise InputError(f"{path.name} is not a numeric CSV table") from exc
+    if not header or not rows:
+        raise InputError(f"{path.name} is empty")
+    if any(len(row) != len(header) for row in rows):
+        raise InputError(f"{path.name} has inconsistent row lengths")
+    if not all(math.isfinite(value) for row in rows for value in row):
+        raise InputError(f"{path.name} contains non-finite values")
+    masses = [row[0] for row in rows]
+    if any(right <= left for left, right in zip(masses, masses[1:])):
+        raise InputError(f"{path.name} mass grid is not strictly increasing")
+    return header, rows
+
+
+def validate_decay_schema(export_dir: Path) -> None:
+    """Validate the machine-readable contract consumed by the model layer."""
+    raw_header, raw_rows = _read_numeric_csv(
+        export_dir / "widths_raw_senscalc.csv"
+    )
+    bnt_header, bnt_rows = _read_numeric_csv(export_dir / "widths_bnt.csv")
+    if raw_header != bnt_header or len(raw_rows) != len(bnt_rows):
+        raise InputError("raw and BNT width tables have different shapes")
+    for raw_row, bnt_row in zip(raw_rows, bnt_rows):
+        if raw_row[0] != bnt_row[0]:
+            raise InputError("raw and BNT width mass grids differ")
+        if any(
+            not math.isclose(converted, raw / 4.0, rel_tol=1e-11, abs_tol=1e-18)
+            for raw, converted in zip(raw_row[1:], bnt_row[1:])
+        ):
+            raise InputError("BNT width coefficients are not raw/4")
+
+    width_metadata = _load_json(export_dir / "widths_metadata.json")
+    if not isinstance(width_metadata, dict):
+        raise InputError("widths_metadata.json must contain an object")
+    columns = width_metadata.get("columns")
+    if not isinstance(columns, list) or not all(
+        isinstance(column, dict) for column in columns
+    ):
+        raise InputError("width metadata has no structured columns")
+    if [column.get("id") for column in columns] != bnt_header:
+        raise InputError("width metadata IDs do not match the CSV header")
+    canonical_widths = {
+        column.get("canonical_name")
+        for column in columns
+        if isinstance(column.get("canonical_name"), str)
+    }
+    if not REQUIRED_WIDTH_CANONICAL_NAMES <= canonical_widths:
+        raise InputError("required canonical width columns are missing")
+    if not math.isclose(
+        width_metadata.get("conversion_raw_to_bnt", math.nan),
+        0.25,
+        rel_tol=0.0,
+        abs_tol=1e-15,
+    ):
+        raise InputError("width metadata has the wrong BNT conversion")
+
+    branching_header, branching_rows = _read_numeric_csv(
+        export_dir / "branching_ratios.csv"
+    )
+    if [row[0] for row in branching_rows] != [row[0] for row in bnt_rows]:
+        raise InputError("branching-ratio and width mass grids differ")
+    if any(
+        value < -1e-12 or value > 1.0 + 1e-12
+        for row in branching_rows
+        for value in row[1:]
+    ):
+        raise InputError("branching ratio lies outside [0, 1]")
+
+    channels = _load_json(export_dir / "decay_channels.json")
+    if not isinstance(channels, list) or not all(
+        isinstance(channel, dict) for channel in channels
+    ):
+        raise InputError("decay_channels.json must contain a list of objects")
+    channel_header = [
+        "mass_GeV", *(channel.get("id") for channel in channels)
+    ]
+    if channel_header != branching_header:
+        raise InputError("decay-channel IDs do not match the CSV header")
+    canonical_channels = {
+        channel.get("canonical_name")
+        for channel in channels
+        if isinstance(channel.get("canonical_name"), str)
+    }
+    if not REQUIRED_BRANCHING_CANONICAL_NAMES <= canonical_channels:
+        raise InputError("required canonical branching channels are missing")
+
+    matrix_elements = _load_json(export_dir / "matrix_elements.json")
+    if not isinstance(matrix_elements, list) or not all(
+        isinstance(entry, dict) and isinstance(entry.get("id"), str)
+        for entry in matrix_elements
+    ):
+        raise InputError("matrix_elements.json must contain identified objects")
+    matrix_ids = [entry["id"] for entry in matrix_elements]
+    if len(matrix_ids) != len(set(matrix_ids)):
+        raise InputError("matrix-element IDs are not unique")
+
+
 def validate_export(export_dir: Path) -> None:
     """Reject incomplete or internally inconsistent Wolfram output."""
     missing = [name for name in EXPECTED_OUTPUT_FILES
@@ -179,6 +306,7 @@ def validate_export(export_dir: Path) -> None:
             raise InputError(
                 f"export hash mismatch for {name}: {actual}; expected {expected}"
             )
+    validate_decay_schema(export_dir)
 
 
 def install_export(staging_dir: Path, output_dir: Path) -> None:

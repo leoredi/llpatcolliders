@@ -32,6 +32,11 @@ determine the visible-channel mixture, and the squared matrix elements
 determine the charged-daughter kinematics used by the reconstruction
 acceptance.
 
+The exporter retains every upstream display label and expression, but it also
+assigns canonical machine names to the unambiguous leptonic, diphoton, and
+total-width entries. Model code must use those canonical fields rather than
+parse Mathematica box notation or localized Greek characters.
+
 The pinned dumps record the Wolfram system ID `Windows-x86-64` in their MX
 headers. MX is a system-dependent format; the exporter reports the source
 system ID and records the decoder `$SystemID` in `EXPORT_MANIFEST.json`.

@@ -1,5 +1,6 @@
 """Tests for the staged SensCalc 2501 export boundary."""
 
+import csv
 import json
 
 import pytest
@@ -9,12 +10,74 @@ from alp_fermion.tools import export_senscalc_2501 as export
 
 def _write_complete_export(path):
     path.mkdir()
+    width_ids = [
+        "mass_GeV",
+        "width_coefficient_001",
+        "width_coefficient_002",
+        "width_coefficient_003",
+        "width_coefficient_004",
+        "width_coefficient_005",
+        "width_coefficient_006",
+        "width_coefficient_007",
+    ]
+    canonical_widths = [
+        None,
+        "ee",
+        "mumu",
+        "tautau",
+        "gammagamma",
+        "nonhadronic_total",
+        "hadronic_total",
+        "total",
+    ]
+    raw_rows = [
+        [0.5, 4.0, 8.0, 12.0, 16.0, 20.0, 24.0, 28.0],
+        [1.0, 8.0, 12.0, 16.0, 20.0, 24.0, 28.0, 32.0],
+    ]
+
+    def write_csv(name, header, rows):
+        with (path / name).open("w", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(header)
+            writer.writerows(rows)
+
+    write_csv("widths_raw_senscalc.csv", width_ids, raw_rows)
+    write_csv(
+        "widths_bnt.csv",
+        width_ids,
+        [[row[0], *(value / 4.0 for value in row[1:])] for row in raw_rows],
+    )
+    (path / "widths_metadata.json").write_text(json.dumps({
+        "columns": [
+            {"id": column_id, "canonical_name": canonical_name}
+            for column_id, canonical_name in zip(width_ids, canonical_widths)
+        ],
+        "conversion_raw_to_bnt": 0.25,
+    }))
+
+    channel_ids = [f"channel_{index:03d}" for index in range(1, 5)]
+    canonical_channels = ["ee", "mumu", "tautau", "gammagamma"]
+    write_csv(
+        "branching_ratios.csv",
+        ["mass_GeV", *channel_ids],
+        [[0.5, 0.25, 0.25, 0.25, 0.25], [1.0, 0.2, 0.3, 0.1, 0.4]],
+    )
+    (path / "decay_channels.json").write_text(json.dumps([
+        {"id": channel_id, "canonical_name": canonical_name}
+        for channel_id, canonical_name in zip(
+            channel_ids, canonical_channels
+        )
+    ]))
+    (path / "matrix_elements.json").write_text(json.dumps([
+        {"id": "matrix_element_001", "canonical_name": None}
+    ]))
+
     hashes = {}
     for name in export.EXPECTED_OUTPUT_FILES:
         if name == "EXPORT_MANIFEST.json":
             continue
         product = path / name
-        product.write_text(f"test product: {name}\n")
+        assert product.is_file()
         hashes[name] = export.sha256(product)
     (path / "EXPORT_MANIFEST.json").write_text(json.dumps({
         "senscalc_tag": export.SENSCALC_TAG,
@@ -29,6 +92,13 @@ def _write_complete_export(path):
     }))
 
 
+def _refresh_manifest_hash(path, name):
+    manifest_path = path / "EXPORT_MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["output_sha256"][name] = export.sha256(path / name)
+    manifest_path.write_text(json.dumps(manifest))
+
+
 def test_validate_export_accepts_complete_hashed_bundle(tmp_path):
     staged = tmp_path / "staged"
     _write_complete_export(staged)
@@ -40,6 +110,29 @@ def test_validate_export_rejects_modified_product(tmp_path):
     _write_complete_export(staged)
     (staged / "widths_bnt.csv").write_text("modified\n")
     with pytest.raises(export.InputError, match="hash mismatch"):
+        export.validate_export(staged)
+
+
+def test_validate_export_rejects_wrong_bnt_conversion(tmp_path):
+    staged = tmp_path / "staged"
+    _write_complete_export(staged)
+    bnt_path = staged / "widths_bnt.csv"
+    text = bnt_path.read_text().replace("1.0,2.0", "1.0,2.5", 1)
+    bnt_path.write_text(text)
+    _refresh_manifest_hash(staged, "widths_bnt.csv")
+    with pytest.raises(export.InputError, match="not raw/4"):
+        export.validate_export(staged)
+
+
+def test_validate_export_rejects_missing_canonical_width(tmp_path):
+    staged = tmp_path / "staged"
+    _write_complete_export(staged)
+    metadata_path = staged / "widths_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["columns"][-1]["canonical_name"] = None
+    metadata_path.write_text(json.dumps(metadata))
+    _refresh_manifest_hash(staged, "widths_metadata.json")
+    with pytest.raises(export.InputError, match="canonical width"):
         export.validate_export(staged)
 
 
@@ -67,5 +160,5 @@ def test_install_export_replaces_destination_bundle(tmp_path):
 
     export.install_export(staged, destination)
 
-    assert (destination / "widths_bnt.csv").read_text().startswith("test product")
+    assert (destination / "widths_bnt.csv").read_text().startswith("mass_GeV")
     assert not any(staged.iterdir())

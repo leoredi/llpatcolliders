@@ -2,8 +2,8 @@
 (* Decode the pinned SensCalc 2501.04525 MX files into reviewable formats. *)
 
 ClearAll[
-  die, render, plainString, normalizedProducts, sha256, checkedImport,
-  evaluateAtMass, writeJSON
+  die, render, plainString, canonicalDecayName, normalizedProducts, sha256,
+  checkedImport, evaluateAtMass, writeJSON
 ];
 
 die[message_] := (
@@ -13,6 +13,16 @@ die[message_] := (
 
 render[expression_] := ToString[expression, InputForm, PageWidth -> Infinity];
 plainString[expression_] := If[StringQ[expression], expression, render[expression]];
+canonicalDecayName[expression_] := Switch[plainString[expression],
+  "2e", "ee",
+  "2\[Mu]", "mumu",
+  "2\[Tau]", "tautau",
+  "2\[Gamma]", "gammagamma",
+  "Non-hadronic, total", "nonhadronic_total",
+  "Hadronic, total", "hadronic_total",
+  "Total", "total",
+  _, Null
+];
 normalizedProducts[products_] := plainString /@
   DeleteCases[Flatten[{products}], Null | "Null"];
 sha256[path_] := IntegerString[FileHash[path, "SHA256"], 16, 64];
@@ -88,14 +98,25 @@ If[!ListQ[widthRaw] || Length[widthRaw] < 4 || !ListQ[widthRaw[[4]]],
 widthPayload = widthRaw[[4]];
 If[Length[widthPayload] < 4, die["widths payload has no numeric rows"]];
 widthSourceHeaders = widthPayload[[1]];
+widthCanonicalNames = canonicalDecayName /@ widthSourceHeaders;
 widthSourceMetadata = Take[widthPayload, 3];
 widthDataRaw = N[Drop[widthPayload, 3]];
 If[!MatrixQ[widthDataRaw, NumericQ], die["widths payload is not a numeric matrix"]];
+If[Length[widthSourceHeaders] =!= Length[First[widthDataRaw]],
+  die["width header and data-column counts differ"]
+];
 
 widthColumnIds = Join[
   {"mass_GeV"},
   Table["width_coefficient_" <> IntegerString[index, 10, 3],
     {index, Length[First[widthDataRaw]] - 1}]
+];
+requiredWidthNames = {
+  "ee", "mumu", "tautau", "gammagamma", "nonhadronic_total",
+  "hadronic_total", "total"
+};
+If[!And @@ (MemberQ[widthCanonicalNames, #] & /@ requiredWidthNames),
+  die["required canonical width columns are missing"]
 ];
 widthDataBNT = (Prepend[Rest[#]/4., First[#]] &) /@ widthDataRaw;
 Export[
@@ -114,6 +135,15 @@ writeJSON[
     "column_ids" -> widthColumnIds,
     "source_headers" -> (plainString /@ widthSourceHeaders),
     "source_headers_input_form" -> (render /@ widthSourceHeaders),
+    "columns" -> Table[
+      <|
+        "source_index" -> index,
+        "id" -> widthColumnIds[[index]],
+        "source_header" -> plainString[widthSourceHeaders[[index]]],
+        "canonical_name" -> widthCanonicalNames[[index]]
+      |>,
+      {index, Length[widthColumnIds]}
+    ],
     "source_metadata_rows_input_form" -> (render /@ widthSourceMetadata),
     "raw_coefficient_definition" -> "Gamma = (gY/(2 vH))^2 * coefficient",
     "bnt_coefficient_definition" -> "Gamma = (1/f_BNT)^2 * coefficient",
@@ -128,13 +158,21 @@ If[!ListQ[branchingRaw] || Length[branchingRaw] < 3,
 branchingProcesses = branchingRaw[[1]];
 branchingProducts = branchingRaw[[2]];
 branchingExpressions = branchingRaw[[3]];
-If[Length[branchingProcesses] =!= Length[branchingExpressions],
-  die["branching process and expression counts differ"]
+If[!SameQ[
+    Length[branchingProcesses], Length[branchingProducts],
+    Length[branchingExpressions]
+  ],
+  die["branching process, product, and expression counts differ"]
 ];
 
 channelIds = Table[
   "channel_" <> IntegerString[index, 10, 3],
   {index, Length[branchingProcesses]}
+];
+channelCanonicalNames = canonicalDecayName /@ branchingProcesses;
+If[!And @@ (MemberQ[channelCanonicalNames, #] & /@
+    {"ee", "mumu", "tautau", "gammagamma"}),
+  die["required canonical branching channels are missing"]
 ];
 massGrid = DeleteDuplicates[widthDataRaw[[All, 1]]];
 branchingData = Table[
@@ -152,6 +190,7 @@ writeJSON[
     <|
       "source_index" -> index,
       "id" -> channelIds[[index]],
+      "canonical_name" -> channelCanonicalNames[[index]],
       "process_name" -> plainString[branchingProcesses[[index]]],
       "decay_products" -> normalizedProducts[branchingProducts[[index]]],
       "process_input_form" -> render[branchingProcesses[[index]]],
@@ -169,8 +208,11 @@ If[!ListQ[matrixRaw] || Length[matrixRaw] < 3,
 matrixProcesses = matrixRaw[[1]];
 matrixMetadata = matrixRaw[[2]];
 matrixExpressions = matrixRaw[[3]];
-If[Length[matrixProcesses] =!= Length[matrixExpressions],
-  die["matrix-element process and expression counts differ"]
+If[!SameQ[
+    Length[matrixProcesses], Length[matrixMetadata],
+    Length[matrixExpressions]
+  ],
+  die["matrix-element process, metadata, and expression counts differ"]
 ];
 matrixIds = Table[
   "matrix_element_" <> IntegerString[index, 10, 3],
@@ -182,6 +224,7 @@ writeJSON[
     <|
       "source_index" -> index,
       "id" -> matrixIds[[index]],
+      "canonical_name" -> canonicalDecayName[matrixProcesses[[index]]],
       "process_name" -> plainString[matrixProcesses[[index]]],
       "decay_products" -> normalizedProducts[matrixMetadata[[index]]],
       "process_input_form" -> render[matrixProcesses[[index]]],
