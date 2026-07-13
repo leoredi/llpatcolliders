@@ -1,11 +1,11 @@
 {
   "artifact": "GRENDEL BC10 fermiophilic-ALP sensitivity (canonical published curve)",
   "producer_repo": "llpatcolliders (branch bc10-alp)",
-  "producer_git_sha": "adfca31",
-  "source_run": "dense-grid campaign of 2026-07-12: 99-point mass grid (0.22-4.75 GeV; 0.02 GeV steps below 1 GeV, 0.05 to 3 GeV, 0.1 above), memory-bounded acceptance MC (EVENT_CHUNK=256, per-chunk seeds; see sensitivity.py) on the same physics inputs as the 2026-07-09 release",
+  "producer_git_sha": "831171e",
+  "source_run": "publication campaign of 2026-07-13: 99-point mass grid (0.22-4.75 GeV), 600000-event FONLL production pool, 20000 full-branching Pythia8 decay templates per supported mass, and memory-bounded acceptance MC (EVENT_CHUNK=256, per-chunk seeds)",
   "generated_from": "alp_fermion/tmp/analysis/bc10_sensitivity.csv",
-  "csv_sha256": "f5a078bbdc7843f4d5ec46fa878406c532e8411ed7c8cbeeba7f3a490bea2482",
-  "date_published": "2026-07-12",
+  "csv_sha256": "a4f11b0dfe2c824294b18ea09eb449bea1cacb0783a5b63e837676ec32d5d473",
+  "date_published": "2026-07-13",
   "hypothesis": {
     "model": "PBC BC10: pseudoscalar ALP with universal SM-fermion couplings",
     "coupling": "g_aff = c_f m_f / f with c_f = 1 (BNT arXiv:1708.00443 convention)",
@@ -14,13 +14,13 @@
   },
   "physics_inputs": {
     "production": "b -> s a penguin as B -> K^(i) a summed over the kaon tower (K, K*, K0*, K1, K2*) per GKOZ arXiv:2310.03524; FONLL 14 TeV bottom kinematics (NNPDF4.0 NLO)",
-    "decays": "GKOZ data-driven spectral tables (leptons, photons, hadrons) via ALPINIST (arXiv:2201.05170), pinned in alp_fermion/data/alpinist/"
+    "decays": "Widths and exclusive branching ratios from arXiv:2501.04525, decoded from pinned SensCalc v1.3.3 inputs; unstable daughters and partonic channels processed with Pythia 8.317 using flat primary multi-body phase space and an equal u/d/s surrogate for the two-gluon channel"
   },
   "analysis": {
     "beam": "pp 14 TeV (HL-LHC)",
     "L_int_fb": 3000.0,
     "criterion": "N_signal >= 3 (background-free, 95% CL)",
-    "reconstruction": "shared GRENDEL 4-hit two-track vertex reco + PR #13 selection, imported from higgs/ and hnl/ (timing chi2 with daughter beta = p/E)"
+    "reconstruction": "shared GRENDEL 4-hit two-track vertex reco + PR #13 selection, imported from higgs/ and hnl/ (timing chi2 with daughter beta = p/E); full exclusive branching mixture is sampled before reconstruction"
   },
   "column_contract": {
     "required_by_consumer": [
@@ -35,14 +35,14 @@
     "peak_invf": "the optimal 1/f [GeV^-1]"
   },
   "headline_reach": {
-    "best_invf_min_GeV_inv": 1.0993569125860519e-08,
-    "best_invf_min_at_mass_GeV": 1.4,
+    "best_invf_min_GeV_inv": 1.2321367884946184e-08,
+    "best_invf_min_at_mass_GeV": 1.5,
     "mass_lo_GeV": 0.22,
-    "mass_hi_closure_GeV": 2.5,
-    "n_sensitive_points": 19,
-    "n_grid_points": 29
+    "mass_hi_closure_GeV": 3.2917434825407237,
+    "n_sensitive_points": 77,
+    "n_grid_points": 99
   },
-  "closure_note": "The island closes at m_a ~ 2.5 GeV, well below the B -> K a endpoint (m_B - m_K ~ 4.8 GeV): the growing hadronic width shortens the lifetime at fixed coupling faster than the coupling can be reduced while retaining N >= 3. The near-pinch at 1.6-1.8 GeV (peak_N ~ 3.2-3.5) is resolved on real grid points.",
+  "closure_note": "The 2501 decay model produces disconnected sensitive runs at 0.22-0.52, 0.56-0.94, 0.98-1.25, 1.40, and 1.50-3.20 GeV. The first two gaps are the explicitly unsupported eta and eta-prime pole windows. Insensitive rows at 1.30, 1.35, and 1.45 GeV are retained as plot boundaries. Log-yield interpolation between 3.20 and 3.30 GeV places the final closure at 3.2917 GeV.",
   "grid": {
     "n_masses": 99,
     "mass_min_GeV": 0.22,

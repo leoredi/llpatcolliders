@@ -24,7 +24,10 @@ cp alp_fermion/tmp/analysis/bc10_sensitivity.csv \
 
 ## Current contents
 
-- Source: the 2026-07-08 sensitivity rerun on the PR #15-synced `hnl/`
-  subtree (timing-chi2 beta = p/E fix included).
-- Reach: island spans `m_a` 0.22–2.5 GeV; deepest `1/f = 1.1e-8 GeV^-1`
-  at 1.4 GeV.
+- Source: the 2026-07-13 600k-production campaign with 20,000
+  full-branching Pythia templates per supported mass and the decoded
+  arXiv:2501.04525 SensCalc v1.3.3 decay tables.
+- Reach: the deepest lower edge is `1/f = 1.23e-8 GeV^-1` at 1.5 GeV; the
+  final high-mass component closes at approximately 3.292 GeV.
+- Topology: pole gaps and insensitive rows are retained in the CSV so plotters
+  can preserve the five disconnected sensitive runs recorded in the manifest.
