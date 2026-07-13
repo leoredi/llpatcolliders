@@ -203,16 +203,29 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
     return res
 
 
-def run(masses, force_geom=False):
+def run(masses, force_geom=False, output=None, resume=False):
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
+    out = Path(output) if output is not None else ANALYSIS_DIR / "bc10_sensitivity.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
     mesh = _get_mesh()
     rows = []
+    completed = set()
+    if resume and out.exists():
+        previous = pd.read_csv(out)
+        rows = previous.to_dict("records")
+        completed = set(previous["mass_GeV"].astype(float))
     for m_a in masses:
+        if float(m_a) in completed:
+            print(f"  m_a={m_a:.3f}: already checkpointed", flush=True)
+            continue
         r = process_mass(m_a, mesh, force_geom=force_geom)
         if r is None:
             print(f"  m_a={m_a:.3f}: skipped (no input)", flush=True)
             continue
         rows.append(r)
+        # A mass point is expensive. Persist every completed row so an external
+        # ROOT/Pythia or Python failure never discards the rest of the campaign.
+        pd.DataFrame(rows).sort_values("mass_GeV").to_csv(out, index=False)
         if r.get("exclusion_reason"):
             print(
                 f"  m_a={m_a:.3f}: excluded ({r['exclusion_reason']})",
@@ -231,7 +244,6 @@ def run(masses, force_geom=False):
         print("No results.")
         return None
     df = pd.DataFrame(rows).sort_values("mass_GeV")
-    out = ANALYSIS_DIR / "bc10_sensitivity.csv"
     df.to_csv(out, index=False)
     print(f"\nSaved {out}")
     n_sens = int(df["has_sensitivity"].sum())
@@ -245,15 +257,20 @@ def main(argv=None):
     ap.add_argument("--mass", type=float, nargs="+", default=None)
     ap.add_argument("--force-geometry", action="store_true")
     ap.add_argument("--plot-only", action="store_true")
+    ap.add_argument("--output", type=Path, default=None,
+                    help="checkpoint/output CSV (default: tmp analysis CSV)")
+    ap.add_argument("--resume", action="store_true",
+                    help="keep rows already present in --output and skip them")
     args = ap.parse_args(argv)
 
-    out = ANALYSIS_DIR / "bc10_sensitivity.csv"
+    out = args.output or ANALYSIS_DIR / "bc10_sensitivity.csv"
     if not args.plot_only:
         masses = args.mass if args.mass else ALP_MASS_GRID
         print("BC10 fermiophilic-ALP sensitivity")
         print(f"  masses: {len(masses)}  L = {L_INT_PB/1e3:.0f} fb^-1  "
               f"N_thr = {N_THRESHOLD}")
-        out = run(masses, force_geom=args.force_geometry)
+        out = run(masses, force_geom=args.force_geometry,
+                  output=out, resume=args.resume)
         if out is None:
             return 1
     if out and Path(out).exists():
