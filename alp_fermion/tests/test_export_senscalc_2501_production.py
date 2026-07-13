@@ -54,6 +54,12 @@ def test_validate_export_rejects_modified_product(tmp_path):
         export.validate_export(staged)
 
 
+def test_wolfram_exporter_maps_association_values():
+    source = export.EXPORTER.read_text()
+    assert "sourcePaths = Map[" in source
+    assert '"source_sha256" -> Map[sha256, sourcePaths]' in source
+
+
 def test_install_export_replaces_destination_bundle(tmp_path):
     staged = tmp_path / "staged"
     destination = tmp_path / "published"

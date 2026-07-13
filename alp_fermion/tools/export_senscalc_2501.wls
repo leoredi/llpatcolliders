@@ -81,7 +81,7 @@ expectedHashes = <|
   "matrix_elements" -> "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed",
   "acceptance_notebook" -> "8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4"
 |>;
-sourcePaths = AssociationMap[FileNameJoin[{sensCalcRoot, #}] &, sourceFiles];
+sourcePaths = Map[FileNameJoin[{sensCalcRoot, #}] &, sourceFiles];
 
 KeyValueMap[
   Function[{key, path},
@@ -252,7 +252,7 @@ writeJSON[
     "wolfram_version" -> $Version,
     "wolfram_system_id" -> $SystemID,
     "exported_utc" -> DateString[TimeZoneConvert[Now, 0], "ISODateTime"],
-    "source_sha256" -> AssociationMap[sha256, sourcePaths],
+    "source_sha256" -> Map[sha256, sourcePaths],
     "output_sha256" -> AssociationMap[
       sha256[FileNameJoin[{outputDir, #}]] &,
       outputFiles

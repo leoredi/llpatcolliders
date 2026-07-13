@@ -38,11 +38,11 @@ total-width entries. Model code must use those canonical fields rather than
 parse Mathematica box notation or localized Greek characters.
 
 The pinned dumps record the Wolfram system ID `Windows-x86-64` in their MX
-headers. MX is a system-dependent format; the exporter reports the source
-system ID and records the decoder `$SystemID` in `EXPORT_MANIFEST.json`.
-Cross-platform import must therefore be demonstrated, not assumed. If the
-macOS engine rejects the dumps, decode them with a matching Windows x86-64
-Wolfram installation and transfer only the hashed CSV/JSON export. See the
+headers. MX is documented as system-dependent, so the exporter reports the
+source system ID and records the decoder `$SystemID` in
+`EXPORT_MANIFEST.json`. The committed bundle was successfully decoded and
+validated with Wolfram Engine 15.0 on `MacOSX-ARM64`; this demonstrated import
+is recorded in the manifest rather than inferred from the file header. See the
 [Wolfram MX format documentation](https://reference.wolfram.com/language/ref/format/MX.html).
 
 ## Regeneration
@@ -76,9 +76,17 @@ Gamma = (g_Y / (2 v_h))^2 * coefficient_raw.
 
 The GRENDEL BNT-axis convention is `1/f_BNT = g_Y/v_h`, so the exported BNT
 coefficient is `coefficient_raw/4`. The branching ratios are convention
-independent. Before the tables become the default model input, the conversion
-must pass the physical anchors documented in `model.py`: the approximately
-9% dimuon branching ratio at 1 GeV and the charm onset near 2.58 GeV.
+independent. The tables are the default decay-model input. Validation checks
+the raw-to-BNT factor row by row, the exact `BR(a -> mu mu) = 0.2022433833`
+anchor at 1 GeV, and the charm-region structure near 2.58 GeV. The older
+approximately 9% anchor came from the superseded GKOZ/ALPINIST digitization and
+must not be imposed on the 2501 tables.
+
+SensCalc's charged/no-ECAL channel policy is reproduced from
+`codes/EventCalc/DecayProductsSampler.nb`: the diphoton, `3 pi0`, and
+`2 K_L pi0` channels are excluded from the visible branching fraction. The
+remaining exclusive branching ratios are summed before the separate GRENDEL
+decay-template and detector-acceptance calculation.
 
 The production-channel comparison is tracked separately in
 [`PRODUCTION_AUDIT.md`](PRODUCTION_AUDIT.md). SensCalc is used as a verified

@@ -38,26 +38,24 @@ def test_tautau_opens_above_threshold():
 
 
 def test_mumu_br_anchor_at_1GeV():
-    # GKOZ (arXiv:2310.03524): BR(a->mumu) "< 10% for m_a >~ 1 GeV".  With the
-    # data-driven hadronic table in our conventions it lands at ~9%.
+    # Direct anchor from the pinned arXiv:2501.04525 SensCalc table.
     br = m.alp_branchings(1.0, 1e-3)["mumu"]
-    assert 0.05 < br < 0.10
+    assert br == pytest.approx(0.2022433833, rel=1e-8)
 
 
-def test_hadronic_table_seam_is_continuous():
-    # the matched perturbative continuation equals the table at the ceiling
-    mt = m.table_mass_max()
-    w_tab = m.alp_partial_widths(mt - 1e-9, 1e-3)["hadronic"]
-    w_cont = m.alp_partial_widths(mt + 1e-9, 1e-3)["hadronic"]
-    assert w_cont == pytest.approx(w_tab, rel=0.02)
+def test_senscalc_table_covers_scan_and_partial_widths_sum_to_total():
+    assert m.table_mass_min() == pytest.approx(0.01)
+    assert m.table_mass_max() == pytest.approx(10.0)
+    for ma in (0.22, 1.0, 2.58, 4.75):
+        assert sum(m.alp_partial_widths(ma, 1e-3).values()) \
+            == pytest.approx(m.alp_total_width(ma, 1e-3), rel=1e-12)
 
 
 def test_visible_fraction_bounds():
     for ma in (0.25, 0.7, 1.0, 1.5, 2.5, 3.5):
         v = m.visible_fraction(ma)
         assert 0.0 < v <= 1.0
-    # around 1--1.5 GeV the all-neutral modes (3pi0 etc.) are a real deficit
-    assert m.visible_fraction(1.5) < 0.9
+    assert m.visible_fraction(1.5) == pytest.approx(0.9657373243, rel=1e-8)
 
 
 def test_visible_weights_subset_of_branchings():

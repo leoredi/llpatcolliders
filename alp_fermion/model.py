@@ -17,20 +17,19 @@ Zaporozhchenko (GKOZ) arXiv:2310.03524, normalises its Lagrangian with
 d_mu a/(2 f_GKOZ) instead, so our axis maps onto theirs as
 1/f (here) = 2/f_GKOZ.  All external inputs below have been converted into the
 BNT convention and cross-checked on physical (convention-free) anchors; see
-data/alpinist/PROVENANCE.md.
+data/senscalc_2501/PROVENANCE.md and data/alpinist/PROVENANCE.md.
 
 External inputs (replacing the analytic placeholders of the first version):
 
-1. **Hadronic + gamma gamma decay widths (data-driven).**  Digitized GKOZ
-   tables shipped by ALPINIST (github.com/jjerhot/ALPINIST, BSD-3, pinned in
-   data/alpinist/COMMIT_SHA.txt): per-channel Gamma/(1/f)^2 vs m_a over
-   0.01--3.01 GeV, with the physical eta/eta' mixing poles and the 2 m_c
-   perturbative onset.  Above the table ceiling the perturbative quark-level
-   sum continues the width, normalised to the table at the seam (the raw sum
-   is ~1.5x the table there -- charm mass-scheme sensitivity).  Anchors
-   validating the normalisation: BR(a->mumu) ~ 9% at m_a = 1 GeV (GKOZ state
-   "<10% for m_a >~ 1 GeV") and the quark-level sum matching the table's own
-   2 m_c onset step to ~5%.
+1. **Decay widths and exclusive branching ratios (data-driven).**  The tables
+   accompanying arXiv:2501.04525 are decoded from the exact SensCalc v.1.3.3
+   MX inputs and committed as reviewable CSV/JSON data.  They cover
+   0.01--10 GeV and include the eta/eta' resonance structure, the charm
+   transition, and the exclusive low-energy hadronic modes.  The upstream
+   convention Gamma=(gY/(2 vH))^2 coefficient maps to the BNT convention
+   1/f=gY/vH by dividing every coefficient by four.  Direct anchors from the
+   decoded table are BR(a->mumu)=0.202243 at exactly 1 GeV and the sharp
+   charm-region structure around 2.58 GeV.
 
 2. **b -> s a production coupling (one-loop RG, finite terms).**  The
    flavour-violating coefficient is evaluated with the ALPINIST implementation
@@ -53,15 +52,16 @@ External inputs (replacing the analytic placeholders of the first version):
    factors as implemented in ALPINIST.  GKOZ find the tower gives ~4x the
    K + K*(892) rate alone.  (Bs -> phi a is not included, matching ALPINIST.)
 
-Leptonic couplings carry the mild RG enhancement C_ll(mu_w)/C(Lambda) = CLL_RG
-from the same evaluation.  Decays to gamma gamma and to all-neutral hadronic
-final states (3pi0, pi0 pi0 eta(') with eta(') -> neutrals, K0 K0 pi0) produce
-no prompt charged tracks at the vertex and are counted in the total width but
-not in the visible channels (see visible_channel_weights / visible_fraction).
+The visible-channel classification follows SensCalc's ``procListnoecal``
+selection from ``codes/EventCalc/DecayProductsSampler.nb``: gamma gamma,
+3 pi0, and 2 K_L pi0 are excluded, while the remaining exclusive channels are
+track-capable.  This controls branching weights only; decay-template
+kinematics are implemented separately in templates.py.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -73,9 +73,7 @@ from particle import Particle
 HBAR_C_GEV_M = 1.973269804e-16   # GeV * m  (hbar c)
 HBAR_GEV_S = 6.582119569e-25     # GeV * s
 
-ALPHA_S_HAD = 0.30               # fixed alpha_s for the (1+a_s/pi) QCD factor
-
-# Lepton + quark masses (GeV).  Current quark masses for the perturbative width.
+# Lepton + quark masses (GeV).  Quark masses enter B-decay production below.
 M_E = Particle.from_pdgid(11).mass * 1e-3
 M_MU = Particle.from_pdgid(13).mass * 1e-3
 M_TAU = Particle.from_pdgid(15).mass * 1e-3
@@ -97,32 +95,87 @@ TAU_B0_S = 1.519e-12
 # b -> s a coefficient per unit (1/f): ALPINIST above_EW.C_qq_ij_mu at
 # Lambda = 1 TeV, universal c_f = 1 (tools/compute_cbs_alpinist.py).
 CBS_EFF = 3.518383e-4
-# Lepton coupling RG enhancement C_ll(mu_w)/C(Lambda), same evaluation.
-CLL_RG = 1.053552
-
 # Reference inverse decay constant at which production weights and ctau are
 # tabulated; the (m_a, 1/f) scan rescales off this point (production ~ (1/f)^2,
 # ctau ~ (1/f)^-2), so the choice is just a numerical anchor.
 INV_F_REF = 1.0e-3               # GeV^-1   (f_ref = 1 TeV)
 
-# Digitized GKOZ (arXiv:2310.03524) decay-width tables via ALPINIST.
-ALPINIST_DATA_DIR = Path(__file__).resolve().parent / "data" / "alpinist"
+SENSCALC_2501_DATA_DIR = (
+    Path(__file__).resolve().parent / "data" / "senscalc_2501"
+)
 
-# Charged-decay fractions of the promptly decaying eta/eta' (PDG 2024): the
-# pi0 pi0 eta(') hadronic channels are vertex-visible only through these.
-ETA_CHARGED_FRAC = 0.272         # eta -> pi+pi-pi0 (0.230) + pi+pi-gamma (0.042)
-ETAP_CHARGED_FRAC = 0.78         # eta' -> pi+pi-eta (0.426) + pi+pi-gamma (0.295) + ...
+_WIDTH_CACHE: tuple[np.ndarray, dict[str, np.ndarray]] | None = None
+_BRANCHING_CACHE: tuple[np.ndarray, dict[str, np.ndarray]] | None = None
 
-_TABLE_CACHE: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+# SensCalc's no-ECAL selection removes only these exclusive channels.  Channel
+# IDs are stable products of the pinned exporter and are checked on load.
+SENSCALC_INVISIBLE_CHANNEL_IDS = {
+    "channel_004",  # gamma gamma
+    "channel_014",  # 3 pi0
+    "channel_021",  # 2 K_L pi0
+}
+SENSCALC_VISIBLE_HADRONIC_CHANNEL_IDS = tuple(
+    f"channel_{index:03d}"
+    for index in range(5, 33)
+    if f"channel_{index:03d}" not in SENSCALC_INVISIBLE_CHANNEL_IDS
+)
+
+
+def _load_width_tables():
+    """Return the pinned 2501 mass grid and canonical BNT width columns."""
+    global _WIDTH_CACHE
+    if _WIDTH_CACHE is None:
+        metadata = json.loads(
+            (SENSCALC_2501_DATA_DIR / "widths_metadata.json").read_text()
+        )
+        table = np.loadtxt(
+            SENSCALC_2501_DATA_DIR / "widths_bnt.csv",
+            delimiter=",",
+            skiprows=1,
+        )
+        columns = {
+            entry["canonical_name"]: table[:, entry["source_index"] - 1]
+            for entry in metadata["columns"]
+            if entry["canonical_name"] is not None
+        }
+        required = {
+            "ee", "mumu", "tautau", "gammagamma",
+            "nonhadronic_total", "hadronic_total", "total",
+        }
+        if not required <= columns.keys():
+            missing = ", ".join(sorted(required - columns.keys()))
+            raise RuntimeError(f"SensCalc 2501 width columns missing: {missing}")
+        _WIDTH_CACHE = (table[:, 0], columns)
+    return _WIDTH_CACHE
+
+
+def _load_branching_tables():
+    """Return the 2501 mass grid and exclusive branching-ratio columns."""
+    global _BRANCHING_CACHE
+    if _BRANCHING_CACHE is None:
+        channels = json.loads(
+            (SENSCALC_2501_DATA_DIR / "decay_channels.json").read_text()
+        )
+        table = np.loadtxt(
+            SENSCALC_2501_DATA_DIR / "branching_ratios.csv",
+            delimiter=",",
+            skiprows=1,
+        )
+        columns = {
+            channel["id"]: table[:, index]
+            for index, channel in enumerate(channels, start=1)
+        }
+        expected = {f"channel_{index:03d}" for index in range(1, 33)}
+        if columns.keys() != expected:
+            raise RuntimeError("SensCalc 2501 decay-channel IDs are incomplete")
+        _BRANCHING_CACHE = (table[:, 0], columns)
+    return _BRANCHING_CACHE
 
 
 def _width_table(name):
-    """(m_a, Gamma/(1/f)^2) columns of a digitized GKOZ table (BNT convention;
-    normalisation anchors in the module docstring)."""
-    if name not in _TABLE_CACHE:
-        arr = np.loadtxt(ALPINIST_DATA_DIR / f"digitized_width_{name}.txt")
-        _TABLE_CACHE[name] = (arr[:, 0], arr[:, 1])
-    return _TABLE_CACHE[name]
+    """(m_a, Gamma/(1/f)^2) for a canonical 2501 width column."""
+    mass_grid, columns = _load_width_tables()
+    return mass_grid, columns[name]
 
 
 def _table_width(name, m_a):
@@ -134,8 +187,20 @@ def _table_width(name, m_a):
     return float(np.interp(m_a, m_grid, g_grid))
 
 
-def table_mass_max(name="TotalHad"):
+def table_mass_max(name="total"):
     return float(_width_table(name)[0][-1])
+
+
+def table_mass_min(name="total"):
+    return float(_width_table(name)[0][0])
+
+
+def _exclusive_branching(channel_id, m_a):
+    mass_grid, columns = _load_branching_tables()
+    m_a = float(m_a)
+    if m_a < mass_grid[0] or m_a > mass_grid[-1]:
+        return 0.0
+    return float(np.interp(m_a, mass_grid, columns[channel_id]))
 
 
 # --------------------------------------------------------------------------
@@ -151,73 +216,35 @@ def _two_body_fermion_width(m_a, m_f, n_c, inv_f, c_f=1.0):
     return n_c * (c_f * m_f) ** 2 * m_a * inv_f ** 2 * beta / (8.0 * np.pi)
 
 
-def _perturbative_hadronic_width(m_a, inv_f, c_f=1.0):
-    """Quark-level sum (N_c = 3, 1 + alpha_s/pi)."""
-    qcd = 1.0 + ALPHA_S_HAD / np.pi
-    w = 0.0
-    for q in ("u", "d", "s", "c"):
-        w += _two_body_fermion_width(m_a, QUARK_MASSES[q], 3, inv_f, c_f)
-    return w * qcd
-
-
-_SEAM_NORM = None
-
-
-def _matched_perturbative_hadronic_width(m_a, inv_f, c_f=1.0):
-    """Perturbative continuation above the GKOZ table ceiling, normalised to
-    the data-driven table at the matching point (the raw quark-level sum is
-    ~1.5x the table there -- charm mass-scheme sensitivity; the shape is kept,
-    the normalisation is anchored to the data-driven side of the seam)."""
-    global _SEAM_NORM
-    if _SEAM_NORM is None:
-        m_seam = table_mass_max()
-        w_tab = _table_width("TotalHad", m_seam) * INV_F_REF ** 2
-        w_pqcd = _perturbative_hadronic_width(m_seam, INV_F_REF)
-        _SEAM_NORM = w_tab / w_pqcd if w_pqcd > 0.0 else 1.0
-    return _SEAM_NORM * _perturbative_hadronic_width(m_a, inv_f, c_f)
-
-
 def alp_partial_widths(m_a, inv_f, c_f=1.0):
     """Per-channel partial widths [GeV] as a dict.
 
-    Leptonic channels (ee, mumu, tautau) are analytic with the CLL_RG running
-    factor.  ``hadronic`` (total, incl. all-neutral modes) and ``gammagamma``
-    are the data-driven GKOZ tables; above the table ceiling ``hadronic``
-    falls back to the perturbative quark-level sum and ``gammagamma`` to zero
-    (negligible there).
+    Every channel comes from the arXiv:2501.04525 table in the BNT convention.
+    Universal ``c_f`` and ``1/f`` rescale all coefficients together.
     """
-    g_lep = CLL_RG * c_f
-    w = {
-        "ee": _two_body_fermion_width(m_a, M_E, 1, inv_f, g_lep),
-        "mumu": _two_body_fermion_width(m_a, M_MU, 1, inv_f, g_lep),
-        "tautau": _two_body_fermion_width(m_a, M_TAU, 1, inv_f, g_lep),
+    scale = inv_f ** 2 * c_f ** 2
+    return {
+        "ee": _table_width("ee", m_a) * scale,
+        "mumu": _table_width("mumu", m_a) * scale,
+        "tautau": _table_width("tautau", m_a) * scale,
+        "gammagamma": _table_width("gammagamma", m_a) * scale,
+        "hadronic": _table_width("hadronic_total", m_a) * scale,
     }
-    if m_a <= table_mass_max():
-        w["hadronic"] = _table_width("TotalHad", m_a) * inv_f ** 2 * c_f ** 2
-        w["gammagamma"] = _table_width("2Gamma", m_a) * inv_f ** 2 * c_f ** 2
-    else:
-        w["hadronic"] = _matched_perturbative_hadronic_width(m_a, inv_f, c_f)
-        w["gammagamma"] = 0.0
-    return w
 
 
 def hadronic_invisible_width(m_a, inv_f, c_f=1.0):
-    """Width into hadronic final states with no prompt charged track at the
-    decay vertex: 3pi0 and K0 K0bar pi0 entirely, pi0 pi0 eta(') for the
-    neutral eta(') decay fractions.  (K_S/K_L decay centimetres-to-metres
-    downstream, not at the ALP vertex, so K0 modes give no vertex tracks.)
-    Zero above the table ceiling (perturbative region: quark final states)."""
-    if m_a > table_mass_max():
-        return 0.0
-    w = (_table_width("3Pi0", m_a)
-         + _table_width("2K0Pi0", m_a)
-         + (1.0 - ETA_CHARGED_FRAC) * _table_width("2Pi0Eta", m_a)
-         + (1.0 - ETAP_CHARGED_FRAC) * _table_width("2Pi0EtaPrim", m_a))
-    return w * inv_f ** 2 * c_f ** 2
+    """Hadronic width outside SensCalc's charged/no-ECAL channel selection."""
+    total = alp_total_width(m_a, inv_f, c_f)
+    visible_br = sum(
+        _exclusive_branching(channel_id, m_a)
+        for channel_id in SENSCALC_VISIBLE_HADRONIC_CHANNEL_IDS
+    )
+    hadronic = alp_partial_widths(m_a, inv_f, c_f)["hadronic"]
+    return max(hadronic - visible_br * total, 0.0)
 
 
 def alp_total_width(m_a, inv_f, c_f=1.0):
-    return float(sum(alp_partial_widths(m_a, inv_f, c_f).values()))
+    return float(_table_width("total", m_a) * inv_f ** 2 * c_f ** 2)
 
 
 def alp_ctau(m_a, inv_f, c_f=1.0):
@@ -231,7 +258,7 @@ def alp_ctau(m_a, inv_f, c_f=1.0):
 def alp_branchings(m_a, inv_f=INV_F_REF, c_f=1.0):
     """Branching ratios per channel (coupling-independent ratios)."""
     w = alp_partial_widths(m_a, inv_f, c_f)
-    tot = sum(w.values())
+    tot = alp_total_width(m_a, inv_f, c_f)
     if tot <= 0.0:
         return {k: 0.0 for k in w}
     return {k: v / tot for k, v in w.items()}
@@ -240,14 +267,12 @@ def alp_branchings(m_a, inv_f=INV_F_REF, c_f=1.0):
 # --------------------------------------------------------------------------
 # Visible decay channels for the charged-track reconstruction
 # --------------------------------------------------------------------------
-# Each channel is reconstructed as a two-charged-track final state (the best-two
-# reduction in the acceptance MC selects exactly two tracks).  For multi-prong
-# modes (tautau, hadronic) the two charged daughters are the proxy for the two
-# leading charged tracks.  The tau decay length (c*tau ~ 87 um * beta*gamma) is
-# far below the 3 mm hit resolution, so each tau is treated as one charged track
-# along its flight direction.  gammagamma and the all-neutral hadronic modes
-# leave no vertex tracks: they enter the total width (lifetime) but not the
-# visible weights.
+# The branching weights use the exact 2501 exclusive table and SensCalc's
+# charged/no-ECAL channel selection.  The current template interface groups
+# those exclusive hadronic modes into a two-leading-track proxy; templates.py
+# owns that kinematic approximation and its pending matrix-element upgrade.
+# The tau decay length (c*tau ~ 87 um * beta*gamma) is far below the 3 mm hit
+# resolution, so each tau is treated as one charged track along its direction.
 #
 # (pdg-pair used for the two charged daughters, daughter mass).
 VISIBLE_CHANNELS = {
@@ -262,17 +287,23 @@ def visible_channel_weights(m_a, inv_f=INV_F_REF, c_f=1.0):
     """{channel: BR} over the track-producing channels (ratios coupling
     independent).  ``hadronic`` here is the *charged-visible* hadronic BR:
     total hadronic minus the all-neutral modes."""
-    w = alp_partial_widths(m_a, inv_f, c_f)
-    tot = sum(w.values())
-    if tot <= 0.0:
+    if alp_total_width(m_a, inv_f, c_f) <= 0.0:
         return {}
-    w_vis_had = max(w["hadronic"] - hadronic_invisible_width(m_a, inv_f, c_f), 0.0)
-    out = {}
-    for ch in ("ee", "mumu", "tautau"):
-        if w[ch] > 0.0:
-            out[ch] = w[ch] / tot
-    if w_vis_had > 0.0:
-        out["hadronic"] = w_vis_had / tot
+    out = {
+        channel: value
+        for channel, channel_id in (
+            ("ee", "channel_001"),
+            ("mumu", "channel_002"),
+            ("tautau", "channel_003"),
+        )
+        if (value := _exclusive_branching(channel_id, m_a)) > 0.0
+    }
+    hadronic = sum(
+        _exclusive_branching(channel_id, m_a)
+        for channel_id in SENSCALC_VISIBLE_HADRONIC_CHANNEL_IDS
+    )
+    if hadronic > 0.0:
+        out["hadronic"] = hadronic
     return out
 
 

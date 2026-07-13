@@ -111,7 +111,7 @@ expectedHashes = <|
   "ks_lhc_spectrum" -> "53aafc2e551fed9d01698ba37c7f230e6c5e66c30cc41e73976cd06dd21784ef"
 |>;
 
-sourcePaths = AssociationMap[FileNameJoin[{sensCalcRoot, #}] &, sourceFiles];
+sourcePaths = Map[FileNameJoin[{sensCalcRoot, #}] &, sourceFiles];
 KeyValueMap[
   Function[{key, path},
     If[!FileExistsQ[path], die["missing source file " <> path]];
@@ -355,7 +355,7 @@ writeJSON[
     "wolfram_version" -> $Version,
     "wolfram_system_id" -> $SystemID,
     "exported_utc" -> DateString[TimeZoneConvert[Now, 0], "ISODateTime"],
-    "source_sha256" -> AssociationMap[sha256, sourcePaths],
+    "source_sha256" -> Map[sha256, sourcePaths],
     "output_sha256" -> AssociationMap[
       sha256[FileNameJoin[{outputDir, #}]] &,
       outputFiles
