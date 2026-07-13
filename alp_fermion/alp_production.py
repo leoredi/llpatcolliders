@@ -45,6 +45,7 @@ if str(_ALP_ROOT) not in sys.path:
     sys.path.insert(0, str(_ALP_ROOT))
 
 import model  # noqa: E402
+from mass_grid import ALP_MASS_GRID  # noqa: E402
 from paths import LLP_VECTORS_DIR, add_hnl_to_path  # noqa: E402
 
 add_hnl_to_path()
@@ -57,17 +58,6 @@ from production.fonll.meson_sampler import (  # noqa: E402
 )
 from production.decay_engine.kinematics import decay_2body  # noqa: E402
 from production.io import write_llp_csv, write_empty_csv  # noqa: E402
-
-
-# Default ALP mass grid for the BC10 island: from just above 2 m_mu up to the
-# B -> K a kinematic edge (m_B - m_K ~ 4.79 GeV).  Denser at low mass where the
-# muon channel + lifetime change fastest.
-ALP_MASS_GRID = sorted({round(x, 2) for x in (
-    [0.22 + 0.02 * i for i in range(40)] +        # 0.22 - 1.00
-    [1.00 + 0.05 * i for i in range(41)] +        # 1.00 - 3.00
-    [3.00 + 0.10 * i for i in range(17)] +        # 3.00 - 4.60
-    [4.65, 4.70, 4.75]                            # B -> K a edge (4.79)
-)})
 
 
 def alp_csv_path(mass, base=LLP_VECTORS_DIR):

@@ -1,10 +1,9 @@
 # External inputs — BC10 fermiophilic ALP
 
 _Updated 2026-07-13._ The production normalization and the arXiv:2310.03524
-decay baseline have been replaced by external data products. The upgrade to
-the arXiv:2501.04525 decay description and the corresponding production audit
-are in progress; this file distinguishes the published baseline from that
-work rather than treating them as equivalent.
+decay baseline have been replaced by external data products. The
+arXiv:2501.04525 widths and exclusive branching ratios are now the default,
+and its production modes have been audited against the GRENDEL acceptance.
 
 ## 1. Absolute B → K a production normalization — SATISFIED
 
@@ -35,38 +34,32 @@ references. Using `f_s/(f_u+f_d) = 0.122` and a ground-state `B_s -> phi` rate
 comparable to `B -> K*(892)` suggests only a few-percent yield correction;
 adding it requires a separately pinned `B_s -> phi` form-factor calculation.
 
-## 2. Data-driven hadronic width — 2310 BASELINE SATISFIED; 2501 UPGRADE OPEN
+## 2. Data-driven decay model — 2501 TABLE UPGRADE SATISFIED
 
-`model.alp_partial_widths` now reads the digitized GKOZ per-channel width
-tables (via ALPINIST, `data/alpinist/`, provenance + normalisation
-cross-checks in `data/alpinist/PROVENANCE.md`): total hadronic + gamma gamma
-over 0.01-3.01 GeV, with the physical eta/eta' mixing poles and the 2 m_c
-onset. Above 3.01 GeV the perturbative quark-level sum continues the width,
-normalised to the table at the seam (raw mismatch ~1.5x, charm mass-scheme).
-All-neutral final states (3pi0, K0 K0bar pi0, pi0 pi0 eta(') with neutral
-eta(') decays) are excluded from the visible channels
-(`model.visible_fraction`, 0.77-1.0 across the island).
+`model.alp_partial_widths` and `model.alp_total_width` read the exact exported
+SensCalc v1.3.3 arXiv:2501.04525 tables over 0.01--10 GeV. The export includes
+the widths, exclusive branching ratios, and squared matrix elements, with
+source hashes and conversion checks in `data/senscalc_2501/PROVENANCE.md`.
+The exact 1 GeV anchor is `BR(a -> mu mu) = 0.2022433833`.
 
-**Residual:** the sharp artificial 2 m_c cliff of the old perturbative
-placeholder is gone (the island's upper edge is now data-driven up to
-3.01 GeV); above 3.01 GeV the upper edge still rests on the matched
-perturbative continuation.
+Publication templates sample the full exclusive branching mixture, let
+Pythia decay unstable daughters and hadronize partonic modes, and leave the
+actual two-track decision to the GRENDEL reconstruction. The old visible-only
+two-track proxy is gated behind `templates.py --legacy-proxy`.
 
-The current default is still the arXiv:2310.03524 table. SensCalc `v.1.3.3`
-contains the improved arXiv:2501.04525 description, including heavy
-pseudoscalar mixing and the chiral-rotation-invariant treatment. The pinned
-export path is `tools/export_senscalc_2501.{py,wls}`, with provenance and
-source hashes in `data/senscalc_2501/PROVENANCE.md`. It deliberately exports
-the widths, branching ratios, and squared matrix elements together: changing
-the lifetime without changing the channel mixture and decay kinematics would
-not be a consistent 2501 upgrade.
+**Residual:** multi-body primary decays currently use flat phase space rather
+than the exported squared matrix elements. The two-gluon mode uses an equal
+`u/d/s` jet surrogate because the Pythia external-decay interface cannot
+fragment a bare colour-singlet gluon pair. These affect decay acceptance, not
+the imported total width or branching ratios, and must be covered by the
+decay-model variation rather than described as exact 2501 kinematics.
 
 **Convention note (for future overlays / axis labels):** our 1/f axis is the
 BNT (arXiv:1708.00443) convention g_aff = c_f m_f / f with c_f = 1. GKOZ
 normalise with 1/(2 f_GKOZ), so 1/f_here = 2/f_GKOZ. Any comparison curve
 digitized from GKOZ/PBC BC10 figures must be mapped accordingly.
 
-## 3. Production modes discussed in arXiv:2501.04525 — AUDIT OPEN
+## 3. Production modes discussed in arXiv:2501.04525 — AUDITED
 
 The current GRENDEL signal contains the exclusive `B+`/`B0` kaon tower only.
 ArXiv:2501.04525 discusses a broader proton-collision production policy:
@@ -80,9 +73,11 @@ acceptance calculation. SensCalc `v.1.3.3` is the pinned source for this audit.
 The source-level findings and per-channel decisions are recorded in
 `data/senscalc_2501/PRODUCTION_AUDIT.md`. Drell-Yan is negligible throughout
 the current island compared with the open B tower, and the obsolete
-flux-times-mixing shortcut is explicitly rejected. The remaining production
-work is confined to a low-mass accepted-yield check of the generalized
-fragmentation and light-meson-decay inputs before the final 600k scan.
+flux-times-mixing shortcut is explicitly rejected. The decoded generalized
+fragmentation contribution is at most 0.15% of the B tower outside the
+excluded light-meson pole windows. Light-meson decay rates are over five
+orders smaller than accepted B production at low mass. Their omission is
+therefore documented and quantified rather than assumed.
 
 ## 4. Competitor + existing-bound curves — DROPPED (by decision)
 

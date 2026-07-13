@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""Generate full-branching BC10 decay templates with ROOT/Pythia8.
+
+The exact arXiv:2501.04525 exclusive branching ratios select the primary
+decay. Pythia decays unstable daughters and showers/hadronizes partonic modes,
+so the cached template contains stable final particles and the GRENDEL
+reconstruction determines visibility. Multi-body primaries currently use
+Pythia's flat phase-space mode; the pinned 2501 matrix elements remain the
+shape-systematic follow-up. Pythia cannot hadronize an isolated two-gluon
+colour singlet through this external-decay interface, so ``a -> gg`` is
+represented by an equal u/d/s light-quark jet mixture.
+
+Run with the same Homebrew ROOT environment used by the HNL templates:
+
+    /path/to/fairship/bin/python -m alp_fermion.generate_decay_templates_pythia
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import numpy as np
+
+_ALP_ROOT = Path(__file__).resolve().parent
+_REPO_ROOT = _ALP_ROOT.parent
+_HNL_ANALYSIS = _REPO_ROOT / "hnl" / "analysis"
+for _path in (_ALP_ROOT, _HNL_ANALYSIS):
+    if str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
+from exclusive_decays import (  # noqa: E402
+    DECAY_PRODUCTS_PDG,
+    UNCLASSIFIED_CHANNEL_ID,
+    ctau_at_reference_coupling,
+    exclusive_branching_weights,
+)
+from mass_grid import ALP_MASS_GRID  # noqa: E402
+from paths import TEMPLATE_DIR  # noqa: E402
+from fairship_decay import (  # noqa: E402
+    PythiaCommandAdapter,
+    _extract_underlying_pythia,
+    _particle_charge,
+    _require_root,
+    _tpythia8_instance,
+)
+
+ALP_PDG = 9900015
+RESONANCE_WINDOWS = ((0.125, 0.140), (0.538, 0.555), (0.940, 0.974))
+GLUON_CHANNEL_ID = "channel_018"
+
+
+def _excluded_resonance(mass_gev: float) -> bool:
+    return any(lower < mass_gev < upper for lower, upper in RESONANCE_WINDOWS)
+
+
+def _mass_label(mass_gev: float) -> str:
+    return f"{mass_gev:.3f}".replace(".", "p")
+
+
+class AlpPythiaBackend:
+    """One initialized Pythia instance for an ALP mass and BR mixture."""
+
+    def __init__(self, mass_gev: float, seed: int):
+        self.mass_gev = float(mass_gev)
+        self.root = _require_root()
+        self.tp8 = _tpythia8_instance(self.root)
+        if self.tp8 is None:
+            raise RuntimeError("ROOT.TPythia8 is required")
+        self.adapter = PythiaCommandAdapter(self.tp8)
+        self.engine = _extract_underlying_pythia(self.tp8)
+        self.weights = exclusive_branching_weights(self.mass_gev)
+        self._configure(seed)
+
+    def _read(self, command: str) -> None:
+        if hasattr(self.engine, "readString"):
+            self.engine.readString(command)
+        else:
+            self.tp8.ReadString(command)
+
+    def _configure(self, seed: int) -> None:
+        for command in (
+            "ProcessLevel:all = off",
+            "Print:quiet = on",
+            "Init:showChangedSettings = off",
+            "Init:showChangedParticleData = off",
+            "Next:numberShowInfo = 0",
+            "Next:numberShowProcess = 0",
+            "Next:numberShowEvent = 0",
+            "Random:setSeed = on",
+            f"Random:seed = {seed}",
+        ):
+            self._read(command)
+        self.adapter.SetParameters(
+            f"{ALP_PDG}:new = a a 1 0 0 {self.mass_gev:.12g} 0 0 0 0 0 1 0 1 0"
+        )
+        self.adapter.SetParameters(f"{ALP_PDG}:isResonance = false")
+        self.adapter.SetParameters(f"{ALP_PDG}:onMode = off")
+        for channel_id, branching in self.weights.items():
+            if channel_id == GLUON_CHANNEL_ID:
+                # The external-decay interface does not create a fragmentable
+                # colour topology for a bare gg pair. A light-flavour mixture
+                # retains a conservative low-mass jet multiplicity model.
+                modes = tuple((branching / 3.0, (q, -q)) for q in (1, 2, 3))
+            else:
+                products = (
+                    (22, 22)
+                    if channel_id == UNCLASSIFIED_CHANNEL_ID
+                    else DECAY_PRODUCTS_PDG[channel_id]
+                )
+                modes = ((branching, products),)
+            for mode_branching, products in modes:
+                codes = " ".join(str(code) for code in products)
+                self.adapter.SetParameters(
+                    f"{ALP_PDG}:addChannel = 1 {mode_branching:.16g} 0 {codes}"
+                )
+        self.adapter.SetParameters(f"{ALP_PDG}:mayDecay = on")
+        if hasattr(self.engine, "init") and not self.engine.init():
+            raise RuntimeError(f"Pythia initialization failed at {self.mass_gev:g} GeV")
+
+    def sample(self) -> dict[str, np.ndarray]:
+        event = self.engine.event
+        event.reset()
+        event.append(
+            ALP_PDG, 1, 0, 0, 0.0, 0.0, 0.0,
+            self.mass_gev, self.mass_gev, 0.0, 9.0,
+        )
+        if not self.engine.next():
+            raise RuntimeError(f"Pythia decay failed at {self.mass_gev:g} GeV")
+        parents = [
+            index for index in range(event.size())
+            if int(event[index].id()) == ALP_PDG
+        ]
+        if len(parents) != 1:
+            raise RuntimeError("Pythia event does not contain exactly one ALP")
+        parent = parents[0]
+        rows = []
+        for index in range(event.size()):
+            particle = event[index]
+            ancestor = int(particle.mother1())
+            while ancestor > 0 and ancestor != parent:
+                ancestor = int(event[ancestor].mother1())
+            is_leaf = int(particle.daughter1()) <= 0 and int(particle.daughter2()) <= 0
+            if ancestor != parent or not is_leaf:
+                continue
+            pdg = int(particle.id())
+            rows.append((
+                pdg,
+                float(particle.px()),
+                float(particle.py()),
+                float(particle.pz()),
+                float(particle.e()),
+                float(particle.m()),
+                _particle_charge(self.root, pdg),
+            ))
+        if not rows:
+            raise RuntimeError("Pythia returned no stable ALP descendants")
+        data = np.asarray(rows, dtype=float)
+        return {
+            "pdg": data[:, 0].astype(np.int32),
+            "px": data[:, 1],
+            "py": data[:, 2],
+            "pz": data[:, 3],
+            "energy": data[:, 4],
+            "mass": data[:, 5],
+            "charge": data[:, 6],
+            "stable": np.ones(len(data), dtype=bool),
+        }
+
+
+def _flatten(samples: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
+    counts = np.asarray([len(sample["pdg"]) for sample in samples], dtype=np.int32)
+    return {
+        "daughter_counts": counts,
+        **{
+            key: np.concatenate([sample[key] for sample in samples])
+            for key in ("pdg", "px", "py", "pz", "energy", "mass", "charge", "stable")
+        },
+    }
+
+
+def generate_one(
+    mass_gev: float,
+    n_templates: int,
+    out_dir: Path,
+    seed: int,
+) -> Path | None:
+    if _excluded_resonance(mass_gev):
+        print(f"  m_a={mass_gev:.3f}: skip unsupported light-meson resonance")
+        return None
+    backend = AlpPythiaBackend(mass_gev, seed)
+    samples = [backend.sample() for _ in range(n_templates)]
+    bundle = _flatten(samples)
+    charged = []
+    offset = 0
+    for count in bundle["daughter_counts"]:
+        end = offset + int(count)
+        charged.append(int((np.abs(bundle["charge"][offset:end]) > 0.5).sum()))
+        offset = end
+    destination = out_dir / f"templates_{_mass_label(mass_gev)}.npz"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        destination,
+        **bundle,
+        mass_GeV=np.float64(mass_gev),
+        ctau_m_u2eq1=np.float64(ctau_at_reference_coupling(mass_gev)),
+        n_templates=np.int32(n_templates),
+        seed=np.int64(seed),
+        flavor=np.array("BC10"),
+        includes_full_branching=np.bool_(True),
+        decay_backend=np.array("Pythia8-flat-primary-phase-space-gg-to-uds"),
+    )
+    print(
+        f"  m_a={mass_gev:.3f}: stable-track visible="
+        f"{np.mean(np.asarray(charged) >= 2):.2%} -> {destination.name}",
+        flush=True,
+    )
+    return destination
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mass", type=float, nargs="+", default=None)
+    parser.add_argument("--n-templates", type=int, default=20_000)
+    parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument("--out", type=Path, default=TEMPLATE_DIR)
+    args = parser.parse_args(argv)
+    masses = args.mass if args.mass is not None else ALP_MASS_GRID
+    for mass in masses:
+        generate_one(
+            mass,
+            args.n_templates,
+            args.out,
+            args.seed + int(round(mass * 1000)),
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -199,8 +199,13 @@ selection rather than substituting the SensCalc detector acceptance.
 Run the expensive production/template/sensitivity campaign once, after:
 
 1. the 2501 decay widths, branching ratios, and squared matrix elements have
-   been exported and validated together;
+   been exported and validated together, and the full branching mixture is
+   sampled in stable-particle templates;
 2. the excluded light-meson pole windows have explicit marker rows and are not
    bridged by the plotting/publication path;
 3. any retained production mode has a real four-vector sample rather than a
    total-rate-only correction.
+
+All three gates are satisfied. The remaining flat-primary-phase-space and
+two-gluon jet-surrogate choices are explicit decay-acceptance systematics;
+they do not require another production campaign before the 600k scan.

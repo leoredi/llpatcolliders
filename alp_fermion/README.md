@@ -3,8 +3,8 @@
 A pseudoscalar axion-like particle `a` with **universal coupling to SM
 fermions** (single parameter `1/f`, Wilson coefficients `c_f = 1`), produced in
 **B → K⁽ⁱ⁾ a** (the flavour-violating `b → s a` penguin, summed over the full
-kaon tower as in GKOZ arXiv:2310.03524) and decaying to leptons and — via the
-data-driven GKOZ spectral tables — to hadrons. This is the genuine
+kaon tower as in GKOZ arXiv:2310.03524) and decaying to leptons and hadrons
+using the arXiv:2501.04525 SensCalc tables. This is the genuine
 charged-track "ALP" benchmark.
 
 BC10 is **coupling-controlled**: the single `1/f` fixes the production yield, the
@@ -39,7 +39,10 @@ alp_fermion/
                     BR(B→K⁽ⁱ⁾ a) over the kaon tower (b→s a penguin, one-loop RG coefficient)
   alp_production.py B (FONLL) → B→K⁽ⁱ⁾ a → a four-vector CSVs (weight,E,px,py,pz)
   production_spectra.py  source-pinned SensCalc LHC light-parent sampler/audit
-  templates.py      per-mass ALP rest-frame decay templates (channels ∝ visible BR)
+  generate_decay_templates_pythia.py  full-branching stable-particle templates
+  templates.py      legacy two-track proxy, retained only for reproducibility
+  exclusive_decays.py  decoded 2501 exclusive-channel to PDG mapping
+  mass_grid.py      shared dense-scan mass grid
   sensitivity.py    (m_a, 1/f) closed-island scan; N_signal ≥ 3, 3000 fb⁻¹
   plot.py           BC10 island in the (m_a, 1/f) plane (+ optional overlay curves)
   paths.py          output-dir policy (ALP_TMP_DIR override) + hnl/ import shim
@@ -53,13 +56,13 @@ alp_fermion/
   EXTERNAL_INPUTS_NEEDED.md   (input provenance + residual systematics; overlays dropped)
 ```
 
-## Run (use the `hnl` conda env — has trimesh + networkx)
+## Run
 ```
-PY=/Volumes/sandbox/conda/envs/hnl/bin/python
-$PY -m alp_fermion.alp_production --n-pool 120000      # a four-vector CSVs
-$PY -m alp_fermion.templates       --n-templates 20000 # decay templates
-$PY -m alp_fermion.sensitivity                         # island CSV + plot
-$PY -m pytest alp_fermion/tests -q
+PY=/Volumes/sandbox/projects/aaaPHYSICSaaa/.venvs/fairship/bin/python
+$PY -m alp_fermion.alp_production --n-pool 600000
+$PY -m alp_fermion.generate_decay_templates_pythia --n-templates 20000
+$PY -m alp_fermion.sensitivity
+python -m pytest alp_fermion/tests -q
 ```
 Outputs go to `alp_fermion/tmp/` (gitignored): `analysis/bc10_sensitivity.csv`
 and `analysis/bc10_island.{png,pdf}`.
@@ -68,13 +71,18 @@ and `analysis/bc10_island.{png,pdf}`.
 - Coupling convention + a→f f̄ widths: Bauer–Neubert–Thamm, JHEP 12 (2017) 044
   (arXiv:1708.00443). Our 1/f axis is the BNT `g_aff = c_f m_f/f` convention
   (= 2/f in the GKOZ normalisation).
-- Production + decay phenomenology: GKOZ, "ALPs with universal fermion
+- Production phenomenology: GKOZ, "ALPs with universal fermion
   couplings — revisited" (arXiv:2310.03524), via the ALPINIST implementation
   (arXiv:2105.10806, BSD-3, pinned SHA in `data/alpinist/COMMIT_SHA.txt`):
   one-loop RG b→s a coefficient (`tools/compute_cbs_alpinist.py`), kaon-tower
-  form factors (Boiarska et al., arXiv:1904.10447), digitized hadronic + γγ
-  width tables (`data/alpinist/PROVENANCE.md` — incl. the normalisation
-  cross-checks).
+  form factors (Boiarska et al., arXiv:1904.10447).
+- Decay widths and exclusive branching ratios: arXiv:2501.04525 through the
+  pinned SensCalc v1.3.3 binary inputs and reviewable exports in
+  `data/senscalc_2501/`. Stable daughter decays and parton hadronization use
+  Pythia 8.317. Multi-body primary shapes are currently flat phase space, and
+  the `a -> gg` mode uses an equal light-quark jet surrogate; these are
+  explicit decay-acceptance systematics rather than exact 2501 matrix-element
+  sampling.
 - Benchmark definition: 2025 PBC report (arXiv:2505.00947); unified FIP
   calculation arXiv:2311.00507; state-of-the-art hadronic treatment
   arXiv:2501.04525.

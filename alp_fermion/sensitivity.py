@@ -125,7 +125,10 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
 
     tmpl_path = TEMPLATE_DIR / f"templates_{format_mass_for_filename(m_a)}.npz"
     if not tmpl_path.exists():
-        print(f"  m_a={m_a:.3f}: missing templates; run templates.py first")
+        print(
+            f"  m_a={m_a:.3f}: missing templates; run "
+            "generate_decay_templates_pythia.py first"
+        )
         return None
     templates = np.load(tmpl_path)
     ctau_ref = float(templates["ctau_m_u2eq1"])
@@ -159,11 +162,16 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
     d = np.concatenate(d_parts, axis=0)
     passed = np.concatenate(passed_parts, axis=0)
 
-    # Visible-BR factor: templates span only the >=2-charged-track channels
-    # (their mix is BR-weighted), so the absolute BR into those channels
-    # multiplies the yield here.  Ratio of (1/f)^2-scaling widths -> coupling
-    # independent, hence a constant per mass.
-    weights = data["weight"][idx] * model.visible_fraction(m_a)
+    # New Pythia templates sample the full exclusive BR mixture, including
+    # neutral modes, so reconstruction itself supplies the visible fraction.
+    # Retain compatibility with the older visible-only proxy caches while the
+    # full grid is regenerated.
+    full_branching = (
+        "includes_full_branching" in templates.files
+        and bool(templates["includes_full_branching"])
+    )
+    branching_factor = 1.0 if full_branching else model.visible_fraction(m_a)
+    weights = data["weight"][idx] * branching_factor
 
     u2_grid = np.logspace(LOG_U2_MIN, LOG_U2_MAX, N_U2)
     u2_grid, N_grid = scan_u2(

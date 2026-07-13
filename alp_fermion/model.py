@@ -55,8 +55,10 @@ External inputs (replacing the analytic placeholders of the first version):
 The visible-channel classification follows SensCalc's ``procListnoecal``
 selection from ``codes/EventCalc/DecayProductsSampler.nb``: gamma gamma,
 3 pi0, and 2 K_L pi0 are excluded, while the remaining exclusive channels are
-track-capable.  This controls branching weights only; decay-template
-kinematics are implemented separately in templates.py.
+track-capable. This legacy classification remains available for comparison;
+publication templates sample all exclusive modes in
+generate_decay_templates_pythia.py and let reconstruction determine whether
+the fully decayed stable final state contains reconstructable tracks.
 """
 
 from __future__ import annotations
