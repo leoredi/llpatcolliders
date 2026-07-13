@@ -47,12 +47,18 @@ Pythia decay unstable daughters and hadronize partonic modes, and leave the
 actual two-track decision to the GRENDEL reconstruction. The old visible-only
 two-track proxy is gated behind `templates.py --legacy-proxy`.
 
-**Residual:** multi-body primary decays currently use flat phase space rather
-than the exported squared matrix elements. The two-gluon mode uses an equal
-`u/d/s` jet surrogate because the Pythia external-decay interface cannot
-fragment a bare colour-singlet gluon pair. These affect decay acceptance, not
-the imported total width or branching ratios, and must be covered by the
-decay-model variation rather than described as exact 2501 kinematics.
+Three-body primary decays are generated with Pythia's flat phase-space mode
+and reweighted event by event with the exact exported squared matrix elements.
+The weights are normalized within every exclusive channel, preserving the
+imported branching mixture while replacing its Dalitz shape. Numerical
+evaluation of the exported `CForm` expressions is cross-checked against
+Wolfram Engine anchors in `tests/test_decay_matrix_elements.py`.
+
+**Residual:** the two-gluon mode uses an equal `u/d/s` jet surrogate because
+the Pythia external-decay interface cannot fragment a bare colour-singlet
+gluon pair. This affects decay acceptance, not the imported total width or
+branching ratios, and remains a decay-model systematic rather than exact 2501
+partonic kinematics.
 
 **Convention note (for future overlays / axis labels):** our 1/f axis is the
 BNT (arXiv:1708.00443) convention g_aff = c_f m_f / f with c_f = 1. GKOZ

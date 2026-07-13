@@ -148,19 +148,21 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
     # seeds) and statistically identical, but not bit-identical to the
     # single-call path used for the original 29-point scan.
     EVENT_CHUNK = 256
-    d_parts, passed_parts = [], []
+    d_parts, passed_parts, template_index_parts = [], [], []
     base_seed = int(round(m_a * 1000)) * 100_000
     for ci, cs in enumerate(range(0, len(idx), EVENT_CHUNK)):
         ce = min(cs + EVENT_CHUNK, len(idx))
         rng_c = np.random.default_rng(base_seed + ci)
-        d_c, passed_c, _ = build_event_mc(
+        d_c, passed_c, template_index_c = build_event_mc(
             p4[cs:ce], direction[cs:ce],
             entry_d[idx[cs:ce]], exit_d[idx[cs:ce]],
             templates, decay_samples, rng_c, origin=CMS_ORIGIN)
         d_parts.append(d_c)
         passed_parts.append(passed_c)
+        template_index_parts.append(template_index_c)
     d = np.concatenate(d_parts, axis=0)
     passed = np.concatenate(passed_parts, axis=0)
+    template_indices = np.concatenate(template_index_parts, axis=0)
 
     # New Pythia templates sample the full exclusive BR mixture, including
     # neutral modes, so reconstruction itself supplies the visible fraction.
@@ -172,11 +174,17 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
     )
     branching_factor = 1.0 if full_branching else model.visible_fraction(m_a)
     weights = data["weight"][idx] * branching_factor
+    sample_weights = None
+    if "matrix_element_weight" in templates.files:
+        sample_weights = np.asarray(templates["matrix_element_weight"])[
+            template_indices
+        ]
 
     u2_grid = np.logspace(LOG_U2_MIN, LOG_U2_MAX, N_U2)
     u2_grid, N_grid = scan_u2(
         d, passed, exit_d[idx] - entry_d[idx], weights,
-        data["beta_gamma"][idx], ctau_ref, L_INT_PB, u2_grid)
+        data["beta_gamma"][idx], ctau_ref, L_INT_PB, u2_grid,
+        sample_w=sample_weights)
 
     band = find_exclusion_band(u2_grid, N_grid, N_THRESHOLD)
     # Map the u2 island edges -> physical coupling 1/f.  Lower-u2 edge = too

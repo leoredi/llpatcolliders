@@ -4,9 +4,9 @@
 The exact arXiv:2501.04525 exclusive branching ratios select the primary
 decay. Pythia decays unstable daughters and showers/hadronizes partonic modes,
 so the cached template contains stable final particles and the GRENDEL
-reconstruction determines visibility. Multi-body primaries currently use
-Pythia's flat phase-space mode; the pinned 2501 matrix elements remain the
-shape-systematic follow-up. Pythia cannot hadronize an isolated two-gluon
+reconstruction determines visibility. Three-body primaries are generated in
+flat phase space and carry normalized weights from the exact exported 2501
+matrix elements. Pythia cannot hadronize an isolated two-gluon
 colour singlet through this external-decay interface, so ``a -> gg`` is
 represented by an equal u/d/s light-quark jet mixture.
 
@@ -36,6 +36,7 @@ from exclusive_decays import (  # noqa: E402
     ctau_at_reference_coupling,
     exclusive_branching_weights,
 )
+from decay_matrix_elements import normalized_template_weights  # noqa: E402
 from mass_grid import ALP_MASS_GRID  # noqa: E402
 from paths import TEMPLATE_DIR  # noqa: E402
 from fairship_decay import (  # noqa: E402
@@ -49,6 +50,12 @@ from fairship_decay import (  # noqa: E402
 ALP_PDG = 9900015
 RESONANCE_WINDOWS = ((0.125, 0.140), (0.538, 0.555), (0.940, 0.974))
 GLUON_CHANNEL_ID = "channel_018"
+
+_PRODUCTS_TO_CHANNEL = {
+    tuple(products): channel_id
+    for channel_id, products in DECAY_PRODUCTS_PDG.items()
+    if channel_id not in {"channel_024", "channel_029"}
+}
 
 
 def _excluded_resonance(mass_gev: float) -> bool:
@@ -135,6 +142,15 @@ class AlpPythiaBackend:
         if len(parents) != 1:
             raise RuntimeError("Pythia event does not contain exactly one ALP")
         parent = parents[0]
+        daughter_first = int(event[parent].daughter1())
+        daughter_last = int(event[parent].daughter2())
+        primary = tuple(
+            int(event[index].id())
+            for index in range(daughter_first, daughter_last + 1)
+        )
+        channel_id = _PRODUCTS_TO_CHANNEL.get(primary, "unweighted")
+        primary_e1 = float(event[daughter_first].e()) if len(primary) == 3 else np.nan
+        primary_e3 = float(event[daughter_last].e()) if len(primary) == 3 else np.nan
         rows = []
         for index in range(event.size()):
             particle = event[index]
@@ -166,6 +182,9 @@ class AlpPythiaBackend:
             "mass": data[:, 5],
             "charge": data[:, 6],
             "stable": np.ones(len(data), dtype=bool),
+            "primary_channel": channel_id,
+            "primary_energy_1": primary_e1,
+            "primary_energy_3": primary_e3,
         }
 
 
@@ -192,6 +211,18 @@ def generate_one(
     backend = AlpPythiaBackend(mass_gev, seed)
     samples = [backend.sample() for _ in range(n_templates)]
     bundle = _flatten(samples)
+    primary_channels = np.asarray(
+        [sample["primary_channel"] for sample in samples], dtype="U32"
+    )
+    primary_energy_1 = np.asarray(
+        [sample["primary_energy_1"] for sample in samples], dtype=float
+    )
+    primary_energy_3 = np.asarray(
+        [sample["primary_energy_3"] for sample in samples], dtype=float
+    )
+    matrix_element_weight = normalized_template_weights(
+        primary_channels, primary_energy_1, primary_energy_3, mass_gev
+    )
     charged = []
     offset = 0
     for count in bundle["daughter_counts"]:
@@ -209,7 +240,11 @@ def generate_one(
         seed=np.int64(seed),
         flavor=np.array("BC10"),
         includes_full_branching=np.bool_(True),
-        decay_backend=np.array("Pythia8-flat-primary-phase-space-gg-to-uds"),
+        primary_channel=primary_channels,
+        primary_energy_1_GeV=primary_energy_1,
+        primary_energy_3_GeV=primary_energy_3,
+        matrix_element_weight=matrix_element_weight,
+        decay_backend=np.array("Pythia8-2501-weighted-three-body-gg-to-uds"),
     )
     print(
         f"  m_a={mass_gev:.3f}: stable-track visible="

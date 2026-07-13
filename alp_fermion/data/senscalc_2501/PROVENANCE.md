@@ -29,11 +29,11 @@ checks these exact SHA-256 values before decoding them:
 
 All three inputs are retained together. Widths determine the lifetime and
 branching ratios determine the visible-channel mixture. The squared matrix
-elements are pinned for the remaining primary-shape upgrade. The publication
-generator in `generate_decay_templates_pythia.py` uses the exact exclusive
-branching mixture and Pythia stable-daughter decays, but flat multi-body
-primary phase space and a light-quark surrogate for the two-gluon mode. It
-must not be described as exact 2501 decay kinematics yet.
+elements supply the primary three-body shapes. The publication generator in
+`generate_decay_templates_pythia.py` uses the exact exclusive branching
+mixture, reweights flat three-body phase space with those squared matrix
+elements, and lets Pythia decay unstable daughters. The light-quark surrogate
+for the two-gluon mode remains an explicitly documented approximation.
 
 The exporter retains every upstream display label and expression, but it also
 assigns canonical machine names to the unambiguous leptonic, diphoton, and

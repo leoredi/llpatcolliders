@@ -80,10 +80,11 @@ and `analysis/bc10_island.{png,pdf}`.
 - Decay widths and exclusive branching ratios: arXiv:2501.04525 through the
   pinned SensCalc v1.3.3 binary inputs and reviewable exports in
   `data/senscalc_2501/`. Stable daughter decays and parton hadronization use
-  Pythia 8.317. Multi-body primary shapes are currently flat phase space, and
-  the `a -> gg` mode uses an equal light-quark jet surrogate; these are
-  explicit decay-acceptance systematics rather than exact 2501 matrix-element
-  sampling.
+  Pythia 8.317. Three-body primary decays are generated in flat phase space
+  and reweighted with the exact exported SensCalc squared matrix elements,
+  normalized within each exclusive channel so its branching fraction is
+  unchanged. The `a -> gg` mode uses an equal light-quark jet surrogate and
+  remains an explicit decay-acceptance systematic.
 - Benchmark definition: 2025 PBC report (arXiv:2505.00947); unified FIP
   calculation arXiv:2311.00507; state-of-the-art hadronic treatment
   arXiv:2501.04525.
