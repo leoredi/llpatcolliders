@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 
 from alp_fermion.production_spectra import (
+    LIGHT_MESON_PARENTS,
+    TWO_BODY_PRODUCTION_CHANNELS,
     TabulatedSpectrum,
+    pseudorapidity,
+    sample_two_body_alps,
     transverse_theta_interval,
 )
 
@@ -61,3 +65,60 @@ def test_transverse_theta_interval_matches_pseudorapidity_definition():
     theta_min, theta_max = transverse_theta_interval(0.5)
     assert theta_min == pytest.approx(2.0 * math.atan(math.exp(-0.5)))
     assert theta_max == pytest.approx(math.pi - theta_min)
+
+
+def test_two_body_alp_sample_is_on_shell_at_rest():
+    parent = LIGHT_MESON_PARENTS["KS"]
+    channel = TWO_BODY_PRODUCTION_CHANNELS["KS-to-ALP-Pi0"]
+    n_events = 20_000
+    parent_vectors = {
+        "E": np.full(n_events, parent.mass_gev),
+        "px": np.zeros(n_events),
+        "py": np.zeros(n_events),
+        "pz": np.zeros(n_events),
+    }
+    alp_mass = 0.22
+
+    alp = sample_two_body_alps(
+        parent_vectors,
+        parent,
+        channel,
+        alp_mass,
+        np.random.default_rng(1234),
+    )
+
+    momentum_squared = alp["px"] ** 2 + alp["py"] ** 2 + alp["pz"] ** 2
+    expected_energy = (
+        parent.mass_gev**2 + alp_mass**2 - channel.recoil_mass_gev**2
+    ) / (2.0 * parent.mass_gev)
+    assert np.allclose(alp["E"], expected_energy)
+    assert np.allclose(alp["E"] ** 2 - momentum_squared, alp_mass**2)
+
+
+def test_two_body_alp_sample_rejects_closed_channel():
+    parent = LIGHT_MESON_PARENTS["KS"]
+    channel = TWO_BODY_PRODUCTION_CHANNELS["KS-to-ALP-Pi0"]
+    parent_vectors = {
+        "E": np.array([parent.mass_gev]),
+        "px": np.zeros(1),
+        "py": np.zeros(1),
+        "pz": np.zeros(1),
+    }
+    with pytest.raises(ValueError, match="is closed"):
+        sample_two_body_alps(
+            parent_vectors,
+            parent,
+            channel,
+            parent.mass_gev - channel.recoil_mass_gev,
+            np.random.default_rng(1234),
+        )
+
+
+def test_pseudorapidity_from_cartesian_momentum():
+    expected = np.array([-0.5, 0.0, 0.5])
+    vectors = {
+        "px": np.ones(3),
+        "py": np.zeros(3),
+        "pz": np.sinh(expected),
+    }
+    assert np.allclose(pseudorapidity(vectors), expected)

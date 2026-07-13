@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
+from hnl.production.decay_engine.kinematics import decay_2body
+
 from .paths import ANALYSIS_DIR
 
 
@@ -50,6 +52,28 @@ LIGHT_MESON_PARENTS = {
     ),
     "KS": ParentSpectrumSpec(
         "KS", 0.497611, 3.1, "DoubleDistr_LHC_KS.txt"
+    ),
+}
+
+
+@dataclass(frozen=True)
+class TwoBodyProductionSpec:
+    """A revised-SensCalc two-body meson production channel."""
+
+    process_name: str
+    parent_key: str
+    recoil_mass_gev: float
+
+
+TWO_BODY_PRODUCTION_CHANNELS = {
+    "Omega-to-ALP-gamma": TwoBodyProductionSpec(
+        "Omega-to-ALP-gamma", "Omega", 0.0
+    ),
+    "RhoCh-to-ALP-PiCh": TwoBodyProductionSpec(
+        "RhoCh-to-ALP-PiCh", "RhoCh", 0.13957039
+    ),
+    "KS-to-ALP-Pi0": TwoBodyProductionSpec(
+        "KS-to-ALP-Pi0", "KS", 0.1349768
     ),
 }
 
@@ -269,6 +293,99 @@ def spectrum_path(senscalc_root: Path, spec: ParentSpectrumSpec) -> Path:
     )
 
 
+def sample_two_body_alps(
+    parent_fourvectors: dict[str, np.ndarray],
+    parent: ParentSpectrumSpec,
+    channel: TwoBodyProductionSpec,
+    alp_mass_gev: float,
+    rng: np.random.Generator,
+) -> dict[str, np.ndarray]:
+    """Decay sampled on-shell parents and return ALP lab four-vectors."""
+    if channel.parent_key not in LIGHT_MESON_PARENTS:
+        raise ValueError(f"unknown parent key: {channel.parent_key}")
+    if parent != LIGHT_MESON_PARENTS[channel.parent_key]:
+        raise ValueError(
+            f"parent does not match channel {channel.process_name}"
+        )
+    if alp_mass_gev <= 0.0:
+        raise ValueError("ALP mass must be positive")
+    if alp_mass_gev + channel.recoil_mass_gev >= parent.mass_gev:
+        raise ValueError(
+            f"{channel.process_name} is closed at m_a={alp_mass_gev:g} GeV"
+        )
+    alp, _ = decay_2body(
+        parent_fourvectors["E"],
+        parent_fourvectors["px"],
+        parent_fourvectors["py"],
+        parent_fourvectors["pz"],
+        parent.mass_gev,
+        alp_mass_gev,
+        channel.recoil_mass_gev,
+        rng=rng,
+    )
+    return {
+        "E": alp[:, 0],
+        "px": alp[:, 1],
+        "py": alp[:, 2],
+        "pz": alp[:, 3],
+    }
+
+
+def pseudorapidity(fourvectors: dict[str, np.ndarray]) -> np.ndarray:
+    """Mass-independent pseudorapidity from Cartesian momentum components."""
+    transverse = np.hypot(fourvectors["px"], fourvectors["py"])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.arcsinh(fourvectors["pz"] / transverse)
+
+
+def summarize_two_body_channels(
+    senscalc_root: Path,
+    alp_masses_gev: list[float],
+    n_events: int,
+    eta_max: float = 0.5,
+    seed: int = 250104525,
+) -> list[dict[str, float | str]]:
+    """Daughter-level central fractions, with no branching weight applied."""
+    if n_events <= 0:
+        raise ValueError("n_events must be positive")
+    if eta_max <= 0.0:
+        raise ValueError("eta_max must be positive")
+    rng = np.random.default_rng(seed)
+    rows = []
+    for channel in TWO_BODY_PRODUCTION_CHANNELS.values():
+        parent = LIGHT_MESON_PARENTS[channel.parent_key]
+        spectrum = TabulatedSpectrum.load(spectrum_path(senscalc_root, parent))
+        for alp_mass in alp_masses_gev:
+            if alp_mass <= 0.0:
+                raise ValueError("ALP masses must be positive")
+            if alp_mass + channel.recoil_mass_gev >= parent.mass_gev:
+                continue
+            parent_vectors = spectrum.sample(
+                n_events, parent.mass_gev, rng=rng
+            )
+            alp_vectors = sample_two_body_alps(
+                parent_vectors, parent, channel, alp_mass, rng
+            )
+            alp_eta = pseudorapidity(alp_vectors)
+            parent_eta = pseudorapidity(parent_vectors)
+            central = np.abs(alp_eta) < eta_max
+            rows.append({
+                "process": channel.process_name,
+                "parent": parent.process_name,
+                "alp_mass_GeV": float(alp_mass),
+                "n_events": n_events,
+                "parent_fraction_abs_eta_lt": float(
+                    np.mean(np.abs(parent_eta) < eta_max)
+                ),
+                "alp_fraction_abs_eta_lt": float(np.mean(central)),
+                "alp_yield_abs_eta_lt_per_collision_per_unit_br": float(
+                    parent.yield_per_collision * np.mean(central)
+                ),
+                "mean_alp_energy_GeV": float(np.mean(alp_vectors["E"])),
+            })
+    return rows
+
+
 def transverse_theta_interval(eta_max: float) -> tuple[float, float]:
     """Return the polar interval equivalent to ``|eta| < eta_max``."""
     if eta_max <= 0.0:
@@ -324,6 +441,38 @@ def write_summary(
             })
 
 
+def write_two_body_summary(
+    rows: list[dict[str, float | str]], output_path: Path, eta_max: float
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "process",
+        "parent",
+        "alp_mass_GeV",
+        "n_events",
+        f"parent_fraction_abs_eta_lt_{eta_max:g}",
+        f"alp_fraction_abs_eta_lt_{eta_max:g}",
+        f"alp_yield_abs_eta_lt_{eta_max:g}_per_collision_per_unit_br",
+        "mean_alp_energy_GeV",
+    ]
+    with output_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({
+                fieldnames[0]: row["process"],
+                fieldnames[1]: row["parent"],
+                fieldnames[2]: row["alp_mass_GeV"],
+                fieldnames[3]: row["n_events"],
+                fieldnames[4]: row["parent_fraction_abs_eta_lt"],
+                fieldnames[5]: row["alp_fraction_abs_eta_lt"],
+                fieldnames[6]: (
+                    row["alp_yield_abs_eta_lt_per_collision_per_unit_br"]
+                ),
+                fieldnames[7]: row["mean_alp_energy_GeV"],
+            })
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("senscalc_root", type=Path)
@@ -332,6 +481,24 @@ def main(argv: list[str] | None = None) -> int:
         "--output",
         type=Path,
         default=ANALYSIS_DIR / "senscalc_2501_parent_spectra.csv",
+    )
+    parser.add_argument(
+        "--two-body-events",
+        type=int,
+        default=0,
+        help="also sample this many parents per open two-body channel and mass",
+    )
+    parser.add_argument(
+        "--alp-mass",
+        type=float,
+        action="append",
+        default=[],
+        help="ALP mass for --two-body-events (repeatable; defaults to audit points)",
+    )
+    parser.add_argument(
+        "--two-body-output",
+        type=Path,
+        default=ANALYSIS_DIR / "senscalc_2501_two_body_acceptance.csv",
     )
     args = parser.parse_args(argv)
 
@@ -347,6 +514,24 @@ def main(argv: list[str] | None = None) -> int:
             f"{row['parent_fraction_abs_eta_lt']:.6f}"
         )
     print(f"Wrote {args.output.resolve()}")
+    if args.two_body_events:
+        masses = args.alp_mass or [0.22, 0.30, 0.40, 0.60]
+        two_body_rows = summarize_two_body_channels(
+            args.senscalc_root,
+            masses,
+            args.two_body_events,
+            args.eta_max,
+        )
+        write_two_body_summary(
+            two_body_rows, args.two_body_output, args.eta_max
+        )
+        for row in two_body_rows:
+            print(
+                f"{row['process']:22s}  m_a={row['alp_mass_GeV']:.2f}  "
+                f"ALP |eta|<{args.eta_max:g} fraction="
+                f"{row['alp_fraction_abs_eta_lt']:.6f}"
+            )
+        print(f"Wrote {args.two_body_output.resolve()}")
     return 0
 
 

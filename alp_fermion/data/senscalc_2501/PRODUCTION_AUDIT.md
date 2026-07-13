@@ -66,12 +66,58 @@ also use a 6.5 TeV beam energy (13 TeV collisions), whereas the GRENDEL FONLL
 baseline is 14 TeV. They are suitable for deciding whether a dedicated 14 TeV
 calculation is necessary, but not for silently mixing final event weights.
 
+### Two-body daughter check
+
+The revised SensCalc process list contains three two-body light-parent modes:
+`Omega-to-ALP-gamma`, `RhoCh-to-ALP-PiCh`, and `KS-to-ALP-Pi0`. A 600,000
+event sample per open channel and mass was generated from the pinned parent
+spectra with the existing `production.decay_engine.kinematics.decay_2body`
+Lorentz sampler. No branching coefficient was applied.
+
+| Process | `m_a` [GeV] | ALP fraction in `|eta| < 0.5` | Central ALPs / collision / unit BR |
+|---|---:|---:|---:|
+| `omega -> a gamma` | 0.22 | 0.0731 | 0.3232 |
+|  | 0.40 | 0.0627 | 0.2773 |
+|  | 0.60 | 0.0568 | 0.2511 |
+| `rho_charged -> a pi_charged` | 0.22 | 0.0703 | 0.6104 |
+|  | 0.40 | 0.0603 | 0.5239 |
+|  | 0.60 | 0.0546 | 0.4743 |
+| `K_S -> a pi0` | 0.22 | 0.0660 | 0.2045 |
+|  | 0.30 | 0.0622 | 0.1928 |
+
+The binomial component of the MC uncertainty on each listed fraction is at
+most `0.00034`; interpolation and source-model systematics are separate.
+The daughter fractions are comparable to, and at low mass slightly larger
+than, the parent fractions. These modes therefore cannot be rejected on
+transverse geometry alone. Their physical importance is controlled by the
+still-to-be-decoded 2501 branching coefficients. The three-body eta,
+eta-prime, and omega modes additionally require the pinned squared matrix
+elements before their daughter kinematics can be considered complete.
+
+For an indicative rate threshold, the current 120,000-pool B-tower sample has
+a central (`|eta| < 0.5`) reference cross section of `15.0--15.8 microbarn`
+over `m_a = 0.22--0.60 GeV` at `1/f_BNT = 1e-3 GeV^-1`. Dividing by the
+SensCalc LHC inelastic cross section (`72 mb`) and the per-unit-BR central
+yields above, a single light-parent channel would need approximately:
+
+- `BR(omega -> a gamma) = 6.8e-4--8.3e-4`;
+- `BR(rho_charged -> a pi_charged) = 3.6e-4--4.4e-4`;
+- `BR(K_S -> a pi0) = 1.1e-3` at `m_a = 0.22 GeV`;
+
+to equal the accepted B-tower yield. Both the B branching ratios and revised
+light-meson branching ratios scale as `(1/f_BNT)^2`, so this comparison is
+coupling independent. It is only an orientation threshold because it compares
+the 14 TeV FONLL B baseline with SensCalc's 13 TeV light-parent shapes. If a
+decoded coefficient approaches the threshold, a common-energy production
+calculation is required.
+
 Reproduce the source check and parent-level summary with:
 
 ```bash
 python alp_fermion/tools/export_senscalc_2501_production.py \
   --check-only /path/to/SensCalc
-python -m alp_fermion.production_spectra /path/to/SensCalc
+python -m alp_fermion.production_spectra /path/to/SensCalc \
+  --two-body-events 600000
 ```
 
 After Wolfram Engine is activated, omit `--check-only` to decode the binary
