@@ -1,7 +1,10 @@
 #!/usr/bin/env wolframscript
 (* Decode the pinned SensCalc 2501.04525 MX files into reviewable formats. *)
 
-ClearAll[die, render, sha256, checkedImport, evaluateAtMass, writeJSON];
+ClearAll[
+  die, render, plainString, normalizedProducts, sha256, checkedImport,
+  evaluateAtMass, writeJSON
+];
 
 die[message_] := (
   WriteString[$Output, "error: " <> ToString[message, InputForm] <> "\n"];
@@ -9,6 +12,9 @@ die[message_] := (
 );
 
 render[expression_] := ToString[expression, InputForm, PageWidth -> Infinity];
+plainString[expression_] := If[StringQ[expression], expression, render[expression]];
+normalizedProducts[products_] := plainString /@
+  DeleteCases[Flatten[{products}], Null | "Null"];
 sha256[path_] := IntegerString[FileHash[path, "SHA256"], 16, 64];
 
 checkedImport[path_] := Module[{value},
@@ -94,6 +100,7 @@ writeJSON[
   FileNameJoin[{outputDir, "widths_metadata.json"}],
   <|
     "column_ids" -> widthColumnIds,
+    "source_headers" -> (plainString /@ widthSourceHeaders),
     "source_headers_input_form" -> (render /@ widthSourceHeaders),
     "source_metadata_rows_input_form" -> (render /@ widthSourceMetadata),
     "raw_coefficient_definition" -> "Gamma = (gY/(2 vH))^2 * coefficient",
@@ -129,14 +136,17 @@ Export[
 ];
 writeJSON[
   FileNameJoin[{outputDir, "decay_channels.json"}],
-  MapThread[
+  Table[
     <|
-      "id" -> #1,
-      "process_input_form" -> render[#2],
-      "decay_products_input_form" -> render[#3],
-      "branching_expression_input_form" -> render[#4]
-    |> &,
-    {channelIds, branchingProcesses, branchingProducts, branchingExpressions}
+      "source_index" -> index,
+      "id" -> channelIds[[index]],
+      "process_name" -> plainString[branchingProcesses[[index]]],
+      "decay_products" -> normalizedProducts[branchingProducts[[index]]],
+      "process_input_form" -> render[branchingProcesses[[index]]],
+      "decay_products_input_form" -> render[branchingProducts[[index]]],
+      "branching_expression_input_form" -> render[branchingExpressions[[index]]]
+    |>,
+    {index, Length[channelIds]}
   ]
 ];
 
@@ -156,15 +166,20 @@ matrixIds = Table[
 ];
 writeJSON[
   FileNameJoin[{outputDir, "matrix_elements.json"}],
-  MapThread[
+  Table[
     <|
-      "id" -> #1,
-      "process_input_form" -> render[#2],
-      "metadata_input_form" -> render[#3],
-      "expression_input_form" -> render[#4],
-      "expression_c_form" -> ToString[CForm[#4], PageWidth -> Infinity]
-    |> &,
-    {matrixIds, matrixProcesses, matrixMetadata, matrixExpressions}
+      "source_index" -> index,
+      "id" -> matrixIds[[index]],
+      "process_name" -> plainString[matrixProcesses[[index]]],
+      "decay_products" -> normalizedProducts[matrixMetadata[[index]]],
+      "process_input_form" -> render[matrixProcesses[[index]]],
+      "metadata_input_form" -> render[matrixMetadata[[index]]],
+      "expression_input_form" -> render[matrixExpressions[[index]]],
+      "expression_c_form" -> ToString[
+        CForm[matrixExpressions[[index]]], PageWidth -> Infinity
+      ]
+    |>,
+    {index, Length[matrixIds]}
   ]
 ];
 

@@ -77,6 +77,13 @@ code. Their relevance must be evaluated with the GRENDEL geometry and LHC
 kinematics; an inclusive production-probability comparison alone is not an
 acceptance calculation. SensCalc `v.1.3.3` is the pinned source for this audit.
 
+The source-level findings and per-channel decisions are recorded in
+`data/senscalc_2501/PRODUCTION_AUDIT.md`. Drell-Yan is negligible throughout
+the current island compared with the open B tower, and the obsolete
+flux-times-mixing shortcut is explicitly rejected. The remaining production
+work is confined to a low-mass accepted-yield check of the generalized
+fragmentation and light-meson-decay inputs before the final 600k scan.
+
 ## 4. Competitor + existing-bound curves — DROPPED (by decision)
 
 The GRENDEL island is the deliverable; overlay curves (unified-calc

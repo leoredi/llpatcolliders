@@ -65,3 +65,8 @@ coefficient is `coefficient_raw/4`. The branching ratios are convention
 independent. Before the tables become the default model input, the conversion
 must pass the physical anchors documented in `model.py`: the approximately
 9% dimuon branching ratio at 1 GeV and the charm onset near 2.58 GeV.
+
+The production-channel comparison is tracked separately in
+[`PRODUCTION_AUDIT.md`](PRODUCTION_AUDIT.md). SensCalc is used as a verified
+physics-input source; its detector acceptance is not substituted for the
+GRENDEL geometry and reconstruction chain.

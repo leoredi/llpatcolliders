@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -43,6 +45,15 @@ SOURCE_FILES = {
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "data" / "senscalc_2501"
 EXPORTER = Path(__file__).with_suffix(".wls")
+EXPECTED_OUTPUT_FILES = (
+    "widths_raw_senscalc.csv",
+    "widths_bnt.csv",
+    "widths_metadata.json",
+    "branching_ratios.csv",
+    "decay_channels.json",
+    "matrix_elements.json",
+    "EXPORT_MANIFEST.json",
+)
 MACOS_ENGINE_KERNEL = Path(
     "/Applications/Wolfram Engine.app/Contents/Resources/"
     "Wolfram Player.app/Contents/MacOS/WolframKernel"
@@ -104,6 +115,41 @@ def wolfram_environment() -> dict[str, str]:
     return env
 
 
+def validate_export(export_dir: Path) -> None:
+    """Reject incomplete or internally inconsistent Wolfram output."""
+    missing = [name for name in EXPECTED_OUTPUT_FILES
+               if not (export_dir / name).is_file()]
+    if missing:
+        raise InputError(f"Wolfram export is missing: {', '.join(missing)}")
+
+    try:
+        manifest = json.loads((export_dir / "EXPORT_MANIFEST.json").read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise InputError("EXPORT_MANIFEST.json is not valid JSON") from exc
+
+    if manifest.get("senscalc_commit") != SENSCALC_COMMIT:
+        raise InputError("export manifest has the wrong SensCalc commit")
+    output_hashes = manifest.get("output_sha256")
+    if not isinstance(output_hashes, dict):
+        raise InputError("export manifest has no output_sha256 mapping")
+    for name in EXPECTED_OUTPUT_FILES:
+        if name == "EXPORT_MANIFEST.json":
+            continue
+        expected = output_hashes.get(name)
+        actual = sha256(export_dir / name)
+        if expected != actual:
+            raise InputError(
+                f"export hash mismatch for {name}: {actual}; expected {expected}"
+            )
+
+
+def install_export(staging_dir: Path, output_dir: Path) -> None:
+    """Atomically replace each validated data product in the destination."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for name in EXPECTED_OUTPUT_FILES:
+        os.replace(staging_dir / name, output_dir / name)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("senscalc_root", type=Path, help="SensCalc Git checkout")
@@ -144,16 +190,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    command = [
-        wolframscript,
-        "-file",
-        str(EXPORTER),
-        str(args.senscalc_root.resolve()),
-        str(args.output_dir.resolve()),
-    ]
+    output_dir = args.output_dir.resolve()
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
     try:
-        subprocess.run(command, check=True, env=wolfram_environment())
+        with tempfile.TemporaryDirectory(
+            prefix=f".{output_dir.name}-", dir=output_dir.parent
+        ) as staging_name:
+            staging_dir = Path(staging_name)
+            command = [
+                wolframscript,
+                "-file",
+                str(EXPORTER),
+                str(args.senscalc_root.resolve()),
+                str(staging_dir),
+            ]
+            subprocess.run(command, check=True, env=wolfram_environment())
+            validate_export(staging_dir)
+            install_export(staging_dir, output_dir)
     except subprocess.CalledProcessError as exc:
         print(
             "error: Wolfram export failed. If the engine reports a license "
@@ -162,8 +215,11 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return exc.returncode or 4
+    except InputError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 5
 
-    print(f"Exported SensCalc 2501 inputs to {args.output_dir.resolve()}")
+    print(f"Exported SensCalc 2501 inputs to {output_dir}")
     return 0
 
 

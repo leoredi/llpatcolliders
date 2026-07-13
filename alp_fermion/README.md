@@ -43,7 +43,7 @@ alp_fermion/
   plot.py           BC10 island in the (m_a, 1/f) plane (+ optional overlay curves)
   paths.py          output-dir policy (ALP_TMP_DIR override) + hnl/ import shim
   data/alpinist/    digitized GKOZ decay-width tables via ALPINIST (PROVENANCE.md, pinned SHA)
-  data/senscalc_2501/ provenance for the pinned arXiv:2501.04525 upgrade
+  data/senscalc_2501/ provenance and production audit for the pinned arXiv:2501.04525 upgrade
   data/published/   canonical published sensitivity curve (CSV + MANIFEST; see its README)
   tools/compute_cbs_alpinist.py  regenerates the b→s a RG coefficient (BSD-3 ALPINIST port)
   tools/export_senscalc_2501.{py,wls}  verifies and exports the three SensCalc decay inputs
