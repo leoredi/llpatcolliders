@@ -124,10 +124,21 @@ SENSCALC_INVISIBLE_CHANNEL_IDS = {
     "channel_014",  # 3 pi0
     "channel_021",  # 2 K_L pi0
 }
+# The MX list repeats the neutral and charged K* K* processes at positions
+# 12/24 and 11/29 with byte-identical products and branching expressions.
+# SensCalc installs them as DownValues keyed by process name, so the later
+# definitions overwrite rather than add. Exclude the repeated positions to
+# reproduce that behavior in the positional CSV representation.
+SENSCALC_DUPLICATE_CHANNEL_IDS = {
+    "channel_024",  # duplicate of channel_012
+    "channel_029",  # duplicate of channel_011
+}
 SENSCALC_VISIBLE_HADRONIC_CHANNEL_IDS = tuple(
     f"channel_{index:03d}"
     for index in range(5, 33)
-    if f"channel_{index:03d}" not in SENSCALC_INVISIBLE_CHANNEL_IDS
+    if f"channel_{index:03d}" not in (
+        SENSCALC_INVISIBLE_CHANNEL_IDS | SENSCALC_DUPLICATE_CHANNEL_IDS
+    )
 )
 
 

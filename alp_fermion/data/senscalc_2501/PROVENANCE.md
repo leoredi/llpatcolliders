@@ -27,10 +27,11 @@ checks these exact SHA-256 values before decoding them:
 | `Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m` | `f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed` |
 | `codes/Acceptances/ALP-fermion.nb` | `8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4` |
 
-All three inputs are required. Widths determine the lifetime, branching ratios
-determine the visible-channel mixture, and the squared matrix elements
-determine the charged-daughter kinematics used by the reconstruction
-acceptance.
+All three inputs are retained together. Widths determine the lifetime and
+branching ratios determine the visible-channel mixture. The squared matrix
+elements are the pinned input for the charged-daughter kinematic upgrade; the
+current template implementation is documented separately in `templates.py`
+and must not be described as exact 2501 decay kinematics yet.
 
 The exporter retains every upstream display label and expression, but it also
 assigns canonical machine names to the unambiguous leptonic, diphoton, and
@@ -87,6 +88,15 @@ SensCalc's charged/no-ECAL channel policy is reproduced from
 `2 K_L pi0` channels are excluded from the visible branching fraction. The
 remaining exclusive branching ratios are summed before the separate GRENDEL
 decay-template and detector-acceptance calculation.
+
+The upstream MX list repeats the charged and neutral `K* K*` processes at
+positions 11/29 and 12/24. Each pair has identical products and a byte-identical
+branching expression. SensCalc installs these entries as Mathematica
+`DownValues` keyed by process name, so the repeated definition overwrites the
+first rather than contributing a second branching fraction. The positional CSV
+retains all source rows for auditability; `model.py` excludes channels 24 and
+29 from sums to reproduce the SensCalc semantics. A full-table test enforces
+that the resulting visible fraction stays in `[0, 1]`.
 
 The production-channel comparison is tracked separately in
 [`PRODUCTION_AUDIT.md`](PRODUCTION_AUDIT.md). SensCalc is used as a verified

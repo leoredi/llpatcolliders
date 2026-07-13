@@ -66,6 +66,23 @@ def test_visible_fraction_bounds():
     assert m.visible_fraction(1.5) == pytest.approx(0.9657373243, rel=1e-8)
 
 
+def test_visible_fraction_is_physical_across_full_table():
+    mass_grid, _ = m._load_branching_tables()
+    fractions = np.array([m.visible_fraction(mass) for mass in mass_grid])
+    assert np.all(fractions >= 0.0)
+    assert np.all(fractions <= 1.0 + 1e-12)
+
+
+def test_duplicate_kstar_channels_are_counted_once():
+    assert m._exclusive_branching("channel_011", 2.0) == pytest.approx(
+        m._exclusive_branching("channel_029", 2.0)
+    )
+    assert m._exclusive_branching("channel_012", 2.0) == pytest.approx(
+        m._exclusive_branching("channel_024", 2.0)
+    )
+    assert m.visible_fraction(2.0) < 1.0
+
+
 def test_visible_weights_subset_of_branchings():
     br = m.alp_branchings(1.0, 1e-3)
     vis = m.visible_channel_weights(1.0, 1e-3)
