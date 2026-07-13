@@ -58,9 +58,10 @@ alp_fermion/
 
 ## Run
 ```
-PY=/Volumes/sandbox/projects/aaaPHYSICSaaa/.venvs/fairship/bin/python
+PY=/Volumes/sandbox/conda/envs/llpatcolliders_FONLL/bin/python
+PYROOT=/Volumes/sandbox/projects/aaaPHYSICSaaa/.venvs/fairship/bin/python
 $PY -m alp_fermion.alp_production --n-pool 600000
-$PY -m alp_fermion.generate_decay_templates_pythia --n-templates 20000
+$PYROOT -m alp_fermion.generate_decay_templates_pythia --n-templates 20000
 $PY -m alp_fermion.sensitivity
 python -m pytest alp_fermion/tests -q
 ```
