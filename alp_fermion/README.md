@@ -38,6 +38,7 @@ alp_fermion/
   model.py          model layer: a→ff/γγ/hadrons widths (GKOZ tables), Γ_tot, cτ, BRs,
                     BR(B→K⁽ⁱ⁾ a) over the kaon tower (b→s a penguin, one-loop RG coefficient)
   alp_production.py B (FONLL) → B→K⁽ⁱ⁾ a → a four-vector CSVs (weight,E,px,py,pz)
+  production_spectra.py  source-pinned SensCalc LHC light-parent sampler/audit
   templates.py      per-mass ALP rest-frame decay templates (channels ∝ visible BR)
   sensitivity.py    (m_a, 1/f) closed-island scan; N_signal ≥ 3, 3000 fb⁻¹
   plot.py           BC10 island in the (m_a, 1/f) plane (+ optional overlay curves)
@@ -47,6 +48,7 @@ alp_fermion/
   data/published/   canonical published sensitivity curve (CSV + MANIFEST; see its README)
   tools/compute_cbs_alpinist.py  regenerates the b→s a RG coefficient (BSD-3 ALPINIST port)
   tools/export_senscalc_2501.{py,wls}  verifies and exports the three SensCalc decay inputs
+  tools/export_senscalc_2501_production.{py,wls}  verifies/decodes the LHC production inputs
   tests/test_model.py
   EXTERNAL_INPUTS_NEEDED.md   (input provenance + residual systematics; overlays dropped)
 ```
