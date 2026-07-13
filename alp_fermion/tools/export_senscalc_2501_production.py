@@ -29,6 +29,7 @@ try:
         SENSCALC_TAG,
         git_head,
         sha256,
+        source_mx_system_ids,
         wolfram_environment,
     )
 except ImportError:  # Direct execution from alp_fermion/tools.
@@ -38,11 +39,24 @@ except ImportError:  # Direct execution from alp_fermion/tools.
         SENSCALC_TAG,
         git_head,
         sha256,
+        source_mx_system_ids,
         wolfram_environment,
     )
 
 
 SOURCE_FILES = {
+    "sensitivity_notebook": (
+        Path("3. ALP-fermion sensitivity.nb"),
+        "48883fb7ecce956bd73965709ecf44d0cae286e637067c672c1566d736072ef3",
+    ),
+    "generic_notebook": (
+        Path("codes/generic.nb"),
+        "95cc528268e41b273182377275bf9eeb00d8cc1cb92d149ddeaa9e72967f0d4a",
+    ),
+    "production_notebook": (
+        Path("codes/LLP distribution/prod-pheno-ALP-fermion.nb"),
+        "e1a7b91a4e82421081d165561a1b7f23e90aefe451efca32a5a3459b1ac0d0f7",
+    ),
     "experiments": (
         Path("codes/experiments.nb"),
         "3e60809105f49d8c5274de9a352cd0063bac9cb8feba31188e5e49ca6e468bdf",
@@ -100,14 +114,16 @@ SOURCE_FILES = {
 }
 
 EXPECTED_OUTPUT_FILES = (
-    "coefficients_metadata.json",
-    "fragmentation_probability.csv",
+    "production_coupling_coefficients_bnt.csv",
+    "production_coupling_coefficients_metadata.json",
+    "fragmentation_probability_coefficients_bnt.csv",
     "fragmentation_probability_metadata.json",
-    "light_meson_branching_ratios.csv",
-    "light_meson_channels.json",
-    "light_meson_matrix_elements.json",
+    "meson_branching_coefficients_bnt.csv",
+    "meson_decay_channels.json",
+    "meson_decay_matrix_elements.json",
     "fragmentation_lhc_grid.csv",
-    "drell_yan_lhc.csv",
+    "drell_yan_lhc_cross_section_coefficients.csv",
+    "drell_yan_lhc_metadata.json",
     "bremsstrahlung_lhc_metadata.json",
     "PRODUCTION_EXPORT_MANIFEST.json",
 )
@@ -161,8 +177,20 @@ def validate_export(export_dir: Path) -> None:
             "PRODUCTION_EXPORT_MANIFEST.json is not valid JSON"
         ) from exc
 
+    if manifest.get("senscalc_tag") != SENSCALC_TAG:
+        raise InputError("export manifest has the wrong SensCalc tag")
     if manifest.get("senscalc_commit") != SENSCALC_COMMIT:
         raise InputError("export manifest has the wrong SensCalc commit")
+    if manifest.get("phenomenology") != "arXiv:2501.04525":
+        raise InputError("export manifest has the wrong phenomenology source")
+    if not isinstance(manifest.get("wolfram_system_id"), str):
+        raise InputError("export manifest has no Wolfram system ID")
+    expected_source_hashes = {
+        key: expected_hash
+        for key, (_, expected_hash) in SOURCE_FILES.items()
+    }
+    if manifest.get("source_sha256") != expected_source_hashes:
+        raise InputError("export manifest has the wrong source hashes")
     output_hashes = manifest.get("output_sha256")
     if not isinstance(output_hashes, dict):
         raise InputError("export manifest has no output_sha256 mapping")
@@ -210,8 +238,18 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(f"SensCalc {SENSCALC_TAG} production inputs verified")
+    mx_system_ids = source_mx_system_ids(verified)
     for key, path in verified.items():
-        print(f"  {key}: {path.relative_to(args.senscalc_root.resolve())}")
+        suffix = f" (MX {mx_system_ids[key]})" if key in mx_system_ids else ""
+        relative_path = path.relative_to(args.senscalc_root.resolve())
+        print(f"  {key}: {relative_path}{suffix}")
+
+    if mx_system_ids:
+        systems = ", ".join(sorted(set(mx_system_ids.values())))
+        print(
+            "note: Wolfram MX is system-dependent; these inputs record "
+            f"{systems}. The export manifest records the decoder system ID."
+        )
 
     if args.check_only:
         return 0

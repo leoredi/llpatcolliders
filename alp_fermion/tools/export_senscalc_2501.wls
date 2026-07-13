@@ -48,18 +48,30 @@ sensCalcRoot = ExpandFileName[$ScriptCommandLine[[2]]];
 outputDir = ExpandFileName[$ScriptCommandLine[[3]]];
 If[!DirectoryQ[outputDir], CreateDirectory[outputDir, CreateIntermediateDirectories -> True]];
 
-sourceDir = FileNameJoin[{sensCalcRoot, "phenomenology", "ALP-fermion", "decay widths"}];
 sourceFiles = <|
-  "widths" -> "Widths-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
-  "branching_ratios" -> "Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
-  "matrix_elements" -> "Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m"
+  "widths" -> FileNameJoin[{
+    "phenomenology", "ALP-fermion", "decay widths",
+    "Widths-model-ALP-fermion-scale-1000.-GeV-2501.04525.m"
+  }],
+  "branching_ratios" -> FileNameJoin[{
+    "phenomenology", "ALP-fermion", "decay widths",
+    "Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-2501.04525.m"
+  }],
+  "matrix_elements" -> FileNameJoin[{
+    "phenomenology", "ALP-fermion", "decay widths",
+    "Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m"
+  }],
+  "acceptance_notebook" -> FileNameJoin[{
+    "codes", "Acceptances", "ALP-fermion.nb"
+  }]
 |>;
 expectedHashes = <|
   "widths" -> "d12fb78d28edff0aa081c9fb66d829b42b4ec71202684019d7b9047ecb40b869",
   "branching_ratios" -> "34a09eed87d081bfffe79b464094741454022f79478c5b28bc236bc361049286",
-  "matrix_elements" -> "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed"
+  "matrix_elements" -> "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed",
+  "acceptance_notebook" -> "8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4"
 |>;
-sourcePaths = AssociationMap[FileNameJoin[{sourceDir, #}] &, sourceFiles];
+sourcePaths = AssociationMap[FileNameJoin[{sensCalcRoot, #}] &, sourceFiles];
 
 KeyValueMap[
   Function[{key, path},

@@ -25,11 +25,20 @@ checks these exact SHA-256 values before decoding them:
 | `Widths-model-ALP-fermion-scale-1000.-GeV-2501.04525.m` | `d12fb78d28edff0aa081c9fb66d829b42b4ec71202684019d7b9047ecb40b869` |
 | `Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-2501.04525.m` | `34a09eed87d081bfffe79b464094741454022f79478c5b28bc236bc361049286` |
 | `Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m` | `f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed` |
+| `codes/Acceptances/ALP-fermion.nb` | `8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4` |
 
 All three inputs are required. Widths determine the lifetime, branching ratios
 determine the visible-channel mixture, and the squared matrix elements
 determine the charged-daughter kinematics used by the reconstruction
 acceptance.
+
+The pinned dumps record the Wolfram system ID `Windows-x86-64` in their MX
+headers. MX is a system-dependent format; the exporter reports the source
+system ID and records the decoder `$SystemID` in `EXPORT_MANIFEST.json`.
+Cross-platform import must therefore be demonstrated, not assumed. If the
+macOS engine rejects the dumps, decode them with a matching Windows x86-64
+Wolfram installation and transfer only the hashed CSV/JSON export. See the
+[Wolfram MX format documentation](https://reference.wolfram.com/language/ref/format/MX.html).
 
 ## Regeneration
 
@@ -50,7 +59,7 @@ nested kernel at:
 ```
 
 Use `--check-only` to validate the SensCalc commit and source hashes without a
-Wolfram license.
+Wolfram license. It also prints the system IDs embedded in the MX headers.
 
 ## Coupling conversion
 

@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,16 +31,23 @@ SENSCALC_COMMIT = "0bca050633aae16e148d47f21840fa07ff4b8724"
 DECAY_DATA_SUBDIR = Path("phenomenology/ALP-fermion/decay widths")
 SOURCE_FILES = {
     "widths": (
-        "Widths-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
+        DECAY_DATA_SUBDIR
+        / "Widths-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
         "d12fb78d28edff0aa081c9fb66d829b42b4ec71202684019d7b9047ecb40b869",
     ),
     "branching_ratios": (
-        "Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
+        DECAY_DATA_SUBDIR
+        / "Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
         "34a09eed87d081bfffe79b464094741454022f79478c5b28bc236bc361049286",
     ),
     "matrix_elements": (
-        "Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
+        DECAY_DATA_SUBDIR
+        / "Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
         "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed",
+    ),
+    "acceptance_notebook": (
+        Path("codes/Acceptances/ALP-fermion.nb"),
+        "8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4",
     ),
 }
 
@@ -58,6 +66,9 @@ MACOS_ENGINE_KERNEL = Path(
     "/Applications/Wolfram Engine.app/Contents/Resources/"
     "Wolfram Player.app/Contents/MacOS/WolframKernel"
 )
+MX_SYSTEM_ID_RE = re.compile(
+    rb"(?:Windows|MacOSX|Linux)-[A-Za-z0-9-]+"
+)
 
 
 class InputError(RuntimeError):
@@ -70,6 +81,22 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def mx_system_id(path: Path) -> str | None:
+    """Return the platform recorded in a Wolfram MX header, if present."""
+    with path.open("rb") as handle:
+        match = MX_SYSTEM_ID_RE.search(handle.read(256))
+    return match.group().decode("ascii") if match else None
+
+
+def source_mx_system_ids(paths: dict[str, Path]) -> dict[str, str]:
+    """Map binary source keys to the system IDs embedded in their headers."""
+    return {
+        key: system_id
+        for key, path in paths.items()
+        if (system_id := mx_system_id(path)) is not None
+    }
 
 
 def git_head(repo: Path) -> str:
@@ -92,16 +119,15 @@ def verify_sources(repo: Path) -> dict[str, Path]:
             f"({SENSCALC_COMMIT})"
         )
 
-    source_dir = repo / DECAY_DATA_SUBDIR
     verified = {}
-    for key, (filename, expected_hash) in SOURCE_FILES.items():
-        path = source_dir / filename
+    for key, (relative_path, expected_hash) in SOURCE_FILES.items():
+        path = repo / relative_path
         if not path.is_file():
             raise InputError(f"missing SensCalc input: {path}")
         actual_hash = sha256(path)
         if actual_hash != expected_hash:
             raise InputError(
-                f"SHA-256 mismatch for {filename}: {actual_hash}; "
+                f"SHA-256 mismatch for {relative_path}: {actual_hash}; "
                 f"expected {expected_hash}"
             )
         verified[key] = path
@@ -127,8 +153,20 @@ def validate_export(export_dir: Path) -> None:
     except (OSError, json.JSONDecodeError) as exc:
         raise InputError("EXPORT_MANIFEST.json is not valid JSON") from exc
 
+    if manifest.get("senscalc_tag") != SENSCALC_TAG:
+        raise InputError("export manifest has the wrong SensCalc tag")
     if manifest.get("senscalc_commit") != SENSCALC_COMMIT:
         raise InputError("export manifest has the wrong SensCalc commit")
+    if manifest.get("phenomenology") != "arXiv:2501.04525":
+        raise InputError("export manifest has the wrong phenomenology source")
+    if not isinstance(manifest.get("wolfram_system_id"), str):
+        raise InputError("export manifest has no Wolfram system ID")
+    expected_source_hashes = {
+        key: expected_hash
+        for key, (_, expected_hash) in SOURCE_FILES.items()
+    }
+    if manifest.get("source_sha256") != expected_source_hashes:
+        raise InputError("export manifest has the wrong source hashes")
     output_hashes = manifest.get("output_sha256")
     if not isinstance(output_hashes, dict):
         raise InputError("export manifest has no output_sha256 mapping")
@@ -176,8 +214,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(f"SensCalc {SENSCALC_TAG} verified at {SENSCALC_COMMIT}")
+    mx_system_ids = source_mx_system_ids(verified)
     for key, path in verified.items():
-        print(f"  {key}: {path.name} ({sha256(path)})")
+        suffix = f"; MX {mx_system_ids[key]}" if key in mx_system_ids else ""
+        print(f"  {key}: {path.name} ({sha256(path)}{suffix})")
+
+    if mx_system_ids:
+        systems = ", ".join(sorted(set(mx_system_ids.values())))
+        print(
+            "note: Wolfram MX is system-dependent; these inputs record "
+            f"{systems}. The export manifest records the decoder system ID."
+        )
 
     if args.check_only:
         return 0

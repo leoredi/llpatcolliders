@@ -46,6 +46,11 @@ outputDir = ExpandFileName[$ScriptCommandLine[[3]]];
 If[!DirectoryQ[outputDir], CreateDirectory[outputDir, CreateIntermediateDirectories -> True]];
 
 sourceFiles = <|
+  "sensitivity_notebook" -> "3. ALP-fermion sensitivity.nb",
+  "generic_notebook" -> FileNameJoin[{"codes", "generic.nb"}],
+  "production_notebook" -> FileNameJoin[{
+    "codes", "LLP distribution", "prod-pheno-ALP-fermion.nb"
+  }],
   "experiments" -> FileNameJoin[{"codes", "experiments.nb"}],
   "coefficients" -> FileNameJoin[{
     "phenomenology", "ALP-fermion", "Production probabilities",
@@ -89,6 +94,9 @@ sourceFiles = <|
 |>;
 
 expectedHashes = <|
+  "sensitivity_notebook" -> "48883fb7ecce956bd73965709ecf44d0cae286e637067c672c1566d736072ef3",
+  "generic_notebook" -> "95cc528268e41b273182377275bf9eeb00d8cc1cb92d149ddeaa9e72967f0d4a",
+  "production_notebook" -> "e1a7b91a4e82421081d165561a1b7f23e90aefe451efca32a5a3459b1ac0d0f7",
   "experiments" -> "3e60809105f49d8c5274de9a352cd0063bac9cb8feba31188e5e49ca6e468bdf",
   "coefficients" -> "e6885569ee8d33fb5310723ba2f020bf8b4e3506c2b5ad258b5230f9aa981f43",
   "fragmentation_probability" -> "4804205cfb14c0d40322fcabb7ec65843023ee44e91f6918603bca0e8835e9eb",
@@ -112,14 +120,60 @@ KeyValueMap[
   sourcePaths
 ];
 
-auditMassGrid = N[Join[Range[0.02, 0.20, 0.01], Range[0.22, 1.00, 0.02]]];
+lowMassGrid = N[Join[
+  Range[0.22, 1.00, 0.02], Range[1.05, 2.00, 0.05]
+]];
+islandMassGrid = N[Join[
+  Range[0.22, 1.00, 0.02], Range[1.05, 3.00, 0.05],
+  Range[3.10, 4.60, 0.10], {4.65, 4.70, 4.75}
+]];
+fPiGeV = 0.093;
+bntCoefficientScaleGeV2 = fPiGeV^2/4.;
 
 coefficientsRaw = checkedImport[sourcePaths["coefficients"]];
+If[!ListQ[coefficientsRaw] ||
+   !And @@ ((ListQ[#] && Length[#] >= 2 &) /@ coefficientsRaw),
+  die["unexpected production-coefficient MX structure"]
+];
+coefficientNames = plainString /@ coefficientsRaw[[All, 1]];
+coefficientExpressions = coefficientsRaw[[All, 2]];
+coefficientIds = Table[
+  "production_coefficient_" <> IntegerString[index, 10, 3],
+  {index, Length[coefficientNames]}
+];
+coefficientData = Table[
+  Prepend[
+    bntCoefficientScaleGeV2 *
+      (numericAtMass[#, mass] & /@ coefficientExpressions),
+    mass
+  ],
+  {mass, islandMassGrid}
+];
+Export[
+  FileNameJoin[{outputDir, "production_coupling_coefficients_bnt.csv"}],
+  Prepend[coefficientData, Join[{"mass_GeV"}, coefficientIds]],
+  "CSV"
+];
 writeJSON[
-  FileNameJoin[{outputDir, "coefficients_metadata.json"}],
+  FileNameJoin[{
+    outputDir, "production_coupling_coefficients_metadata.json"
+  }],
   <|
-    "dimensions" -> Dimensions[coefficientsRaw],
-    "input_form" -> render[coefficientsRaw]
+    "coefficient_definition" ->
+      "P factor = (1/f_BNT)^2 * coefficient_bnt_GeV2",
+    "senscalc_definition" ->
+      "P factor = (Fpi*gY/(2*vh))^2 * coefficient_raw",
+    "fpi_GeV" -> fPiGeV,
+    "raw_to_bnt_coefficient_factor_GeV2" -> bntCoefficientScaleGeV2,
+    "rows" -> Table[
+      <|
+        "source_index" -> index,
+        "id" -> coefficientIds[[index]],
+        "name" -> coefficientNames[[index]],
+        "expression_input_form" -> render[coefficientExpressions[[index]]]
+      |>,
+      {index, Length[coefficientIds]}
+    ]
   |>
 ];
 
@@ -135,25 +189,39 @@ fragmentationIds = Table[
   {index, Length[fragmentationFacilities]}
 ];
 fragmentationData = Table[
-  Prepend[numericAtMass[#, mass] & /@ fragmentationExpressions, mass],
-  {mass, auditMassGrid}
+  Prepend[
+    bntCoefficientScaleGeV2 *
+      (numericAtMass[#, mass] & /@ fragmentationExpressions),
+    mass
+  ],
+  {mass, lowMassGrid}
 ];
 Export[
-  FileNameJoin[{outputDir, "fragmentation_probability.csv"}],
+  FileNameJoin[{
+    outputDir, "fragmentation_probability_coefficients_bnt.csv"
+  }],
   Prepend[fragmentationData, Join[{"mass_GeV"}, fragmentationIds]],
   "CSV"
 ];
 writeJSON[
   FileNameJoin[{outputDir, "fragmentation_probability_metadata.json"}],
-  Table[
-    <|
-      "source_index" -> index,
-      "id" -> fragmentationIds[[index]],
-      "facility" -> fragmentationFacilities[[index]],
-      "expression_input_form" -> render[fragmentationExpressions[[index]]]
-    |>,
-    {index, Length[fragmentationIds]}
-  ]
+  <|
+    "coefficient_definition" ->
+      "P_fragmentation = (1/f_BNT)^2 * coefficient_bnt_GeV2",
+    "senscalc_definition" ->
+      "P_fragmentation = (Fpi*gY/(2*vh))^2 * coefficient_raw",
+    "fpi_GeV" -> fPiGeV,
+    "raw_to_bnt_coefficient_factor_GeV2" -> bntCoefficientScaleGeV2,
+    "rows" -> Table[
+      <|
+        "source_index" -> index,
+        "id" -> fragmentationIds[[index]],
+        "facility" -> fragmentationFacilities[[index]],
+        "expression_input_form" -> render[fragmentationExpressions[[index]]]
+      |>,
+      {index, Length[fragmentationIds]}
+    ]
+  |>
 ];
 
 lightRaw = checkedImport[sourcePaths["light_meson_decays"]];
@@ -169,29 +237,41 @@ lightIds = Table[
   {index, Length[lightProcesses]}
 ];
 lightData = Table[
-  Prepend[numericAtMass[#, mass] & /@ lightBranchingExpressions, mass],
-  {mass, auditMassGrid}
+  Prepend[
+    bntCoefficientScaleGeV2 *
+      (numericAtMass[#, mass] & /@ lightBranchingExpressions),
+    mass
+  ],
+  {mass, lowMassGrid}
 ];
 Export[
-  FileNameJoin[{outputDir, "light_meson_branching_ratios.csv"}],
+  FileNameJoin[{outputDir, "meson_branching_coefficients_bnt.csv"}],
   Prepend[lightData, Join[{"mass_GeV"}, lightIds]],
   "CSV"
 ];
 writeJSON[
-  FileNameJoin[{outputDir, "light_meson_channels.json"}],
-  Table[
-    <|
-      "source_index" -> index,
-      "id" -> lightIds[[index]],
-      "process_name" -> lightProcesses[[index]],
-      "branching_expression_input_form" ->
-        render[lightBranchingExpressions[[index]]]
-    |>,
-    {index, Length[lightIds]}
-  ]
+  FileNameJoin[{outputDir, "meson_decay_channels.json"}],
+  <|
+    "coefficient_definition" ->
+      "BR(meson -> a + X) = (1/f_BNT)^2 * coefficient_bnt_GeV2",
+    "senscalc_definition" ->
+      "BR(meson -> a + X) = (Fpi*gY/(2*vh))^2 * coefficient_raw",
+    "fpi_GeV" -> fPiGeV,
+    "raw_to_bnt_coefficient_factor_GeV2" -> bntCoefficientScaleGeV2,
+    "rows" -> Table[
+      <|
+        "source_index" -> index,
+        "id" -> lightIds[[index]],
+        "process_name" -> lightProcesses[[index]],
+        "branching_expression_input_form" ->
+          render[lightBranchingExpressions[[index]]]
+      |>,
+      {index, Length[lightIds]}
+    ]
+  |>
 ];
 writeJSON[
-  FileNameJoin[{outputDir, "light_meson_matrix_elements.json"}],
+  FileNameJoin[{outputDir, "meson_decay_matrix_elements.json"}],
   Table[
     <|
       "source_index" -> index,
@@ -222,12 +302,27 @@ If[drellYan === $Failed || !MatrixQ[drellYan, NumericQ] ||
   die["unexpected Drell-Yan table structure"]
 ];
 Export[
-  FileNameJoin[{outputDir, "drell_yan_lhc.csv"}],
+  FileNameJoin[{
+    outputDir, "drell_yan_lhc_cross_section_coefficients.csv"
+  }],
   Prepend[N[drellYan], {
-    "mass_GeV", "sigma_central_pb_GeV2", "sigma_lower_pb_GeV2",
-    "sigma_upper_pb_GeV2"
+    "mass_GeV", "sigma_coefficient_central_pb",
+    "sigma_coefficient_lower_pb", "sigma_coefficient_upper_pb"
   }],
   "CSV"
+];
+writeJSON[
+  FileNameJoin[{outputDir, "drell_yan_lhc_metadata.json"}],
+  <|
+    "table_definition" ->
+      "sigma_DY = cG_eff^2 * sigma_coefficient",
+    "probability_definition" ->
+      "P_DY = sigma_DY / sigma_pNucleon",
+    "senscalc_sigma_pNucleon_pb" ->
+      "51e9 * A_target^(-0.29); see codes/generic.nb",
+    "status" ->
+      "audit-only; no transverse GRENDEL acceptance is implied"
+  |>
 ];
 
 bremsstrahlungRaw = checkedImport[sourcePaths["bremsstrahlung_lhc"]];
@@ -241,15 +336,19 @@ writeJSON[
 ];
 
 outputFiles = {
-  "coefficients_metadata.json", "fragmentation_probability.csv",
+  "production_coupling_coefficients_bnt.csv",
+  "production_coupling_coefficients_metadata.json",
+  "fragmentation_probability_coefficients_bnt.csv",
   "fragmentation_probability_metadata.json",
-  "light_meson_branching_ratios.csv", "light_meson_channels.json",
-  "light_meson_matrix_elements.json", "fragmentation_lhc_grid.csv",
-  "drell_yan_lhc.csv", "bremsstrahlung_lhc_metadata.json"
+  "meson_branching_coefficients_bnt.csv", "meson_decay_channels.json",
+  "meson_decay_matrix_elements.json", "fragmentation_lhc_grid.csv",
+  "drell_yan_lhc_cross_section_coefficients.csv",
+  "drell_yan_lhc_metadata.json", "bremsstrahlung_lhc_metadata.json"
 };
 writeJSON[
   FileNameJoin[{outputDir, "PRODUCTION_EXPORT_MANIFEST.json"}],
   <|
+    "senscalc_repository" -> "https://github.com/maksymovchynnikov/SensCalc",
     "senscalc_tag" -> "v.1.3.3",
     "senscalc_commit" -> "0bca050633aae16e148d47f21840fa07ff4b8724",
     "phenomenology" -> "arXiv:2501.04525",

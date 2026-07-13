@@ -18,7 +18,14 @@ def _write_complete_export(path):
         product.write_text(f"test product: {name}\n")
         hashes[name] = export.sha256(product)
     (path / "PRODUCTION_EXPORT_MANIFEST.json").write_text(json.dumps({
+        "senscalc_tag": export.SENSCALC_TAG,
         "senscalc_commit": export.SENSCALC_COMMIT,
+        "phenomenology": "arXiv:2501.04525",
+        "wolfram_system_id": "test-system",
+        "source_sha256": {
+            key: expected_hash
+            for key, (_, expected_hash) in export.SOURCE_FILES.items()
+        },
         "output_sha256": hashes,
     }))
 
@@ -40,7 +47,9 @@ def test_validate_export_accepts_complete_hashed_bundle(tmp_path):
 def test_validate_export_rejects_modified_product(tmp_path):
     staged = tmp_path / "staged"
     _write_complete_export(staged)
-    (staged / "fragmentation_probability.csv").write_text("modified\n")
+    (staged / "fragmentation_probability_coefficients_bnt.csv").write_text(
+        "modified\n"
+    )
     with pytest.raises(export.InputError, match="hash mismatch"):
         export.validate_export(staged)
 
@@ -50,10 +59,11 @@ def test_install_export_replaces_destination_bundle(tmp_path):
     destination = tmp_path / "published"
     _write_complete_export(staged)
     destination.mkdir()
-    (destination / "fragmentation_probability.csv").write_text("stale\n")
+    stale = destination / "fragmentation_probability_coefficients_bnt.csv"
+    stale.write_text("stale\n")
 
     export.install_export(staged, destination)
 
-    output = destination / "fragmentation_probability.csv"
+    output = destination / "fragmentation_probability_coefficients_bnt.csv"
     assert output.read_text().startswith("test product")
     assert not any(staged.iterdir())
