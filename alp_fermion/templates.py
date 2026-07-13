@@ -99,6 +99,10 @@ def generate(masses, n_templates, seed=1234, out_dir=TEMPLATE_DIR):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for m_a in masses:
+        resonance = model.excluded_light_meson_resonance(m_a)
+        if resonance is not None:
+            print(f"  m_a={m_a:.3f}: skip unsupported {resonance} resonance")
+            continue
         rng = np.random.default_rng(seed + int(round(m_a * 1000)))
         bundle = build_templates(m_a, n_templates, rng)
         label = format_mass_for_filename(m_a)

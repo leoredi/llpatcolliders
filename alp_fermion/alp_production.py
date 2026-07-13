@@ -89,6 +89,13 @@ def generate(masses, n_pool, seed=42):
     n_each = max(1, n_pool // len(channels))
 
     for m_a in masses:
+        resonance = model.excluded_light_meson_resonance(m_a)
+        if resonance is not None:
+            print(
+                f"  m_a={m_a:.3f}: skip unsupported {resonance} resonance",
+                flush=True,
+            )
+            continue
         all_w, all_E, all_px, all_py, all_pz = [], [], [], [], []
         for label, pdg, kaon in channels:
             m_B = model.M_BPLUS if label == "B+" else model.M_B0

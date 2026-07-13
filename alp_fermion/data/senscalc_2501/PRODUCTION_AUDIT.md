@@ -40,8 +40,8 @@ The relevant SensCalc source hashes are:
 | Drell-Yan / gluon fusion | Not included | GKOZ's LHC production plot places this channel roughly five to six orders below the `B` tower over the current GRENDEL island. The tabulation starts at 1.5 GeV, while the present island closes near 2.7 GeV and `B` production remains open to about 4.8 GeV. It cannot affect the published island at current precision; document the omission. |
 | Old flux-times-mixing | Deliberately excluded | ArXiv:2501.04525 identifies this approximation as chiral-rotation dependent and kinematically ambiguous. SensCalc still exposes `Old-Mixing-Pi0/Eta/EtaPr`; they must not be enabled as a shortcut. |
 | Proton bremsstrahlung | Not included | The 2501 calculation is a forward quasi-real approximation with a large theory uncertainty. For a transverse detector it requires a dedicated angular acceptance calculation. It is not justified to add a total-rate reweighting to the FONLL `B` sample. |
-| Quark fragmentation | Audit pending | The generalized mixing construction is the correct 2501 treatment below about 2 GeV. SensCalc's revised-production path exposes fragmentation and contains both probability and differential-spectrum assets. Decode them and evaluate the transverse acceptance before the final scan. |
-| Light-meson decays | Audit pending at low mass | The 2501 modes are kinematically confined to the low-mass part of the scan (at most the parent-meson mass). Their very large parent flux means they cannot be dismissed from total rates alone. Decode the branching/matrix-element asset and test with LHC meson kinematics before finalizing masses below roughly 0.8 GeV. |
+| Quark fragmentation | Omitted off pole; pole windows excluded | The decoded generalized-mixing probability and LHC four-vector grid give a central cross section of `7.36e6 pb` at 0.96 GeV, about 52% of the current B-tower value. This point lies inside the eta-prime window where both arXiv:2501.04525 and SensCalc exclude the mixing description. Outside the excluded eta/eta-prime windows, the largest tested central contribution is 0.15% of the B tower (1.0 GeV); omit it at current precision. |
+| Light-meson decays | Omitted | Exact decoded BNT branching coefficients are many orders below the rate needed to compete with the B tower. At 0.22 GeV, even the sum of eta-prime three-body modes is below `2e-9` at the reference coupling; multiplying by the entire parent yield before any transverse or decay-kinematic loss gives less than `70 pb`, versus about `1.5e7 pb` accepted from B decays. Pole-window values are not used. |
 | `B_s -> phi a` | Not added | This is absent from GKOZ, ALPINIST, SensCalc's channel set, and the cited Boiarska kaon-tower form factors. It is an optional new calculation, not a missing implementation of arXiv:2501.04525. |
 
 ## Transverse parent-spectrum check
@@ -88,11 +88,15 @@ Lorentz sampler. No branching coefficient was applied.
 The binomial component of the MC uncertainty on each listed fraction is at
 most `0.00034`; interpolation and source-model systematics are separate.
 The daughter fractions are comparable to, and at low mass slightly larger
-than, the parent fractions. These modes therefore cannot be rejected on
-transverse geometry alone. Their physical importance is controlled by the
-still-to-be-decoded 2501 branching coefficients. The three-body eta,
-eta-prime, and omega modes additionally require the pinned squared matrix
-elements before their daughter kinematics can be considered complete.
+than, the parent fractions. Geometry alone therefore does not reject these
+modes. The decoded 2501 branching coefficients do: at `m_a = 0.22 GeV`, the
+largest coefficients are the eta-prime three-body modes, whose physical
+branching ratios at `1/f = 1e-3 GeV^-1` are `7.10e-10` and `1.29e-9`.
+Even assigning them 100% transverse acceptance gives less than `70 pb` after
+multiplying by the full eta-prime yield and `72 mb` inelastic cross section,
+over five orders below the accepted B-tower cross section. The remaining
+light-parent modes are smaller. Their three-body matrix elements therefore do
+not need to enter the GRENDEL event generator at present precision.
 
 For an indicative rate threshold, the current 120,000-pool B-tower sample has
 a central (`|eta| < 0.5`) reference cross section of `15.0--15.8 microbarn`
@@ -139,6 +143,42 @@ and the decoder `$SystemID` is retained in the export manifest. A successful
 cross-platform import must be demonstrated before any generated table is
 adopted.
 
+### Fragmentation acceptance and light-meson poles
+
+The decoded fragmentation distribution is a normalized 232 by 183
+`(theta, energy)` grid at each of 34 mass nodes. Integrating the same
+log-linear interpolant used by SensCalc gives:
+
+| `m_a` [GeV] | Central fragmentation [pb] | Central B tower [pb] | Ratio |
+|---:|---:|---:|---:|
+| 0.50 | `1.12e3` | `1.52e7` | `7.4e-5` |
+| 0.60 | `6.70e2` | `1.50e7` | `4.5e-5` |
+| 0.90 | `6.01e3` | `1.43e7` | `4.2e-4` |
+| 0.96 | `7.36e6` | `1.41e7` | `0.52` |
+| 1.00 | `2.10e4` | `1.44e7` | `1.5e-3` |
+| 1.50 | `4.98e2` | `1.29e7` | `3.9e-5` |
+| 2.00 | `1.89e2` | `1.16e7` | `1.6e-5` |
+
+The apparent 0.96 GeV exception is not a physical point to retain. The paper
+states that its ALP-meson diagonalization breaks down near the light-meson
+poles, and the pinned SensCalc analysis implements
+`0.538 < m_a < 0.555 GeV` and `0.94 < m_a < 0.974 GeV` as excluded windows.
+GRENDEL now uses the same windows in `model.LIGHT_MESON_RESONANCE_WINDOWS`;
+production and template generation skip them, sensitivity writes explicit
+non-sensitive marker rows, and the plot is split rather than interpolated
+through them. The lower pion window is below the BC10 scan threshold.
+
+Reproduce the fragmentation table with:
+
+```bash
+python -m alp_fermion.production_spectra /path/to/SensCalc \
+  --production-export-dir alp_fermion/tmp/senscalc_2501_production \
+  --fragmentation-mass 0.5 --fragmentation-mass 0.6 \
+  --fragmentation-mass 0.9 --fragmentation-mass 0.96 \
+  --fragmentation-mass 1.0 --fragmentation-mass 1.5 \
+  --fragmentation-mass 2.0
+```
+
 ## SensCalc integration boundary
 
 ArXiv:2305.13383 is the SensCalc methodology paper. SensCalc is beneficial
@@ -160,8 +200,7 @@ Run the expensive production/template/sensitivity campaign once, after:
 
 1. the 2501 decay widths, branching ratios, and squared matrix elements have
    been exported and validated together;
-2. the low-mass fragmentation and light-meson production assets have been
-   decoded and their daughter-level transverse accepted yields compared with
-   the `B` tower;
+2. the excluded light-meson pole windows have explicit marker rows and are not
+   bridged by the plotting/publication path;
 3. any retained production mode has a real four-vector sample rather than a
    total-rate-only correction.

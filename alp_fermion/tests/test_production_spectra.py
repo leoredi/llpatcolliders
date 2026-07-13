@@ -61,6 +61,29 @@ def test_load_rejects_incomplete_cartesian_grid(tmp_path):
         TabulatedSpectrum.load(path)
 
 
+def test_load_fragmentation_mass_slice(tmp_path):
+    path = tmp_path / "fragmentation.csv"
+    path.write_text(
+        "mass_GeV,theta_rad,energy_GeV,density\n"
+        "0.5,0.2,1.0,1.0\n"
+        "0.5,0.2,2.0,2.0\n"
+        "0.5,1.0,1.0,3.0\n"
+        "0.5,1.0,2.0,4.0\n"
+        "0.6,0.2,1.0,5.0\n"
+        "0.6,0.2,2.0,6.0\n"
+        "0.6,1.0,1.0,7.0\n"
+        "0.6,1.0,2.0,8.0\n"
+    )
+
+    spectrum = TabulatedSpectrum.load_mass_slice(path, 0.6)
+
+    assert np.array_equal(spectrum.theta, [0.2, 1.0])
+    assert np.array_equal(spectrum.energy, [1.0, 2.0])
+    assert np.array_equal(spectrum.density, [[5.0, 6.0], [7.0, 8.0]])
+    with pytest.raises(ValueError, match="is not tabulated"):
+        TabulatedSpectrum.load_mass_slice(path, 0.7)
+
+
 def test_transverse_theta_interval_matches_pseudorapidity_definition():
     theta_min, theta_max = transverse_theta_interval(0.5)
     assert theta_min == pytest.approx(2.0 * math.atan(math.exp(-0.5)))

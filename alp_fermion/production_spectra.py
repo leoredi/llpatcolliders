@@ -144,6 +144,46 @@ class TabulatedSpectrum:
             raise ValueError(f"negative spectrum density in {path}")
         return cls(theta, energy, density, path.resolve())
 
+    @classmethod
+    def load_mass_slice(cls, path: Path, mass_gev: float) -> "TabulatedSpectrum":
+        """Load one exact mass slice from the decoded fragmentation CSV."""
+        path = Path(path)
+        rows = []
+        with path.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            expected = {"mass_GeV", "theta_rad", "energy_GeV", "density"}
+            if set(reader.fieldnames or ()) != expected:
+                raise ValueError(f"unexpected fragmentation columns in {path}")
+            for row in reader:
+                if math.isclose(
+                    float(row["mass_GeV"]), mass_gev, rel_tol=0.0, abs_tol=1e-12
+                ):
+                    rows.append((
+                        float(row["theta_rad"]),
+                        float(row["energy_GeV"]),
+                        float(row["density"]),
+                    ))
+        if not rows:
+            raise ValueError(f"mass {mass_gev:g} GeV is not tabulated in {path}")
+
+        data = np.asarray(rows, dtype=float)
+        theta = np.unique(data[:, 0])
+        energy = np.unique(data[:, 1])
+        if len(data) != len(theta) * len(energy):
+            raise ValueError(f"fragmentation slice is not a Cartesian grid: {path}")
+        theta_mesh, energy_mesh = np.meshgrid(theta, energy, indexing="ij")
+        if not (
+            np.allclose(data[:, 0], theta_mesh.ravel(), rtol=0.0, atol=1e-12)
+            and np.allclose(data[:, 1], energy_mesh.ravel(), rtol=0.0, atol=1e-12)
+        ):
+            raise ValueError(
+                f"fragmentation rows are not in theta-energy order: {path}"
+            )
+        density = data[:, 2].reshape(len(theta), len(energy))
+        if not np.all(np.isfinite(density)) or np.any(density < 0.0):
+            raise ValueError(f"invalid fragmentation density in {path}")
+        return cls(theta, energy, density, path.resolve())
+
     @property
     def theta_edges(self) -> np.ndarray:
         return _node_bin_edges(self.theta)
@@ -415,6 +455,81 @@ def summarize_parent_spectra(
     return rows
 
 
+def summarize_fragmentation(
+    export_dir: Path,
+    masses_gev: list[float],
+    eta_max: float = 0.5,
+    inv_f_ref: float = 1.0e-3,
+    inelastic_cross_section_pb: float = 72.0e9,
+) -> list[dict[str, float]]:
+    """Transverse rates for exact masses in the decoded SensCalc LHC grid.
+
+    The differential grid and scalar probability table use different mass
+    nodes upstream.  The shape must exist exactly; the scalar coefficient is
+    linearly interpolated on its denser exported grid.
+    """
+    export_dir = Path(export_dir)
+    coefficients = np.genfromtxt(
+        export_dir / "fragmentation_probability_coefficients_bnt.csv",
+        delimiter=",",
+        names=True,
+        dtype=float,
+    )
+    theta_min, theta_max = transverse_theta_interval(eta_max)
+    rows = []
+    for mass in masses_gev:
+        coefficient_masses = coefficients["mass_GeV"]
+        if mass < coefficient_masses[0] or mass > coefficient_masses[-1]:
+            raise ValueError(
+                f"mass {mass:g} GeV is outside fragmentation coefficients"
+            )
+        coefficient = float(np.interp(
+            mass, coefficient_masses, coefficients["fragmentation_002"]
+        ))
+        spectrum = TabulatedSpectrum.load_mass_slice(
+            export_dir / "fragmentation_lhc_grid.csv", mass
+        )
+        central_fraction = spectrum.polar_fraction(theta_min, theta_max)
+        probability = inv_f_ref**2 * coefficient
+        rows.append({
+            "mass_GeV": float(mass),
+            "coefficient_bnt_GeV2": coefficient,
+            "probability_per_collision_at_invf_ref": probability,
+            "shape_integral": spectrum.integral(),
+            "fraction_abs_eta_lt": central_fraction,
+            "central_cross_section_pb_at_invf_ref": (
+                probability * central_fraction * inelastic_cross_section_pb
+            ),
+        })
+    return rows
+
+
+def write_fragmentation_summary(
+    rows: list[dict[str, float]], output_path: Path, eta_max: float
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "mass_GeV",
+        "coefficient_bnt_GeV2",
+        "probability_per_collision_at_invf_ref",
+        "shape_integral",
+        f"fraction_abs_eta_lt_{eta_max:g}",
+        "central_cross_section_pb_at_invf_ref",
+    ]
+    with output_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({
+                fieldnames[0]: row["mass_GeV"],
+                fieldnames[1]: row["coefficient_bnt_GeV2"],
+                fieldnames[2]: row["probability_per_collision_at_invf_ref"],
+                fieldnames[3]: row["shape_integral"],
+                fieldnames[4]: row["fraction_abs_eta_lt"],
+                fieldnames[5]: row["central_cross_section_pb_at_invf_ref"],
+            })
+
+
 def write_summary(
     rows: list[dict[str, float | str]], output_path: Path, eta_max: float
 ) -> None:
@@ -500,6 +615,23 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=ANALYSIS_DIR / "senscalc_2501_two_body_acceptance.csv",
     )
+    parser.add_argument(
+        "--production-export-dir",
+        type=Path,
+        help="decoded production export containing the fragmentation tables",
+    )
+    parser.add_argument(
+        "--fragmentation-mass",
+        type=float,
+        action="append",
+        default=[],
+        help="exact decoded fragmentation-grid mass to audit (repeatable)",
+    )
+    parser.add_argument(
+        "--fragmentation-output",
+        type=Path,
+        default=ANALYSIS_DIR / "senscalc_2501_fragmentation_acceptance.csv",
+    )
     args = parser.parse_args(argv)
 
     from .tools.export_senscalc_2501_production import verify_sources
@@ -532,6 +664,25 @@ def main(argv: list[str] | None = None) -> int:
                 f"{row['alp_fraction_abs_eta_lt']:.6f}"
             )
         print(f"Wrote {args.two_body_output.resolve()}")
+    if args.fragmentation_mass:
+        if args.production_export_dir is None:
+            parser.error("--fragmentation-mass requires --production-export-dir")
+        fragmentation_rows = summarize_fragmentation(
+            args.production_export_dir,
+            args.fragmentation_mass,
+            args.eta_max,
+        )
+        write_fragmentation_summary(
+            fragmentation_rows, args.fragmentation_output, args.eta_max
+        )
+        for row in fragmentation_rows:
+            print(
+                f"fragmentation m_a={row['mass_GeV']:.3f}  "
+                f"|eta|<{args.eta_max:g} fraction="
+                f"{row['fraction_abs_eta_lt']:.6f}  central sigma_ref="
+                f"{row['central_cross_section_pb_at_invf_ref']:.6g} pb"
+            )
+        print(f"Wrote {args.fragmentation_output.resolve()}")
     return 0
 
 

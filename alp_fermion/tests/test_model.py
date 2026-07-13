@@ -43,6 +43,14 @@ def test_mumu_br_anchor_at_1GeV():
     assert br == pytest.approx(0.2022433833, rel=1e-8)
 
 
+def test_light_meson_resonance_windows_match_senscalc():
+    assert m.excluded_light_meson_resonance(0.54) == "eta"
+    assert m.excluded_light_meson_resonance(0.96) == "eta-prime"
+    assert m.excluded_light_meson_resonance(0.538) is None
+    assert m.excluded_light_meson_resonance(0.974) is None
+    assert m.excluded_light_meson_resonance(1.0) is None
+
+
 def test_senscalc_table_covers_scan_and_partial_widths_sum_to_total():
     assert m.table_mass_min() == pytest.approx(0.01)
     assert m.table_mass_max() == pytest.approx(10.0)

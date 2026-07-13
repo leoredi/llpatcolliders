@@ -100,6 +100,16 @@ CBS_EFF = 3.518383e-4
 # ctau ~ (1/f)^-2), so the choice is just a numerical anchor.
 INV_F_REF = 1.0e-3               # GeV^-1   (f_ref = 1 TeV)
 
+# Light-meson poles where the perturbative ALP-meson diagonalization is not
+# valid.  These are the exact ``exclRes`` windows used by the pinned SensCalc
+# ALP-fermion analysis and quoted in arXiv:2501.04525 as excluded from its
+# phenomenological interpretation.
+LIGHT_MESON_RESONANCE_WINDOWS = (
+    (0.125, 0.140, "pi0"),
+    (0.538, 0.555, "eta"),
+    (0.940, 0.974, "eta-prime"),
+)
+
 SENSCALC_2501_DATA_DIR = (
     Path(__file__).resolve().parent / "data" / "senscalc_2501"
 )
@@ -119,6 +129,15 @@ SENSCALC_VISIBLE_HADRONIC_CHANNEL_IDS = tuple(
     for index in range(5, 33)
     if f"channel_{index:03d}" not in SENSCALC_INVISIBLE_CHANNEL_IDS
 )
+
+
+def excluded_light_meson_resonance(m_a):
+    """Name the unsupported light-meson pole containing ``m_a``, if any."""
+    mass = float(m_a)
+    for lower, upper, name in LIGHT_MESON_RESONANCE_WINDOWS:
+        if lower < mass < upper:
+            return name
+    return None
 
 
 def _load_width_tables():

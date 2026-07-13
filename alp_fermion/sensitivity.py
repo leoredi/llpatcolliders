@@ -91,6 +91,21 @@ def _geometry(m_a, eta, phi, mesh, force=False, source_mtime=None):
 
 
 def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
+    resonance = model.excluded_light_meson_resonance(m_a)
+    if resonance is not None:
+        return {
+            "mass_GeV": m_a,
+            "n_events": 0,
+            "n_hits": 0,
+            "has_sensitivity": False,
+            "peak_N": np.nan,
+            "invf_min": np.nan,
+            "invf_max": np.nan,
+            "invf_min_open": False,
+            "invf_max_open": False,
+            "peak_invf": np.nan,
+            "exclusion_reason": f"unsupported {resonance} resonance",
+        }
     csv = alp_csv_path(m_a)
     if not csv.exists() or csv.stat().st_size == 0:
         return None
@@ -182,6 +197,12 @@ def run(masses, force_geom=False):
             print(f"  m_a={m_a:.3f}: skipped (no input)", flush=True)
             continue
         rows.append(r)
+        if r.get("exclusion_reason"):
+            print(
+                f"  m_a={m_a:.3f}: excluded ({r['exclusion_reason']})",
+                flush=True,
+            )
+            continue
         if r["has_sensitivity"]:
             print(f"  m_a={m_a:.3f}: ISLAND peak_N={r['peak_N']:.1f}  "
                   f"1/f in [{r['invf_min']:.2e}, {r['invf_max']:.2e}] GeV^-1"
