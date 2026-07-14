@@ -66,7 +66,25 @@ def alp_csv_path(mass, base=LLP_VECTORS_DIR):
     return path
 
 
-def generate(masses, n_pool, seed=42):
+def _atomic_write(path, weights=None, energy=None, px=None, py=None, pz=None):
+    """Write one mass output atomically so ``--resume`` never accepts a partial CSV."""
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    if weights is None:
+        write_empty_csv(temporary)
+    else:
+        write_llp_csv(temporary, weights, energy, px, py, pz)
+    temporary.replace(path)
+
+
+def generate(
+    masses,
+    n_pool,
+    seed=42,
+    resume=False,
+    cbs_amplitude_scale=1.0,
+):
+    if cbs_amplitude_scale <= 0.0:
+        raise ValueError("cbs_amplitude_scale must be positive")
     rng = np.random.default_rng(seed)
     print(f"Sampling {n_pool} FONLL bottom (pt,y,phi) shape events...", flush=True)
     pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
@@ -86,13 +104,17 @@ def generate(masses, n_pool, seed=42):
                 flush=True,
             )
             continue
+        path = alp_csv_path(m_a)
+        already_done = resume and path.exists()
         all_w, all_E, all_px, all_py, all_pz = [], [], [], [], []
         for label, pdg, kaon in channels:
             m_B = model.M_BPLUS if label == "B+" else model.M_B0
             m_K = model.kaon_mass(kaon, label)
             if m_a >= m_B - m_K:
                 continue
-            br = model.br_B_to_Ka(m_a, model.INV_F_REF, parent=label, kaon=kaon)
+            br = model.br_B_to_Ka(
+                m_a, model.INV_F_REF, parent=label, kaon=kaon
+            ) * cbs_amplitude_scale**2
             if br <= 0.0:
                 continue
             frag = FRAG_B[pdg]
@@ -103,20 +125,24 @@ def generate(masses, n_pool, seed=42):
             _, a4 = decay_2body(v["E"], v["px"], v["py"], v["pz"],
                                 m_B, m_K, m_a, rng=rng)
             w = 2.0 * sigma_b * frag * br / n_each
-            all_w.append(np.full(n_each, w))
-            all_E.append(a4[:, 0]); all_px.append(a4[:, 1])
-            all_py.append(a4[:, 2]); all_pz.append(a4[:, 3])
+            if not already_done:
+                all_w.append(np.full(n_each, w))
+                all_E.append(a4[:, 0]); all_px.append(a4[:, 1])
+                all_py.append(a4[:, 2]); all_pz.append(a4[:, 3])
 
-        path = alp_csv_path(m_a)
+        if already_done:
+            print(f"  m_a={m_a:.3f}: already checkpointed -> {path.name}", flush=True)
+            continue
         if all_w:
             weights = np.concatenate(all_w)
-            write_llp_csv(path, weights, np.concatenate(all_E),
-                          np.concatenate(all_px), np.concatenate(all_py),
-                          np.concatenate(all_pz))
+            _atomic_write(
+                path, weights, np.concatenate(all_E), np.concatenate(all_px),
+                np.concatenate(all_py), np.concatenate(all_pz),
+            )
             print(f"  m_a={m_a:.3f}: {len(weights)} a, "
                   f"sigma_ref={weights.sum():.3e} pb -> {path.name}", flush=True)
         else:
-            write_empty_csv(path)
+            _atomic_write(path)
             print(f"  m_a={m_a:.3f}: 0 (above B->K a threshold)", flush=True)
 
 
@@ -125,11 +151,23 @@ def main(argv=None):
     ap.add_argument("--mass", type=float, nargs="+", default=None)
     ap.add_argument("--n-pool", type=int, default=200_000)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--resume", action="store_true",
+        help="keep atomically completed mass CSVs while replaying the RNG stream",
+    )
+    ap.add_argument(
+        "--cbs-amplitude-scale", type=float, default=1.0,
+        help="multiply C_bs by this factor (production rates scale as its square)",
+    )
     args = ap.parse_args(argv)
     masses = args.mass if args.mass else ALP_MASS_GRID
     print(f"BC10 production: {len(masses)} masses, n_pool={args.n_pool}")
     print(f"  output -> {LLP_VECTORS_DIR}")
-    generate(masses, args.n_pool, args.seed)
+    generate(
+        masses, args.n_pool, args.seed,
+        resume=args.resume,
+        cbs_amplitude_scale=args.cbs_amplitude_scale,
+    )
     print("Done.")
     return 0
 

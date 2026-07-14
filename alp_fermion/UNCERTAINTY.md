@@ -1,0 +1,97 @@
+# BC10 theory-uncertainty band
+
+The publication campaign propagates every nuisance through a complete signal
+run. No pointwise FONLL envelope or event-level importance reweighting is used.
+
+## Inputs and combination
+
+- **FONLL scales:** independent 600,000-parent runs for the six non-central
+  coherent 7-point `(mu_R, mu_F)` grids. The contour uncertainty is their
+  asymmetric envelope around the independently regenerated central run.
+- **FONLL PDF:** independent 600,000-parent runs for all 100 NNPDF4.0 NLO
+  replicas. Their sample standard deviation in `log10(1/f)` is the PDF term.
+- **FONLL bottom mass:** independent 600,000-parent runs at `m_b = 4.5` and
+  `5.0 GeV`, around the `4.75 GeV` central grid. The maximum absolute contour
+  displacement is used.
+- **Two-gluon decay surrogate:** full-branching Pythia samples in which the
+  imported `a -> gg` branching fraction is represented by pure `u ubar`,
+  `d dbar`, or `s sbar`. The central templates use an equal `u/d/s` mixture.
+  Each alternative is propagated through its own geometry, reconstruction,
+  and sensitivity run. Widths and branching fractions remain fixed to the
+  decoded arXiv:2501.04525/SensCalc v1.3.3 tables.
+- **`C_bs` scheme:** `+/-20%` amplitude variations around the ALPINIST
+  one-loop/RG value, implemented as full production runs with rates scaled by
+  `0.8^2` and `1.2^2`, followed by independent geometry/reconstruction scans.
+
+All shifts are evaluated in `log10(1/f)`. Scale, gluon-surrogate, and `C_bs`
+sources retain separate up/down envelopes. PDF is symmetric, and bottom mass
+uses the symmetric maximum displacement. The five sources are added in
+quadrature separately above and below each central edge. If a variation removes
+an island boundary, `*_variation_missing` is set rather than treating the
+missing boundary as zero displacement.
+
+## Run layout and restart policy
+
+`run_uncertainty_campaign.py` writes heavy artifacts only below the explicit
+`--scratch-root` (or `$ALP_UNCERTAINTY_SCRATCH`) path. Each variation owns a
+run directory containing:
+
+```text
+runs/<variation>/
+  llp_4vectors/            # fresh 600k production output
+  analysis/                # geometry cache, checkpoint CSV, diagnostic plot
+  production.log
+  sensitivity.log
+  production.complete.json
+  variation.complete.json
+```
+
+Completion markers are written atomically only after a stage validates its
+expected outputs. `alp_production --resume` and `sensitivity --resume` make an
+interrupted variation restartable. The campaign can be partitioned over
+several processes with `--worker-index` and `--worker-count`; the assignment is
+stable because it follows the manifest order.
+
+Template bundles are shared through `$ALP_TEMPLATE_DIR`; run trees and source
+directories are selected through environment variables, not repository
+symlinks. Only the compact combined CSV and its exact registry/provenance
+manifest are promoted to `alp_fermion/data/published/`.
+
+## Reproduction
+
+Generate the three pure-flavor alternatives in the ROOT/Pythia environment:
+
+```bash
+PYROOT=/path/to/fairship/bin/python
+for spec in u:2234 d:3234 s:4234; do
+  q=${spec%:*}; seed=${spec#*:}
+  $PYROOT -m alp_fermion.generate_decay_templates_pythia \
+    --mass 2.20 2.25 2.30 2.35 2.40 2.45 2.50 2.55 2.60 2.65 \
+           2.70 2.75 2.80 2.85 2.90 2.95 3.00 3.10 3.20 \
+           3.30 3.40 3.50 3.60 3.70 3.80 3.90 4.00 4.10 4.20 \
+           4.30 4.40 4.50 4.60 4.65 4.70 4.75 \
+    --n-templates 20000 --seed "$seed" --gluon-surrogate "$q" --resume \
+    --out /scratch/bc10_uncertainty/templates/gg_$q
+done
+```
+
+Start one or more FONLL workers, then the three decay variants and two `C_bs`
+variants:
+
+```bash
+PY=/path/to/llpatcolliders_FONLL/bin/python
+for worker in 0 1 2; do
+  $PY -m alp_fermion.run_uncertainty_campaign \
+    --scratch-root /scratch/bc10_uncertainty \
+    --grid-dir /path/to/fonll-nnpdf40/output \
+    --worker-index "$worker" --worker-count 3 --resume
+done
+
+$PY -m alp_fermion.run_uncertainty_campaign \
+  --scratch-root /scratch/bc10_uncertainty \
+  --grid-dir /path/to/fonll-nnpdf40/output \
+  --axes decay_gg cbs --resume
+
+$PY -m alp_fermion.combine_uncertainty_band \
+  --scratch-root /scratch/bc10_uncertainty
+```

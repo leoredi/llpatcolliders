@@ -68,6 +68,14 @@ python -m pytest alp_fermion/tests -q
 Outputs go to `alp_fermion/tmp/` (gitignored): `analysis/bc10_sensitivity.csv`
 and `analysis/bc10_island.{png,pdf}`.
 
+The publication theory band is driven by
+`python -m alp_fermion.run_uncertainty_campaign`. It performs an independent
+600k production, geometry, reconstruction, and sensitivity run for every
+coherent FONLL scale/PDF/bottom-mass member, plus the explicit `a -> gg`
+surrogate and `C_bs` scheme variations. See
+[`UNCERTAINTY.md`](UNCERTAINTY.md) for the prescription and reproduction
+commands.
+
 Sensitivity rows are checkpointed after every mass. For a long or partitioned
 campaign, select a checkpoint with `--output path.csv`; rerun the same command
 with `--resume` to skip masses already present in that file.

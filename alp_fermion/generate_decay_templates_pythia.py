@@ -8,7 +8,9 @@ reconstruction determines visibility. Three-body primaries are generated in
 flat phase space and carry normalized weights from the exact exported 2501
 matrix elements. Pythia cannot hadronize an isolated two-gluon
 colour singlet through this external-decay interface, so ``a -> gg`` is
-represented by an equal u/d/s light-quark jet mixture.
+represented by an equal u/d/s light-quark jet mixture.  The ``--gluon-surrogate``
+option generates the pure-u, pure-d, and pure-s alternatives used to propagate
+this implementation choice as a decay-acceptance uncertainty.
 
 Run with the same Homebrew ROOT environment used by the HNL templates:
 
@@ -69,8 +71,11 @@ def _mass_label(mass_gev: float) -> str:
 class AlpPythiaBackend:
     """One initialized Pythia instance for an ALP mass and BR mixture."""
 
-    def __init__(self, mass_gev: float, seed: int):
+    def __init__(self, mass_gev: float, seed: int, gluon_surrogate: str = "uds"):
         self.mass_gev = float(mass_gev)
+        if gluon_surrogate not in {"uds", "u", "d", "s"}:
+            raise ValueError(f"unknown gluon surrogate {gluon_surrogate!r}")
+        self.gluon_surrogate = gluon_surrogate
         self.root = _require_root()
         self.tp8 = _tpythia8_instance(self.root)
         if self.tp8 is None:
@@ -109,7 +114,15 @@ class AlpPythiaBackend:
                 # The external-decay interface does not create a fragmentable
                 # colour topology for a bare gg pair. A light-flavour mixture
                 # retains a conservative low-mass jet multiplicity model.
-                modes = tuple((branching / 3.0, (q, -q)) for q in (1, 2, 3))
+                flavors = {
+                    "uds": (1, 2, 3),
+                    "u": (2,),
+                    "d": (1,),
+                    "s": (3,),
+                }[self.gluon_surrogate]
+                modes = tuple(
+                    (branching / len(flavors), (q, -q)) for q in flavors
+                )
             else:
                 products = (
                     (22, 22)
@@ -204,11 +217,17 @@ def generate_one(
     n_templates: int,
     out_dir: Path,
     seed: int,
+    gluon_surrogate: str = "uds",
+    resume: bool = False,
 ) -> Path | None:
     if _excluded_resonance(mass_gev):
         print(f"  m_a={mass_gev:.3f}: skip unsupported light-meson resonance")
         return None
-    backend = AlpPythiaBackend(mass_gev, seed)
+    destination = out_dir / f"templates_{_mass_label(mass_gev)}.npz"
+    if resume and destination.exists():
+        print(f"  m_a={mass_gev:.3f}: already checkpointed -> {destination.name}")
+        return destination
+    backend = AlpPythiaBackend(mass_gev, seed, gluon_surrogate)
     samples = [backend.sample() for _ in range(n_templates)]
     bundle = _flatten(samples)
     primary_channels = np.asarray(
@@ -229,23 +248,28 @@ def generate_one(
         end = offset + int(count)
         charged.append(int((np.abs(bundle["charge"][offset:end]) > 0.5).sum()))
         offset = end
-    destination = out_dir / f"templates_{_mass_label(mass_gev)}.npz"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        destination,
-        **bundle,
-        mass_GeV=np.float64(mass_gev),
-        ctau_m_u2eq1=np.float64(ctau_at_reference_coupling(mass_gev)),
-        n_templates=np.int32(n_templates),
-        seed=np.int64(seed),
-        flavor=np.array("BC10"),
-        includes_full_branching=np.bool_(True),
-        primary_channel=primary_channels,
-        primary_energy_1_GeV=primary_energy_1,
-        primary_energy_3_GeV=primary_energy_3,
-        matrix_element_weight=matrix_element_weight,
-        decay_backend=np.array("Pythia8-2501-weighted-three-body-gg-to-uds"),
-    )
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    with temporary.open("wb") as stream:
+        np.savez_compressed(
+            stream,
+            **bundle,
+            mass_GeV=np.float64(mass_gev),
+            ctau_m_u2eq1=np.float64(ctau_at_reference_coupling(mass_gev)),
+            n_templates=np.int32(n_templates),
+            seed=np.int64(seed),
+            flavor=np.array("BC10"),
+            includes_full_branching=np.bool_(True),
+            primary_channel=primary_channels,
+            primary_energy_1_GeV=primary_energy_1,
+            primary_energy_3_GeV=primary_energy_3,
+            matrix_element_weight=matrix_element_weight,
+            decay_backend=np.array(
+                f"Pythia8-2501-weighted-three-body-gg-to-{gluon_surrogate}"
+            ),
+            gluon_surrogate=np.array(gluon_surrogate),
+        )
+    temporary.replace(destination)
     print(
         f"  m_a={mass_gev:.3f}: stable-track visible="
         f"{np.mean(np.asarray(charged) >= 2):.2%} -> {destination.name}",
@@ -260,6 +284,16 @@ def main(argv=None) -> int:
     parser.add_argument("--n-templates", type=int, default=20_000)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--out", type=Path, default=TEMPLATE_DIR)
+    parser.add_argument(
+        "--gluon-surrogate",
+        choices=("uds", "u", "d", "s"),
+        default="uds",
+        help="partonic proxy used for a -> gg (default: equal u/d/s mixture)",
+    )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="keep atomically completed per-mass template bundles",
+    )
     args = parser.parse_args(argv)
     masses = args.mass if args.mass is not None else ALP_MASS_GRID
     for mass in masses:
@@ -268,6 +302,8 @@ def main(argv=None) -> int:
             args.n_templates,
             args.out,
             args.seed + int(round(mass * 1000)),
+            args.gluon_surrogate,
+            args.resume,
         )
     return 0
 

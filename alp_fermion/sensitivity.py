@@ -67,6 +67,14 @@ LOG_U2_MIN, LOG_U2_MAX, N_U2 = -16.0, 0.0, 300
 DECAY_SAMPLES = 60
 
 
+def _write_checkpoint(rows, path):
+    """Atomically persist completed mass rows for interruption-safe resume."""
+    frame = pd.DataFrame(rows).sort_values("mass_GeV")
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    frame.to_csv(temporary, index=False)
+    temporary.replace(path)
+
+
 def _invf_from_u2(u2):
     """Map the scan variable back to the physical coupling 1/f [GeV^-1]."""
     return model.INV_F_REF * np.sqrt(u2)
@@ -121,7 +129,8 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
     if n_hits == 0:
         return {**base, "has_sensitivity": False, "peak_N": 0.0,
                 "invf_min": np.nan, "invf_max": np.nan,
-                "invf_min_open": False, "invf_max_open": False, "peak_invf": np.nan}
+                "invf_min_open": False, "invf_max_open": False,
+                "peak_invf": np.nan}
 
     tmpl_path = TEMPLATE_DIR / f"templates_{format_mass_for_filename(m_a)}.npz"
     if not tmpl_path.exists():
@@ -225,7 +234,7 @@ def run(masses, force_geom=False, output=None, resume=False):
         rows.append(r)
         # A mass point is expensive. Persist every completed row so an external
         # ROOT/Pythia or Python failure never discards the rest of the campaign.
-        pd.DataFrame(rows).sort_values("mass_GeV").to_csv(out, index=False)
+        _write_checkpoint(rows, out)
         if r.get("exclusion_reason"):
             print(
                 f"  m_a={m_a:.3f}: excluded ({r['exclusion_reason']})",
@@ -244,7 +253,7 @@ def run(masses, force_geom=False, output=None, resume=False):
         print("No results.")
         return None
     df = pd.DataFrame(rows).sort_values("mass_GeV")
-    df.to_csv(out, index=False)
+    _write_checkpoint(rows, out)
     print(f"\nSaved {out}")
     n_sens = int(df["has_sensitivity"].sum())
     print(f"Sensitivity at {n_sens}/{len(df)} masses; "
