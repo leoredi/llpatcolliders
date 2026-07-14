@@ -216,6 +216,35 @@ def test_collector_records_separate_consistent_structural_code_state():
         campaign_collector._campaign_code_states(registry)
 
 
+def test_published_registry_paths_are_portable(tmp_path):
+    scratch = tmp_path / "scratch"
+    artifact = scratch / "runs" / "central" / "variation.complete.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("{}")
+    variation = {
+        "axis": "central",
+        "grid_path": str(tmp_path / "fonll" / "central.dat"),
+        "template_variant": "central",
+    }
+    template = {
+        "path": str(tmp_path / "templates" / "central"),
+        "tree_sha256": "template-hash",
+    }
+
+    payload = {
+        "artifact": campaign_collector._scratch_relative(artifact, scratch),
+        "variation": campaign_collector._portable_variation(variation),
+        "template": campaign_collector._portable_template(template, variation),
+    }
+
+    assert payload["artifact"] == "runs/central/variation.complete.json"
+    assert payload["variation"]["grid_file"] == "central.dat"
+    assert payload["template"]["path_role"] == "central"
+    assert str(tmp_path) not in json.dumps(payload)
+    with pytest.raises(ValueError, match="outside scratch root"):
+        campaign_collector._scratch_relative(tmp_path / "elsewhere", scratch)
+
+
 def test_exact_campaign_builds_single_source_variation_envelope():
     xc = -8.0
     variations = [("central", "central", 0.0)]
@@ -269,6 +298,27 @@ def test_exact_campaign_builds_single_source_variation_envelope():
     assert np.isclose(band["invf_min_repeat_max_abs_dex"], 0.12)
     assert bool(band["invf_min_repeat_not_subdominant"])
     assert not bool(band["invf_min_variation_missing"])
+
+    reference = pd.DataFrame([{
+        "mass_GeV": 1.0,
+        "has_sensitivity": True,
+        "invf_min": 2.0 * 10.0**xc,
+        "invf_max": 2.0 * 10.0**(xc + 1.0),
+        "invf_min_open": False,
+        "invf_max_open": False,
+    }])
+    rebased = combine_band(pd.DataFrame(rows), reference).iloc[0]
+    assert rebased["invf_min_campaign_central"] == pytest.approx(10.0**xc)
+    assert rebased["invf_min_central"] == pytest.approx(2.0 * 10.0**xc)
+    assert rebased["invf_min_envelope_lo"] == pytest.approx(
+        2.0 * 10.0**(xc - 0.10)
+    )
+    assert rebased["invf_min_envelope_hi"] == pytest.approx(
+        2.0 * 10.0**(xc + 0.10)
+    )
+    assert rebased["invf_min_decay_structure"] == pytest.approx(10.0**(xc - 0.50))
+    assert rebased["envelope_reference"] == "canonical_high_statistics_central"
+    assert bool(rebased["canonical_rebase_topology_compatible"])
 
 
 def test_missing_variation_boundary_is_explicit():

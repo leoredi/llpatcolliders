@@ -201,7 +201,7 @@ def _log_boundary(raw, mass, variation, boundary):
     return float(np.log10(value)), opened, sensitive
 
 
-def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
+def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
     """Build a pointwise one-source-at-a-time variation envelope.
 
     Named alternatives use their extrema. The NNPDF ensemble uses its 16th and
@@ -410,6 +410,105 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
         record["decay_structure_topology_differs"] = bool(topology_differs)
         rows.append(record)
     return pd.DataFrame(rows).sort_values("mass_GeV")
+
+
+def combine_band(
+    raw: pd.DataFrame,
+    central_curve: pd.DataFrame | str | Path | None = None,
+) -> pd.DataFrame:
+    """Build the campaign band and optionally rebase it to a canonical contour.
+
+    The expensive campaign measures one-source shifts relative to its independent
+    nominal sample.  A higher-statistics central contour can therefore replace
+    the nominal values without discarding those shifts.  Only the pointwise halo
+    components are rebased; the exact 2310 structural contour and same-physics
+    numerical repeats retain their independently simulated absolute values.
+    """
+    band = _combine_campaign_band(raw)
+    if central_curve is None:
+        return band
+
+    reference = (
+        pd.read_csv(central_curve)
+        if isinstance(central_curve, (str, Path))
+        else central_curve.copy()
+    )
+    if reference["mass_GeV"].duplicated().any():
+        raise ValueError("canonical central curve contains duplicate masses")
+    reference = reference.set_index("mass_GeV")
+    missing = sorted(set(band["mass_GeV"]) - set(reference.index.astype(float)))
+    if missing:
+        raise ValueError(
+            f"canonical central curve is missing {len(missing)} campaign masses; "
+            f"first: {missing[0]}"
+        )
+
+    halo_value_columns = {
+        boundary: [
+            *(f"{boundary}_{source}_{edge}"
+              for source in ("scale", "mb", "gg", "cbs")
+              for edge in ("lo", "hi")),
+            f"{boundary}_pdf_p16",
+            f"{boundary}_pdf_p84",
+            f"{boundary}_envelope_lo",
+            f"{boundary}_envelope_hi",
+        ]
+        for boundary in BOUNDARIES
+    }
+
+    for index, campaign in band.iterrows():
+        mass = float(campaign["mass_GeV"])
+        canonical = reference.loc[mass]
+        campaign_sensitive = bool(campaign["has_sensitivity"])
+        canonical_sensitive = bool(canonical.get("has_sensitivity", False))
+        band.at[index, "campaign_has_sensitivity"] = campaign_sensitive
+        band.at[index, "has_sensitivity"] = canonical_sensitive
+        band.at[index, "any_variation_sensitive"] = bool(
+            campaign["any_variation_sensitive"] or canonical_sensitive
+        )
+        band.at[index, "any_halo_variation_sensitive"] = bool(
+            campaign["any_halo_variation_sensitive"] or canonical_sensitive
+        )
+
+        topology_compatible = campaign_sensitive == canonical_sensitive
+        for boundary in BOUNDARIES:
+            campaign_value = float(campaign[f"{boundary}_central"])
+            canonical_value = float(canonical.get(boundary, np.nan))
+            campaign_open = bool(campaign[f"{boundary}_open"])
+            canonical_open = bool(canonical.get(f"{boundary}_open", False))
+            band.at[index, f"{boundary}_campaign_central"] = campaign_value
+            band.at[index, f"{boundary}_central"] = canonical_value
+            band.at[index, f"{boundary}_open"] = canonical_open
+
+            compatible = (
+                campaign_sensitive
+                and canonical_sensitive
+                and np.isfinite(campaign_value)
+                and campaign_value > 0.0
+                and np.isfinite(canonical_value)
+                and canonical_value > 0.0
+                and campaign_open == canonical_open
+                and not campaign_open
+            )
+            topology_compatible = topology_compatible and (
+                compatible or not campaign_sensitive
+            )
+            if compatible:
+                factor = canonical_value / campaign_value
+                for column in halo_value_columns[boundary]:
+                    value = band.at[index, column]
+                    if np.isfinite(value):
+                        band.at[index, column] = float(value) * factor
+            else:
+                for column in halo_value_columns[boundary]:
+                    band.at[index, column] = np.nan
+                band.at[index, f"{boundary}_variation_missing"] = True
+        band.at[index, "canonical_rebase_topology_compatible"] = bool(
+            topology_compatible
+        )
+
+    band["envelope_reference"] = "canonical_high_statistics_central"
+    return band
 
 
 def structural_alternative_table(raw: pd.DataFrame) -> pd.DataFrame:

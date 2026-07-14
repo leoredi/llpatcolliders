@@ -28,7 +28,30 @@ def _atomic_csv(frame: pd.DataFrame, path: Path):
     temporary.replace(path)
 
 
+def _scratch_relative(path: Path, scratch: Path) -> str:
+    """Return a portable campaign path and reject paths outside the scratch tree."""
+    try:
+        return str(Path(path).resolve().relative_to(scratch.resolve()))
+    except ValueError as exc:
+        raise ValueError(f"campaign artifact is outside scratch root: {path}") from exc
+
+
+def _portable_variation(variation: dict) -> dict:
+    result = dict(variation)
+    grid_path = result.pop("grid_path", None)
+    if grid_path is not None:
+        result["grid_file"] = Path(grid_path).name
+    return result
+
+
+def _portable_template(template: dict, variation: dict) -> dict:
+    result = {key: value for key, value in template.items() if key != "path"}
+    result["path_role"] = variation["template_variant"]
+    return result
+
+
 def load_completed(scratch: Path, variations) -> tuple[pd.DataFrame, list[dict]]:
+    scratch = Path(scratch).expanduser().resolve()
     rows = []
     registry = []
     for variation in variations:
@@ -45,20 +68,29 @@ def load_completed(scratch: Path, variations) -> tuple[pd.DataFrame, list[dict]]
         if actual_sha != marker["sensitivity_csv_sha256"]:
             raise ValueError(f"sensitivity checksum mismatch: {sensitivity}")
         frame = pd.read_csv(sensitivity)
-        if len(frame) != 99:
-            raise ValueError(f"{sensitivity} has {len(frame)} rows, expected 99")
+        expected_rows = int(
+            marker.get("mass_grid", {}).get(
+                "n_masses", marker.get("n_sensitivity_rows", 99)
+            )
+        )
+        if len(frame) != expected_rows:
+            raise ValueError(
+                f"{sensitivity} has {len(frame)} rows, expected {expected_rows}"
+            )
         frame.insert(0, "axis", variation["axis"])
         frame.insert(0, "variation", variation["name"])
         rows.append(frame)
         registry.append({
-            "variation": variation,
-            "completion_marker": str(marker_path),
+            "variation": _portable_variation(variation),
+            "completion_marker": _scratch_relative(marker_path, scratch),
             "completion_marker_sha256": sha256_file(marker_path),
-            "sensitivity_csv": str(sensitivity),
+            "sensitivity_csv": _scratch_relative(sensitivity, scratch),
             "sensitivity_csv_sha256": actual_sha,
-            "production_marker": marker["production_marker"],
+            "production_marker": _scratch_relative(
+                Path(marker["production_marker"]), scratch
+            ),
             "production_marker_sha256": marker["production_marker_sha256"],
-            "template": marker["template"],
+            "template": _portable_template(marker["template"], variation),
             "code": marker["code"],
             "storage_state": marker.get("storage_state", "full"),
             "pre_compaction_hashes": {
@@ -159,6 +191,15 @@ def main(argv=None):
     )
     parser.add_argument("--grid-dir", type=Path, required=True)
     parser.add_argument(
+        "--central-curve",
+        type=Path,
+        default=(
+            Path(__file__).resolve().parent
+            / "data" / "published" / "bc10_sensitivity.csv"
+        ),
+        help="canonical high-statistics central contour used to rebase campaign shifts",
+    )
+    parser.add_argument(
         "--out-dir", type=Path,
         default=(
             Path(__file__).resolve().parent / "data" / "published" / "bundle"
@@ -168,7 +209,7 @@ def main(argv=None):
     scratch = Path(args.scratch_root).expanduser().resolve()
     variations = all_variations(args.grid_dir)
     raw, registry = load_completed(scratch, variations)
-    band = combine_band(raw)
+    band = combine_band(raw, args.central_curve)
     structural = structural_alternative_table(raw)
     out_dir = Path(args.out_dir)
     raw_path = out_dir / "bc10_uncertainty_variations.csv"
@@ -215,6 +256,11 @@ def main(argv=None):
                 "the 2310 structural contour and numerical repeats are excluded; "
                 "no quadrature combination and no confidence-interval claim"
             ),
+            "rebase": (
+                "one-source log10(1/f) shifts are applied to the canonical "
+                "high-statistics central contour; the 2310 structural contour and "
+                "numerical repeats retain their directly simulated absolute values"
+            ),
             "label": "single_source_variation_envelope",
         },
         "variation_counts": {
@@ -224,6 +270,12 @@ def main(argv=None):
             "pointwise_halo_total": 114,
             "physics_plus_structural_total": 115,
             "total_with_controls": 117,
+        },
+        "inputs": {
+            args.central_curve.name: {
+                "role": "canonical high-statistics central contour",
+                "sha256": sha256_file(args.central_curve),
+            },
         },
         "outputs": {
             raw_path.name: sha256_file(raw_path),
