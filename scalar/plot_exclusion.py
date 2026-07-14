@@ -20,6 +20,7 @@ import pandas as pd
 
 PLOT_S2T_MIN, PLOT_S2T_MAX = 1e-12, 1e-4
 PLOT_M_MIN, PLOT_M_MAX = 0.1, 5.0
+SIGNAL_THRESHOLD = 3.0
 
 _COMP_DIR = Path(__file__).resolve().parent / "data" / "competitors"
 
@@ -42,6 +43,53 @@ def _segments(df):
         yield seg.sort_values("mass_GeV")
 
 
+def _with_threshold_tips(df):
+    """Insert zero-width contour tips at finite ``peak_N == 3`` crossings."""
+    rows = df.sort_values("mass_GeV").to_dict("records")
+    if len(rows) < 2:
+        return df.sort_values("mass_GeV")
+    output = []
+    for left, right in zip(rows[:-1], rows[1:]):
+        output.append(left)
+        if bool(left["has_sensitivity"]) == bool(right["has_sensitivity"]):
+            continue
+        if not all(
+            np.isfinite(float(row[field])) and float(row[field]) > 0
+            for row in (left, right)
+            for field in ("peak_N", "peak_u2")
+        ):
+            continue
+        log_left = np.log10(float(left["peak_N"]))
+        log_right = np.log10(float(right["peak_N"]))
+        if log_left == log_right:
+            continue
+        frac = (
+            np.log10(SIGNAL_THRESHOLD) - log_left
+        ) / (log_right - log_left)
+        if not 0.0 < frac < 1.0:
+            continue
+        coupling = 10.0 ** (
+            np.log10(float(left["peak_u2"]))
+            + frac
+            * (np.log10(float(right["peak_u2"])) - np.log10(float(left["peak_u2"])))
+        )
+        tip = dict(left if bool(left["has_sensitivity"]) else right)
+        tip.update({
+            "mass_GeV": float(left["mass_GeV"])
+            + frac * (float(right["mass_GeV"]) - float(left["mass_GeV"])),
+            "u2_min": coupling,
+            "u2_max": coupling,
+            "u2_min_open": False,
+            "u2_max_open": False,
+            "peak_N": SIGNAL_THRESHOLD,
+            "peak_u2": coupling,
+            "has_sensitivity": True,
+        })
+        output.append(tip)
+    output.append(rows[-1])
+    return pd.DataFrame(output, columns=df.columns).sort_values("mass_GeV")
+
+
 def _overlay_competitors(ax):
     drawn, missing = [], []
     for name, (label, color, style) in _COMPETITORS.items():
@@ -61,7 +109,7 @@ def _overlay_competitors(ax):
 
 def plot_island(island_csv, output_dir=None, basename="bc4_exclusion"):
     island_csv = Path(island_csv)
-    df = pd.read_csv(island_csv).sort_values("mass_GeV")
+    df = _with_threshold_tips(pd.read_csv(island_csv))
     output_dir = Path(output_dir) if output_dir else island_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
