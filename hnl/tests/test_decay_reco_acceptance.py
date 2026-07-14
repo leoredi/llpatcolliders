@@ -161,3 +161,23 @@ def test_scan_u2_has_interior_lifetime_peak():
     assert 0 < ipk < len(u2) - 1          # peak is interior (lifetime frontier)
     assert N[0] < N[ipk] and N[-1] < N[ipk]
     assert N[ipk] > 0
+
+
+def test_signal_diagnostics_separate_sample_and_event_ess():
+    d = np.array([[1.0, 1.5], [1.0, 1.5]])
+    passed = np.array([[True, True], [True, True]])
+    diagnostics = dra.signal_contribution_diagnostics(
+        d,
+        passed,
+        path_len=np.array([1.0, 1.0]),
+        weight=np.array([100.0, 1.0]),
+        beta_gamma=np.array([1.0, 1.0]),
+        ctau_u2_1=1.0,
+        u2=1.0,
+    )
+
+    assert diagnostics["sample_ess"] > diagnostics["event_ess"]
+    assert diagnostics["event_ess"] < 1.1
+    assert diagnostics["max_event_fraction"] > 0.99
+    assert diagnostics["nonzero_samples"] == 4
+    assert diagnostics["nonzero_events"] == 2

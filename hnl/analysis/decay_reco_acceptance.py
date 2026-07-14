@@ -334,3 +334,61 @@ def scan_u2(d, passed, path_len, weight, beta_gamma, ctau_u2_1,
         P_ev = (per_sample * density * pw).sum(axis=1)  # (n_ev,)
         N_grid[iu] = L_int_pb * u2 * float(weight @ P_ev)
     return u2_grid, N_grid
+
+
+def signal_contribution_diagnostics(
+    d,
+    passed,
+    path_len,
+    weight,
+    beta_gamma,
+    ctau_u2_1,
+    u2,
+    sample_w=None,
+):
+    """Effective statistics of the weighted signal estimator at one coupling.
+
+    Overall luminosity and coupling factors cancel from the ESS. Both the
+    individual decay-sample ESS and the event-aggregated ESS are reported; the
+    latter detects rare production events that cannot be cured by increasing
+    the number of decay samples per detector-entering LLP.
+    """
+    d = np.asarray(d, dtype=float)
+    passed = np.asarray(passed, dtype=float)
+    if d.ndim != 2 or passed.shape != d.shape:
+        raise ValueError("d and passed must be equal-shape 2D arrays")
+    n_events, n_samples = d.shape
+    path_len = np.asarray(path_len, dtype=float)
+    weight = np.asarray(weight, dtype=float)
+    beta_gamma = np.asarray(beta_gamma, dtype=float)
+    if any(len(array) != n_events for array in (path_len, weight, beta_gamma)):
+        raise ValueError("event arrays must match the first dimension of d")
+    if not np.isfinite(u2) or u2 <= 0.0:
+        raise ValueError("u2 must be finite and positive")
+
+    lifetime = beta_gamma * ctau_u2_1 / u2
+    contribution = (
+        weight[:, None]
+        * (path_len / n_samples)[:, None]
+        * np.exp(-d / lifetime[:, None])
+        / lifetime[:, None]
+        * passed
+    )
+    if sample_w is not None:
+        contribution *= np.asarray(sample_w, dtype=float)
+    total = float(contribution.sum())
+    event_contribution = contribution.sum(axis=1)
+
+    def ess(values):
+        denominator = float(np.square(values).sum())
+        return total**2 / denominator if denominator > 0.0 else 0.0
+
+    return {
+        "sample_ess": ess(contribution),
+        "event_ess": ess(event_contribution),
+        "max_event_fraction": (
+            float(event_contribution.max()) / total if total > 0.0 else np.nan
+        ),
+        "nonzero_samples": int(np.count_nonzero(contribution)),
+        "nonzero_events": int(np.count_nonzero(event_contribution)),
+    }
