@@ -1,9 +1,7 @@
-"""E14-16 -- the GRENDEL HNL money plot + A2 metadata + machine-readable bundle.
+"""GRENDEL HNL publication plot plus an optional model-variation audit figure.
 
-Built ON `analysis.plot_exclusion` (the proper renderer: excluded-region fill,
-open-edge markers, ylim to the scan ceiling 1e-1, segment-aware drawing, and the
-FONLL theory ribbon via `band_csv`). On top of that base it layers the two extra
-in-scope boundary bands:
+The default is the central projection used in the paper. ``--with-bands`` writes
+a separately named diagnostic figure with the following one-source variations:
   * lower edge: FONLL production band (orange, from `combine_band.py`)  AND
                 Bc normalization band (teal, `bc_nuisance.py`);
   * upper edge: decay-model width band (blue, `decay_model_band.py`).
@@ -13,7 +11,8 @@ hypothesis metadata (`run_metadata.json`), and a bundle dir with the tables.
 Production + HNL->SM decay physics only; reconstruction / detector / background /
 statistics are the partner layer, idealized (background-free, N>=3).
 
-  python -m analysis.plot_money --run central_newgrids_20260623 --out-dir tmp/runs/v1_bundle
+  python -m analysis.plot_money --out-dir tmp/runs/v1_bundle
+  python -m analysis.plot_money --with-bands --out-dir tmp/runs/v1_bundle
 """
 from __future__ import annotations
 
@@ -82,14 +81,18 @@ def _ribbon(ax, m, lo, hi, color, label, zorder):
 
 
 
-def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
-    in_band = ["HNL total-width/lifetime duality (decay-model band)",
-               "direct Bc normalization (B4)"]
-    if have_fonll:
+def _metadata(run, l_int_fb, p_cut_mev, have_fonll, with_bands):
+    in_band = []
+    if with_bands:
+        in_band.extend([
+            "HNL total-width/lifetime duality (decay-model band)",
+            "direct Bc normalization (B4)",
+        ])
+    if with_bands and have_fonll:
         in_band.insert(0, "FONLL heavy-flavor production (scale/PDF/m_Q)")
     lim = ["production form factors (B3)", "absolute visible-BR normalization (B5)",
            "kaon flux/transport (B7)", "FONLL alpha_s (sub-dominant)"]
-    if not have_fonll:
+    if with_bands and not have_fonll:
         lim.insert(0, "FONLL scale/PDF/m_Q band -- PENDING, not on this figure")
     return {
         "result": "GRENDEL HNL sensitivity projection (single-flavor)",
@@ -104,6 +107,9 @@ def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
                   "idealized_partner_handoff": ["reconstruction", "detector response",
                                                 "background", "statistics"]},
         "central_run": run,
+        "figure_mode": (
+            "central_with_named_model_variations" if with_bands else "central_only"
+        ),
         "band_sources": {"fonll_lower_edge": "hnl_band.csv (run_variation_band + combine_band)"
                                              if have_fonll else "PENDING",
                          "decay_model_upper_edge": "decay_model_band_combined.csv (width_band delta(m))",
@@ -140,14 +146,25 @@ def main(argv=None) -> int:
     ap.add_argument("--l-int-fb", type=float, default=3000.0)
     ap.add_argument("--p-cut-mev", type=int, default=100)
     ap.add_argument("--out-dir", default=str(RUNS / "v1_bundle"))
+    ap.add_argument(
+        "--with-bands",
+        action="store_true",
+        help="write a separate audit figure with named model-variation ribbons",
+    )
     a = ap.parse_args(argv)
 
     central_csv = a.central_csv or str(PUBLISHED / "grendel_hnl_sensitivity.csv")
     cen = pd.read_csv(central_csv)
-    have_fonll = Path(a.fonll_band).exists()
+    have_fonll = a.with_bands and Path(a.fonll_band).exists()
     fonll = pd.read_csv(a.fonll_band) if have_fonll else None
-    dm = pd.read_csv(a.decay_band) if Path(a.decay_band).exists() else None
-    bc = pd.read_csv(a.bc_band) if Path(a.bc_band).exists() else None
+    dm = (
+        pd.read_csv(a.decay_band)
+        if a.with_bands and Path(a.decay_band).exists() else None
+    )
+    bc = (
+        pd.read_csv(a.bc_band)
+        if a.with_bands and Path(a.bc_band).exists() else None
+    )
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5.6), sharey=True)
     for ax, fl in zip(axes, ["Ue", "Umu", "Utau"]):
@@ -200,23 +217,32 @@ def main(argv=None) -> int:
         ax.legend(fontsize=7, loc="lower right")
     fig.suptitle("GRENDEL HNL sensitivity projection (single-flavor, Majorana, 14 TeV, "
                  f"{a.l_int_fb:.0f} fb$^{{-1}}$, P>{a.p_cut_mev} MeV)", y=1.0, fontsize=13)
-    fig.text(0.5, 0.005, _provenance(have_fonll), ha="center", va="bottom",
-             fontsize=6.2, style="italic", wrap=True)
-    plt.tight_layout(rect=[0, 0.075, 1, 0.97])
+    if a.with_bands:
+        fig.text(0.5, 0.005, _provenance(have_fonll), ha="center", va="bottom",
+                 fontsize=6.2, style="italic", wrap=True)
+    plt.tight_layout(rect=[0, 0.075 if a.with_bands else 0.01, 1, 0.97])
 
     out = Path(a.out_dir); out.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out / "money_plot.png", dpi=130, bbox_inches="tight")
-    fig.savefig(out / "money_plot.pdf", bbox_inches="tight")
-    (out / "run_metadata.json").write_text(json.dumps(
-        _metadata(a.run, a.l_int_fb, a.p_cut_mev, have_fonll), indent=2))
+    stem = "money_plot_with_bands" if a.with_bands else "money_plot"
+    fig.savefig(out / f"{stem}.png", dpi=130, bbox_inches="tight")
+    fig.savefig(out / f"{stem}.pdf", bbox_inches="tight")
+    (out / f"run_metadata{'_with_bands' if a.with_bands else ''}.json").write_text(
+        json.dumps(
+            _metadata(a.run, a.l_int_fb, a.p_cut_mev, have_fonll, a.with_bands),
+            indent=2,
+        )
+    )
     for src, name in [(central_csv, "hnl_sensitivity_central.csv"),
                       (a.fonll_band, "hnl_band_fonll.csv"),
                       (a.decay_band, "decay_model_band.csv"),
                       (a.bc_band, "bc_nuisance_band.csv"),
                       (a.breakdown, "channel_breakdown_u2min.csv")]:
-        if Path(src).exists():
+        if Path(src).exists() and (name == "hnl_sensitivity_central.csv" or a.with_bands):
             shutil.copy2(src, out / name)
-    print(f"money plot + bundle -> {out}/  (FONLL band: {'YES' if have_fonll else 'PENDING'})")
+    print(
+        f"{stem} + bundle -> {out}/  "
+        f"(model-variation ribbons: {'YES' if a.with_bands else 'NO'})"
+    )
     return 0
 
 
