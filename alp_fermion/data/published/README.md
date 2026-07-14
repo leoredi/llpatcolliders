@@ -26,11 +26,24 @@ cp alp_fermion/tmp/analysis/bc10_sensitivity.csv \
 
 ## Current contents
 
-- Source: the 2026-07-13 600k-production campaign with 20,000
-  full-branching Pythia templates per supported mass and the decoded
-  arXiv:2501.04525 SensCalc v1.3.3 decay tables and exact three-body
-  matrix-element reweighting.
-- Reach: the deepest lower edge is `1/f = 1.23e-8 GeV^-1` at 1.5 GeV; the
-  final high-mass component closes at approximately 3.292 GeV.
-- Topology: pole gaps and insensitive rows are retained in the CSV so plotters
-  can preserve the five disconnected sensitive runs recorded in the manifest.
+- Source: the 2026-07-15 high-statistics campaign with a 1.2M-event high-pT
+  importance production pool, 20,000 full-branching Pythia templates per
+  supported mass, 60 decay/reconstruction samples per entering ALP, and the
+  decoded arXiv:2501.04525 SensCalc v1.3.3 widths, exclusive branching ratios,
+  and exact three-body matrix elements.
+- Reach: the deepest lower edge is `1/f = 1.2073e-8 GeV^-1` at 1.23 GeV; the
+  final high-mass component closes at approximately 3.293 GeV.
+- Topology: unsupported pole rows and finite insensitive rows are retained, so
+  plotters preserve the five disconnected runs `0.22-0.52`, `0.56-0.94`,
+  `0.98-1.25`, `1.40-1.41`, and `1.47-3.28` GeV.
+
+## Numerical convergence
+
+The high-pT proposal corrects the sparse survival tail that affected the old
+upper edge. Independent six-million-event nominal-pool controls at 0.48, 0.50,
+0.58, and 0.76 GeV agree with the published upper edge within 2.0%. Controls at
+1.25, 1.40, 3.20, and 3.30 GeV independently reproduce the resonance pockets
+and the final closure state. In the sensitive heavy-pseudoscalar region the
+minimum peak event effective sample size is 1459; the narrow components are
+therefore decay-model structure, not a small-simulation artifact. Exact values
+and the production configuration are pinned in `MANIFEST.json`.
