@@ -57,7 +57,7 @@ from analysis._engine import (  # noqa: E402
     compute_geometry, _eta_phi_to_directions_batch, _get_mesh,
 )
 from analysis.decay_reco_acceptance import build_event_mc, scan_u2  # noqa: E402
-from analysis.exclusion import find_exclusion_band  # noqa: E402
+from analysis.exclusion import find_exclusion_band_refined  # noqa: E402
 
 
 # u2 = (1/f / 1/f_ref)^2 scan.  Wide enough to bracket the closed island for the
@@ -201,7 +201,17 @@ def process_mass(
         data["beta_gamma"][idx], ctau_ref, L_INT_PB, u2_grid,
         sample_w=sample_weights)
 
-    band = find_exclusion_band(u2_grid, N_grid, N_THRESHOLD)
+    def evaluate(u2):
+        _, signal = scan_u2(
+            d, passed, exit_d[idx] - entry_d[idx], weights,
+            data["beta_gamma"][idx], ctau_ref, L_INT_PB,
+            np.asarray([u2]), sample_w=sample_weights,
+        )
+        return signal[0]
+
+    band = find_exclusion_band_refined(
+        u2_grid, N_grid, evaluate, N_THRESHOLD,
+    )
     # Map the u2 island edges -> physical coupling 1/f.  Lower-u2 edge = too
     # little production -> SMALLER 1/f; higher-u2 edge = decays too early ->
     # LARGER 1/f.  So invf_min comes from u2_min, invf_max from u2_max.
@@ -224,6 +234,7 @@ def run(
     output=None,
     resume=False,
     reco_seed_offset=0,
+    decay_samples=DECAY_SAMPLES,
 ):
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
     out = Path(output) if output is not None else ANALYSIS_DIR / "bc10_sensitivity.csv"
@@ -242,6 +253,7 @@ def run(
         r = process_mass(
             m_a,
             mesh,
+            decay_samples=decay_samples,
             force_geom=force_geom,
             reco_seed_offset=reco_seed_offset,
         )
@@ -291,7 +303,13 @@ def main(argv=None):
         "--reco-seed-offset", type=int, default=0,
         help="add this offset to every deterministic per-mass reconstruction seed",
     )
+    ap.add_argument(
+        "--decay-samples", type=int, default=DECAY_SAMPLES,
+        help="decay/reconstruction samples per detector-entering ALP",
+    )
     args = ap.parse_args(argv)
+    if args.decay_samples <= 0:
+        ap.error("--decay-samples must be positive")
 
     out = args.output or ANALYSIS_DIR / "bc10_sensitivity.csv"
     if not args.plot_only:
@@ -301,7 +319,8 @@ def main(argv=None):
               f"N_thr = {N_THRESHOLD}")
         out = run(masses, force_geom=args.force_geometry,
                   output=out, resume=args.resume,
-                  reco_seed_offset=args.reco_seed_offset)
+                  reco_seed_offset=args.reco_seed_offset,
+                  decay_samples=args.decay_samples)
         if out is None:
             return 1
     if out and Path(out).exists():
