@@ -27,6 +27,7 @@ by the production (linear) and lifetime (exponential) factors.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -73,10 +74,16 @@ _MODE_DAUGHTER = {
     "gg":     (model.M_PIPLUS,   1.0),
 }
 
+# Bound the daughter-to-wall ray-cast allocation. Decays are independent; this
+# changes only RNG ordering relative to the old monolithic call, not the MC
+# estimator. It prevents a full 600k-event x 100-sample campaign from exhausting
+# memory during a single reconstruction call.
+EVENT_RECO_CHUNK = 50_000
 
-def _mode_table(m_S):
+
+def _mode_table(m_S, width_scheme="winkler"):
     """Return (modes, probs, daughter_mass, charged_frac) arrays for ``m_S``."""
-    br = model.branching_ratios(m_S)
+    br = model.branching_ratios(m_S, scheme=width_scheme)
     modes = [k for k in br if br[k] > 0.0]
     probs = np.array([br[k] for k in modes], float)
     probs = probs / probs.sum()
@@ -87,7 +94,8 @@ def _mode_table(m_S):
 
 def build_event_mc(p4, direction, entry_d, exit_d, m_S, n_samples, rng,
                    sigma_hit=HIT_RESOLUTION, sigma_t=SIGMA_T_DEFAULT,
-                   origin=CMS_ORIGIN):
+                   origin=CMS_ORIGIN, width_scheme="winkler",
+                   reco_chunk=EVENT_RECO_CHUNK):
     """Sample decay vertices + scalar decays and reconstruct, for a batch of S
     four-vectors.  Returns ``(d, passed)`` each ``(n_events, n_samples)``; both
     are ``sin^2 theta``-independent (``scan_u2`` applies the coupling)."""
@@ -103,7 +111,8 @@ def build_event_mc(p4, direction, entry_d, exit_d, m_S, n_samples, rng,
     parent = np.repeat(p4, n_samples, axis=0)            # (M, 4) S four-vectors
 
     # Sample a decay mode per decay, then its charged/neutral sub-mode.
-    modes, probs, m_d_tab, chf_tab = _mode_table(m_S)
+    modes, probs, m_d_tab, chf_tab = _mode_table(
+        m_S, width_scheme=width_scheme)
     mi = rng.choice(len(modes), size=M, p=probs)
     m_d = m_d_tab[mi]
     charged = rng.random(M) < chf_tab[mi]
@@ -141,10 +150,14 @@ def build_event_mc(p4, direction, entry_d, exit_d, m_S, n_samples, rng,
         ok = (p_soft > P_CUT)
         if ok.any():
             sub = idx[ok]
-            mc = reconstruct_decays(vtx[sub], dir1[ok], dir2[ok], p_soft[ok],
-                                    sigma_hit, sigma_t, rng,
-                                    beta1=b1[ok], beta2=b2[ok])
-            passed[sub] = selection_mask(mc)
+            ok_idx = np.where(ok)[0]
+            for start in range(0, len(sub), reco_chunk):
+                stop = min(start + reco_chunk, len(sub))
+                take = ok_idx[start:stop]
+                mc = reconstruct_decays(
+                    vtx[sub[start:stop]], dir1[take], dir2[take], p_soft[take],
+                    sigma_hit, sigma_t, rng, beta1=b1[take], beta2=b2[take])
+                passed[sub[start:stop]] = selection_mask(mc)
 
     return d, passed.reshape(n_ev, n_samples)
 
@@ -161,12 +174,17 @@ def _geometry(csv_path, m_S, eta, phi, mesh):
     hits, entry_d, exit_d = compute_geometry(
         eta, phi, mesh, CMS_ORIGIN, batch_label=f"[mS={m_S:.3f}]")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(cache, hits=hits, entry_d=entry_d, exit_d=exit_d)
+    tmp = cache.with_suffix(cache.suffix + ".tmp")
+    with open(tmp, "wb") as fh:
+        np.savez_compressed(fh, hits=hits, entry_d=entry_d, exit_d=exit_d)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, cache)
     return hits, entry_d, exit_d
 
 
 def process_mass_point(m_S, mesh, csv_path, sin2theta_grid, n_samples=100,
-                       rng=None):
+                       rng=None, width_scheme="winkler"):
     """Acceptance + coupling scan for one ``m_S``.  Returns its exclusion band
     dict (``find_exclusion_band``) augmented with mass / bookkeeping, or None if
     production is closed / no events hit."""
@@ -195,8 +213,9 @@ def process_mass_point(m_S, mesh, csv_path, sin2theta_grid, n_samples=100,
     p4 = np.column_stack([energy, p_mag[:, None] * direction])
 
     d, passed = build_event_mc(p4, direction, entry_d[idx], exit_d[idx],
-                               m_S, n_samples, rng)
-    ctau1 = model.ctau_sin2theta1(m_S)
+                               m_S, n_samples, rng,
+                               width_scheme=width_scheme)
+    ctau1 = model.ctau_sin2theta1(m_S, scheme=width_scheme)
     _, N_grid = scan_u2(
         d, passed, exit_d[idx] - entry_d[idx], data["weight"][idx],
         data["beta_gamma"][idx], ctau1, L_INT_PB, sin2theta_grid)

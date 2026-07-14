@@ -10,21 +10,16 @@ STATUS.md)._
 is in place and `model.partial_widths` reads it below the 2 GeV spectator
 hand-over. The paragraphs below record the original request for provenance.
 
-`scalar/model.py` computes the `pi pi` / `K K` widths in `2 m_pi < m_S < 2 GeV`
-with **leading-order ChPT form factors** (Winkler arXiv:1809.01876 eq. 21 → 15;
-the "Voloshin" curve of his Fig. 1/3). This is a real ChPT calculation but
-misses the `f0(980)` enhancement near 1 GeV and overestimates `K K` toward
-2 GeV, and it leaves a ~factor-few seam where it hands over to the perturbative
-spectator model at 2 GeV.
+The former leading-order ChPT calculation is retained as the
+`chpt_spectator` alternate width scheme. It is propagated against the central
+Winkler table as a decay-model envelope by `scalar/uncertainty_band.py`.
 
-**Requested:** Winkler's *dispersive* result — the table behind his Fig. 4:
+The supplied table represents Winkler's *dispersive* result behind Fig. 4:
 `m_S` (0.2–2.0 GeV) vs the per-channel widths `Gamma_xx / sin^2 theta`
 (`pi pi`, `K K`, total hadronic), or equivalently the dispersive form factors of
 his Fig. 2 (`Gamma_pi, Delta_pi, Theta_pi, Gamma_K, Delta_K, Theta_K`). Source:
 arXiv:1809.01876 supplementary / the unified FIP calculation arXiv:2311.00507
-(which ships the BC4 width tables). Drop in as
-`scalar/data/winkler_widths.csv` and switch `model.partial_widths` to read it
-below 2 GeV.
+(which ships the BC4 width tables).
 
 ## 2. BC4 competitor / existing-bound curves — DROPPED (by decision)
 

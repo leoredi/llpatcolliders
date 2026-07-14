@@ -33,6 +33,30 @@ def test_branching_ratios_normalize():
         assert sum(br.values()) == pytest.approx(1.0, abs=1e-9)
 
 
+def test_alternate_width_scheme_is_normalized_and_finite():
+    for m_S in (0.25, 0.5, 0.975, 2.0, 2.5, 4.0):
+        widths = model.partial_widths(m_S, scheme="chpt_spectator")
+        assert set(widths) == set(model.partial_widths(m_S))
+        assert all(np.isfinite(v) and v >= 0.0 for v in widths.values())
+        assert sum(model.branching_ratios(
+            m_S, scheme="chpt_spectator").values()) == pytest.approx(1.0)
+
+
+def test_alternate_width_scheme_resolves_f0_model_difference():
+    # The LO-ChPT alternate deliberately lacks the f0(980) enhancement that is
+    # present in the central matched/dispersive result.
+    central = model.total_width(0.975)
+    alternate = model.total_width(0.975, scheme="chpt_spectator")
+    assert central > 5.0 * alternate
+    assert model.ctau_sin2theta1(0.975) < model.ctau_sin2theta1(
+        0.975, scheme="chpt_spectator")
+
+
+def test_unknown_width_scheme_is_rejected():
+    with pytest.raises(ValueError, match="unknown width scheme"):
+        model.partial_widths(1.0, scheme="not-a-model")
+
+
 def test_low_mass_is_dimuon():
     # Just above 2 m_mu and below 2 m_pi: essentially pure mu mu (ee is tiny).
     br = model.branching_ratios(0.25)

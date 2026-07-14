@@ -30,14 +30,10 @@ References
   BC4 parameter plane is ``(m_S, sin^2 theta)`` with production by ``B -> K S``,
   the same Winkler decay rates, and ``N_signal >= 3`` background-free limits.
 
-CAVEAT (single documented approximation): in the resonant region
-``2 m_pi < m_S < 2 GeV`` the true pi pi / K K widths require Winkler's dispersive
-form factors (his Fig. 2/4), which are an external digitized data product (see
-``scalar/EXTERNAL_INPUTS_NEEDED.md``).  Until that table is supplied this module
-uses the leading-order ChPT form factors (Winkler eq. 21 -> eq. 15), i.e. the
-"Voloshin" curve of his Fig. 1/3.  It is a genuine ChPT calculation (no invented
-numbers) but misses the f0(980) enhancement near 1 GeV; above 2 GeV the
-perturbative spectator model (eqs. 30-32) is exact.
+The central result uses digitized matched/dispersive widths from Winkler Fig. 4.
+The analytic leading-order ChPT form factors below 2 GeV and perturbative
+spectator widths above 2 GeV remain available as the ``chpt_spectator`` scheme;
+their contour displacement defines the BC4 decay-model uncertainty envelope.
 """
 from __future__ import annotations
 
@@ -238,7 +234,10 @@ def width_gg(m_S):
 _LEPTONS = {"ee": M_ELECTRON, "mumu": M_MUON, "tautau": M_TAU}
 
 
-def partial_widths(m_S):
+WIDTH_SCHEMES = ("winkler", "chpt_spectator")
+
+
+def partial_widths(m_S, scheme="winkler"):
     """All partial widths at ``s_theta^2 = 1`` for a scalar mass ``m_S`` (GeV).
 
     Returns an ordered dict {channel: Gamma_GeV}.  Below ``M_SPECTATOR`` the
@@ -247,10 +246,25 @@ def partial_widths(m_S):
     (his Fig. 4); it is not perfectly continuous at 2 GeV (the eq.-33 constant is
     tuned to soften the seam) but is smooth at the ~order-unity level.
     """
+    if scheme not in WIDTH_SCHEMES:
+        raise ValueError(f"unknown width scheme {scheme!r}; expected one of {WIDTH_SCHEMES}")
     m_S = float(m_S)
     w = {}
     for name, m_l in _LEPTONS.items():
         w[name] = float(width_leptonic(m_S, m_l))
+    if scheme == "chpt_spectator":
+        if m_S < M_SPECTATOR:
+            w["pipi"] = float(width_pipi(m_S))
+            w["KK"] = float(width_KK(m_S))
+            w["4pi"] = float(width_4pi(m_S))
+            w["ss"] = w["cc"] = w["gg"] = 0.0
+        else:
+            w["pipi"] = w["KK"] = w["4pi"] = 0.0
+            w["ss"] = float(width_qq(m_S, M_S_QUARK, M_KPLUS))
+            w["cc"] = float(width_qq(m_S, M_C_QUARK, M_D0))
+            w["gg"] = float(width_gg(m_S))
+        return w
+
     # Hadronic sector from Winkler's matched dispersive result (Fig. 4),
     # switching at M_SPECTATOR = 2 GeV (his matching point) between the
     # dispersive pi pi / K K / 4 pi channels below and the perturbative
@@ -271,33 +285,33 @@ def partial_widths(m_S):
     return w
 
 
-def total_width(m_S):
+def total_width(m_S, scheme="winkler"):
     """Total width at ``s_theta^2 = 1`` (GeV).  Gamma_tot(theta) = s_theta^2 * this."""
-    return sum(partial_widths(m_S).values())
+    return sum(partial_widths(m_S, scheme=scheme).values())
 
 
-def branching_ratios(m_S):
+def branching_ratios(m_S, scheme="winkler"):
     """Visible branching ratios at ``m_S`` (theta-independent: ratios of widths)."""
-    w = partial_widths(m_S)
+    w = partial_widths(m_S, scheme=scheme)
     tot = sum(w.values())
     if tot <= 0:
         return {k: 0.0 for k in w}
     return {k: v / tot for k, v in w.items()}
 
 
-def ctau(m_S, sin2theta):
+def ctau(m_S, sin2theta, scheme="winkler"):
     """Proper decay length c*tau in metres for mass ``m_S`` and coupling
     ``sin^2 theta``.  c*tau = hbar c / (sin^2 theta * Gamma_hat(m_S))."""
-    g = total_width(m_S) * float(sin2theta)
+    g = total_width(m_S, scheme=scheme) * float(sin2theta)
     if g <= 0:
         return np.inf
     return HBAR_C / g
 
 
-def ctau_sin2theta1(m_S):
+def ctau_sin2theta1(m_S, scheme="winkler"):
     """c*tau (m) at ``sin^2 theta = 1`` -- the lifetime the scan divides by the
     coupling, the BC4 analogue of HNLCalc's ``ctau(U^2 = 1)``."""
-    g = total_width(m_S)
+    g = total_width(m_S, scheme=scheme)
     return HBAR_C / g if g > 0 else np.inf
 
 

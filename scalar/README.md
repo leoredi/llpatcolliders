@@ -34,6 +34,7 @@ we evaluate the actual `c*tau`, production yield and visible BR, require
 | `production.py` | FONLL bottom pool → `B+/B0 -> K S` two-body → weighted `S` four-vector CSVs. |
 | `acceptance.py` | scalar decay engine → best-two-track → shared reco → PR#13 `selection_mask`; folds the visible BR in via the decay outcome (neutral sub-modes fail). |
 | `run_sensitivity.py` | driver: produce → coupling scan (`N_signal >= 3`) → island CSV → plot. |
+| `uncertainty_band.py` | independent full-statistics propagation of 109 coherent FONLL bottom grids plus a fresh Winkler-vs-LO-ChPT/spectator decay-model run. |
 | `plot_exclusion.py` | `(m_S, sin^2 theta)` island + competitor overlays. |
 | `tests/test_model.py` | model-layer validation against published numbers. |
 
@@ -47,6 +48,13 @@ we evaluate the actual `c*tau`, production yield and visible BR, require
 python -m scalar.run_sensitivity --masses 0.5 1.0 2.0 --n-pool 100000
 python -m scalar.run_sensitivity --plot-only
 
+# full theory-uncertainty campaign (resumable per mass)
+BC4_UNCERTAINTY_DIR=/Volumes/GRENDEL/extra_space/bc4_uncertainty \
+  python -m scalar.uncertainty_band run --workers 2 \
+    --grid-dir /path/to/fonll-local/output
+python -m scalar.uncertainty_band status
+python -m scalar.uncertainty_band collect
+
 python -m pytest scalar/tests
 ```
 
@@ -55,6 +63,12 @@ Outputs land in `scalar/tmp/` (4-vector CSVs, `bc4_island.csv`,
 quotes) is committed at `scalar/data/published/` (CSV + MANIFEST; see its
 README for the re-publish procedure).
 
+The uncertainty campaign atomically checkpoints four-vectors, geometry, and
+one result per variation/mass under `BC4_UNCERTAINTY_DIR` (by default the
+external `/Volumes/GRENDEL/extra_space/bc4_uncertainty` scratch tree). Its
+stable compact publication products are in `scalar/data/published/bundle/`;
+the bundle README records the combination prescription and limitations.
+
 ## References & caveats
 
 * Winkler, Phys. Rev. D 99 (2019) 015018, arXiv:1809.01876 — scalar widths
@@ -62,11 +76,10 @@ README for the re-publish procedure).
 * Unified FIP calculation arXiv:2311.00507 (used by the 2025 PBC report
   arXiv:2505.00947) — BC4 conventions and competitor curves.
 
-Caveats, and the external data products needed to remove them, are in
-`EXTERNAL_INPUTS_NEEDED.md`: (1) the `pi pi`/`K K` widths in 0.5-2 GeV use
-LO-ChPT form factors (missing the `f0(980)` enhancement and leaving a seam at
-the 2 GeV spectator hand-over); (2) production uses the **exclusive** `B -> K S`
-rate (the inclusive `B -> X_s S` is ~10x larger at low mass — a conservative
-choice that would extend the mass reach); (3) competitor curves must be digitized
-into `data/competitors/`. The `K -> pi S` production channel is implemented in
-the model layer but kaon-flux sampling at the LHC IP is deferred.
+The central decay model uses the supplied Winkler dispersive table, and
+production uses the inclusive `B -> X_s S` rate. `EXTERNAL_INPUTS_NEEDED.md`
+records the resolved input history and the deliberately omitted local
+competitor overlays. The analytic LO-ChPT/spectator calculation is retained as
+an alternate-model uncertainty, not used for the central curve. The `K -> pi S`
+production channel is implemented in the model layer but kaon-flux sampling at
+the LHC IP is deferred.
