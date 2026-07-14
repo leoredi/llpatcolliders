@@ -26,6 +26,67 @@ PLOT_INVF_MIN = 1e-9      # GeV^-1
 PLOT_INVF_MAX = 1e-2
 PLOT_MA_MIN = 0.2
 PLOT_MA_MAX = 5.0
+SIGNAL_THRESHOLD = 3.0
+
+
+def _insert_threshold_tips(df):
+    """Close finite sensitivity transitions where the two roots merge."""
+    rows = df.sort_values("mass_GeV").to_dict("records")
+    if len(rows) < 2:
+        return df.sort_values("mass_GeV")
+
+    output = []
+    for left, right in zip(rows[:-1], rows[1:]):
+        output.append(left)
+        if bool(left["has_sensitivity"]) == bool(right["has_sensitivity"]):
+            continue
+        if not (
+            np.isfinite(left["peak_N"])
+            and np.isfinite(right["peak_N"])
+            and np.isfinite(left["peak_invf"])
+            and np.isfinite(right["peak_invf"])
+            and float(left["peak_N"]) > 0.0
+            and float(right["peak_N"]) > 0.0
+            and float(left["peak_invf"]) > 0.0
+            and float(right["peak_invf"]) > 0.0
+            and float(right["mass_GeV"]) > float(left["mass_GeV"])
+        ):
+            continue
+
+        log_left = np.log10(float(left["peak_N"]))
+        log_right = np.log10(float(right["peak_N"]))
+        if log_left == log_right:
+            continue
+        fraction = float(
+            (np.log10(SIGNAL_THRESHOLD) - log_left) / (log_right - log_left)
+        )
+        if not 0.0 < fraction < 1.0:
+            continue
+
+        tip_invf = 10.0 ** (
+            np.log10(float(left["peak_invf"]))
+            + fraction
+            * (
+                np.log10(float(right["peak_invf"]))
+                - np.log10(float(left["peak_invf"]))
+            )
+        )
+        tip = (left if bool(left["has_sensitivity"]) else right).copy()
+        tip["mass_GeV"] = float(
+            left["mass_GeV"]
+            + fraction * (float(right["mass_GeV"]) - float(left["mass_GeV"]))
+        )
+        tip["invf_min"] = tip_invf
+        tip["invf_max"] = tip_invf
+        tip["invf_min_open"] = False
+        tip["invf_max_open"] = False
+        tip["peak_N"] = SIGNAL_THRESHOLD
+        tip["peak_invf"] = tip_invf
+        tip["has_sensitivity"] = True
+        output.append(tip)
+
+    output.append(rows[-1])
+    return pd.DataFrame(output).sort_values("mass_GeV")
 
 
 def _segments(df):
@@ -40,6 +101,7 @@ def plot_island(results_csv, output_dir=None, basename="bc10_island",
                 overlay_csv=None):
     results_csv = Path(results_csv)
     df = pd.read_csv(results_csv).sort_values("mass_GeV")
+    df = _insert_threshold_tips(df)
     output_dir = Path(output_dir) if output_dir else results_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
