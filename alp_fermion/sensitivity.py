@@ -98,7 +98,13 @@ def _geometry(m_a, eta, phi, mesh, force=False, source_mtime=None):
     return hits, entry_d, exit_d
 
 
-def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
+def process_mass(
+    m_a,
+    mesh,
+    decay_samples=DECAY_SAMPLES,
+    force_geom=False,
+    reco_seed_offset=0,
+):
     resonance = model.excluded_light_meson_resonance(m_a)
     if resonance is not None:
         return {
@@ -158,7 +164,7 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
     # single-call path used for the original 29-point scan.
     EVENT_CHUNK = 256
     d_parts, passed_parts, template_index_parts = [], [], []
-    base_seed = int(round(m_a * 1000)) * 100_000
+    base_seed = int(round(m_a * 1000)) * 100_000 + int(reco_seed_offset)
     for ci, cs in enumerate(range(0, len(idx), EVENT_CHUNK)):
         ce = min(cs + EVENT_CHUNK, len(idx))
         rng_c = np.random.default_rng(base_seed + ci)
@@ -212,7 +218,13 @@ def process_mass(m_a, mesh, decay_samples=DECAY_SAMPLES, force_geom=False):
     return res
 
 
-def run(masses, force_geom=False, output=None, resume=False):
+def run(
+    masses,
+    force_geom=False,
+    output=None,
+    resume=False,
+    reco_seed_offset=0,
+):
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
     out = Path(output) if output is not None else ANALYSIS_DIR / "bc10_sensitivity.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -227,7 +239,12 @@ def run(masses, force_geom=False, output=None, resume=False):
         if float(m_a) in completed:
             print(f"  m_a={m_a:.3f}: already checkpointed", flush=True)
             continue
-        r = process_mass(m_a, mesh, force_geom=force_geom)
+        r = process_mass(
+            m_a,
+            mesh,
+            force_geom=force_geom,
+            reco_seed_offset=reco_seed_offset,
+        )
         if r is None:
             print(f"  m_a={m_a:.3f}: skipped (no input)", flush=True)
             continue
@@ -270,6 +287,10 @@ def main(argv=None):
                     help="checkpoint/output CSV (default: tmp analysis CSV)")
     ap.add_argument("--resume", action="store_true",
                     help="keep rows already present in --output and skip them")
+    ap.add_argument(
+        "--reco-seed-offset", type=int, default=0,
+        help="add this offset to every deterministic per-mass reconstruction seed",
+    )
     args = ap.parse_args(argv)
 
     out = args.output or ANALYSIS_DIR / "bc10_sensitivity.csv"
@@ -279,7 +300,8 @@ def main(argv=None):
         print(f"  masses: {len(masses)}  L = {L_INT_PB/1e3:.0f} fb^-1  "
               f"N_thr = {N_THRESHOLD}")
         out = run(masses, force_geom=args.force_geometry,
-                  output=out, resume=args.resume)
+                  output=out, resume=args.resume,
+                  reco_seed_offset=args.reco_seed_offset)
         if out is None:
             return 1
     if out and Path(out).exists():

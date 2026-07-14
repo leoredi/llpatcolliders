@@ -7,7 +7,11 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from uncertainty_campaign import combine_band, stable_seed  # noqa: E402
+from uncertainty_campaign import (  # noqa: E402
+    combine_band,
+    numerical_control_variations,
+    stable_seed,
+)
 from run_uncertainty_campaign import _compact_completed_run  # noqa: E402
 
 
@@ -15,6 +19,21 @@ def test_stable_seed_is_reproducible_and_member_specific():
     assert stable_seed("pdf_0001") == stable_seed("pdf_0001")
     assert stable_seed("pdf_0001") != stable_seed("pdf_0002")
     assert 0 < stable_seed("scale_muR2_muF2") < 2**32
+
+
+def test_numerical_controls_have_independent_production_and_reco_seeds(tmp_path):
+    grid = tmp_path / "central.dat"
+    grid.write_text("grid")
+    controls = numerical_control_variations(grid)
+    assert [item["name"] for item in controls] == [
+        "central_repeat_1", "central_repeat_2"
+    ]
+    assert len({item["production_seed"] for item in controls}) == 2
+    assert len({item["reco_seed_offset"] for item in controls}) == 2
+    assert all(
+        item["production_seed"] != item["reco_seed_offset"]
+        for item in controls
+    )
 
 
 def test_exact_campaign_builds_single_source_variation_envelope():
@@ -36,6 +55,8 @@ def test_exact_campaign_builds_single_source_variation_envelope():
         ("gg_s", "decay_gg", 0.04),
         ("cbs_down", "cbs", -0.05),
         ("cbs_up", "cbs", 0.05),
+        ("central_repeat_1", "numerical_control", 0.12),
+        ("central_repeat_2", "numerical_control", -0.007),
     ]
     rows = []
     for name, axis, shift in variations:
@@ -62,6 +83,8 @@ def test_exact_campaign_builds_single_source_variation_envelope():
     assert band["invf_min_envelope_lo_source"] == "scale"
     assert band["invf_min_envelope_hi_source"] == "scale"
     assert band["invf_min_pdf_n_finite"] == 100
+    assert np.isclose(band["invf_min_repeat_max_abs_dex"], 0.12)
+    assert bool(band["invf_min_repeat_not_subdominant"])
     assert not bool(band["invf_min_variation_missing"])
 
 
@@ -73,6 +96,10 @@ def test_missing_variation_boundary_is_explicit():
     definitions += [("mb_dn", "mb"), ("mb_up", "mb")]
     definitions += [(f"gg_{q}", "decay_gg") for q in "uds"]
     definitions += [("cbs_down", "cbs"), ("cbs_up", "cbs")]
+    definitions += [
+        ("central_repeat_1", "numerical_control"),
+        ("central_repeat_2", "numerical_control"),
+    ]
     for name, axis in definitions:
         sensitive = name != "scale_0"
         rows.append({
@@ -99,6 +126,10 @@ def test_central_insensitive_row_remains_an_explicit_gap():
     definitions += [("mb_dn", "mb"), ("mb_up", "mb")]
     definitions += [(f"gg_{q}", "decay_gg") for q in "uds"]
     definitions += [("cbs_down", "cbs"), ("cbs_up", "cbs")]
+    definitions += [
+        ("central_repeat_1", "numerical_control"),
+        ("central_repeat_2", "numerical_control"),
+    ]
     for name, axis in definitions:
         sensitive = name == "scale_0"
         rows.append({

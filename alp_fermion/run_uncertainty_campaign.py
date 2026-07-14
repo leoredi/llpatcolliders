@@ -398,7 +398,9 @@ def run_variation(variation, args, git_state, template_cache):
     output = analysis_dir / "bc10_sensitivity.csv"
     command = [
         sys.executable, "-u", "-m", "alp_fermion.sensitivity",
-        "--output", str(output), "--resume",
+        "--output", str(output),
+        "--reco-seed-offset", str(variation["reco_seed_offset"]),
+        "--resume",
     ]
     started = time.time()
     sensitivity_log = run_dir / "sensitivity.log"
@@ -432,6 +434,7 @@ def run_variation(variation, args, git_state, template_cache):
             "grid_path": variation["grid_path"],
             "grid_sha256": variation["grid_sha256"],
             "production_seed": variation["production_seed"],
+            "reco_seed_offset": variation["reco_seed_offset"],
             "n_pool": args.n_pool,
             "cbs_amplitude_scale": variation["cbs_amplitude_scale"],
             "production_mode": variation["production_mode"],
@@ -473,7 +476,8 @@ def main(argv=None):
         required=os.environ.get("ALP_GLUON_TEMPLATE_ROOT") is None,
     )
     parser.add_argument(
-        "--axes", nargs="+", choices=("fonll", "decay_gg", "cbs"),
+        "--axes", nargs="+",
+        choices=("fonll", "decay_gg", "cbs", "numerical_control"),
         default=["fonll"],
     )
     parser.add_argument("--only", nargs="+", default=None)

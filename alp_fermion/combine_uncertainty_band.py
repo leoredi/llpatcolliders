@@ -91,6 +91,26 @@ def _headline(band: pd.DataFrame) -> dict:
                 key = f"max_{boundary}_envelope_{direction}_dex"
                 output[key] = float(values.loc[index])
                 output[f"{key}_mass_GeV"] = float(band.loc[index, "mass_GeV"])
+        repeat = sensitive[f"{boundary}_repeat_max_abs_dex"].replace(
+            [np.inf, -np.inf], np.nan
+        )
+        flagged = sensitive[sensitive[f"{boundary}_repeat_not_subdominant"]]
+        output[f"{boundary}_numerical_control"] = {
+            "median_repeat_max_abs_dex": (
+                float(repeat.median()) if repeat.notna().any() else None
+            ),
+            "max_repeat_abs_dex": (
+                float(repeat.max()) if repeat.notna().any() else None
+            ),
+            "max_repeat_abs_dex_mass_GeV": (
+                float(sensitive.loc[repeat.idxmax(), "mass_GeV"])
+                if repeat.notna().any() else None
+            ),
+            "n_not_subdominant": len(flagged),
+            "not_subdominant_masses_GeV": [
+                float(value) for value in flagged["mass_GeV"]
+            ],
+        }
     return output
 
 
@@ -139,6 +159,11 @@ def main(argv=None):
                 "+/-20% C_bs amplitude, implemented as fresh production rates "
                 "scaled by 0.8^2 and 1.2^2 and full downstream runs"
             ),
+            "numerical_control": (
+                "two same-physics central repeats with fresh independent 600000-"
+                "parent production pools and distinct reconstruction RNG offsets; "
+                "excluded from the physical envelope and compared pointwise with it"
+            ),
             "combination": (
                 "pointwise one-source-at-a-time intervals in log10(1/f): named "
                 "scale/mb/gg/C_bs extrema and NNPDF replica 16th/84th "
@@ -149,7 +174,8 @@ def main(argv=None):
         },
         "variation_counts": {
             "central": 1, "scale": 6, "pdf": 100, "mb": 2,
-            "decay_gg": 3, "cbs": 2, "total": 114,
+            "decay_gg": 3, "cbs": 2, "numerical_control": 2,
+            "physics_total": 114, "total_with_controls": 116,
         },
         "outputs": {
             raw_path.name: sha256_file(raw_path),

@@ -25,6 +25,9 @@ interval or a simultaneous-combination coverage statement.
 - **`C_bs` scheme:** `+/-20%` amplitude variations around the ALPINIST
   one-loop/RG value, implemented as full production runs with rates scaled by
   `0.8^2` and `1.2^2`, followed by independent geometry/reconstruction scans.
+- **Numerical controls:** two same-physics central repeats use fresh 600,000-
+  parent pools and distinct production and reconstruction RNG seeds with the
+  central templates. They are excluded from the theory/model envelope.
 
 All shifts are evaluated in `log10(1/f)`. Scale, bottom-mass,
 gluon-surrogate, and `C_bs` sources retain their named extrema around the
@@ -34,6 +37,9 @@ source varied at a time. Sources are not added in quadrature. If a variation
 removes an island boundary, `*_variation_missing` is set rather than treating
 the missing boundary as zero displacement. Central insensitive rows and the
 excluded eta/eta-prime pole rows remain explicit gaps with NaN envelope edges.
+The compact table also reports each repeat boundary, median/max absolute repeat
+shift in dex and fractional coupling, and flags a mass when the largest repeat
+shift is at least as large as the physical envelope shift on that boundary.
 
 ## Run layout and restart policy
 
@@ -91,7 +97,7 @@ done
 ```
 
 Start one or more FONLL workers, then the three decay variants and two `C_bs`
-variants:
+variants. Run the numerical controls after the physics variations:
 
 ```bash
 PY=/path/to/llpatcolliders_FONLL/bin/python
@@ -106,6 +112,11 @@ $PY -m alp_fermion.run_uncertainty_campaign \
   --scratch-root /scratch/bc10_uncertainty \
   --grid-dir /path/to/fonll-nnpdf40/output \
   --axes decay_gg cbs --resume
+
+$PY -m alp_fermion.run_uncertainty_campaign \
+  --scratch-root /scratch/bc10_uncertainty \
+  --grid-dir /path/to/fonll-nnpdf40/output \
+  --axes numerical_control --resume
 
 $PY -m alp_fermion.combine_uncertainty_band \
   --scratch-root /scratch/bc10_uncertainty

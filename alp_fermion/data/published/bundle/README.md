@@ -5,13 +5,15 @@ sensitivity curve in `../bc10_sensitivity.csv`.
 
 Files:
 
-- `bc10_uncertainty_variations.csv` - all 114 exact full-run contours: central,
+- `bc10_uncertainty_variations.csv` - all 116 exact full-run contours: central,
   six scale choices, 100 NNPDF replicas, two bottom-mass choices, three gluon
-  decay surrogates, and two `C_bs` scheme choices.
+  decay surrogates, two `C_bs` scheme choices, and two same-physics numerical
+  controls.
 - `bc10_single_source_variation_envelope.csv` - the 99-row plot input with the
   central contour, one-source-at-a-time display envelope, open/missing flags,
   named source extrema, PDF percentiles, and PDF log-coupling standard
-  deviation for audit.
+  deviation for audit. It also contains the repeat-control boundary shifts and
+  numerical-spread flags.
 - `UNCERTAINTY_MANIFEST.json` - exact variation registry, input and output
   checksums, code/template provenance, combination prescription, and headline
   shifts.
@@ -23,6 +25,13 @@ pointwise extrema. The 100 NNPDF replicas use their 16th and 84th percentiles
 in `log10(1/f)`; their raw extrema do not define the display envelope. The
 overall edge is the outermost of these source intervals with one source varied
 at a time. Sources are not added in quadrature.
+
+Two same-physics central repeats use fresh 600,000-parent pools, independent
+production seeds, distinct reconstruction RNG offsets, and the central
+templates. They do not enter the physical envelope. For each boundary the
+bundle reports their median and maximum absolute shifts in dex and fractional
+coupling, and flags masses where the maximum repeat shift is not smaller than
+the physical one-source envelope shift.
 
 Every FONLL and `C_bs` variation uses a fresh 600,000-parent production pool
 and full geometry, reconstruction, and sensitivity scan. The `u`, `d`, and

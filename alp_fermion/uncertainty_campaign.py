@@ -84,6 +84,7 @@ def discover_fonll_variations(grid_dir: Path) -> list[dict]:
             "pdf_member": entry.get("lhapdf_member"),
             "mb_GeV": entry.get("heavy_quark_mass_GeV"),
             "production_seed": 42 if kind == "central" else stable_seed(tag),
+            "reco_seed_offset": 0,
             "cbs_amplitude_scale": 1.0,
             "template_variant": "central",
             "production_mode": "fresh_600k",
@@ -109,6 +110,7 @@ def auxiliary_variations(central_grid: Path) -> list[dict]:
             "grid_path": grid_path,
             "grid_sha256": grid_sha,
             "production_seed": 42,
+            "reco_seed_offset": 0,
             "cbs_amplitude_scale": 1.0,
             "template_variant": f"gg_{flavor}",
             "production_mode": "central_vectors_exact_reuse",
@@ -124,7 +126,30 @@ def auxiliary_variations(central_grid: Path) -> list[dict]:
             "grid_path": grid_path,
             "grid_sha256": grid_sha,
             "production_seed": 42,
+            "reco_seed_offset": 0,
             "cbs_amplitude_scale": scale,
+            "template_variant": "central",
+            "production_mode": "fresh_600k",
+        })
+    return output
+
+
+def numerical_control_variations(central_grid: Path) -> list[dict]:
+    """Same-physics central repeats used only to measure numerical spread."""
+    grid_path = str(Path(central_grid).resolve())
+    grid_sha = sha256_file(Path(central_grid))
+    output = []
+    for index in (1, 2):
+        name = f"central_repeat_{index}"
+        output.append({
+            "name": name,
+            "axis": "numerical_control",
+            "campaign_axis": "numerical_control",
+            "grid_path": grid_path,
+            "grid_sha256": grid_sha,
+            "production_seed": stable_seed(f"{name}:production"),
+            "reco_seed_offset": stable_seed(f"{name}:reconstruction"),
+            "cbs_amplitude_scale": 1.0,
             "template_variant": "central",
             "production_mode": "fresh_600k",
         })
@@ -133,7 +158,12 @@ def auxiliary_variations(central_grid: Path) -> list[dict]:
 
 def all_variations(grid_dir: Path) -> list[dict]:
     fonll = discover_fonll_variations(grid_dir)
-    return [*fonll, *auxiliary_variations(Path(fonll[0]["grid_path"]))]
+    central_grid = Path(fonll[0]["grid_path"])
+    return [
+        *fonll,
+        *auxiliary_variations(central_grid),
+        *numerical_control_variations(central_grid),
+    ]
 
 
 def _log_boundary(raw, mass, variation, boundary):
@@ -157,15 +187,19 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
     Named alternatives use their extrema. The NNPDF ensemble uses its 16th and
     84th percentiles; its raw extrema are deliberately not used as a headline
     interval. No sources are combined in quadrature and this is not a
-    confidence interval.
+    confidence interval. Same-physics central repeats are excluded from the
+    envelope and reported separately as numerical controls.
     """
     axes = {
         axis: list(raw.loc[raw["axis"] == axis, "variation"].unique())
-        for axis in ("central", "scale", "pdf", "mb", "decay_gg", "cbs")
+        for axis in (
+            "central", "scale", "pdf", "mb", "decay_gg", "cbs",
+            "numerical_control",
+        )
     }
     expected_counts = {
         "central": 1, "scale": 6, "pdf": 100, "mb": 2,
-        "decay_gg": 3, "cbs": 2,
+        "decay_gg": 3, "cbs": 2, "numerical_control": 2,
     }
     counts = {axis: len(names) for axis, names in axes.items()}
     if counts != expected_counts:
@@ -179,7 +213,11 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
             "mass_GeV": mass,
             "has_sensitivity": bool(central["has_sensitivity"]),
             "any_variation_sensitive": bool(
-                raw.loc[raw["mass_GeV"] == mass, "has_sensitivity"].any()
+                raw.loc[
+                    (raw["mass_GeV"] == mass)
+                    & (raw["axis"] != "numerical_control"),
+                    "has_sensitivity",
+                ].any()
             ),
             "envelope_definition": "single_source_variation_envelope",
         }
@@ -196,6 +234,8 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
                 record[f"{boundary}_variation_missing"] = False
                 record[f"{boundary}_envelope_lo_source"] = ""
                 record[f"{boundary}_envelope_hi_source"] = ""
+                record[f"{boundary}_repeat_missing"] = False
+                record[f"{boundary}_repeat_not_subdominant"] = False
                 continue
 
             missing = False
@@ -266,6 +306,52 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
                 f"{boundary}_variation_missing": missing,
                 f"{boundary}_envelope_lo_source": lo_source,
                 f"{boundary}_envelope_hi_source": hi_source,
+            })
+
+            repeat_values = []
+            repeat_missing = False
+            for name in axes["numerical_control"]:
+                value, _, sensitive = _log_boundary(
+                    raw, mass, name, boundary
+                )
+                if value is None:
+                    repeat_missing = True
+                    record[f"{boundary}_{name}"] = np.nan
+                else:
+                    repeat_values.append(value)
+                    record[f"{boundary}_{name}"] = 10.0 ** value
+            repeat_abs_dex = np.abs(np.asarray(repeat_values) - xc)
+            repeat_abs_fraction = np.abs(10.0 ** (
+                np.asarray(repeat_values) - xc
+            ) - 1.0)
+            physical_max_abs_dex = max(xc - lo, hi - xc)
+            repeat_max_abs_dex = (
+                float(np.max(repeat_abs_dex)) if len(repeat_abs_dex) else np.nan
+            )
+            record.update({
+                f"{boundary}_physical_envelope_max_abs_dex": physical_max_abs_dex,
+                f"{boundary}_repeat_median_abs_dex": (
+                    float(np.median(repeat_abs_dex))
+                    if len(repeat_abs_dex) else np.nan
+                ),
+                f"{boundary}_repeat_max_abs_dex": repeat_max_abs_dex,
+                f"{boundary}_repeat_median_abs_fraction": (
+                    float(np.median(repeat_abs_fraction))
+                    if len(repeat_abs_fraction) else np.nan
+                ),
+                f"{boundary}_repeat_max_abs_fraction": (
+                    float(np.max(repeat_abs_fraction))
+                    if len(repeat_abs_fraction) else np.nan
+                ),
+                f"{boundary}_repeat_missing": repeat_missing,
+                f"{boundary}_repeat_not_subdominant": bool(
+                    repeat_missing
+                    or (
+                        np.isfinite(repeat_max_abs_dex)
+                        and repeat_max_abs_dex > 0.0
+                        and repeat_max_abs_dex >= physical_max_abs_dex
+                    )
+                ),
             })
         rows.append(record)
     return pd.DataFrame(rows).sort_values("mass_GeV")
