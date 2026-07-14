@@ -79,6 +79,28 @@ def test_force_species_overrides_fragmentation_sampling():
     assert np.allclose(m_recon, MESON_MASSES[541], atol=1e-5)
 
 
+def test_high_pt_importance_sampler_reweights_to_nominal_distribution():
+    nominal = sample_meson_4vectors(
+        100_000, "bottom", rng=np.random.default_rng(81),
+    )
+    tilted = sample_meson_4vectors(
+        100_000,
+        "bottom",
+        rng=np.random.default_rng(82),
+        high_pt_tilt_scale=8.0,
+        nominal_mixture_fraction=0.5,
+    )
+
+    weights = tilted["sampling_weight"]
+    nominal_mean = np.mean(nominal["pt"])
+    tilted_weighted_mean = np.average(tilted["pt"], weights=weights)
+    assert tilted_weighted_mean == pytest.approx(nominal_mean, rel=0.02)
+    assert np.mean(weights) == pytest.approx(1.0, rel=0.02)
+    assert np.mean(tilted["pt"] > 30.0) > 10.0 * np.mean(
+        nominal["pt"] > 30.0
+    )
+
+
 def test_fragmentation_fractions_track_omitted_baryons():
     assert sum(FRAG_B.values()) < 1.0
     assert sum(FRAG_C.values()) < 1.0

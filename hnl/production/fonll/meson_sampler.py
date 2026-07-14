@@ -58,19 +58,59 @@ def meson_4vec_from_kinematics(pt, y, phi, m):
     }
 
 
-def sample_meson_4vectors(n_events, quark, rng=None, force_species=None):
+def sample_meson_4vectors(
+    n_events,
+    quark,
+    rng=None,
+    force_species=None,
+    high_pt_tilt_scale=None,
+    nominal_mixture_fraction=0.5,
+):
+    """Sample FONLL meson kinematics, optionally with high-pT importance.
+
+    When ``high_pt_tilt_scale`` is set, bins are drawn from a mixture of the
+    nominal FONLL distribution and a distribution tilted by
+    ``exp(pT / high_pt_tilt_scale)``.  ``sampling_weight`` is the exact
+    nominal/proposal probability ratio for each event.  Downstream weighted
+    estimators must multiply their ordinary event weight by this ratio.
+    """
     if rng is None:
         rng = np.random.default_rng()
 
     path = fonll_parser.FONLL_FILES[quark]
     pt_arr, y_arr, dsigma_2d = parse_fonll_file(path)
-    cdf, pt_edges, y_edges = _build_cdf(pt_arr, y_arr, dsigma_2d)
+    nominal_cdf, pt_edges, y_edges = _build_cdf(pt_arr, y_arr, dsigma_2d)
 
     n_pt = len(pt_arr)
     n_y = len(y_arr)
 
+    if high_pt_tilt_scale is None:
+        proposal_cdf = nominal_cdf
+        probability_ratio = None
+    else:
+        scale = float(high_pt_tilt_scale)
+        fraction = float(nominal_mixture_fraction)
+        if not np.isfinite(scale) or scale <= 0.0:
+            raise ValueError("high_pt_tilt_scale must be finite and positive")
+        if not 0.0 < fraction <= 1.0:
+            raise ValueError("nominal_mixture_fraction must be in (0, 1]")
+        nominal = np.diff(np.concatenate([[0.0], nominal_cdf]))
+        log_tilt = np.repeat(pt_arr, n_y) / scale
+        log_tilt -= log_tilt.max()
+        tilted = nominal * np.exp(log_tilt)
+        tilted /= tilted.sum()
+        proposal = fraction * nominal + (1.0 - fraction) * tilted
+        proposal_cdf = np.cumsum(proposal)
+        proposal_cdf[-1] = 1.0
+        probability_ratio = np.divide(
+            nominal,
+            proposal,
+            out=np.zeros_like(nominal),
+            where=proposal > 0.0,
+        )
+
     u = rng.random(n_events)
-    flat_idx = np.searchsorted(cdf, u)
+    flat_idx = np.searchsorted(proposal_cdf, u)
     flat_idx = np.clip(flat_idx, 0, n_pt * n_y - 1)
 
     i_pt = flat_idx // n_y
@@ -104,8 +144,14 @@ def sample_meson_4vectors(n_events, quark, rng=None, force_species=None):
     px = pt_sampled * np.cos(phi)
     py = pt_sampled * np.sin(phi)
 
+    sampling_weight = (
+        np.ones(n_events)
+        if probability_ratio is None
+        else probability_ratio[flat_idx]
+    )
     return {
         'E': E, 'px': px, 'py': py, 'pz': pz,
         'species_pdg': species_pdg,
         'pt': pt_sampled, 'y': y_sampled, 'phi': phi,
+        'sampling_weight': sampling_weight,
     }
