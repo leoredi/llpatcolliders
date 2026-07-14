@@ -152,7 +152,13 @@ def _log_boundary(raw, mass, variation, boundary):
 
 
 def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
-    """Combine exact full-run contours into the stable published band schema."""
+    """Build a pointwise one-source-at-a-time variation envelope.
+
+    Named alternatives use their extrema. The NNPDF ensemble uses its 16th and
+    84th percentiles; its raw extrema are deliberately not used as a headline
+    interval. No sources are combined in quadrature and this is not a
+    confidence interval.
+    """
     axes = {
         axis: list(raw.loc[raw["axis"] == axis, "variation"].unique())
         for axis in ("central", "scale", "pdf", "mb", "decay_gg", "cbs")
@@ -175,6 +181,7 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
             "any_variation_sensitive": bool(
                 raw.loc[raw["mass_GeV"] == mass, "has_sensitivity"].any()
             ),
+            "envelope_definition": "single_source_variation_envelope",
         }
         for boundary in BOUNDARIES:
             xc, central_open, _ = _log_boundary(
@@ -183,9 +190,12 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
             record[f"{boundary}_central"] = float(central.get(boundary, np.nan))
             record[f"{boundary}_open"] = central_open
             if xc is None:
-                record[f"{boundary}_band_lo"] = np.nan
-                record[f"{boundary}_band_hi"] = np.nan
+                record[f"{boundary}_envelope_lo"] = np.nan
+                record[f"{boundary}_envelope_hi"] = np.nan
+                record[f"{boundary}_any_variation_open"] = central_open
                 record[f"{boundary}_variation_missing"] = False
+                record[f"{boundary}_envelope_lo_source"] = ""
+                record[f"{boundary}_envelope_hi_source"] = ""
                 continue
 
             missing = False
@@ -200,48 +210,62 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
                     )
                     any_open = any_open or opened
                     if value is None:
-                        missing = missing or not sensitive
+                        missing = True
                     else:
-                        result.append(value)
+                        result.append((name, value))
                 return result
 
-            scale = [xc, *values(axes["scale"])]
-            scale_up = max(scale) - xc
-            scale_dn = xc - min(scale)
-            pdf = values(axes["pdf"])
-            pdf_sigma = float(np.std(pdf, ddof=1)) if len(pdf) >= 2 else 0.0
-            mb_values = values(axes["mb"])
-            mb_dev = max((abs(value - xc) for value in mb_values), default=0.0)
+            source_intervals = {}
+            for axis, label in (
+                ("scale", "scale"),
+                ("mb", "mb"),
+                ("decay_gg", "gg"),
+                ("cbs", "cbs"),
+            ):
+                candidates = [("central", xc), *values(axes[axis])]
+                lo_name, lo = min(candidates, key=lambda item: item[1])
+                hi_name, hi = max(candidates, key=lambda item: item[1])
+                source_intervals[label] = (lo, hi)
+                record.update({
+                    f"{boundary}_{label}_lo": 10.0 ** lo,
+                    f"{boundary}_{label}_hi": 10.0 ** hi,
+                    f"{boundary}_{label}_lo_variation": lo_name,
+                    f"{boundary}_{label}_hi_variation": hi_name,
+                })
 
-            def envelope(axis):
-                candidates = [xc, *values(axes[axis])]
-                return max(candidates) - xc, xc - min(candidates)
-
-            gg_up, gg_dn = envelope("decay_gg")
-            cbs_up, cbs_dn = envelope("cbs")
-            total_up = float(np.sqrt(
-                scale_up**2 + pdf_sigma**2 + mb_dev**2
-                + gg_up**2 + cbs_up**2
-            ))
-            total_dn = float(np.sqrt(
-                scale_dn**2 + pdf_sigma**2 + mb_dev**2
-                + gg_dn**2 + cbs_dn**2
-            ))
+            pdf_pairs = values(axes["pdf"])
+            pdf = np.asarray([value for _, value in pdf_pairs], dtype=float)
+            if len(pdf):
+                pdf_p16, pdf_p84 = np.quantile(pdf, [0.16, 0.84])
+                pdf_std = float(np.std(pdf, ddof=1)) if len(pdf) >= 2 else np.nan
+            else:
+                pdf_p16 = pdf_p84 = xc
+                pdf_std = np.nan
+            pdf_lo = min(xc, float(pdf_p16))
+            pdf_hi = max(xc, float(pdf_p84))
+            source_intervals["pdf"] = (pdf_lo, pdf_hi)
             record.update({
-                f"{boundary}_band_lo": 10.0 ** (xc - total_dn),
-                f"{boundary}_band_hi": 10.0 ** (xc + total_up),
-                f"{boundary}_open": any_open,
+                f"{boundary}_pdf_p16": 10.0 ** float(pdf_p16),
+                f"{boundary}_pdf_p84": 10.0 ** float(pdf_p84),
+                f"{boundary}_pdf_log10_std": pdf_std,
+                f"{boundary}_pdf_n_finite": len(pdf),
+            })
+
+            lo_source, lo = min(
+                ((source, interval[0]) for source, interval in source_intervals.items()),
+                key=lambda item: item[1],
+            )
+            hi_source, hi = max(
+                ((source, interval[1]) for source, interval in source_intervals.items()),
+                key=lambda item: item[1],
+            )
+            record.update({
+                f"{boundary}_envelope_lo": 10.0 ** lo,
+                f"{boundary}_envelope_hi": 10.0 ** hi,
+                f"{boundary}_any_variation_open": any_open,
                 f"{boundary}_variation_missing": missing,
-                f"{boundary}_scale_up_dex": scale_up,
-                f"{boundary}_scale_dn_dex": scale_dn,
-                f"{boundary}_pdf_sigma_dex": pdf_sigma,
-                f"{boundary}_mb_dev_dex": mb_dev,
-                f"{boundary}_gg_up_dex": gg_up,
-                f"{boundary}_gg_dn_dex": gg_dn,
-                f"{boundary}_cbs_up_dex": cbs_up,
-                f"{boundary}_cbs_dn_dex": cbs_dn,
-                f"{boundary}_total_up_dex": total_up,
-                f"{boundary}_total_dn_dex": total_dn,
+                f"{boundary}_envelope_lo_source": lo_source,
+                f"{boundary}_envelope_hi_source": hi_source,
             })
         rows.append(record)
     return pd.DataFrame(rows).sort_values("mass_GeV")

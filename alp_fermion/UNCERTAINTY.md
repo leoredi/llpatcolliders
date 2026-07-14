@@ -1,7 +1,9 @@
-# BC10 theory-uncertainty band
+# BC10 theory/model variation envelope
 
 The publication campaign propagates every nuisance through a complete signal
-run. No pointwise FONLL envelope or event-level importance reweighting is used.
+run. No event-level importance reweighting is used. The displayed result is a
+non-statistical, one-source-at-a-time variation envelope, not a confidence
+interval or a simultaneous-combination coverage statement.
 
 ## Inputs and combination
 
@@ -9,7 +11,8 @@ run. No pointwise FONLL envelope or event-level importance reweighting is used.
   coherent 7-point `(mu_R, mu_F)` grids. The contour uncertainty is their
   asymmetric envelope around the independently regenerated central run.
 - **FONLL PDF:** independent 600,000-parent runs for all 100 NNPDF4.0 NLO
-  replicas. Their sample standard deviation in `log10(1/f)` is the PDF term.
+  replicas. Their 16th and 84th percentiles in `log10(1/f)` define the PDF
+  interval; the sample standard deviation is retained only as an audit field.
 - **FONLL bottom mass:** independent 600,000-parent runs at `m_b = 4.5` and
   `5.0 GeV`, around the `4.75 GeV` central grid. The maximum absolute contour
   displacement is used.
@@ -23,12 +26,14 @@ run. No pointwise FONLL envelope or event-level importance reweighting is used.
   one-loop/RG value, implemented as full production runs with rates scaled by
   `0.8^2` and `1.2^2`, followed by independent geometry/reconstruction scans.
 
-All shifts are evaluated in `log10(1/f)`. Scale, gluon-surrogate, and `C_bs`
-sources retain separate up/down envelopes. PDF is symmetric, and bottom mass
-uses the symmetric maximum displacement. The five sources are added in
-quadrature separately above and below each central edge. If a variation removes
-an island boundary, `*_variation_missing` is set rather than treating the
-missing boundary as zero displacement.
+All shifts are evaluated in `log10(1/f)`. Scale, bottom-mass,
+gluon-surrogate, and `C_bs` sources retain their named extrema around the
+central contour. The overall display envelope is the outermost boundary among
+those four intervals and the PDF 16th/84th-percentile interval, with only one
+source varied at a time. Sources are not added in quadrature. If a variation
+removes an island boundary, `*_variation_missing` is set rather than treating
+the missing boundary as zero displacement. Central insensitive rows and the
+excluded eta/eta-prime pole rows remain explicit gaps with NaN envelope edges.
 
 ## Run layout and restart policy
 
@@ -38,8 +43,8 @@ run directory containing:
 
 ```text
 runs/<variation>/
-  llp_4vectors/            # fresh 600k production output
-  analysis/                # geometry cache, checkpoint CSV, diagnostic plot
+  llp_4vectors/            # fresh 600k production output while running
+  analysis/                # checkpoint CSV, geometry while running, plot
   production.log
   sensitivity.log
   production.complete.json
@@ -52,10 +57,20 @@ interrupted variation restartable. The campaign can be partitioned over
 several processes with `--worker-index` and `--worker-count`; the assignment is
 stable because it follows the manifest order.
 
+After a non-central variation validates completely, the completion marker is
+written with vector and geometry tree hashes, exact grid/seed/code/template
+provenance, commands, and log hashes. The runner then removes that variation's
+raw vectors and geometry cache and atomically records `storage_state=compacted`.
+An interruption during reclamation resumes from the `compacting` state. The
+central vectors and geometry are always retained because the three gluon
+surrogate variations reuse the central production exactly. Pass
+`--keep-intermediates` to suppress reclamation for new full runs.
+
 Template bundles are shared through `$ALP_TEMPLATE_DIR`; run trees and source
 directories are selected through environment variables, not repository
-symlinks. Only the compact combined CSV and its exact registry/provenance
-manifest are promoted to `alp_fermion/data/published/`.
+symlinks. The raw contour table, compact
+`bc10_single_source_variation_envelope.csv`, and exact registry/provenance
+manifest are promoted to `alp_fermion/data/published/bundle/`.
 
 ## Reproduction
 

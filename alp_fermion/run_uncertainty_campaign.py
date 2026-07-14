@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -88,7 +89,7 @@ def _validate_vectors(directory: Path, hash_outputs=True) -> dict:
     }
 
 
-def _validate_sensitivity(path: Path, geometry_dir: Path) -> dict:
+def _validate_sensitivity_csv(path: Path) -> dict:
     if not path.exists():
         raise RuntimeError(f"missing sensitivity CSV: {path}")
     frame = pd.read_csv(path)
@@ -101,15 +102,47 @@ def _validate_sensitivity(path: Path, geometry_dir: Path) -> dict:
     temporary = path.with_suffix(path.suffix + ".tmp")
     if temporary.exists():
         raise RuntimeError(f"partial sensitivity checkpoint remains: {temporary}")
-    geometry = sorted(geometry_dir.glob("geom_*.npz"))
-    if len(geometry) != 97:
-        raise RuntimeError(f"geometry cache has {len(geometry)} files; expected 97")
     return {
         "sensitivity_csv_sha256": sha256_file(path),
         "n_sensitivity_rows": len(frame),
         "n_sensitive_rows": int(frame["has_sensitivity"].sum()),
+    }
+
+
+def _validate_geometry(geometry_dir: Path) -> dict:
+    geometry = sorted(geometry_dir.glob("geom_*.npz"))
+    if len(geometry) != 97:
+        raise RuntimeError(f"geometry cache has {len(geometry)} files; expected 97")
+    return {
+        "n_geometry_files": len(geometry),
+        "total_geometry_bytes": sum(path.stat().st_size for path in geometry),
         "geometry_tree_sha256": sha256_tree(geometry),
     }
+
+
+def _validate_sensitivity(path: Path, geometry_dir: Path) -> dict:
+    return {
+        **_validate_sensitivity_csv(path),
+        **_validate_geometry(geometry_dir),
+    }
+
+
+def _tree_usage(path: Path) -> dict:
+    files = [item for item in path.rglob("*") if item.is_file()]
+    return {
+        "path": str(path),
+        "n_files": len(files),
+        "bytes": sum(item.stat().st_size for item in files),
+    }
+
+
+def _remove_generated_tree(path: Path, run_dir: Path) -> None:
+    path = path.resolve()
+    run_dir = run_dir.resolve()
+    if path.parent != run_dir and path.parent.parent != run_dir:
+        raise RuntimeError(f"refusing to compact path outside run directory: {path}")
+    if path.exists():
+        shutil.rmtree(path)
 
 
 def _template_provenance(directory: Path) -> dict:
@@ -160,6 +193,98 @@ def _marker_matches(path: Path, variation, n_pool, git_state) -> bool:
     )
 
 
+def _validate_completed_run(run_dir: Path, marker: dict) -> None:
+    output = Path(marker["sensitivity_csv"])
+    current = _validate_sensitivity_csv(output)
+    if current["sensitivity_csv_sha256"] != marker["sensitivity_csv_sha256"]:
+        raise RuntimeError(
+            f"completed {marker['variation']['name']} sensitivity checksum changed"
+        )
+
+    state = marker.get("storage_state", "full")
+    if state == "full":
+        geometry = _validate_geometry(run_dir / "analysis" / "geometry_cache")
+        if geometry["geometry_tree_sha256"] != marker["geometry_tree_sha256"]:
+            raise RuntimeError(
+                f"completed {marker['variation']['name']} geometry checksum changed"
+            )
+        if marker["variation"]["production_mode"] == "fresh_600k":
+            vectors = _validate_vectors(run_dir / "llp_4vectors")
+            production = json.loads(Path(marker["production_marker"]).read_text())
+            if vectors["vector_tree_sha256"] != production["vector_tree_sha256"]:
+                raise RuntimeError(
+                    f"completed {marker['variation']['name']} vector checksum changed"
+                )
+    elif state == "compacted":
+        for path in (
+            run_dir / "llp_4vectors",
+            run_dir / "analysis" / "geometry_cache",
+        ):
+            if path.exists():
+                raise RuntimeError(
+                    f"compacted run unexpectedly retains generated tree: {path}"
+                )
+    elif state != "compacting":
+        raise RuntimeError(f"unknown completion storage state: {state}")
+
+
+def _compact_completed_run(
+    completion: Path,
+    marker: dict,
+    run_dir: Path,
+    keep_intermediates: bool,
+) -> dict:
+    variation = marker["variation"]
+    state = marker.get("storage_state", "full")
+    if variation["name"] == "central" or (
+        keep_intermediates and state == "full"
+    ):
+        return marker
+    if state == "compacted":
+        return marker
+    if state not in {"full", "compacting"}:
+        raise RuntimeError(f"cannot compact completion in storage state {state}")
+
+    vector_dir = run_dir / "llp_4vectors"
+    geometry_dir = run_dir / "analysis" / "geometry_cache"
+    targets = [geometry_dir]
+    if variation["production_mode"] == "fresh_600k":
+        targets.insert(0, vector_dir)
+
+    if state == "full":
+        marker = dict(marker)
+        marker["storage_state"] = "compacting"
+        marker["compaction"] = {
+            "started_unix": time.time(),
+            "targets": [_tree_usage(path) for path in targets if path.exists()],
+            "retained": [
+                marker["sensitivity_csv"],
+                marker["production_marker"],
+                str(run_dir / "production.log"),
+                str(run_dir / "sensitivity.log"),
+            ],
+        }
+        atomic_json(completion, marker)
+
+    for target in targets:
+        _remove_generated_tree(target, run_dir)
+
+    marker = dict(marker)
+    marker["storage_state"] = "compacted"
+    marker["compaction"] = dict(marker["compaction"])
+    marker["compaction"]["completed_unix"] = time.time()
+    marker["compaction"]["reclaimed_bytes"] = sum(
+        item["bytes"] for item in marker["compaction"]["targets"]
+    )
+    atomic_json(completion, marker)
+    print(
+        f"[{variation['name']}] compacted "
+        f"{marker['compaction']['reclaimed_bytes'] / 2**30:.1f} GiB",
+        flush=True,
+    )
+    return marker
+
+
 def _environment(run_dir, vector_dir, analysis_dir, template_dir, variation):
     env = os.environ.copy()
     env.update({
@@ -193,6 +318,20 @@ def run_variation(variation, args, git_state, template_cache):
     if template_key not in template_cache:
         template_cache[template_key] = _template_provenance(template_dir)
 
+    completion = run_dir / "variation.complete.json"
+    if _marker_matches(completion, variation, args.n_pool, git_state):
+        marker = json.loads(completion.read_text())
+        _validate_completed_run(run_dir, marker)
+        _compact_completed_run(
+            completion, marker, run_dir, args.keep_intermediates
+        )
+        print(f"[{variation['name']}] variation already complete", flush=True)
+        return
+    if completion.exists():
+        raise RuntimeError(
+            f"stale completion marker for {variation['name']}; use a new scratch root"
+        )
+
     if variation["production_mode"] == "fresh_600k":
         vector_dir = run_dir / "llp_4vectors"
         production_marker = run_dir / "production.complete.json"
@@ -223,8 +362,9 @@ def run_variation(variation, args, git_state, template_cache):
                 "--resume",
             ]
             started = time.time()
+            production_log = run_dir / "production.log"
             _run_logged(
-                command, env, run_dir / "production.log",
+                command, env, production_log,
                 f"{variation['name']}:production",
             )
             vector_info = _validate_vectors(vector_dir)
@@ -233,6 +373,8 @@ def run_variation(variation, args, git_state, template_cache):
                 "n_pool": args.n_pool,
                 "code": git_state,
                 "command": command,
+                "log": str(production_log),
+                "log_sha256": sha256_file(production_log),
                 "started_unix": started,
                 "completed_unix": time.time(),
                 **vector_info,
@@ -252,24 +394,6 @@ def run_variation(variation, args, git_state, template_cache):
             "central_production_marker_sha256": sha256_file(central_marker),
             "vector_dir": str(vector_dir),
         })
-
-    completion = run_dir / "variation.complete.json"
-    if _marker_matches(completion, variation, args.n_pool, git_state):
-        marker = json.loads(completion.read_text())
-        current = _validate_sensitivity(
-            Path(marker["sensitivity_csv"]), analysis_dir / "geometry_cache"
-        )
-        for key in ("sensitivity_csv_sha256", "geometry_tree_sha256"):
-            if current[key] != marker[key]:
-                raise RuntimeError(
-                    f"completed {variation['name']} {key} changed on disk"
-                )
-        print(f"[{variation['name']}] variation already complete", flush=True)
-        return
-    if completion.exists():
-        raise RuntimeError(
-            f"stale completion marker for {variation['name']}; use a new scratch root"
-        )
     env = _environment(run_dir, vector_dir, analysis_dir, template_dir, variation)
     output = analysis_dir / "bc10_sensitivity.csv"
     command = [
@@ -277,8 +401,9 @@ def run_variation(variation, args, git_state, template_cache):
         "--output", str(output), "--resume",
     ]
     started = time.time()
+    sensitivity_log = run_dir / "sensitivity.log"
     _run_logged(
-        command, env, run_dir / "sensitivity.log",
+        command, env, sensitivity_log,
         f"{variation['name']}:sensitivity",
     )
     analysis_info = _validate_sensitivity(output, analysis_dir / "geometry_cache")
@@ -300,10 +425,33 @@ def run_variation(variation, args, git_state, template_cache):
         "production_marker_sha256": sha256_file(production_marker),
         "sensitivity_csv": str(output),
         "command": command,
+        "sensitivity_log": str(sensitivity_log),
+        "sensitivity_log_sha256": sha256_file(sensitivity_log),
+        "storage_state": "full",
+        "regeneration": {
+            "grid_path": variation["grid_path"],
+            "grid_sha256": variation["grid_sha256"],
+            "production_seed": variation["production_seed"],
+            "n_pool": args.n_pool,
+            "cbs_amplitude_scale": variation["cbs_amplitude_scale"],
+            "production_mode": variation["production_mode"],
+            "template_path": template_cache[template_key]["path"],
+            "template_tree_sha256": template_cache[template_key]["tree_sha256"],
+            "production_command": (
+                json.loads(production_marker.read_text()).get("command")
+                if variation["production_mode"] == "fresh_600k"
+                else "exact reuse of central production vectors"
+            ),
+            "sensitivity_command": command,
+        },
         "started_unix": started,
         "completed_unix": time.time(),
         **analysis_info,
     })
+    marker = json.loads(completion.read_text())
+    _compact_completed_run(
+        completion, marker, run_dir, args.keep_intermediates
+    )
     print(f"[{variation['name']}] COMPLETE", flush=True)
 
 
@@ -333,6 +481,13 @@ def main(argv=None):
     parser.add_argument("--worker-index", type=int, default=0)
     parser.add_argument("--worker-count", type=int, default=1)
     parser.add_argument("--max-variations", type=int, default=None)
+    parser.add_argument(
+        "--keep-intermediates", action="store_true",
+        help=(
+            "retain non-central production vectors and geometry caches after "
+            "their validated completion marker is written"
+        ),
+    )
     parser.add_argument(
         "--resume", action="store_true",
         help="accepted for explicit restart intent; stages always resume atomically",

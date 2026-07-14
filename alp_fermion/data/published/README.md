@@ -13,6 +13,8 @@ of one chosen analysis run promoted to a fixed, committed path so consumers
   `1/f` in GeV^-1, BNT convention (`1/f = 2/f_GKOZ`).
 - `MANIFEST.json` — provenance: source run, git sha, csv sha256, inputs,
   luminosity, threshold, headline reach, and the closure note.
+- `bundle/` — exact full-run theory/model variation curves, the compact
+  one-source-at-a-time display envelope, and their provenance manifest.
 
 ## To re-publish (after a better run)
 

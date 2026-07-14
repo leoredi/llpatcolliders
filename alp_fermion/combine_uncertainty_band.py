@@ -59,6 +59,13 @@ def load_completed(scratch: Path, variations) -> tuple[pd.DataFrame, list[dict]]
             "production_marker_sha256": marker["production_marker_sha256"],
             "template": marker["template"],
             "code": marker["code"],
+            "storage_state": marker.get("storage_state", "full"),
+            "pre_compaction_hashes": {
+                "vector_tree_sha256": json.loads(
+                    Path(marker["production_marker"]).read_text()
+                ).get("vector_tree_sha256"),
+                "geometry_tree_sha256": marker["geometry_tree_sha256"],
+            },
         })
     return pd.concat(rows, ignore_index=True), registry
 
@@ -71,13 +78,19 @@ def _headline(band: pd.DataFrame) -> dict:
         "n_any_variation_sensitive": int(band["any_variation_sensitive"].sum()),
     }
     for boundary in ("invf_min", "invf_max"):
-        for direction in ("up", "dn"):
-            column = f"{boundary}_total_{direction}_dex"
-            values = sensitive[column].replace([np.inf, -np.inf], np.nan)
+        central = sensitive[f"{boundary}_central"]
+        for direction, edge in (("up", "hi"), ("dn", "lo")):
+            envelope = sensitive[f"{boundary}_envelope_{edge}"]
+            if direction == "up":
+                values = np.log10(envelope / central)
+            else:
+                values = np.log10(central / envelope)
+            values = values.replace([np.inf, -np.inf], np.nan)
             if values.notna().any():
                 index = values.idxmax()
-                output[f"max_{column}"] = float(values.loc[index])
-                output[f"max_{column}_mass_GeV"] = float(band.loc[index, "mass_GeV"])
+                key = f"max_{boundary}_envelope_{direction}_dex"
+                output[key] = float(values.loc[index])
+                output[f"{key}_mass_GeV"] = float(band.loc[index, "mass_GeV"])
     return output
 
 
@@ -91,7 +104,9 @@ def main(argv=None):
     parser.add_argument("--grid-dir", type=Path, required=True)
     parser.add_argument(
         "--out-dir", type=Path,
-        default=Path(__file__).resolve().parent / "data" / "published",
+        default=(
+            Path(__file__).resolve().parent / "data" / "published" / "bundle"
+        ),
     )
     args = parser.parse_args(argv)
     scratch = Path(args.scratch_root).expanduser().resolve()
@@ -100,7 +115,7 @@ def main(argv=None):
     band = combine_band(raw)
     out_dir = Path(args.out_dir)
     raw_path = out_dir / "bc10_uncertainty_variations.csv"
-    band_path = out_dir / "bc10_uncertainty_band.csv"
+    band_path = out_dir / "bc10_single_source_variation_envelope.csv"
     manifest_path = out_dir / "UNCERTAINTY_MANIFEST.json"
     _atomic_csv(raw, raw_path)
     _atomic_csv(band, band_path)
@@ -108,7 +123,7 @@ def main(argv=None):
     if len(code_states) != 1:
         raise ValueError("campaign variations were produced from different code states")
     atomic_json(manifest_path, {
-        "artifact": "GRENDEL BC10 exact theory-uncertainty band",
+        "artifact": "GRENDEL BC10 exact single-source variation envelope",
         "generated_unix": time.time(),
         "method": {
             "production": (
@@ -125,10 +140,12 @@ def main(argv=None):
                 "scaled by 0.8^2 and 1.2^2 and full downstream runs"
             ),
             "combination": (
-                "log10(1/f): asymmetric scale/gg/C_bs envelopes, NNPDF replica "
-                "sample standard deviation, max absolute mb displacement, sources "
-                "combined in quadrature separately up/down"
+                "pointwise one-source-at-a-time intervals in log10(1/f): named "
+                "scale/mb/gg/C_bs extrema and NNPDF replica 16th/84th "
+                "percentiles; display envelope is their outermost boundary; "
+                "no quadrature combination and no confidence-interval claim"
             ),
+            "label": "single_source_variation_envelope",
         },
         "variation_counts": {
             "central": 1, "scale": 6, "pdf": 100, "mb": 2,
