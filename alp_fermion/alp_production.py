@@ -84,6 +84,16 @@ def _importance_weighted_rate(normalization, pool, indices):
     return normalization * np.asarray(ratios, dtype=float)[indices]
 
 
+def _partition_parent_indices(n_pool, n_channels, rng):
+    """Assign disjoint, random parent samples to each production channel."""
+    if n_pool < n_channels:
+        raise ValueError("n_pool must be at least the number of channels")
+    n_each = n_pool // n_channels
+    usable = n_each * n_channels
+    permutation = rng.permutation(n_pool)[:usable]
+    return permutation.reshape(n_channels, n_each)
+
+
 def generate(
     masses,
     n_pool,
@@ -110,7 +120,6 @@ def generate(
     channels = [(label, pdg, kaon)
                 for label, pdg in model.PRODUCTION_PARENTS
                 for kaon in model.KAON_TOWER]
-    n_each = max(1, n_pool // len(channels))
 
     for m_a in masses:
         resonance = model.excluded_light_meson_resonance(m_a)
@@ -123,7 +132,10 @@ def generate(
         path = alp_csv_path(m_a)
         already_done = resume and path.exists()
         all_w, all_E, all_px, all_py, all_pz = [], [], [], [], []
-        for label, pdg, kaon in channels:
+        parent_indices = _partition_parent_indices(
+            n_pool, len(channels), rng,
+        )
+        for channel_index, (label, pdg, kaon) in enumerate(channels):
             m_B = model.M_BPLUS if label == "B+" else model.M_B0
             m_K = model.kaon_mass(kaon, label)
             if m_a >= m_B - m_K:
@@ -134,7 +146,8 @@ def generate(
             if br <= 0.0:
                 continue
             frag = FRAG_B[pdg]
-            idx = rng.integers(0, n_pool, size=n_each)
+            idx = parent_indices[channel_index]
+            n_each = len(idx)
             v = meson_4vec_from_kinematics(
                 pool["pt"][idx], pool["y"][idx], pool["phi"][idx], m_B)
             # two-body B -> K_i(m_K) + a(m_a); decay_2body returns (d1=K, d2=a)
