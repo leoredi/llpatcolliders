@@ -34,7 +34,7 @@ we evaluate the actual `c*tau`, production yield and visible BR, require
 | `production.py` | FONLL bottom pool → `B+/B0 -> K S` two-body → weighted `S` four-vector CSVs. |
 | `acceptance.py` | scalar decay engine → best-two-track → shared reco → PR#13 `selection_mask`; folds the visible BR in via the decay outcome (neutral sub-modes fail). |
 | `run_sensitivity.py` | driver: produce → coupling scan (`N_signal >= 3`) → island CSV → plot. |
-| `uncertainty_band.py` | independent full-statistics propagation of 109 coherent FONLL bottom grids plus a fresh Winkler-vs-LO-ChPT/spectator decay-model run. |
+| `uncertainty_band.py` | independent full-statistics propagation of 109 coherent FONLL bottom grids, a fresh Winkler-vs-LO-ChPT/spectator decay-model run, and two excluded fresh-seed central numerical controls. |
 | `plot_exclusion.py` | `(m_S, sin^2 theta)` island + competitor overlays. |
 | `tests/test_model.py` | model-layer validation against published numbers. |
 

@@ -8,7 +8,8 @@ import pandas as pd
 import pytest
 
 from scalar.uncertainty_band import (
-    DECAY_VARIATION, _finalize_and_compact, _stable_seed,
+    DECAY_VARIATION, NUMERICAL_CONTROL_VARIATIONS,
+    _finalize_and_compact, _stable_seed,
     _validate_retained_completion, combine_band, discover_variations)
 
 
@@ -22,18 +23,23 @@ def test_complete_fonll_manifest_is_discovered():
     counts = pd.Series([variation["axis"] for variation in variations]).value_counts()
     assert counts.to_dict() == {
         "pdf": 100, "scale": 6, "mass": 2,
-        "central": 1, "decay_model": 1,
+        "numerical_control": 2, "central": 1, "decay_model": 1,
     }
     assert variations[0]["name"] == "central"
     assert variations[1]["name"] == DECAY_VARIATION
     assert variations[0]["path"] == variations[1]["path"]
     assert variations[0]["width_scheme"] != variations[1]["width_scheme"]
+    assert tuple(v["name"] for v in variations[-2:]) == NUMERICAL_CONTROL_VARIATIONS
 
 
 def test_variation_seeds_are_deterministic_and_independent():
     central = _stable_seed(42, "central", "parent_pool")
     assert central == _stable_seed(42, "central", "parent_pool")
     assert central != _stable_seed(42, DECAY_VARIATION, "parent_pool")
+    assert central != _stable_seed(
+        42, NUMERICAL_CONTROL_VARIATIONS[0], "parent_pool")
+    assert _stable_seed(42, NUMERICAL_CONTROL_VARIATIONS[0], "parent_pool") != (
+        _stable_seed(42, NUMERICAL_CONTROL_VARIATIONS[1], "parent_pool"))
     assert central != _stable_seed(42, "central", "0p500", "production")
     assert 0 <= central < 2**32
 
@@ -92,6 +98,10 @@ def test_pdf_replica_outlier_does_not_define_display_envelope():
                 for index in range(99))
     rows.append(_row("pdf_99", "pdf", 1e-5, 1e-1))
     rows.append(_row(DECAY_VARIATION, "decay_model", 1e-8, 1e-4))
+    rows.append(_row(NUMERICAL_CONTROL_VARIATIONS[0], "numerical_control",
+                     1e-5, 1e-1))
+    rows.append(_row(NUMERICAL_CONTROL_VARIATIONS[1], "numerical_control",
+                     1e-11, 1e-7))
     reference = pd.DataFrame([{
         "mass_GeV": 1.0, "has_sensitivity": True,
         "u2_min": 2e-8, "u2_max": 2e-4,
@@ -101,6 +111,9 @@ def test_pdf_replica_outlier_does_not_define_display_envelope():
     assert out["u2_min_pdf_p84"] == pytest.approx(2e-8)
     assert out["u2_min_envelope_hi"] == pytest.approx(2e-8)
     assert out["u2_min_pdf_std_dex"] > 0
+    assert out["u2_min_numerical_repeat_median_abs_dex"] == pytest.approx(3.0)
+    assert out["u2_min_numerical_repeat_max_abs_dex"] == pytest.approx(3.0)
+    assert bool(out["u2_min_numerical_repeat_not_subdominant"])
 
 
 def test_completed_variation_is_checksummed_then_compacted(tmp_path):

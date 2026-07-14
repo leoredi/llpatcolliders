@@ -5,7 +5,8 @@ curve in `../bc4_island.csv`.
 
 Files:
 
-- `bc4_uncertainty_variations.csv` — all 110 independently simulated compact curves.
+- `bc4_uncertainty_variations.csv` — all 110 independently simulated physics
+  curves plus two same-physics numerical-control repeats.
 - `bc4_single_source_variation_envelope.csv` — canonical central contour,
   per-source intervals, their outer display envelope, open-edge flags, source
   names, and audit shifts in dex for both contour edges.
@@ -19,6 +20,14 @@ uses a fresh 200,000-event parent pool, producing 600,000 scalar events per
 mass after the three B-species contributions. Scalar kinematics, geometry,
 decay/reconstruction MC, and the sensitivity scan are all independent between
 variations; no importance reweighting or detector-outcome reuse is used.
+
+Two additional central-FONLL/Winkler runs use fresh production and
+reconstruction seeds. They quantify finite-simulation scatter only and are
+excluded from the scale, PDF, bottom-mass, decay-model, and headline envelopes.
+For each boundary the compact table reports the repeat median/max absolute dex
+shift, maximum fractional shift, ratios to every physical source displacement,
+and a flag when the repeat maximum is not smaller than the largest physical
+source displacement at that mass. The manifest summarizes all flagged masses.
 
 Combination is in `log10(sin^2 theta)`: the scale source uses the extrema of
 the coherent seven-point set, the PDF source uses the 16th and 84th percentiles

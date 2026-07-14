@@ -15,6 +15,10 @@ The full campaign consists of:
 * one independently simulated LO-ChPT/spectator decay-model alternate using a
   fresh central-FONLL production sample.
 
+Two additional same-physics central repeats use fresh production and
+reconstruction seeds as numerical controls.  They are reported separately and
+never enter the theory/model display envelope.
+
 Heavy products are written outside the repository.  The default can be
 overridden either by ``--scratch-dir`` or ``BC4_UNCERTAINTY_DIR``::
 
@@ -89,6 +93,7 @@ LOG_S2T_MIN, LOG_S2T_MAX, N_S2T = -12.0, -2.0, 200
 CENTRAL_SCHEME = "winkler"
 DECAY_SCHEME = "chpt_spectator"
 DECAY_VARIATION = "decay_chpt_spectator"
+NUMERICAL_CONTROL_VARIATIONS = ("central_repeat_1", "central_repeat_2")
 GRID_ENV = "HNL_FONLL_BOTTOM_GRID"
 GRID_STEM = "fonll_pp14tev_nnpdf40_nlo_as_01180_fonll_meson_dsdpTdy_pt0-50_y-3to3"
 
@@ -296,6 +301,11 @@ def discover_variations(grid_dir: Path, validate_hashes=True):
     # Run the two independent central-grid simulations first so the decay-model
     # comparison completes before the long PDF campaign.
     records = [central, decay, *records[1:]]
+    records.extend({
+        **central,
+        "name": name,
+        "axis": "numerical_control",
+    } for name in NUMERICAL_CONTROL_VARIATIONS)
     return manifest, records
 
 
@@ -729,7 +739,8 @@ def combine_band(raw, central_curve):
     reference = (pd.read_csv(central_curve) if isinstance(central_curve, (str, Path))
                  else central_curve.copy())
     axes = {axis: sorted(raw.loc[raw["axis"] == axis, "variation"].unique())
-            for axis in ("scale", "pdf", "mass", "decay_model")}
+            for axis in (
+                "scale", "pdf", "mass", "decay_model", "numerical_control")}
     rows = []
     for _, ref in reference.sort_values("mass_GeV").iterrows():
         mass = float(ref["mass_GeV"])
@@ -814,6 +825,46 @@ def combine_band(raw, central_curve):
             decay_lo = min(decay_values, key=lambda item: item[0])
             decay_hi = max(decay_values, key=lambda item: item[0])
 
+            repeat_values = []
+            repeat_open = False
+            repeat_missing = False
+            for name in axes["numerical_control"]:
+                value, is_open = _boundary(by_name.get(name), boundary, open_col)
+                repeat_open |= is_open
+                repeat_missing |= value is None and not is_open
+                if value is not None and not is_open:
+                    repeat_values.append((value, name))
+            repeat_abs = np.asarray(
+                [abs(value - xc) for value, _ in repeat_values], dtype=float)
+            repeat_median_abs = (
+                float(np.median(repeat_abs)) if len(repeat_abs) else np.nan)
+            repeat_max_abs = (
+                float(np.max(repeat_abs)) if len(repeat_abs) else np.nan)
+            repeat_max_fractional = (
+                float(max(abs(10.0**(value - xc) - 1.0)
+                          for value, _ in repeat_values))
+                if repeat_values else np.nan)
+
+            physical_magnitudes = {
+                "scale": max(abs(scale_lo[0] - xc), abs(scale_hi[0] - xc)),
+                "pdf": max(abs(pdf_p16 - xc), abs(pdf_p84 - xc)),
+                "bottom_mass": max(
+                    abs(mass_lo[0] - xc), abs(mass_hi[0] - xc)),
+                "decay_model": max(
+                    abs(decay_lo[0] - xc), abs(decay_hi[0] - xc)),
+            }
+
+            def numerical_ratio(component):
+                magnitude = physical_magnitudes[component]
+                if not np.isfinite(repeat_max_abs) or magnitude <= 0:
+                    return np.nan
+                return repeat_max_abs / magnitude
+
+            display_magnitude = max(physical_magnitudes.values())
+            numerical_subdominant = (
+                bool(repeat_max_abs < display_magnitude)
+                if np.isfinite(repeat_max_abs) and display_magnitude > 0 else False)
+
             source_endpoints = [
                 (scale_lo[0], f"scale:{scale_lo[1]}"),
                 (scale_hi[0], f"scale:{scale_hi[1]}"),
@@ -859,6 +910,22 @@ def combine_band(raw, central_curve):
                     alt - xc if alt is not None and not alt_open else np.nan),
                 f"{boundary}_decay_model_envelope_lo": rebased(decay_lo[0]),
                 f"{boundary}_decay_model_envelope_hi": rebased(decay_hi[0]),
+                f"{boundary}_numerical_repeat_median_abs_dex": repeat_median_abs,
+                f"{boundary}_numerical_repeat_max_abs_dex": repeat_max_abs,
+                f"{boundary}_numerical_repeat_max_fractional": repeat_max_fractional,
+                f"{boundary}_numerical_repeat_n_finite": len(repeat_values),
+                f"{boundary}_numerical_repeat_open": repeat_open,
+                f"{boundary}_numerical_repeat_missing": repeat_missing,
+                f"{boundary}_numerical_repeat_to_scale_ratio": (
+                    numerical_ratio("scale")),
+                f"{boundary}_numerical_repeat_to_pdf_ratio": numerical_ratio("pdf"),
+                f"{boundary}_numerical_repeat_to_bottom_mass_ratio": (
+                    numerical_ratio("bottom_mass")),
+                f"{boundary}_numerical_repeat_to_decay_model_ratio": (
+                    numerical_ratio("decay_model")),
+                f"{boundary}_numerical_repeat_subdominant": numerical_subdominant,
+                f"{boundary}_numerical_repeat_not_subdominant": (
+                    not numerical_subdominant),
                 f"{boundary}_envelope_lo": rebased(total_lo[0]),
                 f"{boundary}_envelope_hi": rebased(total_hi[0]),
                 f"{boundary}_envelope_lo_source": total_lo[1],
@@ -917,6 +984,37 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
     _atomic_csv(band, Path(band_out))
 
     source_manifest = Path(variations[0]["path"]).parent / "variation_manifest.json"
+
+    def control_summary(boundary):
+        prefix = f"{boundary}_numerical_repeat"
+        flagged = band[f"{prefix}_not_subdominant"].fillna(False).astype(bool)
+        summary = {
+            "n_masses_not_subdominant": int(flagged.sum()),
+            "masses_not_subdominant_GeV": [
+                float(value) for value in band.loc[flagged, "mass_GeV"]],
+            "max_abs_dex": float(band[f"{prefix}_max_abs_dex"].max()),
+            "max_fractional": float(band[f"{prefix}_max_fractional"].max()),
+        }
+        for component in ("scale", "pdf", "bottom_mass", "decay_model"):
+            values = band[f"{prefix}_to_{component}_ratio"].replace(
+                [np.inf, -np.inf], np.nan)
+            summary[f"max_ratio_to_{component}"] = float(values.max())
+        return summary
+
+    numerical_control_summary = {
+        "definition": (
+            "absolute boundary shifts of two fresh-seed, same-physics central "
+            "repeats relative to the independent campaign central"
+        ),
+        "envelope_policy": "excluded from every physics interval and display envelope",
+        "subdominant_criterion": (
+            "repeat maximum absolute dex shift is smaller than the largest "
+            "one-source physical interval displacement at that mass/boundary"
+        ),
+        "u2_min": control_summary("u2_min"),
+        "u2_max": control_summary("u2_max"),
+    }
+
     manifest = {
         "artifact": "GRENDEL BC4 independent full-statistics uncertainty campaign",
         "schema_version": 2,
@@ -933,6 +1031,7 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
         "campaign": {
             "n_fonll_variations": 109,
             "n_decay_model_variations": 1,
+            "n_numerical_control_variations": len(NUMERICAL_CONTROL_VARIATIONS),
             "n_total_variations": len(variations),
             "n_masses": len(masses),
             "n_parent_pool_per_variation": n_pool,
@@ -963,8 +1062,13 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
                 "one source varied at a time; no quadrature, no simultaneous-source "
                 "coverage, and not a confidence band"
             ),
+            "numerical_controls": (
+                "two fresh-seed same-physics central repeats, reported separately "
+                "and excluded from all physics intervals and the display envelope"
+            ),
             "rebase": "component dex shifts applied to canonical published central curve",
         },
+        "numerical_control_summary": numerical_control_summary,
         "variations": [
             {
                 "name": variation["name"],
