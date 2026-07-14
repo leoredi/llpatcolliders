@@ -15,7 +15,16 @@ from scalar.uncertainty_band import (
 
 def _workspace_grid_dir():
     repo = Path(__file__).resolve().parents[2]
-    return repo.parents[2] / "shared" / "NNPDF40" / "fonll-local" / "output"
+    if override := os.environ.get("FONLL_GRID_DIR"):
+        candidate = Path(override).expanduser().resolve()
+        if (candidate / "variation_manifest.json").is_file():
+            return candidate
+        pytest.fail(f"FONLL_GRID_DIR has no variation manifest: {candidate}")
+    for ancestor in (repo, *repo.parents):
+        candidate = ancestor / "shared" / "NNPDF40" / "fonll-local" / "output"
+        if (candidate / "variation_manifest.json").is_file():
+            return candidate
+    pytest.skip("external FONLL variation bundle is not available")
 
 
 def test_complete_fonll_manifest_is_discovered():
