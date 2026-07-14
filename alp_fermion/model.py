@@ -31,6 +31,12 @@ External inputs (replacing the analytic placeholders of the first version):
    decoded table are BR(a->mumu)=0.202243 at exactly 1 GeV and the sharp
    charm-region structure around 2.58 GeV.
 
+   The exact arXiv:2310.03524 widths, exclusive branching functions, and
+   squared matrix elements shipped in the same SensCalc release are available
+   as ``decay_model="2310_structural"``. They define a one-sided
+   heavy-pseudoscalar structural comparison, not the central prediction and not
+   a calibrated confidence interval; see data/senscalc_2310/PROVENANCE.md.
+
 2. **b -> s a production coupling (one-loop RG, finite terms).**  The
    flavour-violating coefficient is evaluated with the ALPINIST implementation
    of the GKOZ RG equations (tools/compute_cbs_alpinist.py, ported under
@@ -64,10 +70,22 @@ the fully decayed stable final state contains reconstructable tracks.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
 from particle import Particle
+
+try:
+    from .decay_models import (
+        DEFAULT_DECAY_MODEL,
+        STRUCTURAL_DECAY_MODEL,
+        decay_data_dir,
+    )
+except ImportError:  # direct module execution from the alp_fermion directory
+    from decay_models import (
+        DEFAULT_DECAY_MODEL,
+        STRUCTURAL_DECAY_MODEL,
+        decay_data_dir,
+    )
 
 # --------------------------------------------------------------------------
 # Physical constants (PDG 2024 central values)
@@ -112,12 +130,11 @@ LIGHT_MESON_RESONANCE_WINDOWS = (
     (0.940, 0.974, "eta-prime"),
 )
 
-SENSCALC_2501_DATA_DIR = (
-    Path(__file__).resolve().parent / "data" / "senscalc_2501"
-)
+SENSCALC_2501_DATA_DIR = decay_data_dir(DEFAULT_DECAY_MODEL)
+SENSCALC_2310_DATA_DIR = decay_data_dir(STRUCTURAL_DECAY_MODEL)
 
-_WIDTH_CACHE: tuple[np.ndarray, dict[str, np.ndarray]] | None = None
-_BRANCHING_CACHE: tuple[np.ndarray, dict[str, np.ndarray]] | None = None
+_WIDTH_CACHE: dict[str, tuple[np.ndarray, dict[str, np.ndarray]]] = {}
+_BRANCHING_CACHE: dict[str, tuple[np.ndarray, dict[str, np.ndarray]]] = {}
 
 # SensCalc's no-ECAL selection removes only these exclusive channels.  Channel
 # IDs are stable products of the pinned exporter and are checked on load.
@@ -153,15 +170,15 @@ def excluded_light_meson_resonance(m_a):
     return None
 
 
-def _load_width_tables():
-    """Return the pinned 2501 mass grid and canonical BNT width columns."""
-    global _WIDTH_CACHE
-    if _WIDTH_CACHE is None:
+def _load_width_tables(decay_model=DEFAULT_DECAY_MODEL):
+    """Return one pinned mass grid and its canonical BNT width columns."""
+    if decay_model not in _WIDTH_CACHE:
+        data_dir = decay_data_dir(decay_model)
         metadata = json.loads(
-            (SENSCALC_2501_DATA_DIR / "widths_metadata.json").read_text()
+            (data_dir / "widths_metadata.json").read_text()
         )
         table = np.loadtxt(
-            SENSCALC_2501_DATA_DIR / "widths_bnt.csv",
+            data_dir / "widths_bnt.csv",
             delimiter=",",
             skiprows=1,
         )
@@ -176,20 +193,22 @@ def _load_width_tables():
         }
         if not required <= columns.keys():
             missing = ", ".join(sorted(required - columns.keys()))
-            raise RuntimeError(f"SensCalc 2501 width columns missing: {missing}")
-        _WIDTH_CACHE = (table[:, 0], columns)
-    return _WIDTH_CACHE
+            raise RuntimeError(
+                f"SensCalc {decay_model} width columns missing: {missing}"
+            )
+        _WIDTH_CACHE[decay_model] = (table[:, 0], columns)
+    return _WIDTH_CACHE[decay_model]
 
 
-def _load_branching_tables():
-    """Return the 2501 mass grid and exclusive branching-ratio columns."""
-    global _BRANCHING_CACHE
-    if _BRANCHING_CACHE is None:
+def _load_branching_tables(decay_model=DEFAULT_DECAY_MODEL):
+    """Return one pinned mass grid and exclusive branching-ratio columns."""
+    if decay_model not in _BRANCHING_CACHE:
+        data_dir = decay_data_dir(decay_model)
         channels = json.loads(
-            (SENSCALC_2501_DATA_DIR / "decay_channels.json").read_text()
+            (data_dir / "decay_channels.json").read_text()
         )
         table = np.loadtxt(
-            SENSCALC_2501_DATA_DIR / "branching_ratios.csv",
+            data_dir / "branching_ratios.csv",
             delimiter=",",
             skiprows=1,
         )
@@ -199,36 +218,40 @@ def _load_branching_tables():
         }
         expected = {f"channel_{index:03d}" for index in range(1, 33)}
         if columns.keys() != expected:
-            raise RuntimeError("SensCalc 2501 decay-channel IDs are incomplete")
-        _BRANCHING_CACHE = (table[:, 0], columns)
-    return _BRANCHING_CACHE
+            raise RuntimeError(
+                f"SensCalc {decay_model} decay-channel IDs are incomplete"
+            )
+        _BRANCHING_CACHE[decay_model] = (table[:, 0], columns)
+    return _BRANCHING_CACHE[decay_model]
 
 
-def _width_table(name):
-    """(m_a, Gamma/(1/f)^2) for a canonical 2501 width column."""
-    mass_grid, columns = _load_width_tables()
+def _width_table(name, decay_model=DEFAULT_DECAY_MODEL):
+    """(m_a, Gamma/(1/f)^2) for one canonical width column."""
+    mass_grid, columns = _load_width_tables(decay_model)
     return mass_grid, columns[name]
 
 
-def _table_width(name, m_a):
+def _table_width(name, m_a, decay_model=DEFAULT_DECAY_MODEL):
     """Interpolated Gamma/(1/f)^2 [GeV^3]; zero outside the tabulated range."""
-    m_grid, g_grid = _width_table(name)
+    m_grid, g_grid = _width_table(name, decay_model)
     m_a = float(m_a)
     if m_a < m_grid[0] or m_a > m_grid[-1]:
         return 0.0
     return float(np.interp(m_a, m_grid, g_grid))
 
 
-def table_mass_max(name="total"):
-    return float(_width_table(name)[0][-1])
+def table_mass_max(name="total", decay_model=DEFAULT_DECAY_MODEL):
+    return float(_width_table(name, decay_model)[0][-1])
 
 
-def table_mass_min(name="total"):
-    return float(_width_table(name)[0][0])
+def table_mass_min(name="total", decay_model=DEFAULT_DECAY_MODEL):
+    return float(_width_table(name, decay_model)[0][0])
 
 
-def _exclusive_branching(channel_id, m_a):
-    mass_grid, columns = _load_branching_tables()
+def _exclusive_branching(
+    channel_id, m_a, decay_model=DEFAULT_DECAY_MODEL
+):
+    mass_grid, columns = _load_branching_tables(decay_model)
     m_a = float(m_a)
     if m_a < mass_grid[0] or m_a > mass_grid[-1]:
         return 0.0
@@ -248,49 +271,57 @@ def _two_body_fermion_width(m_a, m_f, n_c, inv_f, c_f=1.0):
     return n_c * (c_f * m_f) ** 2 * m_a * inv_f ** 2 * beta / (8.0 * np.pi)
 
 
-def alp_partial_widths(m_a, inv_f, c_f=1.0):
+def alp_partial_widths(
+    m_a, inv_f, c_f=1.0, decay_model=DEFAULT_DECAY_MODEL
+):
     """Per-channel partial widths [GeV] as a dict.
 
-    Every channel comes from the arXiv:2501.04525 table in the BNT convention.
-    Universal ``c_f`` and ``1/f`` rescale all coefficients together.
+    Every channel comes from the selected exact SensCalc table in the BNT
+    convention. Universal ``c_f`` and ``1/f`` rescale all coefficients together.
     """
     scale = inv_f ** 2 * c_f ** 2
     return {
-        "ee": _table_width("ee", m_a) * scale,
-        "mumu": _table_width("mumu", m_a) * scale,
-        "tautau": _table_width("tautau", m_a) * scale,
-        "gammagamma": _table_width("gammagamma", m_a) * scale,
-        "hadronic": _table_width("hadronic_total", m_a) * scale,
+        "ee": _table_width("ee", m_a, decay_model) * scale,
+        "mumu": _table_width("mumu", m_a, decay_model) * scale,
+        "tautau": _table_width("tautau", m_a, decay_model) * scale,
+        "gammagamma": _table_width("gammagamma", m_a, decay_model) * scale,
+        "hadronic": _table_width("hadronic_total", m_a, decay_model) * scale,
     }
 
 
-def hadronic_invisible_width(m_a, inv_f, c_f=1.0):
+def hadronic_invisible_width(
+    m_a, inv_f, c_f=1.0, decay_model=DEFAULT_DECAY_MODEL
+):
     """Hadronic width outside SensCalc's charged/no-ECAL channel selection."""
-    total = alp_total_width(m_a, inv_f, c_f)
+    total = alp_total_width(m_a, inv_f, c_f, decay_model)
     visible_br = sum(
-        _exclusive_branching(channel_id, m_a)
+        _exclusive_branching(channel_id, m_a, decay_model)
         for channel_id in SENSCALC_VISIBLE_HADRONIC_CHANNEL_IDS
     )
-    hadronic = alp_partial_widths(m_a, inv_f, c_f)["hadronic"]
+    hadronic = alp_partial_widths(m_a, inv_f, c_f, decay_model)["hadronic"]
     return max(hadronic - visible_br * total, 0.0)
 
 
-def alp_total_width(m_a, inv_f, c_f=1.0):
-    return float(_table_width("total", m_a) * inv_f ** 2 * c_f ** 2)
+def alp_total_width(m_a, inv_f, c_f=1.0, decay_model=DEFAULT_DECAY_MODEL):
+    return float(
+        _table_width("total", m_a, decay_model) * inv_f ** 2 * c_f ** 2
+    )
 
 
-def alp_ctau(m_a, inv_f, c_f=1.0):
+def alp_ctau(m_a, inv_f, c_f=1.0, decay_model=DEFAULT_DECAY_MODEL):
     """Lab-frame c*tau [m] of the ALP at rest-frame width Gamma_tot."""
-    gamma = alp_total_width(m_a, inv_f, c_f)
+    gamma = alp_total_width(m_a, inv_f, c_f, decay_model)
     if gamma <= 0.0:
         return np.inf
     return HBAR_C_GEV_M / gamma
 
 
-def alp_branchings(m_a, inv_f=INV_F_REF, c_f=1.0):
+def alp_branchings(
+    m_a, inv_f=INV_F_REF, c_f=1.0, decay_model=DEFAULT_DECAY_MODEL
+):
     """Branching ratios per channel (coupling-independent ratios)."""
-    w = alp_partial_widths(m_a, inv_f, c_f)
-    tot = alp_total_width(m_a, inv_f, c_f)
+    w = alp_partial_widths(m_a, inv_f, c_f, decay_model)
+    tot = alp_total_width(m_a, inv_f, c_f, decay_model)
     if tot <= 0.0:
         return {k: 0.0 for k in w}
     return {k: v / tot for k, v in w.items()}
@@ -315,11 +346,13 @@ VISIBLE_CHANNELS = {
 }
 
 
-def visible_channel_weights(m_a, inv_f=INV_F_REF, c_f=1.0):
+def visible_channel_weights(
+    m_a, inv_f=INV_F_REF, c_f=1.0, decay_model=DEFAULT_DECAY_MODEL
+):
     """{channel: BR} over the track-producing channels (ratios coupling
     independent).  ``hadronic`` here is the *charged-visible* hadronic BR:
     total hadronic minus the all-neutral modes."""
-    if alp_total_width(m_a, inv_f, c_f) <= 0.0:
+    if alp_total_width(m_a, inv_f, c_f, decay_model) <= 0.0:
         return {}
     out = {
         channel: value
@@ -328,10 +361,10 @@ def visible_channel_weights(m_a, inv_f=INV_F_REF, c_f=1.0):
             ("mumu", "channel_002"),
             ("tautau", "channel_003"),
         )
-        if (value := _exclusive_branching(channel_id, m_a)) > 0.0
+        if (value := _exclusive_branching(channel_id, m_a, decay_model)) > 0.0
     }
     hadronic = sum(
-        _exclusive_branching(channel_id, m_a)
+        _exclusive_branching(channel_id, m_a, decay_model)
         for channel_id in SENSCALC_VISIBLE_HADRONIC_CHANNEL_IDS
     )
     if hadronic > 0.0:
@@ -339,10 +372,14 @@ def visible_channel_weights(m_a, inv_f=INV_F_REF, c_f=1.0):
     return out
 
 
-def visible_fraction(m_a, inv_f=INV_F_REF, c_f=1.0):
+def visible_fraction(
+    m_a, inv_f=INV_F_REF, c_f=1.0, decay_model=DEFAULT_DECAY_MODEL
+):
     """Total BR into channels with >= 2 prompt charged tracks (multiplies the
     production yield in the sensitivity scan; coupling independent)."""
-    return float(sum(visible_channel_weights(m_a, inv_f, c_f).values()))
+    return float(
+        sum(visible_channel_weights(m_a, inv_f, c_f, decay_model).values())
+    )
 
 
 # --------------------------------------------------------------------------

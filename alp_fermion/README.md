@@ -41,13 +41,15 @@ alp_fermion/
   production_spectra.py  source-pinned SensCalc LHC light-parent sampler/audit
   generate_decay_templates_pythia.py  full-branching stable-particle templates
   templates.py      legacy two-track proxy, retained only for reproducibility
-  exclusive_decays.py  decoded 2501 exclusive-channel to PDG mapping
+  exclusive_decays.py  decoded central/structural exclusive-channel to PDG mapping
+  decay_models.py   named 2501 central and 2310 structural model registry
   mass_grid.py      shared dense-scan mass grid
   sensitivity.py    (m_a, 1/f) closed-island scan; N_signal ≥ 3, 3000 fb⁻¹
   plot.py           BC10 island in the (m_a, 1/f) plane (+ optional overlay curves)
   paths.py          output-dir policy (ALP_TMP_DIR override) + hnl/ import shim
   data/alpinist/    digitized GKOZ decay-width tables via ALPINIST (PROVENANCE.md, pinned SHA)
   data/senscalc_2501/ provenance and production audit for the pinned arXiv:2501.04525 upgrade
+  data/senscalc_2310/ exact arXiv:2310.03524 structural widths, BRs, and MEs
   data/published/   canonical published sensitivity curve (CSV + MANIFEST; see its README)
   tools/compute_cbs_alpinist.py  regenerates the b→s a RG coefficient (BSD-3 ALPINIST port)
   tools/export_senscalc_2501.{py,wls}  verifies and exports the three SensCalc decay inputs
@@ -72,7 +74,9 @@ The publication theory band is driven by
 `python -m alp_fermion.run_uncertainty_campaign`. It performs an independent
 600k production, geometry, reconstruction, and sensitivity run for every
 coherent FONLL scale/PDF/bottom-mass member, plus the explicit `a -> gg`
-surrogate and `C_bs` scheme variations. See
+surrogate and `C_bs` scheme variations. It also runs the exact SensCalc 2310
+decay model as a separate one-sided structural contour, outside the ordinary
+pointwise halo. See
 [`UNCERTAINTY.md`](UNCERTAINTY.md) for the prescription and reproduction
 commands.
 
@@ -97,6 +101,11 @@ with `--resume` to skip masses already present in that file.
   normalized within each exclusive channel so its branching fraction is
   unchanged. The `a -> gg` mode uses an equal light-quark jet surrogate and
   remains an explicit decay-acceptance systematic.
+- Heavy-pseudoscalar structural comparison: exact arXiv:2310.03524 widths,
+  exclusive branching functions, and squared matrix elements from the same
+  SensCalc pin, exported under `data/senscalc_2310/`. This alternative is
+  propagated through independent full-decay templates and reconstruction but
+  is plotted separately rather than interpreted as a confidence interval.
 - Benchmark definition: 2025 PBC report (arXiv:2505.00947); unified FIP
   calculation arXiv:2311.00507; state-of-the-art hadronic treatment
   arXiv:2501.04525.

@@ -1,13 +1,19 @@
-"""Machine-readable exclusive arXiv:2501.04525 ALP decay definitions."""
+"""Machine-readable exclusive definitions for the pinned ALP decay models."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from functools import lru_cache
 
 import numpy as np
 
-DATA_DIR = Path(__file__).resolve().parent / "data" / "senscalc_2501"
+try:
+    from .decay_models import DEFAULT_DECAY_MODEL, decay_data_dir
+except ImportError:  # direct module execution from the alp_fermion directory
+    from decay_models import DEFAULT_DECAY_MODEL, decay_data_dir
+
+
+DATA_DIR = decay_data_dir(DEFAULT_DECAY_MODEL)
 HBAR_C_GEV_M = 1.973269804e-16
 INV_F_REF = 1.0e-3
 
@@ -52,35 +58,32 @@ DECAY_PRODUCTS_PDG = {
 DUPLICATE_CHANNEL_IDS = {"channel_024", "channel_029"}
 UNCLASSIFIED_CHANNEL_ID = "unclassified_neutral_remainder"
 
-_BRANCHING_TABLE = None
-_TOTAL_WIDTH_TABLE = None
+@lru_cache(maxsize=None)
+def _branching_table(decay_model: str = DEFAULT_DECAY_MODEL):
+    return np.genfromtxt(
+        decay_data_dir(decay_model) / "branching_ratios.csv",
+        delimiter=",",
+        names=True,
+    )
 
 
-def _branching_table():
-    global _BRANCHING_TABLE
-    if _BRANCHING_TABLE is None:
-        _BRANCHING_TABLE = np.genfromtxt(
-            DATA_DIR / "branching_ratios.csv", delimiter=",", names=True
-        )
-    return _BRANCHING_TABLE
+@lru_cache(maxsize=None)
+def _total_width_table(decay_model: str = DEFAULT_DECAY_MODEL):
+    data_dir = decay_data_dir(decay_model)
+    metadata = json.loads((data_dir / "widths_metadata.json").read_text())
+    total = next(
+        entry for entry in metadata["columns"]
+        if entry["canonical_name"] == "total"
+    )
+    table = np.loadtxt(data_dir / "widths_bnt.csv", delimiter=",", skiprows=1)
+    return table[:, 0], table[:, total["source_index"] - 1]
 
 
-def _total_width_table():
-    global _TOTAL_WIDTH_TABLE
-    if _TOTAL_WIDTH_TABLE is None:
-        metadata = json.loads((DATA_DIR / "widths_metadata.json").read_text())
-        total = next(
-            entry for entry in metadata["columns"]
-            if entry["canonical_name"] == "total"
-        )
-        table = np.loadtxt(DATA_DIR / "widths_bnt.csv", delimiter=",", skiprows=1)
-        _TOTAL_WIDTH_TABLE = (table[:, 0], table[:, total["source_index"] - 1])
-    return _TOTAL_WIDTH_TABLE
-
-
-def exclusive_branching_weights(mass_gev: float) -> dict[str, float]:
+def exclusive_branching_weights(
+    mass_gev: float, decay_model: str = DEFAULT_DECAY_MODEL
+) -> dict[str, float]:
     """Unique exclusive BRs plus a conservative neutral missing-width mode."""
-    table = _branching_table()
+    table = _branching_table(decay_model)
     masses = table["mass_GeV"]
     if not masses[0] <= mass_gev <= masses[-1]:
         raise ValueError(f"mass {mass_gev:g} GeV is outside the decay table")
@@ -97,10 +100,11 @@ def exclusive_branching_weights(mass_gev: float) -> dict[str, float]:
     return {key: value for key, value in weights.items() if value > 0.0}
 
 
-def ctau_at_reference_coupling(mass_gev: float) -> float:
-    masses, coefficients = _total_width_table()
+def ctau_at_reference_coupling(
+    mass_gev: float, decay_model: str = DEFAULT_DECAY_MODEL
+) -> float:
+    masses, coefficients = _total_width_table(decay_model)
     if not masses[0] <= mass_gev <= masses[-1]:
         raise ValueError(f"mass {mass_gev:g} GeV is outside the width table")
     width = float(np.interp(mass_gev, masses, coefficients)) * INV_F_REF**2
     return HBAR_C_GEV_M / width if width > 0.0 else np.inf
-

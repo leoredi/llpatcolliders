@@ -1,19 +1,21 @@
-"""Evaluate the exact SensCalc 2501 three-body decay matrix elements."""
+"""Evaluate exact three-body matrix elements from pinned SensCalc models."""
 
 from __future__ import annotations
 
 import json
 import sys
 from functools import lru_cache
-from pathlib import Path
 
 import numpy as np
 
+try:
+    from .decay_models import DEFAULT_DECAY_MODEL, decay_data_dir
+except ImportError:  # direct module execution from the alp_fermion directory
+    from decay_models import DEFAULT_DECAY_MODEL, decay_data_dir
+
+
 DATA_PATH = (
-    Path(__file__).resolve().parent
-    / "data"
-    / "senscalc_2501"
-    / "matrix_elements.json"
+    decay_data_dir(DEFAULT_DECAY_MODEL) / "matrix_elements.json"
 )
 
 # The order is the order of products passed to Pythia and of E1/E3 in the
@@ -52,9 +54,13 @@ _EVAL_GLOBALS = {
 }
 
 
-@lru_cache(maxsize=1)
-def _compiled_expressions() -> dict[str, object]:
-    records = json.loads(DATA_PATH.read_text())
+@lru_cache(maxsize=None)
+def _compiled_expressions(
+    decay_model: str = DEFAULT_DECAY_MODEL,
+) -> dict[str, object]:
+    records = json.loads(
+        (decay_data_dir(decay_model) / "matrix_elements.json").read_text()
+    )
     # The largest exported expression has deeply nested function calls.
     sys.setrecursionlimit(max(sys.getrecursionlimit(), 200_000))
     return {
@@ -70,10 +76,11 @@ def matrix_element_squared(
     mass_gev: float,
     energy_1_gev,
     energy_3_gev,
+    decay_model: str = DEFAULT_DECAY_MODEL,
 ) -> np.ndarray:
     """Return the real, non-negative squared amplitude on a Dalitz sample."""
     values = eval(
-        _compiled_expressions()[matrix_element_id],
+        _compiled_expressions(decay_model)[matrix_element_id],
         _EVAL_GLOBALS,
         {
             "mLLP": float(mass_gev),
@@ -90,6 +97,7 @@ def normalized_template_weights(
     energy_1_gev,
     energy_3_gev,
     mass_gev: float,
+    decay_model: str = DEFAULT_DECAY_MODEL,
 ) -> np.ndarray:
     """Matrix-element reweights normalized within every exclusive channel.
 
@@ -113,6 +121,7 @@ def normalized_template_weights(
             mass_gev,
             energy_1_gev[selected],
             energy_3_gev[selected],
+            decay_model,
         )
         mean = float(raw.mean())
         if mean > 0.0:

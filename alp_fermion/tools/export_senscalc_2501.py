@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Verify and export the pinned SensCalc arXiv:2501.04525 decay inputs.
+"""Verify and export pinned SensCalc fermionic-ALP decay inputs.
 
 The upstream files are Wolfram MX dumps, so they must be decoded by the
 official Wolfram Engine.  This wrapper verifies the exact SensCalc release and
-input hashes before invoking ``export_senscalc_2501.wls``.
+input hashes before invoking ``export_senscalc_2501.wls``.  The 2501 model is
+the publication central value; the exact 2310 model is retained as a named,
+one-sided heavy-pseudoscalar structural alternative.
 
 Example:
 
     python alp_fermion/tools/export_senscalc_2501.py /path/to/SensCalc
+    python alp_fermion/tools/export_senscalc_2501.py /path/to/SensCalc \
+        --decay-model 2310_structural
 """
 
 from __future__ import annotations
@@ -31,29 +35,72 @@ SENSCALC_TAG = "v.1.3.3"
 SENSCALC_COMMIT = "0bca050633aae16e148d47f21840fa07ff4b8724"
 
 DECAY_DATA_SUBDIR = Path("phenomenology/ALP-fermion/decay widths")
-SOURCE_FILES = {
-    "widths": (
-        DECAY_DATA_SUBDIR
-        / "Widths-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
-        "d12fb78d28edff0aa081c9fb66d829b42b4ec71202684019d7b9047ecb40b869",
-    ),
-    "branching_ratios": (
-        DECAY_DATA_SUBDIR
-        / "Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
-        "34a09eed87d081bfffe79b464094741454022f79478c5b28bc236bc361049286",
-    ),
-    "matrix_elements": (
-        DECAY_DATA_SUBDIR
-        / "Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m",
-        "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed",
-    ),
-    "acceptance_notebook": (
-        Path("codes/Acceptances/ALP-fermion.nb"),
-        "8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4",
-    ),
+ACCEPTANCE_NOTEBOOK = Path("codes/Acceptances/ALP-fermion.nb")
+ACCEPTANCE_NOTEBOOK_SHA256 = (
+    "8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4"
+)
+DEFAULT_DECAY_MODEL = "2501"
+DECAY_MODEL_SPECS = {
+    "2501": {
+        "file_suffix": "2501.04525",
+        "phenomenology": "arXiv:2501.04525",
+        "output_subdir": "senscalc_2501",
+        "source_sha256": {
+            "widths": "d12fb78d28edff0aa081c9fb66d829b42b4ec71202684019d7b9047ecb40b869",
+            "branching_ratios": "34a09eed87d081bfffe79b464094741454022f79478c5b28bc236bc361049286",
+            "matrix_elements": "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed",
+            "acceptance_notebook": ACCEPTANCE_NOTEBOOK_SHA256,
+        },
+    },
+    "2310_structural": {
+        "file_suffix": "2310.03524",
+        "phenomenology": "arXiv:2310.03524",
+        "output_subdir": "senscalc_2310",
+        "source_sha256": {
+            "widths": "40b51e8d35a8edbb3027cfcc3a2bb369faff8fc009a958863d6264f227410e93",
+            "branching_ratios": "130aaa7e95c50a3fea8f43a537fcddfe2bf2d4f676a6110bd3f88097da2826cd",
+            "matrix_elements": "89ef54601fc995418e9967d8269862e27cb86852a847bff1669e8948aa12dfca",
+            "acceptance_notebook": ACCEPTANCE_NOTEBOOK_SHA256,
+        },
+    },
 }
 
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "data" / "senscalc_2501"
+
+def source_files(decay_model: str) -> dict[str, tuple[Path, str]]:
+    """Return exact upstream paths and hashes for one pinned decay model."""
+    spec = DECAY_MODEL_SPECS[decay_model]
+    suffix = spec["file_suffix"]
+    hashes = spec["source_sha256"]
+    return {
+        "widths": (
+            DECAY_DATA_SUBDIR
+            / f"Widths-model-ALP-fermion-scale-1000.-GeV-{suffix}.m",
+            hashes["widths"],
+        ),
+        "branching_ratios": (
+            DECAY_DATA_SUBDIR
+            / f"Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-{suffix}.m",
+            hashes["branching_ratios"],
+        ),
+        "matrix_elements": (
+            DECAY_DATA_SUBDIR
+            / f"Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-{suffix}.m",
+            hashes["matrix_elements"],
+        ),
+        "acceptance_notebook": (
+            ACCEPTANCE_NOTEBOOK,
+            hashes["acceptance_notebook"],
+        ),
+    }
+
+
+# Backward-compatible aliases used by the existing 2501 export tests/API.
+SOURCE_FILES = source_files(DEFAULT_DECAY_MODEL)
+DEFAULT_OUTPUT_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / DECAY_MODEL_SPECS[DEFAULT_DECAY_MODEL]["output_subdir"]
+)
 EXPORTER = Path(__file__).with_suffix(".wls")
 EXPECTED_OUTPUT_FILES = (
     "widths_raw_senscalc.csv",
@@ -127,7 +174,9 @@ def git_head(repo: Path) -> str:
         raise InputError(f"not a readable Git checkout: {repo}") from exc
 
 
-def verify_sources(repo: Path) -> dict[str, Path]:
+def verify_sources(
+    repo: Path, decay_model: str = DEFAULT_DECAY_MODEL
+) -> dict[str, Path]:
     repo = repo.resolve()
     head = git_head(repo)
     if head != SENSCALC_COMMIT:
@@ -137,7 +186,7 @@ def verify_sources(repo: Path) -> dict[str, Path]:
         )
 
     verified = {}
-    for key, (relative_path, expected_hash) in SOURCE_FILES.items():
+    for key, (relative_path, expected_hash) in source_files(decay_model).items():
         path = repo / relative_path
         if not path.is_file():
             raise InputError(f"missing SensCalc input: {path}")
@@ -268,7 +317,9 @@ def validate_decay_schema(export_dir: Path) -> None:
         raise InputError("matrix-element IDs are not unique")
 
 
-def validate_export(export_dir: Path) -> None:
+def validate_export(
+    export_dir: Path, decay_model: str = DEFAULT_DECAY_MODEL
+) -> None:
     """Reject incomplete or internally inconsistent Wolfram output."""
     missing = [name for name in EXPECTED_OUTPUT_FILES
                if not (export_dir / name).is_file()]
@@ -284,13 +335,21 @@ def validate_export(export_dir: Path) -> None:
         raise InputError("export manifest has the wrong SensCalc tag")
     if manifest.get("senscalc_commit") != SENSCALC_COMMIT:
         raise InputError("export manifest has the wrong SensCalc commit")
-    if manifest.get("phenomenology") != "arXiv:2501.04525":
+    spec = DECAY_MODEL_SPECS[decay_model]
+    if manifest.get("phenomenology") != spec["phenomenology"]:
         raise InputError("export manifest has the wrong phenomenology source")
+    manifest_model = manifest.get("decay_model")
+    if manifest_model is None and decay_model == DEFAULT_DECAY_MODEL:
+        # Accept the original 2501 export manifest generated before this field
+        # was introduced; all source and output hashes are still verified.
+        manifest_model = DEFAULT_DECAY_MODEL
+    if manifest_model != decay_model:
+        raise InputError("export manifest has the wrong decay-model identifier")
     if not isinstance(manifest.get("wolfram_system_id"), str):
         raise InputError("export manifest has no Wolfram system ID")
     expected_source_hashes = {
         key: expected_hash
-        for key, (_, expected_hash) in SOURCE_FILES.items()
+        for key, (_, expected_hash) in source_files(decay_model).items()
     }
     if manifest.get("source_sha256") != expected_source_hashes:
         raise InputError("export manifest has the wrong source hashes")
@@ -320,10 +379,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("senscalc_root", type=Path, help="SensCalc Git checkout")
     parser.add_argument(
+        "--decay-model",
+        choices=tuple(DECAY_MODEL_SPECS),
+        default=DEFAULT_DECAY_MODEL,
+        help="decay-table model to verify/export (default: 2501)",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help=f"export destination (default: {DEFAULT_OUTPUT_DIR})",
+        default=None,
+        help="export destination (default: model-specific committed data directory)",
     )
     parser.add_argument(
         "--check-only",
@@ -336,12 +401,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        verified = verify_sources(args.senscalc_root)
+        verified = verify_sources(args.senscalc_root, args.decay_model)
     except InputError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    print(f"SensCalc {SENSCALC_TAG} verified at {SENSCALC_COMMIT}")
+    print(
+        f"SensCalc {SENSCALC_TAG} verified at {SENSCALC_COMMIT} "
+        f"for {args.decay_model}"
+    )
     mx_system_ids = source_mx_system_ids(verified)
     for key, path in verified.items():
         suffix = f"; MX {mx_system_ids[key]}" if key in mx_system_ids else ""
@@ -365,7 +433,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
 
-    output_dir = args.output_dir.resolve()
+    output_dir = (
+        args.output_dir
+        if args.output_dir is not None
+        else (
+            Path(__file__).resolve().parents[1]
+            / "data"
+            / DECAY_MODEL_SPECS[args.decay_model]["output_subdir"]
+        )
+    ).resolve()
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     try:
         with tempfile.TemporaryDirectory(
@@ -378,9 +454,10 @@ def main(argv: list[str] | None = None) -> int:
                 str(EXPORTER),
                 str(args.senscalc_root.resolve()),
                 str(staging_dir),
+                args.decay_model,
             ]
             subprocess.run(command, check=True, env=wolfram_environment())
-            validate_export(staging_dir)
+            validate_export(staging_dir, args.decay_model)
             install_export(staging_dir, output_dir)
     except subprocess.CalledProcessError as exc:
         print(
@@ -394,7 +471,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 5
 
-    print(f"Exported SensCalc 2501 inputs to {output_dir}")
+    print(f"Exported SensCalc {args.decay_model} inputs to {output_dir}")
     return 0
 
 

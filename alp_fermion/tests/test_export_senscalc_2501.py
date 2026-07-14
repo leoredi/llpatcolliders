@@ -8,7 +8,7 @@ import pytest
 from alp_fermion.tools import export_senscalc_2501 as export
 
 
-def _write_complete_export(path):
+def _write_complete_export(path, decay_model=export.DEFAULT_DECAY_MODEL):
     path.mkdir()
     width_ids = [
         "mass_GeV",
@@ -82,11 +82,12 @@ def _write_complete_export(path):
     (path / "EXPORT_MANIFEST.json").write_text(json.dumps({
         "senscalc_tag": export.SENSCALC_TAG,
         "senscalc_commit": export.SENSCALC_COMMIT,
-        "phenomenology": "arXiv:2501.04525",
+        "phenomenology": export.DECAY_MODEL_SPECS[decay_model]["phenomenology"],
+        "decay_model": decay_model,
         "wolfram_system_id": "test-system",
         "source_sha256": {
             key: expected_hash
-            for key, (_, expected_hash) in export.SOURCE_FILES.items()
+            for key, (_, expected_hash) in export.source_files(decay_model).items()
         },
         "output_sha256": hashes,
     }))
@@ -103,6 +104,23 @@ def test_validate_export_accepts_complete_hashed_bundle(tmp_path):
     staged = tmp_path / "staged"
     _write_complete_export(staged)
     export.validate_export(staged)
+
+
+def test_validate_export_accepts_exact_2310_structural_schema(tmp_path):
+    staged = tmp_path / "staged"
+    _write_complete_export(staged, "2310_structural")
+    export.validate_export(staged, "2310_structural")
+
+
+def test_2310_source_files_and_hashes_are_pinned():
+    sources = export.source_files("2310_structural")
+    assert sources["widths"][0].name.endswith("2310.03524.m")
+    assert sources["branching_ratios"][1] == (
+        "130aaa7e95c50a3fea8f43a537fcddfe2bf2d4f676a6110bd3f88097da2826cd"
+    )
+    assert sources["matrix_elements"][1] == (
+        "89ef54601fc995418e9967d8269862e27cb86852a847bff1669e8948aa12dfca"
+    )
 
 
 def test_validate_export_rejects_modified_product(tmp_path):

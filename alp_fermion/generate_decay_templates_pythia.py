@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Generate full-branching BC10 decay templates with ROOT/Pythia8.
 
-The exact arXiv:2501.04525 exclusive branching ratios select the primary
-decay. Pythia decays unstable daughters and showers/hadronizes partonic modes,
-so the cached template contains stable final particles and the GRENDEL
-reconstruction determines visibility. Three-body primaries are generated in
-flat phase space and carry normalized weights from the exact exported 2501
-matrix elements. Pythia cannot hadronize an isolated two-gluon
-colour singlet through this external-decay interface, so ``a -> gg`` is
+The selected exact SensCalc exclusive branching ratios determine the primary
+decay. The 2501 model is the central value; ``2310_structural`` is the named
+one-sided heavy-pseudoscalar alternative. Pythia decays unstable daughters and
+showers/hadronizes partonic modes, so the cached template contains stable final
+particles and the GRENDEL reconstruction determines visibility. Three-body
+primaries are generated in flat phase space and carry normalized weights from
+the corresponding exact exported matrix elements. Pythia cannot hadronize an
+isolated two-gluon colour singlet through this external-decay interface, so
+``a -> gg`` is
 represented by an equal u/d/s light-quark jet mixture.  The ``--gluon-surrogate``
 option generates the pure-u, pure-d, and pure-s alternatives used to propagate
 this implementation choice as a decay-acceptance uncertainty.
@@ -20,6 +22,7 @@ Run with the same Homebrew ROOT environment used by the HNL templates:
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from pathlib import Path
 
@@ -39,6 +42,11 @@ from exclusive_decays import (  # noqa: E402
     exclusive_branching_weights,
 )
 from decay_matrix_elements import normalized_template_weights  # noqa: E402
+from decay_models import (  # noqa: E402
+    DECAY_MODEL_SPECS,
+    DEFAULT_DECAY_MODEL,
+    validate_decay_model,
+)
 from mass_grid import ALP_MASS_GRID  # noqa: E402
 from paths import TEMPLATE_DIR  # noqa: E402
 from fairship_decay import (  # noqa: E402
@@ -68,21 +76,68 @@ def _mass_label(mass_gev: float) -> str:
     return f"{mass_gev:.3f}".replace(".", "p")
 
 
+def _masses_from_csv(path: Path) -> list[float]:
+    with path.expanduser().resolve().open(newline="") as stream:
+        reader = csv.DictReader(stream)
+        if reader.fieldnames is None or "mass_GeV" not in reader.fieldnames:
+            raise ValueError(f"mass-grid file has no mass_GeV column: {path}")
+        masses = [float(row["mass_GeV"]) for row in reader]
+    values = np.asarray(masses, dtype=float)
+    if len(values) == 0 or np.any(~np.isfinite(values)) or np.any(values <= 0.0):
+        raise ValueError("mass grid must contain finite positive values")
+    if np.any(np.diff(values) <= 0.0):
+        raise ValueError("mass grid must be strictly increasing with no duplicates")
+    return masses
+
+
+def _validate_resumed_template(
+    path: Path,
+    n_templates: int,
+    gluon_surrogate: str,
+    decay_model: str,
+) -> None:
+    """Refuse to reuse a template generated for a different model/config."""
+    with np.load(path) as bundle:
+        observed_model = (
+            str(bundle["decay_model"])
+            if "decay_model" in bundle.files
+            else DEFAULT_DECAY_MODEL
+        )
+        observed_count = int(bundle["n_templates"])
+        observed_surrogate = str(bundle["gluon_surrogate"])
+    expected = (decay_model, int(n_templates), gluon_surrogate)
+    observed = (observed_model, observed_count, observed_surrogate)
+    if observed != expected:
+        raise RuntimeError(
+            f"resume template {path} has model/count/surrogate {observed}; "
+            f"expected {expected}"
+        )
+
+
 class AlpPythiaBackend:
     """One initialized Pythia instance for an ALP mass and BR mixture."""
 
-    def __init__(self, mass_gev: float, seed: int, gluon_surrogate: str = "uds"):
+    def __init__(
+        self,
+        mass_gev: float,
+        seed: int,
+        gluon_surrogate: str = "uds",
+        decay_model: str = DEFAULT_DECAY_MODEL,
+    ):
         self.mass_gev = float(mass_gev)
         if gluon_surrogate not in {"uds", "u", "d", "s"}:
             raise ValueError(f"unknown gluon surrogate {gluon_surrogate!r}")
         self.gluon_surrogate = gluon_surrogate
+        self.decay_model = validate_decay_model(decay_model)
         self.root = _require_root()
         self.tp8 = _tpythia8_instance(self.root)
         if self.tp8 is None:
             raise RuntimeError("ROOT.TPythia8 is required")
         self.adapter = PythiaCommandAdapter(self.tp8)
         self.engine = _extract_underlying_pythia(self.tp8)
-        self.weights = exclusive_branching_weights(self.mass_gev)
+        self.weights = exclusive_branching_weights(
+            self.mass_gev, self.decay_model
+        )
         self._configure(seed)
 
     def _read(self, command: str) -> None:
@@ -218,6 +273,7 @@ def generate_one(
     out_dir: Path,
     seed: int,
     gluon_surrogate: str = "uds",
+    decay_model: str = DEFAULT_DECAY_MODEL,
     resume: bool = False,
 ) -> Path | None:
     if _excluded_resonance(mass_gev):
@@ -225,9 +281,14 @@ def generate_one(
         return None
     destination = out_dir / f"templates_{_mass_label(mass_gev)}.npz"
     if resume and destination.exists():
+        _validate_resumed_template(
+            destination, n_templates, gluon_surrogate, decay_model
+        )
         print(f"  m_a={mass_gev:.3f}: already checkpointed -> {destination.name}")
         return destination
-    backend = AlpPythiaBackend(mass_gev, seed, gluon_surrogate)
+    backend = AlpPythiaBackend(
+        mass_gev, seed, gluon_surrogate, decay_model
+    )
     samples = [backend.sample() for _ in range(n_templates)]
     bundle = _flatten(samples)
     primary_channels = np.asarray(
@@ -240,7 +301,11 @@ def generate_one(
         [sample["primary_energy_3"] for sample in samples], dtype=float
     )
     matrix_element_weight = normalized_template_weights(
-        primary_channels, primary_energy_1, primary_energy_3, mass_gev
+        primary_channels,
+        primary_energy_1,
+        primary_energy_3,
+        mass_gev,
+        decay_model,
     )
     charged = []
     offset = 0
@@ -255,7 +320,9 @@ def generate_one(
             stream,
             **bundle,
             mass_GeV=np.float64(mass_gev),
-            ctau_m_u2eq1=np.float64(ctau_at_reference_coupling(mass_gev)),
+            ctau_m_u2eq1=np.float64(
+                ctau_at_reference_coupling(mass_gev, decay_model)
+            ),
             n_templates=np.int32(n_templates),
             seed=np.int64(seed),
             flavor=np.array("BC10"),
@@ -265,8 +332,10 @@ def generate_one(
             primary_energy_3_GeV=primary_energy_3,
             matrix_element_weight=matrix_element_weight,
             decay_backend=np.array(
-                f"Pythia8-2501-weighted-three-body-gg-to-{gluon_surrogate}"
+                f"Pythia8-{decay_model}-weighted-three-body-"
+                f"gg-to-{gluon_surrogate}"
             ),
+            decay_model=np.array(decay_model),
             gluon_surrogate=np.array(gluon_surrogate),
         )
     temporary.replace(destination)
@@ -280,10 +349,23 @@ def generate_one(
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mass", type=float, nargs="+", default=None)
+    mass_source = parser.add_mutually_exclusive_group()
+    mass_source.add_argument("--mass", type=float, nargs="+", default=None)
+    mass_source.add_argument(
+        "--mass-grid-file",
+        type=Path,
+        default=None,
+        help="CSV containing the exact strictly increasing mass_GeV list",
+    )
     parser.add_argument("--n-templates", type=int, default=20_000)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--out", type=Path, default=TEMPLATE_DIR)
+    parser.add_argument(
+        "--decay-model",
+        choices=tuple(DECAY_MODEL_SPECS),
+        default=DEFAULT_DECAY_MODEL,
+        help="pinned decay model used for widths, BRs, and matrix elements",
+    )
     parser.add_argument(
         "--gluon-surrogate",
         choices=("uds", "u", "d", "s"),
@@ -295,7 +377,15 @@ def main(argv=None) -> int:
         help="keep atomically completed per-mass template bundles",
     )
     args = parser.parse_args(argv)
-    masses = args.mass if args.mass is not None else ALP_MASS_GRID
+    try:
+        if args.mass is not None:
+            masses = args.mass
+        elif args.mass_grid_file is not None:
+            masses = _masses_from_csv(args.mass_grid_file)
+        else:
+            masses = ALP_MASS_GRID
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
     for mass in masses:
         generate_one(
             mass,
@@ -303,6 +393,7 @@ def main(argv=None) -> int:
             args.out,
             args.seed + int(round(mass * 1000)),
             args.gluon_surrogate,
+            args.decay_model,
             args.resume,
         )
     return 0

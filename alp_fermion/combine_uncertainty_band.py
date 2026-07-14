@@ -17,6 +17,7 @@ from alp_fermion.uncertainty_campaign import (
     atomic_json,
     combine_band,
     sha256_file,
+    structural_alternative_table,
 )
 
 
@@ -76,6 +77,18 @@ def _headline(band: pd.DataFrame) -> dict:
         "n_mass_points": len(band),
         "n_central_sensitive": int(band["has_sensitivity"].sum()),
         "n_any_variation_sensitive": int(band["any_variation_sensitive"].sum()),
+        "n_decay_structure_sensitive": int(
+            band["decay_structure_has_sensitivity"].sum()
+        ),
+        "n_decay_structure_restored": int(
+            band["decay_structure_restores_sensitivity"].sum()
+        ),
+        "n_decay_structure_removed": int(
+            band["decay_structure_removes_sensitivity"].sum()
+        ),
+        "n_decay_structure_topology_differences": int(
+            band["decay_structure_topology_differs"].sum()
+        ),
     }
     for boundary in ("invf_min", "invf_max"):
         central = sensitive[f"{boundary}_central"]
@@ -114,6 +127,29 @@ def _headline(band: pd.DataFrame) -> dict:
     return output
 
 
+def _campaign_code_states(registry: list[dict]) -> tuple[dict, dict]:
+    """Require consistency within the halo campaign and structural add-on."""
+    halo = {
+        json.dumps(item["code"], sort_keys=True)
+        for item in registry
+        if item["variation"]["axis"] != "decay_structure"
+    }
+    structural = {
+        json.dumps(item["code"], sort_keys=True)
+        for item in registry
+        if item["variation"]["axis"] == "decay_structure"
+    }
+    if len(halo) != 1:
+        raise ValueError(
+            "pointwise-halo/control variations were produced from different code states"
+        )
+    if len(structural) != 1:
+        raise ValueError(
+            "decay-structure variations were produced from different code states"
+        )
+    return json.loads(next(iter(halo))), json.loads(next(iter(structural)))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -133,15 +169,16 @@ def main(argv=None):
     variations = all_variations(args.grid_dir)
     raw, registry = load_completed(scratch, variations)
     band = combine_band(raw)
+    structural = structural_alternative_table(raw)
     out_dir = Path(args.out_dir)
     raw_path = out_dir / "bc10_uncertainty_variations.csv"
     band_path = out_dir / "bc10_single_source_variation_envelope.csv"
+    structural_path = out_dir / "bc10_decay_2310_structural_alternative.csv"
     manifest_path = out_dir / "UNCERTAINTY_MANIFEST.json"
     _atomic_csv(raw, raw_path)
     _atomic_csv(band, band_path)
-    code_states = {json.dumps(item["code"], sort_keys=True) for item in registry}
-    if len(code_states) != 1:
-        raise ValueError("campaign variations were produced from different code states")
+    _atomic_csv(structural, structural_path)
+    halo_code, structural_code = _campaign_code_states(registry)
     atomic_json(manifest_path, {
         "artifact": "GRENDEL BC10 exact single-source variation envelope",
         "generated_unix": time.time(),
@@ -159,6 +196,13 @@ def main(argv=None):
                 "+/-20% C_bs amplitude, implemented as fresh production rates "
                 "scaled by 0.8^2 and 1.2^2 and full downstream runs"
             ),
+            "decay_structure": (
+                "one exact SensCalc arXiv:2310.03524 width, exclusive-BR, and "
+                "three-body-matrix-element model with independent 20000-event "
+                "Pythia templates and full geometry/reconstruction; exact central "
+                "production-vector reuse; published as a dashed one-sided structural "
+                "comparison and excluded from the pointwise halo"
+            ),
             "numerical_control": (
                 "two same-physics central repeats with fresh independent 600000-"
                 "parent production pools and distinct reconstruction RNG offsets; "
@@ -168,25 +212,32 @@ def main(argv=None):
                 "pointwise one-source-at-a-time intervals in log10(1/f): named "
                 "scale/mb/gg/C_bs extrema and NNPDF replica 16th/84th "
                 "percentiles; display envelope is their outermost boundary; "
+                "the 2310 structural contour and numerical repeats are excluded; "
                 "no quadrature combination and no confidence-interval claim"
             ),
             "label": "single_source_variation_envelope",
         },
         "variation_counts": {
             "central": 1, "scale": 6, "pdf": 100, "mb": 2,
-            "decay_gg": 3, "cbs": 2, "numerical_control": 2,
-            "physics_total": 114, "total_with_controls": 116,
+            "decay_gg": 3, "cbs": 2, "decay_structure": 1,
+            "numerical_control": 2,
+            "pointwise_halo_total": 114,
+            "physics_plus_structural_total": 115,
+            "total_with_controls": 117,
         },
         "outputs": {
             raw_path.name: sha256_file(raw_path),
             band_path.name: sha256_file(band_path),
+            structural_path.name: sha256_file(structural_path),
         },
         "headline": _headline(band),
-        "code": json.loads(next(iter(code_states))),
+        "code": halo_code,
+        "decay_structure_code": structural_code,
         "registry": registry,
     })
     print(f"wrote {raw_path} ({len(raw)} rows)")
     print(f"wrote {band_path} ({len(band)} rows)")
+    print(f"wrote {structural_path} ({len(structural)} rows)")
     print(f"wrote {manifest_path} ({len(registry)} exact variations)")
     return 0
 

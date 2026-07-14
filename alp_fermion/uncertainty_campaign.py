@@ -134,6 +134,25 @@ def auxiliary_variations(central_grid: Path) -> list[dict]:
     return output
 
 
+def decay_structure_variation(central_grid: Path) -> dict:
+    """Exact 2310 decay model as a one-sided structural comparison."""
+    grid_path = str(Path(central_grid).resolve())
+    return {
+        "name": "decay_2310_structural",
+        "axis": "decay_structure",
+        "campaign_axis": "decay_structure",
+        "grid_path": grid_path,
+        "grid_sha256": sha256_file(Path(central_grid)),
+        "production_seed": 42,
+        "reco_seed_offset": 0,
+        "cbs_amplitude_scale": 1.0,
+        "template_variant": "decay_2310_structural",
+        "decay_model": "2310_structural",
+        "production_mode": "central_vectors_exact_reuse",
+        "combination_role": "one_sided_structural_comparison_outside_halo",
+    }
+
+
 def numerical_control_variations(central_grid: Path) -> list[dict]:
     """Same-physics central repeats used only to measure numerical spread."""
     grid_path = str(Path(central_grid).resolve())
@@ -162,6 +181,7 @@ def all_variations(grid_dir: Path) -> list[dict]:
     return [
         *fonll,
         *auxiliary_variations(central_grid),
+        decay_structure_variation(central_grid),
         *numerical_control_variations(central_grid),
     ]
 
@@ -194,12 +214,13 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
         axis: list(raw.loc[raw["axis"] == axis, "variation"].unique())
         for axis in (
             "central", "scale", "pdf", "mb", "decay_gg", "cbs",
-            "numerical_control",
+            "decay_structure", "numerical_control",
         )
     }
     expected_counts = {
         "central": 1, "scale": 6, "pdf": 100, "mb": 2,
-        "decay_gg": 3, "cbs": 2, "numerical_control": 2,
+        "decay_gg": 3, "cbs": 2, "decay_structure": 1,
+        "numerical_control": 2,
     }
     counts = {axis: len(names) for axis, names in axes.items()}
     if counts != expected_counts:
@@ -209,24 +230,57 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
         central = raw[
             (raw["mass_GeV"] == mass) & (raw["variation"] == "central")
         ].iloc[0]
+        structural_name = axes["decay_structure"][0]
+        structural = raw[
+            (raw["mass_GeV"] == mass)
+            & (raw["variation"] == structural_name)
+        ].iloc[0]
+        central_sensitive = bool(central["has_sensitivity"])
+        structural_sensitive = bool(structural["has_sensitivity"])
+        any_halo_variation_sensitive = bool(
+            raw.loc[
+                (raw["mass_GeV"] == mass)
+                & ~raw["axis"].isin(
+                    ["numerical_control", "decay_structure"]
+                ),
+                "has_sensitivity",
+            ].any()
+        )
         record = {
             "mass_GeV": mass,
-            "has_sensitivity": bool(central["has_sensitivity"]),
-            "any_variation_sensitive": bool(
-                raw.loc[
-                    (raw["mass_GeV"] == mass)
-                    & (raw["axis"] != "numerical_control"),
-                    "has_sensitivity",
-                ].any()
+            "has_sensitivity": central_sensitive,
+            # Backward-compatible name plus an explicit halo-only alias.
+            "any_variation_sensitive": any_halo_variation_sensitive,
+            "any_halo_variation_sensitive": any_halo_variation_sensitive,
+            "decay_structure_variation": structural_name,
+            "decay_structure_has_sensitivity": structural_sensitive,
+            "decay_structure_restores_sensitivity": bool(
+                structural_sensitive and not central_sensitive
             ),
+            "decay_structure_removes_sensitivity": bool(
+                central_sensitive and not structural_sensitive
+            ),
+            "decay_structure_included_in_halo": False,
             "envelope_definition": "single_source_variation_envelope",
         }
+        topology_differs = structural_sensitive != central_sensitive
         for boundary in BOUNDARIES:
             xc, central_open, _ = _log_boundary(
                 raw, mass, "central", boundary
             )
+            xs, structural_open, _ = _log_boundary(
+                raw, mass, structural_name, boundary
+            )
             record[f"{boundary}_central"] = float(central.get(boundary, np.nan))
             record[f"{boundary}_open"] = central_open
+            record[f"{boundary}_decay_structure"] = (
+                10.0 ** xs if xs is not None else np.nan
+            )
+            record[f"{boundary}_decay_structure_open"] = structural_open
+            if central_sensitive and structural_sensitive:
+                topology_differs = topology_differs or (
+                    central_open != structural_open
+                )
             if xc is None:
                 record[f"{boundary}_envelope_lo"] = np.nan
                 record[f"{boundary}_envelope_hi"] = np.nan
@@ -353,5 +407,51 @@ def combine_band(raw: pd.DataFrame) -> pd.DataFrame:
                     )
                 ),
             })
+        record["decay_structure_topology_differs"] = bool(topology_differs)
         rows.append(record)
     return pd.DataFrame(rows).sort_values("mass_GeV")
+
+
+def structural_alternative_table(raw: pd.DataFrame) -> pd.DataFrame:
+    """Publish the one-sided structural contour with explicit topology state."""
+    central = raw.loc[raw["axis"] == "central"].copy()
+    structural = raw.loc[raw["axis"] == "decay_structure"].copy()
+    if central["variation"].nunique() != 1 or len(central) != len(structural):
+        raise ValueError("central/decay-structure contour counts are incomplete")
+    if structural["variation"].nunique() != 1:
+        raise ValueError("expected exactly one decay-structure variation")
+
+    keep = [
+        "mass_GeV", "has_sensitivity", "peak_N", "peak_invf",
+        "invf_min", "invf_max", "invf_min_open", "invf_max_open",
+    ]
+    central_state = central[keep].rename(columns={
+        column: f"central_{column}"
+        for column in keep if column != "mass_GeV"
+    })
+    result = structural[["variation", *keep]].merge(
+        central_state, on="mass_GeV", validate="one_to_one"
+    )
+    result.insert(1, "axis", "decay_structure")
+    result["restores_sensitivity"] = (
+        result["has_sensitivity"] & ~result["central_has_sensitivity"]
+    )
+    result["removes_sensitivity"] = (
+        ~result["has_sensitivity"] & result["central_has_sensitivity"]
+    )
+    open_differs = (
+        result["has_sensitivity"]
+        & result["central_has_sensitivity"]
+        & (
+            (result["invf_min_open"] != result["central_invf_min_open"])
+            | (result["invf_max_open"] != result["central_invf_max_open"])
+        )
+    )
+    result["topology_differs"] = (
+        result["restores_sensitivity"]
+        | result["removes_sensitivity"]
+        | open_differs
+    )
+    result["comparison_role"] = "one_sided_structural_model_comparison"
+    result["included_in_pointwise_halo"] = False
+    return result.sort_values("mass_GeV")

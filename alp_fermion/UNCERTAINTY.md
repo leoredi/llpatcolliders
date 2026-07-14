@@ -25,6 +25,14 @@ interval or a simultaneous-combination coverage statement.
 - **`C_bs` scheme:** `+/-20%` amplitude variations around the ALPINIST
   one-loop/RG value, implemented as full production runs with rates scaled by
   `0.8^2` and `1.2^2`, followed by independent geometry/reconstruction scans.
+- **Heavy-pseudoscalar decay structure:** the exact arXiv:2310.03524 widths,
+  all 32 exclusive branching channels, and all 18 squared matrix elements
+  shipped in the same pinned SensCalc v1.3.3 release are propagated through
+  independent 20,000-event Pythia templates and a complete reconstruction
+  scan. Production physics is unchanged, so this run reuses the central
+  production vectors exactly. This is a one-sided named model comparison, not
+  a calibrated uncertainty. It is published as a separate dashed contour and
+  does **not** enter the pointwise halo.
 - **Numerical controls:** two same-physics central repeats use fresh 600,000-
   parent pools and distinct production and reconstruction RNG seeds with the
   central templates. They are excluded from the theory/model envelope.
@@ -37,6 +45,10 @@ source varied at a time. Sources are not added in quadrature. If a variation
 removes an island boundary, `*_variation_missing` is set rather than treating
 the missing boundary as zero displacement. Central insensitive rows and the
 excluded eta/eta-prime pole rows remain explicit gaps with NaN envelope edges.
+The structural table separately records whether the 2310 model restores or
+removes sensitivity and whether an open-boundary state changes. In particular,
+central gaps restored by the alternative remain explicit topology changes;
+they are never converted into a halo displacement around a nonexistent edge.
 The compact table also reports each repeat boundary, median/max absolute repeat
 shift in dex and fractional coupling, and flags a mass when the largest repeat
 shift is at least as large as the physical envelope shift on that boundary.
@@ -69,14 +81,20 @@ provenance, commands, and log hashes. The runner then removes that variation's
 raw vectors and geometry cache and atomically records `storage_state=compacted`.
 An interruption during reclamation resumes from the `compacting` state. The
 central vectors and geometry are always retained because the three gluon
-surrogate variations reuse the central production exactly. Pass
+surrogate variations and the 2310 structural comparison reuse central
+production exactly. Pass
 `--keep-intermediates` to suppress reclamation for new full runs.
 
 Template bundles are shared through `$ALP_TEMPLATE_DIR`; run trees and source
 directories are selected through environment variables, not repository
 symlinks. The raw contour table, compact
-`bc10_single_source_variation_envelope.csv`, and exact registry/provenance
+`bc10_single_source_variation_envelope.csv`, dedicated
+`bc10_decay_2310_structural_alternative.csv`, and exact registry/provenance
 manifest are promoted to `alp_fermion/data/published/bundle/`.
+The manifest requires one consistent code state for the pointwise campaign and
+one for the structural add-on, and records both. This permits the structural
+implementation commit to be applied after already validated halo runs without
+weakening reproducibility within either group.
 
 ## Reproduction
 
@@ -94,10 +112,16 @@ for spec in u:2234 d:3234 s:4234; do
     --n-templates 20000 --seed "$seed" --gluon-surrogate "$q" --resume \
     --out /scratch/bc10_uncertainty/templates/gg_$q
 done
+
+$PYROOT -m alp_fermion.generate_decay_templates_pythia \
+  --decay-model 2310_structural --mass-grid-file /scratch/final_mass_grid.csv \
+  --n-templates 20000 --seed 5234 --resume \
+  --out /scratch/bc10_uncertainty/templates/decay_2310_structural
 ```
 
-Start one or more FONLL workers, then the three decay variants and two `C_bs`
-variants. Run the numerical controls after the physics variations:
+Start one or more FONLL workers, then the three gluon variants, two `C_bs`
+variants, and the structural comparison. Run numerical controls after the
+physics variations:
 
 ```bash
 PY=/path/to/llpatcolliders_FONLL/bin/python
@@ -105,19 +129,37 @@ for worker in 0 1 2; do
   $PY -m alp_fermion.run_uncertainty_campaign \
     --scratch-root /scratch/bc10_uncertainty \
     --grid-dir /path/to/fonll-nnpdf40/output \
+    --mass-grid-file /scratch/final_mass_grid.csv \
     --worker-index "$worker" --worker-count 3 --resume
 done
 
 $PY -m alp_fermion.run_uncertainty_campaign \
   --scratch-root /scratch/bc10_uncertainty \
   --grid-dir /path/to/fonll-nnpdf40/output \
+  --mass-grid-file /scratch/final_mass_grid.csv \
   --axes decay_gg cbs --resume
 
 $PY -m alp_fermion.run_uncertainty_campaign \
   --scratch-root /scratch/bc10_uncertainty \
   --grid-dir /path/to/fonll-nnpdf40/output \
+  --mass-grid-file /scratch/final_mass_grid.csv \
+  --axes decay_structure \
+  --structural-template-dir \
+    /scratch/bc10_uncertainty/templates/decay_2310_structural --resume
+
+$PY -m alp_fermion.run_uncertainty_campaign \
+  --scratch-root /scratch/bc10_uncertainty \
+  --grid-dir /path/to/fonll-nnpdf40/output \
+  --mass-grid-file /scratch/final_mass_grid.csv \
   --axes numerical_control --resume
 
 $PY -m alp_fermion.combine_uncertainty_band \
-  --scratch-root /scratch/bc10_uncertainty
+  --scratch-root /scratch/bc10_uncertainty \
+  --grid-dir /path/to/fonll-nnpdf40/output
 ```
+
+`final_mass_grid.csv` must contain a strictly increasing `mass_GeV` column.
+The runner records both its file hash and a canonical hash of the parsed mass
+list in every production and variation marker, and refuses to reuse central
+vectors generated on a different grid. Omit `--mass-grid-file` only when
+reproducing the package's built-in grid exactly.

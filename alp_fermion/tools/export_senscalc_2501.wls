@@ -1,5 +1,5 @@
 #!/usr/bin/env wolframscript
-(* Decode the pinned SensCalc 2501.04525 MX files into reviewable formats. *)
+(* Decode a pinned SensCalc fermionic-ALP decay model into reviewable formats. *)
 
 ClearAll[
   die, render, plainString, canonicalDecayName, normalizedProducts, sha256,
@@ -50,37 +50,62 @@ writeJSON[path_, value_] := Module[{result},
   If[result === $Failed, die["failed to write " <> path]]
 ];
 
-If[Length[$ScriptCommandLine] != 3,
-  die["usage: export_senscalc_2501.wls SENSCALC_ROOT OUTPUT_DIR"]
+If[!MemberQ[{3, 4}, Length[$ScriptCommandLine]],
+  die["usage: export_senscalc_2501.wls SENSCALC_ROOT OUTPUT_DIR [DECAY_MODEL]"]
 ];
 
 sensCalcRoot = ExpandFileName[$ScriptCommandLine[[2]]];
 outputDir = ExpandFileName[$ScriptCommandLine[[3]]];
+decayModel = If[Length[$ScriptCommandLine] == 4,
+  $ScriptCommandLine[[4]], "2501"];
 If[!DirectoryQ[outputDir], CreateDirectory[outputDir, CreateIntermediateDirectories -> True]];
+
+modelSpecs = <|
+  "2501" -> <|
+    "file_suffix" -> "2501.04525",
+    "phenomenology" -> "arXiv:2501.04525",
+    "hashes" -> <|
+      "widths" -> "d12fb78d28edff0aa081c9fb66d829b42b4ec71202684019d7b9047ecb40b869",
+      "branching_ratios" -> "34a09eed87d081bfffe79b464094741454022f79478c5b28bc236bc361049286",
+      "matrix_elements" -> "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed",
+      "acceptance_notebook" -> "8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4"
+    |>
+  |>,
+  "2310_structural" -> <|
+    "file_suffix" -> "2310.03524",
+    "phenomenology" -> "arXiv:2310.03524",
+    "hashes" -> <|
+      "widths" -> "40b51e8d35a8edbb3027cfcc3a2bb369faff8fc009a958863d6264f227410e93",
+      "branching_ratios" -> "130aaa7e95c50a3fea8f43a537fcddfe2bf2d4f676a6110bd3f88097da2826cd",
+      "matrix_elements" -> "89ef54601fc995418e9967d8269862e27cb86852a847bff1669e8948aa12dfca",
+      "acceptance_notebook" -> "8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4"
+    |>
+  |>
+|>;
+If[!KeyExistsQ[modelSpecs, decayModel],
+  die["unknown decay model " <> decayModel]
+];
+modelSpec = modelSpecs[decayModel];
+fileSuffix = modelSpec["file_suffix"];
 
 sourceFiles = <|
   "widths" -> FileNameJoin[{
     "phenomenology", "ALP-fermion", "decay widths",
-    "Widths-model-ALP-fermion-scale-1000.-GeV-2501.04525.m"
+    "Widths-model-ALP-fermion-scale-1000.-GeV-" <> fileSuffix <> ".m"
   }],
   "branching_ratios" -> FileNameJoin[{
     "phenomenology", "ALP-fermion", "decay widths",
-    "Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-2501.04525.m"
+    "Br-ratios-SensCalc-model-ALP-fermion-scale-1000.-GeV-" <> fileSuffix <> ".m"
   }],
   "matrix_elements" -> FileNameJoin[{
     "phenomenology", "ALP-fermion", "decay widths",
-    "Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-2501.04525.m"
+    "Matrix-elements-squared-model-ALP-fermion-scale-1000.-GeV-" <> fileSuffix <> ".m"
   }],
   "acceptance_notebook" -> FileNameJoin[{
     "codes", "Acceptances", "ALP-fermion.nb"
   }]
 |>;
-expectedHashes = <|
-  "widths" -> "d12fb78d28edff0aa081c9fb66d829b42b4ec71202684019d7b9047ecb40b869",
-  "branching_ratios" -> "34a09eed87d081bfffe79b464094741454022f79478c5b28bc236bc361049286",
-  "matrix_elements" -> "f959c2257fa349e5af6966795db8cbf0da2e3ff8d097b5fccc3316d270ff17ed",
-  "acceptance_notebook" -> "8d205b65da456fb1a8fac8d1803eaa73ae839128a60d0624eeea17cacee5d4b4"
-|>;
+expectedHashes = modelSpec["hashes"];
 sourcePaths = Map[FileNameJoin[{sensCalcRoot, #}] &, sourceFiles];
 
 KeyValueMap[
@@ -248,7 +273,8 @@ writeJSON[
     "senscalc_repository" -> "https://github.com/maksymovchynnikov/SensCalc",
     "senscalc_tag" -> "v.1.3.3",
     "senscalc_commit" -> "0bca050633aae16e148d47f21840fa07ff4b8724",
-    "phenomenology" -> "arXiv:2501.04525",
+    "phenomenology" -> modelSpec["phenomenology"],
+    "decay_model" -> decayModel,
     "wolfram_version" -> $Version,
     "wolfram_system_id" -> $SystemID,
     "exported_utc" -> DateString[TimeZoneConvert[Now, 0], "ISODateTime"],
