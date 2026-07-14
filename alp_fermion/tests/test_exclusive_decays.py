@@ -12,9 +12,13 @@ import model
 
 
 def test_mass_grid_is_shared_dense_scan():
-    assert len(mass_grid.ALP_MASS_GRID) == 99
+    assert len(mass_grid.ALP_MASS_GRID) == 145
     assert mass_grid.ALP_MASS_GRID[0] == pytest.approx(0.22)
     assert mass_grid.ALP_MASS_GRID[-1] == pytest.approx(4.75)
+    assert all(
+        mass in mass_grid.ALP_MASS_GRID
+        for mass in (1.18, 1.19, 1.60, 3.12, 3.34, 3.38)
+    )
 
 
 @pytest.mark.parametrize("mass", [0.12, 0.22, 1.0, 2.0, 2.5, 4.75])
