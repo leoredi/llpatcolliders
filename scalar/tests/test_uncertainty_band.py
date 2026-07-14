@@ -116,6 +116,34 @@ def test_pdf_replica_outlier_does_not_define_display_envelope():
     assert bool(out["u2_min_numerical_repeat_not_subdominant"])
 
 
+def test_numerical_repeat_does_not_restore_physics_topology():
+    raw = pd.DataFrame([
+        {
+            **_row("central", "central", 1e-8, 1e-4),
+            "has_sensitivity": False,
+        },
+        {
+            **_row(DECAY_VARIATION, "decay_model", 1e-8, 1e-4),
+            "has_sensitivity": False,
+        },
+        _row(
+            NUMERICAL_CONTROL_VARIATIONS[0], "numerical_control", 1e-8, 1e-4
+        ),
+    ])
+    reference = pd.DataFrame([{
+        "mass_GeV": 1.0,
+        "has_sensitivity": False,
+        "u2_min": float("nan"),
+        "u2_max": float("nan"),
+        "u2_min_open": False,
+        "u2_max_open": False,
+    }])
+
+    out = combine_band(raw, reference).iloc[0]
+
+    assert not bool(out["any_variation_sensitive"])
+
+
 def test_completed_variation_is_checksummed_then_compacted(tmp_path):
     run_dir = tmp_path / "runs" / "central"
     vector_dir = run_dir / "llp_4vectors"

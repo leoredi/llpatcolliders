@@ -747,11 +747,13 @@ def combine_band(raw, central_curve):
         group = raw[np.isclose(raw["mass_GeV"], mass, rtol=0, atol=5e-10)]
         by_name = {row["variation"]: row for _, row in group.iterrows()}
         campaign_central = by_name.get("central")
+        physics_group = group[group["axis"] != "numerical_control"]
         rec = {
             "mass_GeV": mass,
             "has_sensitivity": bool(ref.get("has_sensitivity", False)),
             "any_variation_sensitive": bool(
-                len(group) and group["has_sensitivity"].fillna(False).astype(bool).any()),
+                len(physics_group)
+                and physics_group["has_sensitivity"].fillna(False).astype(bool).any()),
             "envelope_definition": "single_source_variation_envelope",
             "campaign_has_sensitivity": bool(
                 campaign_central is not None
@@ -1022,7 +1024,10 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
         "producer_repo": "llpatcolliders (branch bc4-scalar)",
         "producer_git_head": _git_head(),
         "producer_code_sha256": _code_hashes(),
-        "scratch_root": str(Path(scratch_dir).resolve()),
+        "scratch_artifacts": (
+            "external campaign workspace; published outputs are identified by "
+            "content hashes rather than a machine-specific path"
+        ),
         "independence_policy": (
             "Every variation has a fresh FONLL parent sample, scalar four-vectors, "
             "geometry, decay/reconstruction MC, and sensitivity scan. No event, "
