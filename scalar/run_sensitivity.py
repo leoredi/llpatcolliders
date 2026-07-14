@@ -45,13 +45,42 @@ VEC_DIR = OUT_DIR / "llp_4vectors"
 ISLAND_CSV = OUT_DIR / "bc4_island.csv"
 
 
-def run(masses, n_pool, seed, n_samples, force_produce=False):
+def _write_checkpoint(rows, path):
+    """Atomically persist every completed mass for interruption-safe resume."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame = pd.DataFrame(rows).sort_values("mass_GeV")
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    frame.to_csv(temporary, index=False)
+    temporary.replace(path)
+
+
+def _reconstruction_seed(mass):
+    """Keep canonical mass seeds stable across full-grid and subset scans."""
+    rounded = round(float(mass), 3)
+    if rounded in prod.MASS_GRID:
+        return 1000 + prod.MASS_GRID.index(rounded)
+    return 100_000 + int(round(rounded * 1000))
+
+
+def run(
+    masses,
+    n_pool,
+    seed,
+    n_samples,
+    force_produce=False,
+    vector_dir=VEC_DIR,
+    output=ISLAND_CSV,
+    resume=False,
+):
     """Produce-if-missing + cached ray-casts (the BC10/HNL pattern): the
     four-vector CSVs are only (re)generated for masses that have none, or for
     all masses with ``force_produce``; untouched CSVs keep their mtime so the
     geometry cache in ``acceptance._geometry`` stays valid and a re-scan only
     redoes the decay MC + reconstruction + coupling scan."""
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    vector_dir = Path(vector_dir)
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
     s2t_grid = np.logspace(LOG_S2T_MIN, LOG_S2T_MAX, N_S2T)
     rng = np.random.default_rng(seed)
 
@@ -59,39 +88,54 @@ def run(masses, n_pool, seed, n_samples, force_produce=False):
         to_produce = list(masses)
     else:
         to_produce = [m for m in masses
-                      if not (VEC_DIR / f"mS_{prod._mass_label(m)}.csv").exists()]
+                      if not (vector_dir / f"mS_{prod._mass_label(m)}.csv").exists()]
     if to_produce:
         sigma_bottom = get_sigma_total("bottom")
         pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
         print(f"sigma_FONLL(bottom) = {sigma_bottom:.3e} pb; "
               f"producing {len(to_produce)}/{len(masses)} masses")
         for m_S in to_produce:
-            prod.write_scalar_csv(m_S, VEC_DIR, n_pool, rng,
+            prod.write_scalar_csv(m_S, vector_dir, n_pool, rng,
                                   sigma_bottom=sigma_bottom, pool=pool)
     else:
         print(f"reusing existing four-vector CSVs for all {len(masses)} masses "
               "(--force-produce to regenerate)")
 
     rows = []
+    completed = set()
+    if resume and output.exists():
+        previous = pd.read_csv(output)
+        if previous["mass_GeV"].duplicated().any():
+            raise ValueError(f"checkpoint contains duplicate masses: {output}")
+        rows = previous.to_dict("records")
+        completed = set(previous["mass_GeV"].astype(float))
     for i, m_S in enumerate(masses):
-        csv = VEC_DIR / f"mS_{prod._mass_label(m_S)}.csv"
+        if float(m_S) in completed:
+            print(f"  [{i+1}/{len(masses)}] m_S={m_S:.3f} already checkpointed",
+                  flush=True)
+            continue
+        csv = vector_dir / f"mS_{prod._mass_label(m_S)}.csv"
         out = acc.process_mass_point(
             m_S, mesh_fiducial, csv, s2t_grid, n_samples=n_samples,
-            rng=np.random.default_rng(1000 + i))
+            rng=np.random.default_rng(_reconstruction_seed(m_S)))
         if out is None:
             continue
         band = out[0] if isinstance(out, tuple) else out
         rows.append(band)
+        _write_checkpoint(rows, output)
         tag = "SENS" if band.get("has_sensitivity") else "----"
         print(f"  [{i+1}/{len(masses)}] m_S={m_S:.3f} {tag} "
               f"peak_N={band['peak_N']:.1f} "
               f"island=[{band['u2_min']:.2e}, {band['u2_max']:.2e}]", flush=True)
 
+    if not rows:
+        print("No results.")
+        return None
     df = pd.DataFrame(rows).sort_values("mass_GeV")
-    df.to_csv(ISLAND_CSV, index=False)
-    print(f"\nIsland CSV: {ISLAND_CSV}")
+    _write_checkpoint(rows, output)
+    print(f"\nIsland CSV: {output}")
     _summarize(df)
-    plot_island(ISLAND_CSV, OUT_DIR)
+    plot_island(output, output.parent)
     return df
 
 
@@ -112,6 +156,10 @@ def main(argv=None):
     p.add_argument("--n-pool", type=int, default=prod.N_POOL_DEFAULT)
     p.add_argument("--n-samples", type=int, default=100)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--vector-dir", type=Path, default=VEC_DIR)
+    p.add_argument("--output", type=Path, default=ISLAND_CSV)
+    p.add_argument("--resume", action="store_true",
+                   help="skip masses already present in --output")
     p.add_argument("--plot-only", action="store_true")
     p.add_argument("--force-produce", action="store_true",
                    help="regenerate the four-vector CSVs even where they exist "
@@ -120,12 +168,13 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     if args.plot_only:
-        plot_island(ISLAND_CSV, OUT_DIR)
+        plot_island(args.output, args.output.parent)
         return 0
 
     masses = args.masses if args.masses else prod.MASS_GRID
     run(masses, args.n_pool, args.seed, args.n_samples,
-        force_produce=args.force_produce)
+        force_produce=args.force_produce, vector_dir=args.vector_dir,
+        output=args.output, resume=args.resume)
     return 0
 
 
