@@ -48,7 +48,7 @@ from analysis.decay_reco_acceptance import (          # noqa: E402
     HIT_RESOLUTION, P_CUT, CMS_ORIGIN)
 from analysis._engine import (                          # noqa: E402
     compute_geometry, _eta_phi_to_directions_batch)
-from analysis.exclusion import find_exclusion_band      # noqa: E402
+from analysis.exclusion import find_exclusion_band_refined  # noqa: E402
 from analysis.format_bridge import load_combined_csv     # noqa: E402
 from analysis.constants import L_INT_PB, N_THRESHOLD     # noqa: E402
 from production.decay_engine.kinematics import _boost_to_lab  # noqa: E402
@@ -220,7 +220,17 @@ def process_mass_point(m_S, mesh, csv_path, sin2theta_grid, n_samples=100,
         d, passed, exit_d[idx] - entry_d[idx], data["weight"][idx],
         data["beta_gamma"][idx], ctau1, L_INT_PB, sin2theta_grid)
 
-    result = find_exclusion_band(sin2theta_grid, N_grid, N_THRESHOLD)
+    def evaluate(sin2theta):
+        _, signal = scan_u2(
+            d, passed, exit_d[idx] - entry_d[idx], data["weight"][idx],
+            data["beta_gamma"][idx], ctau1, L_INT_PB,
+            np.asarray([sin2theta]),
+        )
+        return signal[0]
+
+    result = find_exclusion_band_refined(
+        sin2theta_grid, N_grid, evaluate, N_THRESHOLD,
+    )
     result.update(base)
     result["ctau_sin2th1_m"] = ctau1
     return result, sin2theta_grid, N_grid
