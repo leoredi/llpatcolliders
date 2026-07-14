@@ -45,6 +45,7 @@ for _p in (str(_REPO_ROOT), str(_HNL_ROOT), str(_HIGGS_DIR)):
 # template (which itself imports the higgs/reco_common single source).
 from analysis.decay_reco_acceptance import (          # noqa: E402
     reconstruct_decays, selection_mask, scan_u2,
+    signal_contribution_diagnostics,
     HIT_RESOLUTION, P_CUT, CMS_ORIGIN)
 from analysis._engine import (                          # noqa: E402
     compute_geometry, _eta_phi_to_directions_batch)
@@ -233,4 +234,21 @@ def process_mass_point(m_S, mesh, csv_path, sin2theta_grid, n_samples=100,
     )
     result.update(base)
     result["ctau_sin2th1_m"] = ctau1
+    for label in ("u2_min", "peak_u2", "u2_max"):
+        coupling = result[label]
+        if not np.isfinite(coupling):
+            for field in ("sample_ess", "event_ess", "max_event_fraction"):
+                result[f"{label}_{field}"] = np.nan
+            continue
+        diagnostics = signal_contribution_diagnostics(
+            d,
+            passed,
+            exit_d[idx] - entry_d[idx],
+            data["weight"][idx],
+            data["beta_gamma"][idx],
+            ctau1,
+            coupling,
+        )
+        for field in ("sample_ess", "event_ess", "max_event_fraction"):
+            result[f"{label}_{field}"] = diagnostics[field]
     return result, sin2theta_grid, N_grid
