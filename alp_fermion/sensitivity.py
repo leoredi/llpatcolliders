@@ -56,7 +56,11 @@ from analysis.format_bridge import load_combined_csv  # noqa: E402
 from analysis._engine import (  # noqa: E402
     compute_geometry, _eta_phi_to_directions_batch, _get_mesh,
 )
-from analysis.decay_reco_acceptance import build_event_mc, scan_u2  # noqa: E402
+from analysis.decay_reco_acceptance import (  # noqa: E402
+    build_event_mc,
+    scan_u2,
+    signal_contribution_diagnostics,
+)
 from analysis.exclusion import find_exclusion_band_refined  # noqa: E402
 
 
@@ -225,6 +229,28 @@ def process_mass(
         "invf_min_open": bool(band["u2_min_open"]),
         "invf_max_open": bool(band["u2_max_open"]),
     }
+    diagnostic_points = {
+        "invf_min": band["u2_min"],
+        "peak": band["peak_u2"],
+        "invf_max": band["u2_max"],
+    }
+    for label, u2 in diagnostic_points.items():
+        if not np.isfinite(u2):
+            for field in ("sample_ess", "event_ess", "max_event_fraction"):
+                res[f"{label}_{field}"] = np.nan
+            continue
+        diagnostics = signal_contribution_diagnostics(
+            d,
+            passed,
+            exit_d[idx] - entry_d[idx],
+            weights,
+            data["beta_gamma"][idx],
+            ctau_ref,
+            u2,
+            sample_w=sample_weights,
+        )
+        for field in ("sample_ess", "event_ess", "max_event_fraction"):
+            res[f"{label}_{field}"] = diagnostics[field]
     return res
 
 
