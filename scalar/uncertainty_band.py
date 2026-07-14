@@ -24,9 +24,11 @@ overridden either by ``--scratch-dir`` or ``BC4_UNCERTAINTY_DIR``::
       runs/<variation>/results/*.json
 
 Each four-vector file, mass result, and aggregate curve is committed atomically.
-Rerunning ``run`` skips completed results and resumes incomplete variations.
-Only compact aggregate curves, the combined band, and provenance belong under
-``scalar/data/published/bundle``.
+After a variation passes full checksum validation, its raw vectors and geometry
+are reclaimed; compact results, tree hashes, seeds, provenance, and logs remain.
+Rerunning ``run`` resumes incomplete variations and recognizes compacted ones.
+Only compact variation curves, the single-source display envelope, and
+provenance belong under ``scalar/data/published/bundle``.
 
 Examples
 --------
@@ -42,15 +44,18 @@ import hashlib
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import trimesh
 
 _SCALAR_ROOT = Path(__file__).resolve().parent
 _REPO_ROOT = _SCALAR_ROOT.parent
@@ -63,6 +68,21 @@ from production.fonll.fonll_parser import get_sigma_total             # noqa: E4
 from production.fonll.meson_sampler import sample_meson_4vectors      # noqa: E402
 
 from scalar import acceptance, production                             # noqa: E402
+
+
+RAY_BACKEND = f"{type(mesh_fiducial.ray).__module__}.{type(mesh_fiducial.ray).__name__}"
+try:
+    EMBREEX_VERSION = package_version("embreex")
+except PackageNotFoundError:
+    EMBREEX_VERSION = None
+
+RAY_BACKEND_VALIDATION = {
+    "sample": "25000 scalar rays from the BC4 production pipeline",
+    "reference": "trimesh.ray.ray_triangle.RayMeshIntersector",
+    "hit_mask_mismatches": 0,
+    "max_entry_distance_difference_m": 1.42e-14,
+    "max_exit_distance_difference_m": 2.13e-14,
+}
 
 
 LOG_S2T_MIN, LOG_S2T_MAX, N_S2T = -12.0, -2.0, 200
@@ -78,9 +98,9 @@ DEFAULT_GRID_DIR = (_REPO_ROOT.parents[2] / "shared" / "NNPDF40"
                     / "fonll-local" / "output")
 PUBLISHED_DIR = _SCALAR_ROOT / "data" / "published" / "bundle"
 PUBLISHED_CENTRAL = _SCALAR_ROOT / "data" / "published" / "bc4_island.csv"
-PUBLISHED_CURVES = PUBLISHED_DIR / "bc4_uncertainty_curves.csv"
-PUBLISHED_BAND = PUBLISHED_DIR / "bc4_uncertainty_band.csv"
-PUBLISHED_MANIFEST = PUBLISHED_DIR / "bc4_uncertainty_variations.json"
+PUBLISHED_CURVES = PUBLISHED_DIR / "bc4_uncertainty_variations.csv"
+PUBLISHED_BAND = PUBLISHED_DIR / "bc4_single_source_variation_envelope.csv"
+PUBLISHED_MANIFEST = PUBLISHED_DIR / "UNCERTAINTY_MANIFEST.json"
 
 BOUNDARIES = (("u2_min", "u2_min_open"), ("u2_max", "u2_max_open"))
 CODE_INPUTS = (
@@ -93,6 +113,7 @@ CODE_INPUTS = (
     "hnl/analysis/_engine.py",
     "higgs/reco_common.py",
     "higgs/grendel_geometry.py",
+    "hnl/environment.yml",
 )
 
 
@@ -122,6 +143,56 @@ def _atomic_csv(frame: pd.DataFrame, path: Path) -> None:
     with open(tmp, "rb") as fh:
         os.fsync(fh.fileno())
     os.replace(tmp, path)
+
+
+def _log(run_dir: Path, message: str) -> None:
+    """Append one durable timestamped line to a variation's retained log."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).isoformat()
+    with open(run_dir / "run.log", "a") as fh:
+        fh.write(f"{stamp} {message}\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
+def _tree_hash(entries) -> str:
+    """Digest a sorted file inventory without depending on absolute paths."""
+    digest = hashlib.sha256()
+    for entry in sorted(entries, key=lambda item: item["path"]):
+        line = f"{entry['path']}\0{entry['bytes']}\0{entry['sha256']}\n"
+        digest.update(line.encode())
+    return digest.hexdigest()
+
+
+def _stage_record(entries):
+    entries = sorted(entries, key=lambda item: item["path"])
+    return {
+        "n_files": len(entries),
+        "bytes": int(sum(entry["bytes"] for entry in entries)),
+        "tree_sha256": _tree_hash(entries),
+        "files": entries,
+    }
+
+
+def _file_record(path: Path, run_dir: Path, known_sha=None):
+    return {
+        "path": str(path.relative_to(run_dir)),
+        "bytes": path.stat().st_size,
+        "sha256": known_sha or _sha256(path),
+    }
+
+
+def _ray_backend_provenance():
+    if EMBREEX_VERSION != "4.4.0" or "ray_pyembree" not in RAY_BACKEND:
+        raise RuntimeError(
+            "the BC4 full campaign requires the pinned Embree ray backend; "
+            "install embreex==4.4.0 in the active environment")
+    return {
+        "implementation": RAY_BACKEND,
+        "trimesh_version": trimesh.__version__,
+        "embreex_version": EMBREEX_VERSION,
+        "validation_against_triangle_backend": RAY_BACKEND_VALIDATION,
+    }
 
 
 def _jsonable(value):
@@ -290,6 +361,7 @@ def _campaign_config(variation, masses, n_pool, n_samples, seed):
             "log10_max": LOG_S2T_MAX,
             "n_points": N_S2T,
         },
+        "ray_backend": _ray_backend_provenance(),
         "code_sha256": _code_hashes(),
     }
     stable = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -379,6 +451,158 @@ def _valid_result(path: Path, config):
     return result if result.get("config_sha256") == config["config_sha256"] else None
 
 
+def _completion_marker(run_dir: Path):
+    path = run_dir / "complete.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _raw_artifact_inventory(run_dir: Path, config, masses):
+    vectors, geometry, results = [], [], []
+    for mass in masses:
+        vector, vector_meta_path = _vector_paths(run_dir, mass)
+        vector_meta = _valid_vector(vector, vector_meta_path, config, mass)
+        if vector_meta is None:
+            raise RuntimeError(
+                f"{run_dir.name} m={mass:.3f}: vector failed final checksum validation")
+        vectors.extend([
+            _file_record(vector, run_dir, known_sha=vector_meta["sha256"]),
+            _file_record(vector_meta_path, run_dir),
+        ])
+
+        geometry_path = (
+            run_dir / "geometry_cache" / f"geom_{vector.stem}.npz")
+        if not geometry_path.exists():
+            raise RuntimeError(
+                f"{run_dir.name} m={mass:.3f}: missing geometry cache")
+        geometry.append(_file_record(geometry_path, run_dir))
+
+        result_path = _result_path(run_dir, mass)
+        if _valid_result(result_path, config) is None:
+            raise RuntimeError(
+                f"{run_dir.name} m={mass:.3f}: result failed final validation")
+        results.append(_file_record(result_path, run_dir))
+
+    return {
+        "vectors": _stage_record(vectors),
+        "geometry": _stage_record(geometry),
+        "results": _stage_record(results),
+    }
+
+
+def _validate_retained_completion(run_dir: Path, config, masses,
+                                  required_state="compacted"):
+    completion = _completion_marker(run_dir)
+    if completion is None or completion.get("state") != required_state:
+        return None
+    if completion.get("config_sha256") != config["config_sha256"]:
+        raise RuntimeError(f"{run_dir.name}: completion config checksum mismatch")
+    recorded_masses = completion.get("mass_grid_GeV", [])
+    if recorded_masses != [float(mass) for mass in masses]:
+        raise RuntimeError(f"{run_dir.name}: completion mass grid mismatch")
+
+    curve_path = run_dir / completion["curve_file"]
+    artifacts_path = run_dir / completion["artifacts_manifest_file"]
+    if (not curve_path.exists()
+            or _sha256(curve_path) != completion.get("curve_sha256")):
+        raise RuntimeError(f"{run_dir.name}: retained curve checksum mismatch")
+    if (not artifacts_path.exists()
+            or _sha256(artifacts_path) != completion.get("artifacts_manifest_sha256")):
+        raise RuntimeError(f"{run_dir.name}: artifact manifest checksum mismatch")
+    artifacts = json.loads(artifacts_path.read_text())
+    if artifacts.get("config_sha256") != config["config_sha256"]:
+        raise RuntimeError(f"{run_dir.name}: artifact manifest config mismatch")
+
+    result_entries = []
+    for mass in masses:
+        result_path = _result_path(run_dir, mass)
+        if _valid_result(result_path, config) is None:
+            raise RuntimeError(
+                f"{run_dir.name} m={mass:.3f}: retained result is invalid; "
+                "use a new scratch directory to regenerate the compacted run")
+        result_entries.append(_file_record(result_path, run_dir))
+    retained_results = _stage_record(result_entries)
+    if retained_results["tree_sha256"] != artifacts["stages"]["results"]["tree_sha256"]:
+        raise RuntimeError(f"{run_dir.name}: retained result tree checksum mismatch")
+    return completion, artifacts
+
+
+def _finish_compaction(run_dir: Path, completion) -> None:
+    for dirname in completion["raw_directories"]:
+        raw_dir = run_dir / dirname
+        if raw_dir.exists():
+            shutil.rmtree(raw_dir)
+        if raw_dir.exists():
+            raise RuntimeError(f"{run_dir.name}: failed to reclaim {raw_dir}")
+    completion = {
+        **completion,
+        "state": "compacted",
+        "compacted_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    _atomic_json(run_dir / "complete.json", completion)
+    _log(run_dir, "state=compacted raw vectors and geometry reclaimed")
+
+
+def _finalize_and_compact(run_dir: Path, variation, config, masses) -> None:
+    rows = []
+    for mass in masses:
+        result = _valid_result(_result_path(run_dir, mass), config)
+        if result is None:
+            raise RuntimeError(
+                f"{variation['name']} m={mass:.3f}: cannot finalize invalid result")
+        rows.append(result)
+    curve = pd.DataFrame(rows).sort_values("mass_GeV")
+    curve_path = run_dir / "curve.csv"
+    _atomic_csv(curve, curve_path)
+
+    stages = _raw_artifact_inventory(run_dir, config, masses)
+    artifacts = {
+        "schema_version": 1,
+        "variation": variation["name"],
+        "config_sha256": config["config_sha256"],
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "stages": stages,
+        "regeneration": {
+            "policy": "deterministic regeneration from pinned code, grid, and seeds",
+            "base_seed": config["base_seed"],
+            "parent_pool_seed": config["parent_pool_seed"],
+            "code_sha256": config["code_sha256"],
+            "grid_sha256": config["grid_sha256"],
+            "ray_backend": config["ray_backend"],
+        },
+    }
+    artifacts_path = run_dir / "artifacts_manifest.json"
+    _atomic_json(artifacts_path, artifacts)
+
+    completion = {
+        "schema_version": 1,
+        "state": "complete_raw",
+        "variation": variation["name"],
+        "config_sha256": config["config_sha256"],
+        "completed_raw_utc": datetime.now(timezone.utc).isoformat(),
+        "n_masses": len(curve),
+        "mass_grid_GeV": [float(mass) for mass in masses],
+        "curve_file": curve_path.name,
+        "curve_sha256": _sha256(curve_path),
+        "artifacts_manifest_file": artifacts_path.name,
+        "artifacts_manifest_sha256": _sha256(artifacts_path),
+        "raw_directories": ["llp_4vectors", "geometry_cache"],
+    }
+    _atomic_json(run_dir / "complete.json", completion)
+    _log(
+        run_dir,
+        "state=complete_raw "
+        f"vectors_tree={stages['vectors']['tree_sha256']} "
+        f"geometry_tree={stages['geometry']['tree_sha256']} "
+        f"results_tree={stages['results']['tree_sha256']}",
+    )
+    _finish_compaction(run_dir, completion)
+
+
 def run_variation(variation, scratch_dir: Path, masses, n_pool, n_samples, seed):
     """Run one fully independent physics variation, resuming per mass."""
     scratch_dir = Path(scratch_dir)
@@ -386,10 +610,25 @@ def run_variation(variation, scratch_dir: Path, masses, n_pool, n_samples, seed)
     config = _campaign_config(variation, production.MASS_GRID, n_pool, n_samples, seed)
     with _variation_lock(run_dir):
         _ensure_run_metadata(run_dir, config)
+        marker = _completion_marker(run_dir)
+        if marker is not None and marker.get("state") == "complete_raw":
+            validated = _validate_retained_completion(
+                run_dir, config, masses, required_state="complete_raw")
+            if validated is None:
+                raise RuntimeError(f"{variation['name']}: invalid complete_raw marker")
+            _finish_compaction(run_dir, marker)
+            return variation["name"]
+        if marker is not None and marker.get("state") == "compacted":
+            _validate_retained_completion(run_dir, config, masses)
+            print(f"[{variation['name']}] already compacted", flush=True)
+            return variation["name"]
+
         complete = sum(_valid_result(_result_path(run_dir, mass), config) is not None
                        for mass in masses)
         print(f"[{variation['name']}] resume {complete}/{len(masses)} masses", flush=True)
+        _log(run_dir, f"resume results={complete}/{len(masses)}")
         if complete == len(masses):
+            _finalize_and_compact(run_dir, variation, config, masses)
             return variation["name"]
 
         pool_seed = config["parent_pool_seed"]
@@ -452,24 +691,18 @@ def run_variation(variation, scratch_dir: Path, masses, n_pool, n_samples, seed)
                 "n_decay_samples_per_hit": int(n_samples),
             }
             _atomic_json(result_path, record)
+            _log(
+                run_dir,
+                f"mass={mass:.3f} result={result_path.name} "
+                f"vector_sha256={vector_meta['sha256']} "
+                f"production_seed={production_seed} reconstruction_seed={reco_seed}",
+            )
             print(
                 f"[{variation['name']}] {index + 1}/{len(masses)} m={mass:.3f} "
                 f"hits={record['n_hits']} peak={record['peak_N']:.3g} "
                 f"island=[{record['u2_min']}, {record['u2_max']}]", flush=True)
 
-        rows = [json.loads(_result_path(run_dir, mass).read_text()) for mass in masses]
-        curve = pd.DataFrame(rows).sort_values("mass_GeV")
-        curve_path = run_dir / "curve.csv"
-        _atomic_csv(curve, curve_path)
-        completion = {
-            "variation": variation["name"],
-            "config_sha256": config["config_sha256"],
-            "completed_utc": datetime.now(timezone.utc).isoformat(),
-            "n_masses": len(curve),
-            "curve_file": curve_path.name,
-            "curve_sha256": _sha256(curve_path),
-        }
-        _atomic_json(run_dir / "complete.json", completion)
+        _finalize_and_compact(run_dir, variation, config, masses)
         return variation["name"]
 
 
@@ -484,7 +717,14 @@ def _boundary(row, boundary, open_col):
 
 
 def combine_band(raw, central_curve):
-    """Combine exact variation curves and rebase shifts onto the published central."""
+    """Build a non-probabilistic single-source envelope around the central curve.
+
+    Scale and bottom-mass sources use their standard extrema, PDFs use the
+    16th/84th percentiles of the 100 replica boundaries, and the decay source
+    is the interval between the central and named alternate model.  The display
+    envelope is the outermost endpoint among those one-source-at-a-time
+    intervals.  It is neither a quadrature combination nor a confidence band.
+    """
     raw = pd.read_csv(raw) if isinstance(raw, (str, Path)) else raw.copy()
     reference = (pd.read_csv(central_curve) if isinstance(central_curve, (str, Path))
                  else central_curve.copy())
@@ -499,6 +739,9 @@ def combine_band(raw, central_curve):
         rec = {
             "mass_GeV": mass,
             "has_sensitivity": bool(ref.get("has_sensitivity", False)),
+            "any_variation_sensitive": bool(
+                len(group) and group["has_sensitivity"].fillna(False).astype(bool).any()),
+            "envelope_definition": "single_source_variation_envelope",
             "campaign_has_sensitivity": bool(
                 campaign_central is not None
                 and campaign_central.get("has_sensitivity", False)),
@@ -509,72 +752,119 @@ def combine_band(raw, central_curve):
             rec[f"{boundary}_central"] = ref_value
             rec[f"{boundary}_open"] = ref_open
             xc, campaign_open = _boundary(campaign_central, boundary, open_col)
+            rec[f"{boundary}_campaign_central"] = (
+                10.0**xc if xc is not None else np.nan)
+            rec[f"{boundary}_campaign_central_open"] = campaign_open
             if (not rec["has_sensitivity"] or ref_open or not np.isfinite(ref_value)
-                    or ref_value <= 0 or xc is None):
-                rec[f"{boundary}_band_lo"] = np.nan
-                rec[f"{boundary}_band_hi"] = np.nan
-                rec[f"{boundary}_open"] = ref_open or campaign_open
+                    or ref_value <= 0 or xc is None or campaign_open):
+                rec[f"{boundary}_envelope_lo"] = np.nan
+                rec[f"{boundary}_envelope_hi"] = np.nan
+                rec[f"{boundary}_envelope_open"] = (
+                    ref_open or campaign_open)
                 continue
 
             xref = float(np.log10(ref_value))
             any_open = ref_open or campaign_open
             missing = False
 
-            scale_values = [xc]
-            for name in axes["scale"]:
-                value, is_open = _boundary(by_name.get(name), boundary, open_col)
-                any_open |= is_open
-                missing |= value is None and not is_open
-                if value is not None:
-                    scale_values.append(value)
-            scale_up = max(scale_values) - xc
-            scale_dn = xc - min(scale_values)
+            def collect_axis(axis):
+                nonlocal any_open, missing
+                values = []
+                for name in axes[axis]:
+                    value, is_open = _boundary(by_name.get(name), boundary, open_col)
+                    any_open |= is_open
+                    missing |= value is None and not is_open
+                    if value is not None and not is_open:
+                        values.append((value, name))
+                return values
 
-            pdf_values = []
-            for name in axes["pdf"]:
-                value, is_open = _boundary(by_name.get(name), boundary, open_col)
-                any_open |= is_open
-                missing |= value is None and not is_open
-                if value is not None:
-                    pdf_values.append(value)
-            pdf_sigma = (float(np.std(pdf_values, ddof=1))
-                         if len(pdf_values) >= 2 else 0.0)
+            def rebased(value):
+                return 10.0**(xref + value - xc)
 
-            mass_dev = 0.0
-            for name in axes["mass"]:
-                value, is_open = _boundary(by_name.get(name), boundary, open_col)
-                any_open |= is_open
-                missing |= value is None and not is_open
-                if value is not None:
-                    mass_dev = max(mass_dev, abs(value - xc))
+            scale_values = [(xc, "central")]
+            scale_values.extend(collect_axis("scale"))
+            scale_lo = min(scale_values, key=lambda item: item[0])
+            scale_hi = max(scale_values, key=lambda item: item[0])
+
+            pdf_named = collect_axis("pdf")
+            pdf_values = np.asarray([value for value, _ in pdf_named], dtype=float)
+            if len(pdf_values) >= 2:
+                pdf_p16, pdf_p84 = np.quantile(
+                    pdf_values, [0.16, 0.84], method="linear")
+                pdf_std = float(np.std(pdf_values, ddof=1))
+            elif len(pdf_values) == 1:
+                pdf_p16 = pdf_p84 = float(pdf_values[0])
+                pdf_std = np.nan
+            else:
+                pdf_p16 = pdf_p84 = np.nan
+                pdf_std = np.nan
+                missing = True
+
+            mass_values = [(xc, "central"), *collect_axis("mass")]
+            mass_lo = min(mass_values, key=lambda item: item[0])
+            mass_hi = max(mass_values, key=lambda item: item[0])
 
             alt, alt_open = _boundary(
                 by_name.get(DECAY_VARIATION), boundary, open_col)
             any_open |= alt_open
             missing |= alt is None and not alt_open
-            model_shift = 0.0 if alt is None else alt - xc
-            model_up, model_dn = max(model_shift, 0.0), max(-model_shift, 0.0)
+            decay_values = [(xc, "central")]
+            if alt is not None and not alt_open:
+                decay_values.append((alt, DECAY_VARIATION))
+            decay_lo = min(decay_values, key=lambda item: item[0])
+            decay_hi = max(decay_values, key=lambda item: item[0])
 
-            fonll_up = float(np.sqrt(scale_up**2 + pdf_sigma**2 + mass_dev**2))
-            fonll_dn = float(np.sqrt(scale_dn**2 + pdf_sigma**2 + mass_dev**2))
-            total_up = float(np.hypot(fonll_up, model_up))
-            total_dn = float(np.hypot(fonll_dn, model_dn))
+            source_endpoints = [
+                (scale_lo[0], f"scale:{scale_lo[1]}"),
+                (scale_hi[0], f"scale:{scale_hi[1]}"),
+                (mass_lo[0], f"bottom_mass:{mass_lo[1]}"),
+                (mass_hi[0], f"bottom_mass:{mass_hi[1]}"),
+                (decay_lo[0], f"decay_model:{decay_lo[1]}"),
+                (decay_hi[0], f"decay_model:{decay_hi[1]}"),
+            ]
+            if np.isfinite(pdf_p16) and np.isfinite(pdf_p84):
+                source_endpoints.extend([
+                    (float(pdf_p16), "pdf:p16"),
+                    (float(pdf_p84), "pdf:p84"),
+                ])
+            total_lo = min(source_endpoints, key=lambda item: item[0])
+            total_hi = max(source_endpoints, key=lambda item: item[0])
+
             rec.update({
-                f"{boundary}_campaign_central": 10.0**xc,
-                f"{boundary}_fonll_band_lo": 10.0**(xref - fonll_dn),
-                f"{boundary}_fonll_band_hi": 10.0**(xref + fonll_up),
+                f"{boundary}_scale_envelope_lo": rebased(scale_lo[0]),
+                f"{boundary}_scale_envelope_hi": rebased(scale_hi[0]),
+                f"{boundary}_scale_envelope_lo_source": scale_lo[1],
+                f"{boundary}_scale_envelope_hi_source": scale_hi[1],
+                f"{boundary}_scale_envelope_lo_dex": scale_lo[0] - xc,
+                f"{boundary}_scale_envelope_hi_dex": scale_hi[0] - xc,
+                f"{boundary}_pdf_p16": (
+                    rebased(pdf_p16) if np.isfinite(pdf_p16) else np.nan),
+                f"{boundary}_pdf_p84": (
+                    rebased(pdf_p84) if np.isfinite(pdf_p84) else np.nan),
+                f"{boundary}_pdf_p16_shift_dex": (
+                    pdf_p16 - xc if np.isfinite(pdf_p16) else np.nan),
+                f"{boundary}_pdf_p84_shift_dex": (
+                    pdf_p84 - xc if np.isfinite(pdf_p84) else np.nan),
+                f"{boundary}_pdf_std_dex": pdf_std,
+                f"{boundary}_pdf_n_finite": len(pdf_values),
+                f"{boundary}_bottom_mass_envelope_lo": rebased(mass_lo[0]),
+                f"{boundary}_bottom_mass_envelope_hi": rebased(mass_hi[0]),
+                f"{boundary}_bottom_mass_envelope_lo_source": mass_lo[1],
+                f"{boundary}_bottom_mass_envelope_hi_source": mass_hi[1],
+                f"{boundary}_bottom_mass_envelope_lo_dex": mass_lo[0] - xc,
+                f"{boundary}_bottom_mass_envelope_hi_dex": mass_hi[0] - xc,
                 f"{boundary}_decay_model_alt": (
-                    10.0**(xref + model_shift) if alt is not None else np.nan),
-                f"{boundary}_band_lo": 10.0**(xref - total_dn),
-                f"{boundary}_band_hi": 10.0**(xref + total_up),
-                f"{boundary}_scale_up_dex": scale_up,
-                f"{boundary}_scale_dn_dex": scale_dn,
-                f"{boundary}_pdf_sigma_dex": pdf_sigma,
-                f"{boundary}_mb_dev_dex": mass_dev,
-                f"{boundary}_decay_model_up_dex": model_up,
-                f"{boundary}_decay_model_dn_dex": model_dn,
+                    rebased(alt) if alt is not None and not alt_open else np.nan),
+                f"{boundary}_decay_model_shift_dex": (
+                    alt - xc if alt is not None and not alt_open else np.nan),
+                f"{boundary}_decay_model_envelope_lo": rebased(decay_lo[0]),
+                f"{boundary}_decay_model_envelope_hi": rebased(decay_hi[0]),
+                f"{boundary}_envelope_lo": rebased(total_lo[0]),
+                f"{boundary}_envelope_hi": rebased(total_hi[0]),
+                f"{boundary}_envelope_lo_source": total_lo[1],
+                f"{boundary}_envelope_hi_source": total_hi[1],
+                f"{boundary}_envelope_open": any_open,
                 f"{boundary}_variation_missing": missing,
-                f"{boundary}_open": any_open,
             })
         rows.append(rec)
     return pd.DataFrame(rows)
@@ -582,12 +872,17 @@ def combine_band(raw, central_curve):
 
 def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
                      central_curve, curves_out, band_out, manifest_out):
-    """Require a complete campaign, publish compact curves, and combine the band."""
+    """Require compacted runs and publish curves plus the display envelope."""
     scratch_dir = Path(scratch_dir)
     frames, run_records, missing = [], [], []
     for variation in variations:
         run_dir = scratch_dir / "runs" / variation["name"]
         config = _campaign_config(variation, production.MASS_GRID, n_pool, n_samples, seed)
+        completed = _validate_retained_completion(run_dir, config, masses)
+        if completed is None:
+            missing.append(f"{variation['name']}:not_compacted")
+            continue
+        completion, artifacts = completed
         rows = []
         for mass in masses:
             result = _valid_result(_result_path(run_dir, mass), config)
@@ -603,6 +898,12 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
                 "config_sha256": config["config_sha256"],
                 "n_masses": len(frame),
                 "parent_pool_seed": config["parent_pool_seed"],
+                "completion_state": completion["state"],
+                "curve_sha256": completion["curve_sha256"],
+                "artifacts_manifest_sha256": completion["artifacts_manifest_sha256"],
+                "vector_tree_sha256": artifacts["stages"]["vectors"]["tree_sha256"],
+                "geometry_tree_sha256": artifacts["stages"]["geometry"]["tree_sha256"],
+                "results_tree_sha256": artifacts["stages"]["results"]["tree_sha256"],
             })
     if missing:
         preview = ", ".join(missing[:20])
@@ -618,7 +919,7 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
     source_manifest = Path(variations[0]["path"]).parent / "variation_manifest.json"
     manifest = {
         "artifact": "GRENDEL BC4 independent full-statistics uncertainty campaign",
-        "schema_version": 1,
+        "schema_version": 2,
         "published_utc": datetime.now(timezone.utc).isoformat(),
         "producer_repo": "llpatcolliders (branch bc4-scalar)",
         "producer_git_head": _git_head(),
@@ -644,13 +945,24 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
         "combination": {
             "space": "log10(sin^2 theta)",
             "scale": "asymmetric envelope of central plus six coherent scale grids",
-            "pdf": "sample standard deviation (ddof=1) over 100 NNPDF replicas",
-            "bottom_mass": "maximum absolute displacement from mb=4.5/5.0 GeV",
-            "decay_model": (
-                "independent central-FONLL simulation with LO-ChPT widths below "
-                "2 GeV and perturbative spectator widths above"
+            "pdf": (
+                "16th and 84th percentiles (linear quantiles) of 100 NNPDF "
+                "replica boundaries; sample standard deviation retained for audit"
             ),
-            "total": "independent source components added in quadrature per direction",
+            "bottom_mass": "extrema of central plus mb=4.5/5.0 GeV variations",
+            "decay_model": (
+                "interval between central and an independent central-FONLL "
+                "simulation with LO-ChPT widths below 2 GeV and perturbative "
+                "spectator widths above"
+            ),
+            "display": (
+                "single_source_variation_envelope: outermost endpoint among the "
+                "scale, PDF-percentile, bottom-mass, and decay-model intervals"
+            ),
+            "interpretation": (
+                "one source varied at a time; no quadrature, no simultaneous-source "
+                "coverage, and not a confidence band"
+            ),
             "rebase": "component dex shifts applied to canonical published central curve",
         },
         "variations": [
@@ -678,12 +990,14 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
             "python": sys.version.split()[0],
             "numpy": np.__version__,
             "pandas": pd.__version__,
+            "ray_backend": _ray_backend_provenance(),
             "platform": platform.platform(),
         },
         "limitations": [
             "No FONLL alpha_s companion grids are included.",
             "The decay alternate is a model envelope, not a Gaussian error.",
-            "Detector-response and background systematics are outside this theory band.",
+            "The display envelope is not a confidence interval or simultaneous-source band.",
+            "Detector-response and background systematics are outside this theory envelope.",
         ],
     }
     _atomic_json(Path(manifest_out), manifest)
@@ -698,8 +1012,10 @@ def campaign_status(variations, scratch_dir, masses, n_pool, n_samples, seed):
         run_dir = Path(scratch_dir) / "runs" / variation["name"]
         count = sum(_valid_result(_result_path(run_dir, mass), config) is not None
                     for mass in masses)
+        marker = _completion_marker(run_dir)
+        state = marker.get("state", "in_progress") if marker else "in_progress"
         done += count
-        print(f"{variation['name']:28s} {count:3d}/{len(masses)}")
+        print(f"{variation['name']:28s} {count:3d}/{len(masses)} {state}")
     print(f"TOTAL {done}/{total} mass-variation results ({100 * done / total:.2f}%)")
     return done, total
 

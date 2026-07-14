@@ -48,7 +48,7 @@ we evaluate the actual `c*tau`, production yield and visible BR, require
 python -m scalar.run_sensitivity --masses 0.5 1.0 2.0 --n-pool 100000
 python -m scalar.run_sensitivity --plot-only
 
-# full theory-uncertainty campaign (resumable per mass)
+# full theory-variation campaign (resumable per mass; requires embreex 4.4.0)
 BC4_UNCERTAINTY_DIR=/Volumes/GRENDEL/extra_space/bc4_uncertainty \
   python -m scalar.uncertainty_band run --workers 2 \
     --grid-dir /path/to/fonll-local/output
@@ -65,9 +65,13 @@ README for the re-publish procedure).
 
 The uncertainty campaign atomically checkpoints four-vectors, geometry, and
 one result per variation/mass under `BC4_UNCERTAINTY_DIR` (by default the
-external `/Volumes/GRENDEL/extra_space/bc4_uncertainty` scratch tree). Its
-stable compact publication products are in `scalar/data/published/bundle/`;
-the bundle README records the combination prescription and limitations.
+external `/Volumes/GRENDEL/extra_space/bc4_uncertainty` scratch tree). Once a
+complete variation has been checksummed, its raw vectors and geometry are
+reclaimed while the compact results, stage tree hashes, seeds, provenance, and
+log remain. The pinned Embree backend was cross-checked ray by ray against the
+triangle intersector. Stable publication products are in
+`scalar/data/published/bundle/`; its README records the non-probabilistic
+single-source envelope prescription and limitations.
 
 ## References & caveats
 

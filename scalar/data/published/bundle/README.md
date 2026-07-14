@@ -5,11 +5,11 @@ curve in `../bc4_island.csv`.
 
 Files:
 
-- `bc4_uncertainty_curves.csv` — all 110 independently simulated compact curves.
-- `bc4_uncertainty_band.csv` — central contour, separate FONLL ribbon, alternate
-  decay-model contour, combined ribbon, open-edge flags, and every component in
-  dex for both contour edges.
-- `bc4_uncertainty_variations.json` — pinned FONLL grid checksums, campaign
+- `bc4_uncertainty_variations.csv` — all 110 independently simulated compact curves.
+- `bc4_single_source_variation_envelope.csv` — canonical central contour,
+  per-source intervals, their outer display envelope, open-edge flags, source
+  names, and audit shifts in dex for both contour edges.
+- `UNCERTAINTY_MANIFEST.json` — pinned FONLL grid checksums, campaign
   configuration, combination prescription, output checksum, and limitations.
 
 The FONLL contribution uses all 109 coherent bottom grids from the NNPDF4.0 NLO
@@ -20,14 +20,19 @@ mass after the three B-species contributions. Scalar kinematics, geometry,
 decay/reconstruction MC, and the sensitivity scan are all independent between
 variations; no importance reweighting or detector-outcome reuse is used.
 
-Combination is in `log10(sin^2 theta)`: asymmetric scale envelope, sample
-standard deviation over PDF replicas, and maximum absolute bottom-mass shift.
+Combination is in `log10(sin^2 theta)`: the scale source uses the extrema of
+the coherent seven-point set, the PDF source uses the 16th and 84th percentiles
+of the 100 replicas (with the sample standard deviation retained for audit),
+and the bottom-mass source uses the extrema of the central, 4.5, and 5.0 GeV
+curves.
 The decay-model contribution comes from a separate fresh central-FONLL
 production and full detector simulation using analytic LO-ChPT widths below
 2 GeV plus spectator widths above 2 GeV, compared with the matched/dispersive
 Winkler central run. It is an alternate-model envelope, not a Gaussian error.
-Independent FONLL and model components are added in quadrature per direction
-and rebased onto the canonical central curve.
+The displayed `single_source_variation_envelope` is the outermost boundary of
+these one-source-at-a-time intervals, rebased onto the canonical central curve.
+Nothing is added in quadrature; it is not a confidence band and does not claim
+simultaneous-source coverage.
 
 Reproduce from the repository root in the `llpatcolliders_FONLL` environment:
 
@@ -40,6 +45,11 @@ python -m scalar.uncertainty_band collect
 ```
 
 The heavy resumable run tree stays in external scratch and is not published.
-Each vector, result, and aggregate curve is written atomically and pinned by
-checksums. This band does not include FONLL alpha-s companions, detector
-response systematics, or background uncertainty.
+Each vector, geometry cache, result, and aggregate curve is written atomically
+and pinned by checksums. After each variation is validated, raw vectors and
+geometry are reclaimed; per-stage tree hashes, compact results, seeds,
+provenance, and logs remain. The campaign requires `embreex==4.4.0`; 25,000
+actual scalar rays were cross-checked against the triangle backend with zero
+hit-mask mismatches and entry/exit differences below `2.2e-14 m`. This envelope
+does not include FONLL alpha-s companions, detector-response systematics, or
+background uncertainty.
