@@ -73,7 +73,15 @@ B_SPECIES = {
 N_POOL_DEFAULT = 200_000
 
 
-def generate_scalar_4vectors(m_S, n_pool, rng, sigma_bottom=None, pool=None):
+def generate_scalar_4vectors(
+    m_S,
+    n_pool,
+    rng,
+    sigma_bottom=None,
+    pool=None,
+    high_pt_tilt_scale=None,
+    nominal_mixture_fraction=0.5,
+):
     """S four-vectors + production weights (at sin^2 theta = 1) for mass ``m_S``.
 
     Returns ``(weights, E, px, py, pz)`` arrays (empty if production is closed).
@@ -83,8 +91,15 @@ def generate_scalar_4vectors(m_S, n_pool, rng, sigma_bottom=None, pool=None):
     if sigma_bottom is None:
         sigma_bottom = get_sigma_total("bottom")
     if pool is None:
-        pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
+        pool = sample_meson_4vectors(
+            n_pool,
+            "bottom",
+            rng=rng,
+            high_pt_tilt_scale=high_pt_tilt_scale,
+            nominal_mixture_fraction=nominal_mixture_fraction,
+        )
     n_each = len(pool["pt"])
+    sampling_weight = pool.get("sampling_weight", np.ones(n_each))
 
     weights, E, px, py, pz = [], [], [], [], []
     for pdg, (parent, m_B, m_K, frag) in B_SPECIES.items():
@@ -98,7 +113,7 @@ def generate_scalar_4vectors(m_S, n_pool, rng, sigma_bottom=None, pool=None):
         _, s4 = decay_2body(v["E"], v["px"], v["py"], v["pz"], m_B, m_K, m_S, rng=rng)
         # factor 2: b and bbar both hadronize to a B (matches hnl convention).
         w = 2.0 * sigma_bottom * frag * br / n_each
-        weights.append(np.full(n_each, w))
+        weights.append(w * sampling_weight)
         E.append(s4[:, 0]); px.append(s4[:, 1]); py.append(s4[:, 2]); pz.append(s4[:, 3])
 
     if not weights:
@@ -134,6 +149,21 @@ def main(argv=None):
     p.add_argument("--n-pool", type=int, default=N_POOL_DEFAULT)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--masses", type=float, nargs="+", default=None)
+    p.add_argument(
+        "--high-pt-tilt-scale",
+        type=float,
+        default=None,
+        help=(
+            "importance-sample a nominal/high-pT FONLL mixture tilted by "
+            "exp(pT/scale); output weights include the exact p/q correction"
+        ),
+    )
+    p.add_argument(
+        "--nominal-mixture-fraction",
+        type=float,
+        default=0.5,
+        help="nominal fraction of the optional high-pT proposal mixture",
+    )
     args = p.parse_args(argv)
 
     rng = np.random.default_rng(args.seed)
@@ -142,7 +172,13 @@ def main(argv=None):
     print(f"sigma_FONLL(bottom) = {sigma_bottom:.3e} pb;  {len(masses)} masses")
     # One shared (pT, y, phi) pool serves every mass (the boost spectrum is
     # mass-independent in the shared-shape FONLL approximation hnl also uses).
-    pool = sample_meson_4vectors(args.n_pool, "bottom", rng=rng)
+    pool = sample_meson_4vectors(
+        args.n_pool,
+        "bottom",
+        rng=rng,
+        high_pt_tilt_scale=args.high_pt_tilt_scale,
+        nominal_mixture_fraction=args.nominal_mixture_fraction,
+    )
     for m_S in masses:
         path, n = write_scalar_csv(m_S, args.out_dir, args.n_pool, rng,
                                    sigma_bottom=sigma_bottom, pool=pool)
