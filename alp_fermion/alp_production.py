@@ -76,18 +76,34 @@ def _atomic_write(path, weights=None, energy=None, px=None, py=None, pz=None):
     temporary.replace(path)
 
 
+def _importance_weighted_rate(normalization, pool, indices):
+    """Apply the nominal/proposal FONLL density ratio to selected parents."""
+    ratios = pool.get("sampling_weight")
+    if ratios is None:
+        return np.full(len(indices), normalization)
+    return normalization * np.asarray(ratios, dtype=float)[indices]
+
+
 def generate(
     masses,
     n_pool,
     seed=42,
     resume=False,
     cbs_amplitude_scale=1.0,
+    high_pt_tilt_scale=None,
+    nominal_mixture_fraction=0.5,
 ):
     if cbs_amplitude_scale <= 0.0:
         raise ValueError("cbs_amplitude_scale must be positive")
     rng = np.random.default_rng(seed)
     print(f"Sampling {n_pool} FONLL bottom (pt,y,phi) shape events...", flush=True)
-    pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
+    pool = sample_meson_4vectors(
+        n_pool,
+        "bottom",
+        rng=rng,
+        high_pt_tilt_scale=high_pt_tilt_scale,
+        nominal_mixture_fraction=nominal_mixture_fraction,
+    )
     sigma_b = get_sigma_total("bottom")
     print(f"  sigma_FONLL(bottom) = {sigma_b:.4e} pb", flush=True)
 
@@ -124,9 +140,13 @@ def generate(
             # two-body B -> K_i(m_K) + a(m_a); decay_2body returns (d1=K, d2=a)
             _, a4 = decay_2body(v["E"], v["px"], v["py"], v["pz"],
                                 m_B, m_K, m_a, rng=rng)
-            w = 2.0 * sigma_b * frag * br / n_each
+            w = _importance_weighted_rate(
+                2.0 * sigma_b * frag * br / n_each,
+                pool,
+                idx,
+            )
             if not already_done:
-                all_w.append(np.full(n_each, w))
+                all_w.append(w)
                 all_E.append(a4[:, 0]); all_px.append(a4[:, 1])
                 all_py.append(a4[:, 2]); all_pz.append(a4[:, 3])
 
@@ -159,6 +179,21 @@ def main(argv=None):
         "--cbs-amplitude-scale", type=float, default=1.0,
         help="multiply C_bs by this factor (production rates scale as its square)",
     )
+    ap.add_argument(
+        "--high-pt-tilt-scale",
+        type=float,
+        default=None,
+        help=(
+            "importance-sample a nominal/high-pT FONLL mixture tilted by "
+            "exp(pT/scale); output weights include the exact p/q correction"
+        ),
+    )
+    ap.add_argument(
+        "--nominal-mixture-fraction",
+        type=float,
+        default=0.5,
+        help="nominal fraction of the optional high-pT proposal mixture",
+    )
     args = ap.parse_args(argv)
     masses = args.mass if args.mass else ALP_MASS_GRID
     print(f"BC10 production: {len(masses)} masses, n_pool={args.n_pool}")
@@ -167,6 +202,8 @@ def main(argv=None):
         masses, args.n_pool, args.seed,
         resume=args.resume,
         cbs_amplitude_scale=args.cbs_amplitude_scale,
+        high_pt_tilt_scale=args.high_pt_tilt_scale,
+        nominal_mixture_fraction=args.nominal_mixture_fraction,
     )
     print("Done.")
     return 0
