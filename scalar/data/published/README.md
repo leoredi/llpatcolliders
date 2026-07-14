@@ -24,8 +24,20 @@ cp scalar/tmp/bc4_island.csv scalar/data/published/bc4_island.csv
 
 ## Current contents
 
-- Source: the 2026-07-09 full-grid rerun with the timing-chi2 beta = p/E fix
-  propagated through the BC4 acceptance (supersedes the 2026-07-02 pre-fix
-  run).
-- Reach: island spans `m_S` 0.22–3.70 GeV; deepest `sin^2 theta = 7.4e-12`
-  at 0.975 GeV (the f0(980) width peak).
+- Source: the 2026-07-15 high-statistics campaign with a 1.2M-scalar high-pT
+  importance production pool per mass, 100 decay/reconstruction samples per
+  entering scalar, and the timing-chi2 daughter `beta = p/E` correction.
+- Reach: the sensitive grid spans `m_S = 0.14-3.70 GeV`; the upper boundary is
+  open above the scan ceiling for the electron-only `0.14-0.20 GeV` extension.
+  The deepest lower edge is `sin^2 theta = 7.3988e-12` at 0.975 GeV, near the
+  f0(980) enhancement. Log-yield interpolation places the final closure at
+  approximately 3.798 GeV.
+
+## Numerical convergence
+
+The importance proposal gives at least 2249 effective events on every finite
+sensitive lower edge and at least 2049 at every sensitive peak. Independent
+six-million-event controls at 3.75, 3.80, and 3.85 GeV give peak yields of
+3.925, 2.858, and 2.069, respectively; their interpolated closure is 3.792 GeV.
+Exact values, seeds, hashes, and the production configuration are pinned in
+`MANIFEST.json`.

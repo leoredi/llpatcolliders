@@ -1,25 +1,25 @@
 {
   "artifact": "GRENDEL BC4 dark-scalar sensitivity (canonical published curve)",
   "producer_repo": "llpatcolliders (branch bc4-scalar)",
-  "producer_git_sha": "7f792dc",
-  "source_run": "full-grid rerun of 2026-07-12 (run locally by FLR): extends the mass grid below the dimuon threshold (0.14-0.20 GeV, S -> e e only; see production.py MASS_GRID note), 600k-event pool, 86 mass points. Pre-existing rows shift at MC-noise level (per-mass seeds are positional: rng(1000+i)).",
-  "generated_from": "scalar/tmp/bc4_island.csv",
-  "csv_sha256": "043f1deeadd7abcdebca7487b547ac7ccc677ce0f01d94a1b1c29acc86358526",
-  "date_published": "2026-07-12",
-  "correction": "Supersedes the 2026-07-02 pre-fix run (deepest 7.1e-12, span 0.22-3.8 GeV): with daughter beta = p/E in the timing chi2 the lower edge is ~4% shallower (consistent with the HNL beta-fix median) and the 3.80 GeV point drops below N = 3, so the span ends at 3.70 GeV.",
+  "producer_git_sha": "8c6fa509397f102e1d4cd713896ea18fe6d1f896",
+  "source_run": "High-statistics publication campaign completed 2026-07-15: 86-point mass grid, 400000-parent high-pT importance-sampled FONLL pool per B species (1200000 scalar events per mass across B+, B0, and Bs; tilt scale 5 GeV, 50% nominal mixture, seed 42), and 100 decay/reconstruction samples per detector-entering scalar.",
+  "generated_from": "external high-statistics scalar.run_sensitivity output",
+  "csv_sha256": "54253088e78531991d6d30f7f15997a08d4cb0ef7a1686b5f1af0901d7526b01",
+  "date_published": "2026-07-15",
+  "correction": "Supersedes the 2026-07-12 600000-event curve. The denser importance-sampled production pool removes visible upper-edge Monte Carlo fluctuations while retaining the daughter beta = p/E timing correction and the 0.14-0.20 GeV electron-only extension.",
   "hypothesis": {
     "model": "PBC BC4: Higgs-portal dark scalar, mixing only (no quartic)",
     "observable": "sin^2 theta"
   },
   "physics_inputs": {
-    "production": "inclusive b -> X_s S (Winkler arXiv:1809.01876 eq. A7) summed over B+, B0, Bs; FONLL 14 TeV bottom kinematics (NNPDF4.0 NLO); two-body B -> K S recoil",
-    "decays": "Winkler dispersive hadronic widths (digitized Fig. 4) below 2 GeV, perturbative spectator above; analytic leptonic widths"
+    "production": "inclusive b -> X_s S (Winkler arXiv:1809.01876 eq. A7) summed over B+, B0, and Bs; FONLL 14 TeV bottom kinematics (NNPDF4.0 NLO); two-body B -> K S recoil",
+    "decays": "Winkler dispersive hadronic widths (digitized Fig. 4) below 2 GeV, perturbative spectator model above; analytic leptonic widths"
   },
   "analysis": {
     "beam": "pp 14 TeV (HL-LHC)",
     "L_int_fb": 3000.0,
     "criterion": "N_signal >= 3 (background-free, 95% CL)",
-    "reconstruction": "shared GRENDEL 4-hit two-track vertex reco + PR #13 selection, imported from higgs/ and hnl/ (timing chi2 with daughter beta = p/E)"
+    "reconstruction": "shared GRENDEL 4-hit two-track vertex reconstruction and PR #13 selection, imported from higgs/ and hnl/ (timing chi2 with daughter beta = p/E)"
   },
   "column_contract": {
     "required_by_consumer": [
@@ -28,17 +28,49 @@
       "u2_max"
     ],
     "u2_min": "lower sin^2 theta edge of the excluded island",
-    "u2_max": "upper sin^2 theta edge of the excluded island",
+    "u2_max": "upper sin^2 theta edge of the excluded island; NaN when u2_max_open is true",
     "has_sensitivity": "False => no excluded island at that mass (peak_N < 3)",
-    "ctau_sin2th1_m": "scalar ctau at sin^2 theta = 1, metres"
+    "peak_N": "signal yield at the optimal mixing",
+    "ctau_sin2th1_m": "scalar ctau at sin^2 theta = 1, metres",
+    "event_ess_columns": "importance-weight effective event counts at the lower edge, peak, and upper edge"
   },
   "headline_reach": {
-    "best_sin2theta_min": 7.358e-12,
+    "best_sin2theta_min": 7.398794149799898e-12,
     "best_sin2theta_min_at_mass_GeV": 0.975,
-    "mass_lo_GeV": 0.22,
-    "mass_hi_closure_GeV": 3.7,
-    "n_sensitive_points": 72,
-    "n_grid_points": 82
+    "mass_lo_grid_GeV": 0.14,
+    "mass_hi_grid_GeV": 3.7,
+    "mass_hi_closure_GeV": 3.797507716364184,
+    "n_sensitive_points": 76,
+    "n_grid_points": 86
   },
-  "closure_note": "The deepest point sits at the f0(980) width peak (~0.98 GeV), where the dispersive hadronic width is largest and the long-lifetime lower edge (proportional to 1/sqrt(Gamma_total)) is correspondingly deepest. The island ends at 3.7 GeV, below the m_B - m_K ~ 4.8 GeV endpoint: the inclusive b -> X_s S rate falls too rapidly as m_S -> m_B to retain N >= 3 at any mixing."
+  "topology": {
+    "sensitive_grid_run_GeV": [
+      0.14,
+      3.7
+    ],
+    "upper_open_grid_run_GeV": [
+      0.14,
+      0.2
+    ],
+    "finite_threshold_tips": "Every adjacent finite sensitive/insensitive transition is closed by log-yield/log-coupling interpolation at N_signal = 3."
+  },
+  "numerical_validation": {
+    "minimum_sensitive_lower_edge_event_ess": 2249.3316183117886,
+    "minimum_sensitive_peak_event_ess": 2048.999110980777,
+    "minimum_sensitive_upper_edge_event_ess": 201.25736238803464,
+    "six_million_event_high_mass_peak_controls": {
+      "3.75": 3.924917827267497,
+      "3.80": 2.857946200087359,
+      "3.85": 2.0692572797580233
+    },
+    "independent_control_closure_GeV": 3.7923545732986583,
+    "independent_control_csv_sha256": "af1f2ab5cdf58662f8eabf384eec38243e5929ec86c9c2c5389d3bb58000b511",
+    "interpretation": "The six-million-event controls retain sensitivity at 3.75 GeV and independently reject 3.80 and 3.85 GeV. Their interpolated closure agrees with the published central closure within 0.006 GeV, so the high-mass endpoint is not a finite-pool artifact."
+  },
+  "closure_note": "The deepest point is at the f0(980) enhancement of the dispersive hadronic width. The island ends before the B -> K S kinematic endpoint because the inclusive b -> X_s S yield falls below three events at every mixing; log-yield interpolation between the 3.70 and 3.80 GeV central grid rows places the closure at 3.7975 GeV.",
+  "grid": {
+    "n_masses": 86,
+    "mass_min_GeV": 0.14,
+    "mass_max_GeV": 4.7
+  }
 }
