@@ -140,6 +140,12 @@ def test_numerical_repeat_does_not_restore_physics_topology():
         _row(
             NUMERICAL_CONTROL_VARIATIONS[0], "numerical_control", 1e-8, 1e-4
         ),
+        {
+            **_row(
+                NUMERICAL_CONTROL_VARIATIONS[1], "numerical_control", 1e-8, 1e-4
+            ),
+            "has_sensitivity": False,
+        },
     ])
     reference = pd.DataFrame([{
         "mass_GeV": 1.0,
@@ -153,6 +159,27 @@ def test_numerical_repeat_does_not_restore_physics_topology():
     out = combine_band(raw, reference).iloc[0]
 
     assert not bool(out["any_variation_sensitive"])
+    assert bool(out["numerical_control_any_sensitive"])
+    assert not bool(out["numerical_control_all_sensitive"])
+    assert out["numerical_control_n_sensitive"] == 1
+    assert (
+        out["numerical_control_sensitive_variations"]
+        == NUMERICAL_CONTROL_VARIATIONS[0]
+    )
+    assert bool(out["numerical_control_topology_differs_from_campaign"])
+    assert bool(out["numerical_control_topology_differs_from_canonical"])
+    assert (
+        out[
+            "numerical_control_topology_difference_variations_from_campaign"
+        ] == NUMERICAL_CONTROL_VARIATIONS[0]
+    )
+    assert (
+        out[
+            "numerical_control_topology_difference_variations_from_canonical"
+        ] == NUMERICAL_CONTROL_VARIATIONS[0]
+    )
+    assert out[f"u2_min_{NUMERICAL_CONTROL_VARIATIONS[0]}"] == pytest.approx(1e-8)
+    assert not bool(out["numerical_control_included_in_envelope"])
 
 
 def test_completed_variation_is_checksummed_then_compacted(tmp_path):

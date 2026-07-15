@@ -841,16 +841,40 @@ def combine_band(raw, central_curve):
         by_name = {row["variation"]: row for _, row in group.iterrows()}
         campaign_central = by_name.get("central")
         physics_group = group[group["axis"] != "numerical_control"]
+        campaign_sensitive = bool(
+            campaign_central is not None
+            and campaign_central.get("has_sensitivity", False))
+        repeat_sensitive = {
+            name: bool(
+                by_name.get(name) is not None
+                and by_name[name].get("has_sensitivity", False))
+            for name in axes["numerical_control"]
+        }
+        topology_differs_from_campaign = {
+            name for name, sensitive in repeat_sensitive.items()
+            if sensitive != campaign_sensitive
+        }
+        canonical_sensitive = bool(ref.get("has_sensitivity", False))
+        topology_differs_from_canonical = {
+            name for name, sensitive in repeat_sensitive.items()
+            if sensitive != canonical_sensitive
+        }
         rec = {
             "mass_GeV": mass,
-            "has_sensitivity": bool(ref.get("has_sensitivity", False)),
+            "has_sensitivity": canonical_sensitive,
             "any_variation_sensitive": bool(
                 len(physics_group)
                 and physics_group["has_sensitivity"].fillna(False).astype(bool).any()),
             "envelope_definition": "single_source_variation_envelope",
-            "campaign_has_sensitivity": bool(
-                campaign_central is not None
-                and campaign_central.get("has_sensitivity", False)),
+            "campaign_has_sensitivity": campaign_sensitive,
+            "numerical_control_n_sensitive": sum(repeat_sensitive.values()),
+            "numerical_control_any_sensitive": any(repeat_sensitive.values()),
+            "numerical_control_all_sensitive": bool(repeat_sensitive)
+            and all(repeat_sensitive.values()),
+            "numerical_control_sensitive_variations": ";".join(
+                name for name in axes["numerical_control"]
+                if repeat_sensitive[name]),
+            "numerical_control_included_in_envelope": False,
         }
         for boundary, open_col in BOUNDARIES:
             ref_value = ref.get(boundary, np.nan)
@@ -861,6 +885,19 @@ def combine_band(raw, central_curve):
             rec[f"{boundary}_campaign_central"] = (
                 10.0**xc if xc is not None else np.nan)
             rec[f"{boundary}_campaign_central_open"] = campaign_open
+            repeat_samples = []
+            for name in axes["numerical_control"]:
+                value, is_open = _boundary(
+                    by_name.get(name), boundary, open_col)
+                repeat_samples.append((name, value, is_open))
+                rec[f"{boundary}_{name}"] = (
+                    10.0**value if value is not None else np.nan)
+                if campaign_sensitive and repeat_sensitive[name]:
+                    if campaign_open != is_open:
+                        topology_differs_from_campaign.add(name)
+                if canonical_sensitive and repeat_sensitive[name]:
+                    if ref_open != is_open:
+                        topology_differs_from_canonical.add(name)
             if (not rec["has_sensitivity"] or ref_open or not np.isfinite(ref_value)
                     or ref_value <= 0 or xc is None or campaign_open):
                 rec[f"{boundary}_envelope_lo"] = np.nan
@@ -923,8 +960,7 @@ def combine_band(raw, central_curve):
             repeat_values = []
             repeat_open = False
             repeat_missing = False
-            for name in axes["numerical_control"]:
-                value, is_open = _boundary(by_name.get(name), boundary, open_col)
+            for name, value, is_open in repeat_samples:
                 repeat_open |= is_open
                 repeat_missing |= value is None and not is_open
                 if value is not None and not is_open:
@@ -1028,6 +1064,20 @@ def combine_band(raw, central_curve):
                 f"{boundary}_envelope_open": any_open,
                 f"{boundary}_variation_missing": missing,
             })
+        rec["numerical_control_topology_differs_from_campaign"] = bool(
+            topology_differs_from_campaign)
+        rec["numerical_control_topology_difference_variations_from_campaign"] = (
+            ";".join(
+                name for name in axes["numerical_control"]
+                if name in topology_differs_from_campaign)
+        )
+        rec["numerical_control_topology_differs_from_canonical"] = bool(
+            topology_differs_from_canonical)
+        rec["numerical_control_topology_difference_variations_from_canonical"] = (
+            ";".join(
+                name for name in axes["numerical_control"]
+                if name in topology_differs_from_canonical)
+        )
         rows.append(rec)
     return pd.DataFrame(rows)
 
@@ -1128,6 +1178,30 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
         "u2_min": control_summary("u2_min"),
         "u2_max": control_summary("u2_max"),
     }
+    for reference_name in ("campaign", "canonical"):
+        flag = band[
+            f"numerical_control_topology_differs_from_{reference_name}"
+        ].fillna(False).astype(bool)
+        numerical_control_summary[f"topology_vs_{reference_name}"] = {
+            "n_differences": int(flag.sum()),
+            "difference_masses_GeV": [
+                float(value) for value in band.loc[flag, "mass_GeV"]],
+            "difference_variations_by_mass": {
+                f"{float(row.mass_GeV):g}": getattr(
+                    row,
+                    "numerical_control_topology_difference_variations_"
+                    f"from_{reference_name}",
+                )
+                for row in band.loc[
+                    flag,
+                    [
+                        "mass_GeV",
+                        "numerical_control_topology_difference_variations_"
+                        f"from_{reference_name}",
+                    ],
+                ].itertuples(index=False)
+            },
+        }
 
     manifest = {
         "artifact": "GRENDEL BC4 independent full-statistics uncertainty campaign",
