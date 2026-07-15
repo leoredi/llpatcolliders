@@ -28,6 +28,10 @@ For each boundary the compact table reports the repeat median/max absolute dex
 shift, maximum fractional shift, ratios to every physical source displacement,
 and a flag when the repeat maximum is not smaller than the largest physical
 source displacement at that mass. The manifest summarizes all flagged masses.
+Sensitivity and open-edge topology disagreements are recorded separately
+against both the independent campaign central and the canonical published
+curve, including the responsible repeat names and masses. They remain
+numerical diagnostics only and cannot restore a gap or enter an envelope.
 
 Combination is in `log10(sin^2 theta)`: the scale source uses the extrema of
 the coherent seven-point set, the PDF source uses the 16th and 84th percentiles
