@@ -188,9 +188,12 @@ def load_decay_templates(flavor, mass_label):
     return np.load(path)
 
 
-def _seed_for(flavor, mass_label):
+def _seed_for(flavor, mass_label, seed_salt=""):
     """Deterministic per-point RNG seed (order-independent, reproducible)."""
-    h = hashlib.md5(f"{flavor}/{mass_label}".encode()).digest()
+    key = f"{flavor}/{mass_label}"
+    if seed_salt:
+        key += f"/{seed_salt}"
+    h = hashlib.md5(key.encode()).digest()
     return int.from_bytes(h[:4], "little")
 
 
@@ -223,6 +226,7 @@ def _select_hit_sample(idx, weights, max_hit_events, rng):
 def process_mass_point(flavor, mass, mesh,
                        force_geometry=False, save_diagnostic=False,
                        decay_samples=DECAY_SAMPLES, max_hit_events=None,
+                       event_chunk=None, seed_salt="",
                        width_delta=None, had_frac=None):
     """Process one (flavor, mass) point and return its exclusion band."""
     mass_label = format_mass_for_filename(mass)
@@ -261,21 +265,78 @@ def process_mass_point(flavor, mass, mesh,
 
     # Build the acceptance MC for the hitting events only.
     idx_all = np.where(hits & np.isfinite(entry_d) & np.isfinite(exit_d))[0]
-    rng = np.random.default_rng(_seed_for(flavor, mass_label))
+    rng = np.random.default_rng(_seed_for(flavor, mass_label, seed_salt))
     idx, scan_weights, hit_estimator = _select_hit_sample(
         idx_all, data["weight"][idx_all], max_hit_events, rng)
-    direction = _eta_phi_to_directions_batch(data["eta"][idx], data["phi"][idx])
-    p_mag = data["beta_gamma"][idx] * mass
+    if len(idx) == 0:
+        return {
+            "mass_GeV": mass, "flavor": flavor,
+            "u2_min": np.nan, "u2_max": np.nan,
+            "u2_min_open": False, "u2_max_open": False,
+            "peak_N": 0.0, "peak_u2": np.nan,
+            "has_sensitivity": False, "n_events": n_events,
+            "n_hits": n_hits, "n_hits_eval": 0,
+            "decay_samples": decay_samples,
+            "hit_estimator": hit_estimator,
+            "event_chunk": event_chunk, "seed_salt": seed_salt,
+        }
+
+    entry_sel = entry_d[idx]
+    exit_sel = exit_d[idx]
+    beta_gamma_sel = data["beta_gamma"][idx]
+    direction = _eta_phi_to_directions_batch(
+        data["eta"][idx], data["phi"][idx])
+    p_mag = beta_gamma_sel * mass
     energy = data["gamma"][idx] * mass
     p4 = np.column_stack([energy, p_mag[:, None] * direction])
-    d, passed, tmpl_idx = build_event_mc(
-        p4, direction, entry_d[idx], exit_d[idx], templates, decay_samples,
-        rng, origin=CMS_ORIGIN)
-
     u2_grid = np.logspace(LOG_U2_MIN, LOG_U2_MAX, N_U2_POINTS)
-    u2_grid, N_grid = scan_u2(
-        d, passed, exit_d[idx] - entry_d[idx], scan_weights,
-        data["beta_gamma"][idx], ctau_u2_1, L_INT_PB, u2_grid)
+    N_grid = np.zeros(len(u2_grid))
+
+    # Exact event evaluation can transiently allocate O(n_hits * n_samples)
+    # reconstruction arrays. Process bounded event chunks and add their yields;
+    # scan_u2 is linear in events, so this changes memory use, not the estimator.
+    chunk_size = len(idx)
+    if event_chunk is not None and event_chunk > 0:
+        chunk_size = min(int(event_chunk), len(idx))
+
+    # Avoid repeatedly decompressing the NPZ arrays for every event chunk.
+    if hasattr(templates, "files"):
+        archive = templates
+        templates = {name: archive[name] for name in archive.files}
+        archive.close()
+
+    varied_N = {}
+    mode_is_had = None
+    if width_delta:
+        mode_is_had = classify_template_modes(templates)
+        varied_N = {"lo": np.zeros(len(u2_grid)),
+                    "hi": np.zeros(len(u2_grid))}
+
+    for start in range(0, len(idx), chunk_size):
+        stop = min(start + chunk_size, len(idx))
+        sl = slice(start, stop)
+        d, passed, tmpl_idx = build_event_mc(
+            p4[sl], direction[sl], entry_sel[sl], exit_sel[sl],
+            templates, decay_samples, rng, origin=CMS_ORIGIN)
+        _, N_part = scan_u2(
+            d, passed, exit_sel[sl] - entry_sel[sl], scan_weights[sl],
+            beta_gamma_sel[sl], ctau_u2_1, L_INT_PB, u2_grid)
+        N_grid += N_part
+
+        if width_delta:
+            hf = had_frac if had_frac else 1.0
+            samp_had = mode_is_had[tmpl_idx]
+            for tag, gscale in (("lo", 1.0 + width_delta),
+                                ("hi", 1.0 - width_delta)):
+                w_lep = 1.0 / gscale
+                w_had = (1.0 + (gscale - 1.0) / hf) / gscale
+                sample_w = np.where(samp_had, w_had, w_lep)
+                _, N_part_v = scan_u2(
+                    d, passed, exit_sel[sl] - entry_sel[sl],
+                    scan_weights[sl], beta_gamma_sel[sl],
+                    ctau_u2_1 / gscale, L_INT_PB, u2_grid,
+                    sample_w=sample_w)
+                varied_N[tag] += N_part_v
 
     result = find_exclusion_band(u2_grid, N_grid, N_THRESHOLD)
 
@@ -288,17 +349,8 @@ def process_mass_point(flavor, mass, mesh,
     # hadronic modes), so they are co-varied in one scan -- never quadrature.
     if width_delta:
         hf = had_frac if had_frac else 1.0
-        samp_had = classify_template_modes(templates)[tmpl_idx]   # (n_ev, n_samples)
-        for tag, gscale in (("lo", 1.0 + width_delta),    # Gamma up
-                            ("hi", 1.0 - width_delta)):    # Gamma down
-            w_lep = 1.0 / gscale
-            w_had = (1.0 + (gscale - 1.0) / hf) / gscale   # (1 +/- delta/had_frac)/gscale
-            sample_w = np.where(samp_had, w_had, w_lep)
-            _, N_v = scan_u2(
-                d, passed, exit_d[idx] - entry_d[idx], scan_weights,
-                data["beta_gamma"][idx], ctau_u2_1 / gscale, L_INT_PB, u2_grid,
-                sample_w=sample_w)
-            r_v = find_exclusion_band(u2_grid, N_v, N_THRESHOLD)
+        for tag in ("lo", "hi"):
+            r_v = find_exclusion_band(u2_grid, varied_N[tag], N_THRESHOLD)
             result[f"u2_max_dm_{tag}"] = r_v["u2_max"]
             result[f"u2_min_dm_{tag}"] = r_v["u2_min"]
         result["width_delta"] = width_delta
@@ -311,11 +363,11 @@ def process_mass_point(flavor, mass, mesh,
     result["n_hits_eval"] = len(idx)
     result["decay_samples"] = decay_samples
     result["hit_estimator"] = hit_estimator
+    result["event_chunk"] = event_chunk
+    result["seed_salt"] = seed_salt
 
     if save_diagnostic:
         diag_dir = ANALYSIS_DIR / "diagnostics"
         plot_nsignal_vs_u2(u2_grid, N_grid, mass, flavor, diag_dir)
 
     return result
-
-
