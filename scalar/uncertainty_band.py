@@ -1196,7 +1196,7 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
 
     def control_summary(boundary):
         prefix = f"{boundary}_numerical_repeat"
-        flagged = band[f"{prefix}_not_subdominant"].fillna(False).astype(bool)
+        flagged = band[f"{prefix}_not_subdominant"].eq(True)
         summary = {
             "n_masses_not_subdominant": int(flagged.sum()),
             "masses_not_subdominant_GeV": [
