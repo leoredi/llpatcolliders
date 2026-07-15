@@ -39,6 +39,24 @@ cp alp_fermion/tmp/analysis/bc10_sensitivity.csv \
   plotters preserve the five disconnected runs `0.22-0.52`, `0.56-0.94`,
   `0.98-1.25`, `1.40-1.41`, and `1.47-3.28` GeV.
 
+## Variation diagnostics
+
+The committed bundle contains 117 complete variations: the central run, six
+FONLL scale choices, 100 NNPDF replicas, two bottom-mass choices, three named
+`a -> gg` hadronisation surrogates, two `C_bs` normalisation stress tests, the
+exact 2023 SensCalc decay model, and two independent numerical repeats. The
+one-source-at-a-time physical envelope reaches about 0.15 dex on a contour
+edge. It is a diagnostic envelope, not a confidence interval or a combined
+theory uncertainty.
+
+One central repeat makes the marginal 3.30 GeV grid point sensitive, while the
+canonical and six-million-event controls leave it insensitive. Numerical
+scatter is also non-subdominant to the physical envelope on the upper edge at
+ten low-mass grid points. The refined exact-2023 structural calculation
+restores 19 points in the 1.26--1.39 and 1.42--1.46 GeV gaps and removes no
+central point. These named results are retained separately; the primary
+proposed-experiment comparison remains central-only.
+
 ## Numerical convergence
 
 The high-pT proposal corrects the sparse survival tail that affected the old
