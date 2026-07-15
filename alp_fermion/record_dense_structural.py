@@ -42,6 +42,15 @@ def build_manifest(args) -> dict:
     masses = mass_grid["masses_GeV"]
     central = pd.read_csv(args.central_curve)
     structural = pd.read_csv(args.structural_curve)
+    central_manifest = json.loads(args.central_manifest.read_text())
+    central_sha = sha256_file(args.central_curve)
+    if central_manifest.get("csv_sha256") != central_sha:
+        raise ValueError("canonical central curve/manifest checksum mismatch")
+    if int(central_manifest.get("grid", {}).get("n_masses", -1)) != len(masses):
+        raise ValueError("canonical central manifest uses a different mass grid")
+    source_run = str(central_manifest.get("source_run", ""))
+    if str(int(args.n_pool)) not in source_run.replace(",", ""):
+        raise ValueError("canonical central manifest does not confirm --n-pool")
     comparison = structural_alternative_from_curves(central, structural)
     if list(comparison["mass_GeV"].astype(float)) != masses:
         raise ValueError("comparison curves do not exactly match --mass-grid order")
@@ -79,8 +88,13 @@ def build_manifest(args) -> dict:
         "inputs": {
             "central_curve": {
                 "file": args.central_curve.name,
-                "sha256": sha256_file(args.central_curve),
+                "sha256": central_sha,
                 "rows": len(central),
+            },
+            "central_publication_manifest": {
+                "file": args.central_manifest.name,
+                "sha256": sha256_file(args.central_manifest),
+                "producer_git_sha": central_manifest.get("producer_git_sha"),
             },
             "mass_grid": {
                 "file": args.mass_grid.name,
@@ -119,6 +133,7 @@ def build_manifest(args) -> dict:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--central-curve", type=Path, required=True)
+    parser.add_argument("--central-manifest", type=Path, required=True)
     parser.add_argument("--structural-curve", type=Path, required=True)
     parser.add_argument("--mass-grid", type=Path, required=True)
     parser.add_argument("--vector-dir", type=Path, required=True)

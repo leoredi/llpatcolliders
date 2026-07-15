@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pandas as pd
@@ -9,6 +10,7 @@ from alp_fermion.uncertainty_campaign import sha256_file
 def test_dense_structural_manifest_is_portable_and_pins_inputs(tmp_path, monkeypatch):
     mass_grid = tmp_path / "mass_grid.csv"
     central = tmp_path / "central.csv"
+    central_manifest = tmp_path / "MANIFEST.json"
     structural = tmp_path / "structural.csv"
     vector_dir = tmp_path / "vectors"
     geometry_dir = tmp_path / "geometry"
@@ -28,6 +30,12 @@ def test_dense_structural_manifest_is_portable_and_pins_inputs(tmp_path, monkeyp
     frame[["mass_GeV"]].to_csv(mass_grid, index=False)
     frame.to_csv(central, index=False)
     frame.to_csv(structural, index=False)
+    central_manifest.write_text(json.dumps({
+        "csv_sha256": sha256_file(central),
+        "producer_git_sha": "b" * 40,
+        "source_run": "1200000-event central production pool",
+        "grid": {"n_masses": 1},
+    }))
 
     monkeypatch.setattr(
         record,
@@ -72,6 +80,7 @@ def test_dense_structural_manifest_is_portable_and_pins_inputs(tmp_path, monkeyp
     args = SimpleNamespace(
         mass_grid=mass_grid,
         central_curve=central,
+        central_manifest=central_manifest,
         structural_curve=structural,
         vector_dir=vector_dir,
         geometry_dir=geometry_dir,
@@ -87,6 +96,9 @@ def test_dense_structural_manifest_is_portable_and_pins_inputs(tmp_path, monkeyp
     manifest = record.build_manifest(args)
 
     assert manifest["inputs"]["central_curve"]["sha256"] == sha256_file(central)
+    assert manifest["inputs"]["central_publication_manifest"][
+        "producer_git_sha"
+    ] == "b" * 40
     assert manifest["inputs"]["production_vectors"]["vector_tree_sha256"] == "vectors"
     assert manifest["output"]["sha256"] == sha256_file(structural)
     assert manifest["producer_code"]["commit"] == "a" * 40

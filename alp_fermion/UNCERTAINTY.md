@@ -167,6 +167,7 @@ RUN_COMMIT=0123456789abcdef0123456789abcdef01234567
 RUN_COMMAND='ALP_* paths as above; python -m alp_fermion.sensitivity --output ... --decay-samples 60 --resume'
 $PY -m alp_fermion.record_dense_structural \
   --central-curve /scratch/bc10_final/analysis/bc10_sensitivity.csv \
+  --central-manifest alp_fermion/data/published/MANIFEST.json \
   --structural-curve /scratch/bc10_final/analysis_2310/bc10_sensitivity.csv \
   --mass-grid /scratch/bc10_final/mass_grid.csv \
   --vector-dir /scratch/bc10_final/llp_4vectors \
