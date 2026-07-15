@@ -574,6 +574,13 @@ def test_dense_structural_collector_pins_curve_and_central_hashes(tmp_path):
     assert len(dense) == 1
     assert observed == provenance
 
+    published_curve = tmp_path / "published" / "dense_curve.csv"
+    campaign_collector._atomic_copy(structural_path, published_curve)
+    assert published_curve.read_bytes() == structural_path.read_bytes()
+    assert campaign_definitions.sha256_file(published_curve) == (
+        provenance["output"]["sha256"]
+    )
+
     provenance["output"]["sha256"] = "wrong"
     provenance_path.write_text(json.dumps(provenance))
     with pytest.raises(ValueError, match="checksum mismatch"):

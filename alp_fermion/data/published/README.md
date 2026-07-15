@@ -14,7 +14,9 @@ of one chosen analysis run promoted to a fixed, committed path so consumers
 - `MANIFEST.json` — provenance: source run, git sha, csv sha256, inputs,
   luminosity, threshold, headline reach, and the closure note.
 - `bundle/` — exact full-run theory/model variation curves, the compact
-  one-source-at-a-time display envelope, and their provenance manifest.
+  one-source-at-a-time diagnostic envelope, the raw and derived refined-grid
+  2310 structural contours, and their provenance manifests. These diagnostics
+  are not overlaid on the primary proposed-experiment comparison plots.
 
 ## To re-publish (after a better run)
 

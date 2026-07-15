@@ -35,7 +35,7 @@ extraction.
 ## Layout
 ```
 alp_fermion/
-  model.py          model layer: a→ff/γγ/hadrons widths (GKOZ tables), Γ_tot, cτ, BRs,
+  model.py          model layer: a→ff/γγ/hadrons widths (SensCalc 2501 tables), Γ_tot, cτ, BRs,
                     BR(B→K⁽ⁱ⁾ a) over the kaon tower (b→s a penguin, one-loop RG coefficient)
   alp_production.py B (FONLL) → B→K⁽ⁱ⁾ a → a four-vector CSVs (weight,E,px,py,pz)
   production_spectra.py  source-pinned SensCalc LHC light-parent sampler/audit
@@ -55,7 +55,7 @@ alp_fermion/
   tools/export_senscalc_2501.{py,wls}  verifies and exports the three SensCalc decay inputs
   tools/export_senscalc_2501_production.{py,wls}  verifies/decodes the LHC production inputs
   tests/test_model.py
-  EXTERNAL_INPUTS_NEEDED.md   (input provenance + residual systematics; overlays dropped)
+  EXTERNAL_INPUTS_NEEDED.md   (input provenance, residual systematics, overlay policy)
 ```
 
 ## Run
@@ -70,13 +70,14 @@ python -m pytest alp_fermion/tests -q
 Outputs go to `alp_fermion/tmp/` (gitignored): `analysis/bc10_sensitivity.csv`
 and `analysis/bc10_island.{png,pdf}`.
 
-The publication theory band is driven by
+The publication diagnostic campaign is driven by
 `python -m alp_fermion.run_uncertainty_campaign`. It performs an independent
 600k production, geometry, reconstruction, and sensitivity run for every
 coherent FONLL scale/PDF/bottom-mass member, plus the explicit `a -> gg`
 surrogate and `C_bs` scheme variations. It also runs the exact SensCalc 2310
 decay model as a separate one-sided structural contour, outside the ordinary
-pointwise halo. See
+pointwise envelope. These products are retained for audit and discussion; the
+primary proposed-experiment comparison plots remain central-only. See
 [`UNCERTAINTY.md`](UNCERTAINTY.md) for the prescription and reproduction
 commands.
 
@@ -104,11 +105,11 @@ with `--resume` to skip masses already present in that file.
 - Heavy-pseudoscalar structural comparison: exact arXiv:2310.03524 widths,
   exclusive branching functions, and squared matrix elements from the same
   SensCalc pin, exported under `data/senscalc_2310/`. This alternative is
-  propagated through independent full-decay templates and reconstruction but
-  is plotted separately rather than interpreted as a confidence interval.
+  propagated through independent full-decay templates and reconstruction and
+  published separately rather than interpreted as a confidence interval.
 - Benchmark definition: 2025 PBC report (arXiv:2505.00947); unified FIP
   calculation arXiv:2311.00507; state-of-the-art hadronic treatment
   arXiv:2501.04525.
 See `EXTERNAL_INPUTS_NEEDED.md` for residual systematics (production
 normalisation <~20% in 1/f; >3 GeV width from the matched perturbative
-continuation) and the dropped overlay curves.
+continuation) and the curated overlay policy.

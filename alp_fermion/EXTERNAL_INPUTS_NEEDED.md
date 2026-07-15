@@ -85,9 +85,12 @@ excluded light-meson pole windows. Light-meson decay rates are over five
 orders smaller than accepted B production at low mass. Their omission is
 therefore documented and quantified rather than assumed.
 
-## 4. Competitor + existing-bound curves — DROPPED (by decision)
+## 4. Competitor + existing-bound curves — SATISFIED OUTSIDE THIS PACKAGE
 
-The GRENDEL island is the deliverable; overlay curves (unified-calc
-competitors, CHARM/E137, LHCb/Belle II B→K(*) mumu / B→K+inv) are not part of
-it. `plot.py` still accepts an optional long-format overlay CSV
-(`curve, m_a_GeV, invf_GeV_inv`) if that decision is ever revisited.
+The signal package publishes the GRENDEL contour without duplicating external
+limits. The sibling `curves_PBC` repository builds the paper comparison from
+source-pinned GKOZ LHCb, arXiv:2501.04525 beam-dump, ALPINIST NA62, and selected
+FIPs-2022 existing bounds, plus the published SHiP and DarkQuest projections.
+ATLAS, CMS, and LHCb projection curves are excluded by analysis policy. The
+local `plot.py` still accepts an optional long-format overlay CSV
+(`curve, m_a_GeV, invf_GeV_inv`) for focused validation plots.

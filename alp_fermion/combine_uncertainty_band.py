@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -27,6 +28,14 @@ def _atomic_csv(frame: pd.DataFrame, path: Path):
     temporary = path.with_suffix(path.suffix + ".tmp")
     frame.to_csv(temporary, index=False)
     temporary.replace(path)
+
+
+def _atomic_copy(source: Path, destination: Path):
+    """Publish an already validated artifact without changing its bytes."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    shutil.copyfile(source, temporary)
+    temporary.replace(destination)
 
 
 def _scratch_relative(path: Path, scratch: Path) -> str:
@@ -252,6 +261,7 @@ def main(argv=None):
     raw_path = out_dir / "bc10_uncertainty_variations.csv"
     band_path = out_dir / "bc10_single_source_variation_envelope.csv"
     structural_path = out_dir / "bc10_decay_2310_structural_alternative.csv"
+    dense_curve_path = out_dir / "bc10_decay_2310_structural_curve_dense.csv"
     dense_structural_path = (
         out_dir / "bc10_decay_2310_structural_alternative_dense.csv"
     )
@@ -268,6 +278,7 @@ def main(argv=None):
             args.dense_structural_curve,
             args.dense_structural_manifest,
         )
+        _atomic_copy(args.dense_structural_curve, dense_curve_path)
         _atomic_csv(dense_structural, dense_structural_path)
         atomic_json(dense_manifest_path, dense_provenance)
     halo_code, structural_code = _campaign_code_states(registry)
@@ -295,6 +306,7 @@ def main(argv=None):
             "sha256": sha256_file(args.dense_structural_manifest),
         }
         outputs[dense_structural_path.name] = sha256_file(dense_structural_path)
+        outputs[dense_curve_path.name] = sha256_file(dense_curve_path)
         outputs[dense_manifest_path.name] = sha256_file(dense_manifest_path)
 
     headline = _headline(band)
@@ -374,6 +386,7 @@ def main(argv=None):
     print(f"wrote {band_path} ({len(band)} rows)")
     print(f"wrote {structural_path} ({len(structural)} rows)")
     if dense_structural is not None:
+        print(f"wrote {dense_curve_path} ({len(dense_structural)} rows)")
         print(f"wrote {dense_structural_path} ({len(dense_structural)} rows)")
         print(f"wrote {dense_manifest_path}")
     print(f"wrote {manifest_path} ({len(registry)} exact variations)")

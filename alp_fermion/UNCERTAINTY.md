@@ -1,9 +1,10 @@
-# BC10 theory/model variation envelope
+# BC10 theory/model variation diagnostics
 
 The publication campaign propagates every nuisance through a complete signal
-run. No event-level importance reweighting is used. The displayed result is a
+run. No event-level importance reweighting is used. The compact result is a
 non-statistical, one-source-at-a-time variation envelope, not a confidence
-interval or a simultaneous-combination coverage statement.
+interval or a simultaneous-combination coverage statement. It is retained as
+an audit diagnostic and is not drawn on the primary comparison plots.
 
 ## Inputs and combination
 
@@ -31,8 +32,8 @@ interval or a simultaneous-combination coverage statement.
   independent 20,000-event Pythia templates and a complete reconstruction
   scan. Production physics is unchanged, so this run reuses the central
   production vectors exactly. This is a one-sided named model comparison, not
-  a calibrated uncertainty. It is published as a separate dashed contour and
-  does **not** enter the pointwise halo.
+  a calibrated uncertainty. It is published as a separate named contour data
+  product and does **not** enter the pointwise envelope.
 - **Numerical controls:** two same-physics central repeats use fresh 600,000-
   parent pools and distinct production and reconstruction RNG seeds with the
   central templates. They are excluded from the theory/model envelope.
@@ -48,7 +49,7 @@ excluded eta/eta-prime pole rows remain explicit gaps with NaN envelope edges.
 The structural table separately records whether the 2310 model restores or
 removes sensitivity and whether an open-boundary state changes. In particular,
 central gaps restored by the alternative remain explicit topology changes;
-they are never converted into a halo displacement around a nonexistent edge.
+they are never converted into an envelope displacement around a nonexistent edge.
 The compact table also reports each repeat boundary, median/max absolute repeat
 shift in dex and fractional coupling, and flags a mass when the largest repeat
 shift is at least as large as the physical envelope shift on that boundary.
@@ -90,10 +91,13 @@ directories are selected through environment variables, not repository
 symlinks. The raw contour table, compact
 `bc10_single_source_variation_envelope.csv`, dedicated
 `bc10_decay_2310_structural_alternative.csv`, and exact registry/provenance
-manifest are promoted to `alp_fermion/data/published/bundle/`.
+manifest are promoted to `alp_fermion/data/published/bundle/`. The definitive
+refined-grid comparison additionally includes the byte-identical raw contour
+`bc10_decay_2310_structural_curve_dense.csv`, its derived central-vs-structural
+table, and `DENSE_STRUCTURAL_MANIFEST.json`, so the bundle is self-contained.
 The manifest requires one consistent code state for the pointwise campaign and
 one for the structural add-on, and records both. This permits the structural
-implementation commit to be applied after already validated halo runs without
+implementation commit to be applied after already validated pointwise runs without
 weakening reproducibility within either group.
 
 ## Reproduction
