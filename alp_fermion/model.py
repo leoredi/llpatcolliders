@@ -330,10 +330,9 @@ def alp_branchings(
 # --------------------------------------------------------------------------
 # Visible decay channels for the charged-track reconstruction
 # --------------------------------------------------------------------------
-# The branching weights use the exact 2501 exclusive table and SensCalc's
-# charged/no-ECAL channel selection.  The current template interface groups
-# those exclusive hadronic modes into a two-leading-track proxy; templates.py
-# owns that kinematic approximation and its pending matrix-element upgrade.
+# These grouped channels support only the explicitly retained legacy proxy in
+# templates.py. Publication templates instead sample the full exclusive table,
+# decay unstable daughters with Pythia, and apply the exact three-body weights.
 # The tau decay length (c*tau ~ 87 um * beta*gamma) is far below the 3 mm hit
 # resolution, so each tau is treated as one charged track along its direction.
 #

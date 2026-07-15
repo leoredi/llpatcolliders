@@ -185,8 +185,7 @@ def process_mass(
 
     # New Pythia templates sample the full exclusive BR mixture, including
     # neutral modes, so reconstruction itself supplies the visible fraction.
-    # Retain compatibility with the older visible-only proxy caches while the
-    # full grid is regenerated.
+    # Retain compatibility only for explicitly requested legacy-proxy caches.
     full_branching = (
         "includes_full_branching" in templates.files
         and bool(templates["includes_full_branching"])
