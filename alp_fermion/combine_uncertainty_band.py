@@ -153,6 +153,31 @@ def _headline(band: pd.DataFrame) -> dict:
                 ].itertuples(index=False)
             },
         },
+        "physical_variation_topology": {
+            "n_differences": int(band["halo_topology_differs"].sum()),
+            "difference_masses_GeV": [
+                float(value) for value in band.loc[
+                    band["halo_topology_differs"], "mass_GeV"
+                ]
+            ],
+            "difference_variations_by_mass": {
+                f"{float(row.mass_GeV):g}": row.halo_topology_difference_variations
+                for row in band.loc[
+                    band["halo_topology_differs"],
+                    ["mass_GeV", "halo_topology_difference_variations"],
+                ].itertuples(index=False)
+            },
+            "restored_masses_GeV": [
+                float(value) for value in band.loc[
+                    band["halo_restores_sensitivity"], "mass_GeV"
+                ]
+            ],
+            "removed_masses_GeV": [
+                float(value) for value in band.loc[
+                    band["halo_removes_sensitivity"], "mass_GeV"
+                ]
+            ],
+        },
     }
     for boundary in ("invf_min", "invf_max"):
         central = sensitive[f"{boundary}_central"]

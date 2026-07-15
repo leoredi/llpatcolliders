@@ -225,6 +225,10 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
     counts = {axis: len(names) for axis, names in axes.items()}
     if counts != expected_counts:
         raise ValueError(f"incomplete contour ensemble: {counts} != {expected_counts}")
+    halo_variations = [
+        name for axis in ("scale", "pdf", "mb", "decay_gg", "cbs")
+        for name in axes[axis]
+    ]
     rows = []
     for mass in sorted(raw["mass_GeV"].unique()):
         central = raw[
@@ -249,6 +253,25 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
             name for name, sensitive in numerical_sensitive.items()
             if sensitive != central_sensitive
         }
+        halo_rows = raw[
+            (raw["mass_GeV"] == mass)
+            & raw["variation"].isin(halo_variations)
+        ].set_index("variation")
+        halo_sensitive = {
+            name: bool(halo_rows.loc[name, "has_sensitivity"])
+            for name in halo_variations
+        }
+        halo_restores_sensitivity = {
+            name for name, sensitive in halo_sensitive.items()
+            if sensitive and not central_sensitive
+        }
+        halo_removes_sensitivity = {
+            name for name, sensitive in halo_sensitive.items()
+            if central_sensitive and not sensitive
+        }
+        halo_topology_differences = (
+            halo_restores_sensitivity | halo_removes_sensitivity
+        )
         any_halo_variation_sensitive = bool(
             raw.loc[
                 (raw["mass_GeV"] == mass)
@@ -281,6 +304,16 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
                 if numerical_sensitive[name]
             ),
             "numerical_control_included_in_halo": False,
+            "halo_restores_sensitivity": bool(halo_restores_sensitivity),
+            "halo_restores_sensitivity_variations": ";".join(
+                name for name in halo_variations
+                if name in halo_restores_sensitivity
+            ),
+            "halo_removes_sensitivity": bool(halo_removes_sensitivity),
+            "halo_removes_sensitivity_variations": ";".join(
+                name for name in halo_variations
+                if name in halo_removes_sensitivity
+            ),
             "envelope_definition": "single_source_variation_envelope",
         }
         topology_differs = structural_sensitive != central_sensitive
@@ -301,6 +334,15 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
                 topology_differs = topology_differs or (
                     central_open != structural_open
                 )
+            for name in halo_variations:
+                _, opened, sensitive = _log_boundary(
+                    raw, mass, name, boundary
+                )
+                if (
+                    central_sensitive and sensitive
+                    and central_open != opened
+                ):
+                    halo_topology_differences.add(name)
             repeat_samples = []
             for name in axes["numerical_control"]:
                 value, opened, sensitive = _log_boundary(
@@ -442,6 +484,11 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
                 ),
             })
         record["decay_structure_topology_differs"] = bool(topology_differs)
+        record["halo_topology_differs"] = bool(halo_topology_differences)
+        record["halo_topology_difference_variations"] = ";".join(
+            name for name in halo_variations
+            if name in halo_topology_differences
+        )
         record["numerical_control_topology_differs"] = bool(
             numerical_topology_differences
         )

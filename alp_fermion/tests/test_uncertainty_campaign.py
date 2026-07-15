@@ -520,6 +520,55 @@ def test_numerical_repeat_topology_difference_is_preserved_at_central_gap():
     }
 
 
+def test_physical_variation_topology_difference_is_named_at_central_gap():
+    definitions = [("central", "central")]
+    definitions += [(f"scale_{i}", "scale") for i in range(6)]
+    definitions += [(f"pdf_{i}", "pdf") for i in range(100)]
+    definitions += [("mb_dn", "mb"), ("mb_up", "mb")]
+    definitions += [(f"gg_{q}", "decay_gg") for q in "uds"]
+    definitions += [("cbs_down", "cbs"), ("cbs_up", "cbs")]
+    definitions += [("decay_2310_structural", "decay_structure")]
+    definitions += [
+        ("central_repeat_1", "numerical_control"),
+        ("central_repeat_2", "numerical_control"),
+    ]
+    rows = []
+    for name, axis in definitions:
+        sensitive = name == "gg_u"
+        rows.append({
+            "mass_GeV": 3.30,
+            "variation": name,
+            "axis": axis,
+            "has_sensitivity": sensitive,
+            "invf_min": 1e-8 if sensitive else np.nan,
+            "invf_max": 1e-7 if sensitive else np.nan,
+            "invf_min_open": False,
+            "invf_max_open": False,
+        })
+
+    band_frame = combine_band(pd.DataFrame(rows))
+    band = band_frame.iloc[0]
+    assert not bool(band["has_sensitivity"])
+    assert bool(band["any_halo_variation_sensitive"])
+    assert bool(band["halo_restores_sensitivity"])
+    assert band["halo_restores_sensitivity_variations"] == "gg_u"
+    assert not bool(band["halo_removes_sensitivity"])
+    assert bool(band["halo_topology_differs"])
+    assert band["halo_topology_difference_variations"] == "gg_u"
+    assert np.isnan(band["invf_min_envelope_lo"])
+
+    topology = campaign_collector._headline(band_frame)[
+        "physical_variation_topology"
+    ]
+    assert topology == {
+        "n_differences": 1,
+        "difference_masses_GeV": [3.3],
+        "difference_variations_by_mass": {"3.3": "gg_u"},
+        "restored_masses_GeV": [3.3],
+        "removed_masses_GeV": [],
+    }
+
+
 def test_structural_table_publishes_restored_heavy_pseudoscalar_topology():
     rows = []
     for mass in (1.30, 1.35, 1.45):

@@ -46,6 +46,9 @@ source varied at a time. Sources are not added in quadrature. If a variation
 removes an island boundary, `*_variation_missing` is set rather than treating
 the missing boundary as zero displacement. Central insensitive rows and the
 excluded eta/eta-prime pole rows remain explicit gaps with NaN envelope edges.
+Named physical variations that restore or remove sensitivity, or change an
+open-edge state, are listed separately by mass rather than converted into a
+finite displacement around a missing boundary.
 The structural table separately records whether the 2310 model restores or
 removes sensitivity and whether an open-boundary state changes. In particular,
 central gaps restored by the alternative remain explicit topology changes;
