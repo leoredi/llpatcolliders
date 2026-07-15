@@ -237,6 +237,18 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
         ].iloc[0]
         central_sensitive = bool(central["has_sensitivity"])
         structural_sensitive = bool(structural["has_sensitivity"])
+        numerical_rows = raw[
+            (raw["mass_GeV"] == mass)
+            & raw["variation"].isin(axes["numerical_control"])
+        ].set_index("variation")
+        numerical_sensitive = {
+            name: bool(numerical_rows.loc[name, "has_sensitivity"])
+            for name in axes["numerical_control"]
+        }
+        numerical_topology_differences = {
+            name for name, sensitive in numerical_sensitive.items()
+            if sensitive != central_sensitive
+        }
         any_halo_variation_sensitive = bool(
             raw.loc[
                 (raw["mass_GeV"] == mass)
@@ -261,6 +273,14 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
                 central_sensitive and not structural_sensitive
             ),
             "decay_structure_included_in_halo": False,
+            "numerical_control_n_sensitive": sum(numerical_sensitive.values()),
+            "numerical_control_any_sensitive": any(numerical_sensitive.values()),
+            "numerical_control_all_sensitive": all(numerical_sensitive.values()),
+            "numerical_control_sensitive_variations": ";".join(
+                name for name in axes["numerical_control"]
+                if numerical_sensitive[name]
+            ),
+            "numerical_control_included_in_halo": False,
             "envelope_definition": "single_source_variation_envelope",
         }
         topology_differs = structural_sensitive != central_sensitive
@@ -281,6 +301,20 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
                 topology_differs = topology_differs or (
                     central_open != structural_open
                 )
+            repeat_samples = []
+            for name in axes["numerical_control"]:
+                value, opened, sensitive = _log_boundary(
+                    raw, mass, name, boundary
+                )
+                repeat_samples.append((name, value, opened, sensitive))
+                record[f"{boundary}_{name}"] = (
+                    10.0 ** value if value is not None else np.nan
+                )
+                if (
+                    central_sensitive and sensitive
+                    and central_open != opened
+                ):
+                    numerical_topology_differences.add(name)
             if xc is None:
                 record[f"{boundary}_envelope_lo"] = np.nan
                 record[f"{boundary}_envelope_hi"] = np.nan
@@ -288,6 +322,11 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
                 record[f"{boundary}_variation_missing"] = False
                 record[f"{boundary}_envelope_lo_source"] = ""
                 record[f"{boundary}_envelope_hi_source"] = ""
+                record[f"{boundary}_physical_envelope_max_abs_dex"] = np.nan
+                record[f"{boundary}_repeat_median_abs_dex"] = np.nan
+                record[f"{boundary}_repeat_max_abs_dex"] = np.nan
+                record[f"{boundary}_repeat_median_abs_fraction"] = np.nan
+                record[f"{boundary}_repeat_max_abs_fraction"] = np.nan
                 record[f"{boundary}_repeat_missing"] = False
                 record[f"{boundary}_repeat_not_subdominant"] = False
                 continue
@@ -364,16 +403,11 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
 
             repeat_values = []
             repeat_missing = False
-            for name in axes["numerical_control"]:
-                value, _, sensitive = _log_boundary(
-                    raw, mass, name, boundary
-                )
+            for name, value, _, _ in repeat_samples:
                 if value is None:
                     repeat_missing = True
-                    record[f"{boundary}_{name}"] = np.nan
                 else:
                     repeat_values.append(value)
-                    record[f"{boundary}_{name}"] = 10.0 ** value
             repeat_abs_dex = np.abs(np.asarray(repeat_values) - xc)
             repeat_abs_fraction = np.abs(10.0 ** (
                 np.asarray(repeat_values) - xc
@@ -408,6 +442,13 @@ def _combine_campaign_band(raw: pd.DataFrame) -> pd.DataFrame:
                 ),
             })
         record["decay_structure_topology_differs"] = bool(topology_differs)
+        record["numerical_control_topology_differs"] = bool(
+            numerical_topology_differences
+        )
+        record["numerical_control_topology_difference_variations"] = ";".join(
+            name for name in axes["numerical_control"]
+            if name in numerical_topology_differences
+        )
         rows.append(record)
     return pd.DataFrame(rows).sort_values("mass_GeV")
 

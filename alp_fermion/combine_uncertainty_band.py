@@ -131,6 +131,28 @@ def _headline(band: pd.DataFrame) -> dict:
         "n_decay_structure_topology_differences": int(
             band["decay_structure_topology_differs"].sum()
         ),
+        "numerical_control_topology": {
+            "n_differences": int(
+                band["numerical_control_topology_differs"].sum()
+            ),
+            "difference_masses_GeV": [
+                float(value) for value in band.loc[
+                    band["numerical_control_topology_differs"], "mass_GeV"
+                ]
+            ],
+            "difference_variations_by_mass": {
+                f"{float(row.mass_GeV):g}": (
+                    row.numerical_control_topology_difference_variations
+                )
+                for row in band.loc[
+                    band["numerical_control_topology_differs"],
+                    [
+                        "mass_GeV",
+                        "numerical_control_topology_difference_variations",
+                    ],
+                ].itertuples(index=False)
+            },
+        },
     }
     for boundary in ("invf_min", "invf_max"):
         central = sensitive[f"{boundary}_central"]
