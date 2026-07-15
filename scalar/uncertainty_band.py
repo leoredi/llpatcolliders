@@ -834,6 +834,10 @@ def combine_band(raw, central_curve):
     axes = {axis: sorted(raw.loc[raw["axis"] == axis, "variation"].unique())
             for axis in (
                 "scale", "pdf", "mass", "decay_model", "numerical_control")}
+    physical_variations = [
+        name for axis in ("scale", "pdf", "mass", "decay_model")
+        for name in axes[axis]
+    ]
     rows = []
     for _, ref in reference.sort_values("mass_GeV").iterrows():
         mass = float(ref["mass_GeV"])
@@ -859,6 +863,20 @@ def combine_band(raw, central_curve):
             name for name, sensitive in repeat_sensitive.items()
             if sensitive != canonical_sensitive
         }
+        physical_sensitive = {
+            name: bool(
+                by_name.get(name) is not None
+                and by_name[name].get("has_sensitivity", False))
+            for name in physical_variations
+        }
+        physical_topology_differs_from_campaign = {
+            name for name, sensitive in physical_sensitive.items()
+            if sensitive != campaign_sensitive
+        }
+        physical_topology_differs_from_canonical = {
+            name for name, sensitive in physical_sensitive.items()
+            if sensitive != canonical_sensitive
+        }
         rec = {
             "mass_GeV": mass,
             "has_sensitivity": canonical_sensitive,
@@ -875,6 +893,11 @@ def combine_band(raw, central_curve):
                 name for name in axes["numerical_control"]
                 if repeat_sensitive[name]),
             "numerical_control_included_in_envelope": False,
+            "physical_variation_n_sensitive": sum(physical_sensitive.values()),
+            "physical_variation_any_sensitive": any(physical_sensitive.values()),
+            "physical_variation_sensitive_variations": ";".join(
+                name for name in physical_variations
+                if physical_sensitive[name]),
         }
         for boundary, open_col in BOUNDARIES:
             ref_value = ref.get(boundary, np.nan)
@@ -898,6 +921,14 @@ def combine_band(raw, central_curve):
                 if canonical_sensitive and repeat_sensitive[name]:
                     if ref_open != is_open:
                         topology_differs_from_canonical.add(name)
+            for name in physical_variations:
+                _, is_open = _boundary(by_name.get(name), boundary, open_col)
+                if campaign_sensitive and physical_sensitive[name]:
+                    if campaign_open != is_open:
+                        physical_topology_differs_from_campaign.add(name)
+                if canonical_sensitive and physical_sensitive[name]:
+                    if ref_open != is_open:
+                        physical_topology_differs_from_canonical.add(name)
             if (not rec["has_sensitivity"] or ref_open or not np.isfinite(ref_value)
                     or ref_value <= 0 or xc is None or campaign_open):
                 rec[f"{boundary}_envelope_lo"] = np.nan
@@ -1078,6 +1109,20 @@ def combine_band(raw, central_curve):
                 name for name in axes["numerical_control"]
                 if name in topology_differs_from_canonical)
         )
+        rec["physical_variation_topology_differs_from_campaign"] = bool(
+            physical_topology_differs_from_campaign)
+        rec["physical_variation_topology_difference_variations_from_campaign"] = (
+            ";".join(
+                name for name in physical_variations
+                if name in physical_topology_differs_from_campaign)
+        )
+        rec["physical_variation_topology_differs_from_canonical"] = bool(
+            physical_topology_differs_from_canonical)
+        rec["physical_variation_topology_difference_variations_from_canonical"] = (
+            ";".join(
+                name for name in physical_variations
+                if name in physical_topology_differs_from_canonical)
+        )
         rows.append(rec)
     return pd.DataFrame(rows)
 
@@ -1203,6 +1248,32 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
             },
         }
 
+    physical_variation_topology_summary = {}
+    for reference_name in ("campaign", "canonical"):
+        flag = band[
+            f"physical_variation_topology_differs_from_{reference_name}"
+        ].fillna(False).astype(bool)
+        physical_variation_topology_summary[f"topology_vs_{reference_name}"] = {
+            "n_differences": int(flag.sum()),
+            "difference_masses_GeV": [
+                float(value) for value in band.loc[flag, "mass_GeV"]],
+            "difference_variations_by_mass": {
+                f"{float(row.mass_GeV):g}": getattr(
+                    row,
+                    "physical_variation_topology_difference_variations_"
+                    f"from_{reference_name}",
+                )
+                for row in band.loc[
+                    flag,
+                    [
+                        "mass_GeV",
+                        "physical_variation_topology_difference_variations_"
+                        f"from_{reference_name}",
+                    ],
+                ].itertuples(index=False)
+            },
+        }
+
     manifest = {
         "artifact": "GRENDEL BC4 independent full-statistics uncertainty campaign",
         "schema_version": 2,
@@ -1264,6 +1335,8 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
             "rebase": "component dex shifts applied to canonical published central curve",
         },
         "numerical_control_summary": numerical_control_summary,
+        "physical_variation_topology_summary": (
+            physical_variation_topology_summary),
         "variations": [
             {
                 "name": variation["name"],

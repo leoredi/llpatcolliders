@@ -46,6 +46,10 @@ The displayed `single_source_variation_envelope` is the outermost boundary of
 these one-source-at-a-time intervals, rebased onto the canonical central curve.
 Nothing is added in quadrature; it is not a confidence band and does not claim
 simultaneous-source coverage.
+Physical variations that restore or remove sensitivity, or change an open-edge
+state, are listed by variation and mass against both the independent campaign
+central and the canonical contour. They are not converted into a finite band
+width where the corresponding reference boundary does not exist.
 
 Reproduce from the repository root in the `llpatcolliders_FONLL` environment:
 

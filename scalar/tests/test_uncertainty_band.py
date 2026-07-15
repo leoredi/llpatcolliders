@@ -182,6 +182,45 @@ def test_numerical_repeat_does_not_restore_physics_topology():
     assert not bool(out["numerical_control_included_in_envelope"])
 
 
+def test_physical_variation_topology_change_is_named_at_canonical_gap():
+    raw = pd.DataFrame([
+        {
+            **_row("central", "central", 1e-8, 1e-4),
+            "has_sensitivity": False,
+        },
+        _row(DECAY_VARIATION, "decay_model", 1e-8, 1e-4),
+    ])
+    reference = pd.DataFrame([{
+        "mass_GeV": 3.8,
+        "has_sensitivity": False,
+        "u2_min": float("nan"),
+        "u2_max": float("nan"),
+        "u2_min_open": False,
+        "u2_max_open": False,
+    }])
+    raw["mass_GeV"] = 3.8
+
+    out = combine_band(raw, reference).iloc[0]
+
+    assert bool(out["any_variation_sensitive"])
+    assert bool(out["physical_variation_any_sensitive"])
+    assert out["physical_variation_n_sensitive"] == 1
+    assert out["physical_variation_sensitive_variations"] == DECAY_VARIATION
+    assert bool(out["physical_variation_topology_differs_from_campaign"])
+    assert bool(out["physical_variation_topology_differs_from_canonical"])
+    assert (
+        out[
+            "physical_variation_topology_difference_variations_from_campaign"
+        ] == DECAY_VARIATION
+    )
+    assert (
+        out[
+            "physical_variation_topology_difference_variations_from_canonical"
+        ] == DECAY_VARIATION
+    )
+    assert pd.isna(out["u2_min_envelope_lo"])
+
+
 def test_completed_variation_is_checksummed_then_compacted(tmp_path):
     run_dir = tmp_path / "runs" / "central"
     vector_dir = run_dir / "llp_4vectors"
