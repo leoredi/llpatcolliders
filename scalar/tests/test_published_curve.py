@@ -10,6 +10,7 @@ from scalar.production import MASS_GRID
 
 
 PUBLISHED = Path(__file__).resolve().parents[1] / "data" / "published"
+BUNDLE = PUBLISHED / "bundle"
 
 
 def _sha256(path):
@@ -63,3 +64,63 @@ def test_published_curve_and_manifest_are_self_consistent():
     assert [upper_open["mass_GeV"].min(), upper_open["mass_GeV"].max()] == (
         manifest["topology"]["upper_open_grid_run_GeV"]
     )
+
+
+def test_uncertainty_bundle_is_complete_and_hash_linked():
+    manifest = json.loads((BUNDLE / "UNCERTAINTY_MANIFEST.json").read_text())
+    canonical_manifest = json.loads((PUBLISHED / "MANIFEST.json").read_text())
+
+    for name, metadata in manifest["outputs"].items():
+        path = PUBLISHED / name
+        if not path.is_file():
+            path = BUNDLE / name
+        assert path.is_file()
+        assert _sha256(path) == metadata["sha256"]
+        if "rows" in metadata:
+            assert len(pd.read_csv(path)) == metadata["rows"]
+
+    assert manifest["outputs"]["bc4_island.csv"]["sha256"] == (
+        canonical_manifest["csv_sha256"]
+    )
+    assert manifest["collector"]["uncertainty_band_sha256"] == _sha256(
+        PUBLISHED.parents[1] / "uncertainty_band.py"
+    )
+
+    raw = pd.read_csv(BUNDLE / "bc4_uncertainty_variations.csv")
+    band = pd.read_csv(BUNDLE / "bc4_single_source_variation_envelope.csv")
+    expected_axes = {
+        "central": 1,
+        "scale": 6,
+        "pdf": 100,
+        "mass": 2,
+        "decay_model": 1,
+        "numerical_control": 2,
+    }
+    assert raw.groupby("axis")["variation"].nunique().to_dict() == expected_axes
+    assert raw.groupby("variation").size().eq(len(MASS_GRID)).all()
+    assert len(raw) == sum(expected_axes.values()) * len(MASS_GRID)
+    assert np.array_equal(
+        band["mass_GeV"].to_numpy(float), np.asarray(MASS_GRID, dtype=float)
+    )
+    assert set(band["envelope_definition"]) == {
+        "single_source_variation_envelope"
+    }
+    insensitive = ~band["has_sensitivity"].astype(bool)
+    assert band.loc[
+        insensitive,
+        [
+            "u2_min_envelope_lo",
+            "u2_min_envelope_hi",
+            "u2_max_envelope_lo",
+            "u2_max_envelope_hi",
+        ],
+    ].isna().all().all()
+
+    numerical = manifest["numerical_control_summary"]
+    assert numerical["topology_vs_campaign"]["difference_masses_GeV"] == []
+    assert numerical["topology_vs_canonical"]["difference_masses_GeV"] == []
+    assert numerical["u2_min"]["masses_not_subdominant_GeV"] == []
+    assert numerical["u2_max"]["masses_not_subdominant_GeV"] == [0.22]
+    physical = manifest["physical_variation_topology_summary"]
+    assert physical["topology_vs_campaign"]["difference_masses_GeV"] == [3.8]
+    assert physical["topology_vs_canonical"]["difference_masses_GeV"] == [3.8]
