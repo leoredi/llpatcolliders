@@ -15,6 +15,7 @@ import pandas as pd
 
 from alp_fermion.run_uncertainty_campaign import (
     REPO_ROOT,
+    _git_state,
     _load_mass_grid,
     _template_provenance,
     _validate_geometry,
@@ -75,6 +76,7 @@ def build_manifest(args) -> dict:
             "commit": producer_commit,
             "repository": "llpatcolliders (branch bc10-alp)",
         },
+        "recorder_code": _git_state(),
         "command": args.command,
         "analysis": {
             "n_parent_pool": int(args.n_pool),

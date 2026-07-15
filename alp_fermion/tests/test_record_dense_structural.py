@@ -77,6 +77,15 @@ def test_dense_structural_manifest_is_portable_and_pins_inputs(tmp_path, monkeyp
         },
     )
     monkeypatch.setattr(record, "_require_commit", lambda value: "a" * 40)
+    monkeypatch.setattr(
+        record,
+        "_git_state",
+        lambda: {
+            "commit": "c" * 40,
+            "tracked_diff_sha256": "0" * 64,
+            "tracked_tree_clean": True,
+        },
+    )
     args = SimpleNamespace(
         mass_grid=mass_grid,
         central_curve=central,
@@ -102,4 +111,5 @@ def test_dense_structural_manifest_is_portable_and_pins_inputs(tmp_path, monkeyp
     assert manifest["inputs"]["production_vectors"]["vector_tree_sha256"] == "vectors"
     assert manifest["output"]["sha256"] == sha256_file(structural)
     assert manifest["producer_code"]["commit"] == "a" * 40
+    assert manifest["recorder_code"]["commit"] == "c" * 40
     assert str(tmp_path) not in str(manifest)
