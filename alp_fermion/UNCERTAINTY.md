@@ -53,6 +53,10 @@ they are never converted into an envelope displacement around a nonexistent edge
 The compact table also reports each repeat boundary, median/max absolute repeat
 shift in dex and fractional coupling, and flags a mass when the largest repeat
 shift is at least as large as the physical envelope shift on that boundary.
+Sensitivity and open-edge topology disagreements are recorded independently,
+including the responsible repeat names and masses, even where the central
+contour has no boundary to compare. These flags never restore a gap in the
+central contour and never enter the physical envelope.
 
 ## Run layout and restart policy
 
