@@ -177,6 +177,84 @@ def test_structural_reference_hashes_exact_central_vectors(tmp_path, monkeypatch
         )
 
 
+def test_structural_reference_strictly_validates_legacy_central_grid(
+    tmp_path, monkeypatch
+):
+    central_dir = tmp_path / "central"
+    marker_path = central_dir / "production.complete.json"
+    marker_path.parent.mkdir(parents=True)
+    marker_path.write_text(json.dumps({
+        "variation": {
+            "name": "central",
+            "grid_sha256": "grid-hash",
+            "cbs_amplitude_scale": 1.0,
+        },
+        "n_pool": 600_000,
+        "n_vector_files": 1,
+        "vector_tree_sha256": "vector-hash",
+    }))
+    mass_grid = {
+        "canonical_sha256": "mass-hash",
+        "masses_GeV": [1.0],
+    }
+    monkeypatch.setattr(
+        campaign_runner,
+        "_validate_vectors",
+        lambda *args, **kwargs: {
+            "n_vector_files": 1,
+            "total_vector_bytes": 123,
+            "vector_tree_sha256": "vector-hash",
+        },
+    )
+    calls = []
+
+    def validate_curve(path, masses):
+        calls.append((path, masses))
+        return {
+            "sensitivity_csv_sha256": "curve-hash",
+            "n_sensitivity_rows": 1,
+            "n_sensitive_rows": 1,
+        }
+
+    monkeypatch.setattr(
+        campaign_runner, "_validate_sensitivity_csv", validate_curve
+    )
+    _, info = campaign_runner._validate_central_production_reference(
+        marker_path,
+        central_dir / "llp_4vectors",
+        {"grid_sha256": "grid-hash"},
+        600_000,
+        hash_vectors=True,
+        mass_grid=mass_grid,
+    )
+
+    assert calls == [
+        (central_dir / "analysis" / "bc10_sensitivity.csv", [1.0])
+    ]
+    assert info["mass_grid_validation"] == {
+        "mode": "legacy_vector_tree_and_sensitivity_csv",
+        "central_sensitivity_csv": str(
+            central_dir / "analysis" / "bc10_sensitivity.csv"
+        ),
+        "sensitivity_csv_sha256": "curve-hash",
+        "n_sensitivity_rows": 1,
+        "n_sensitive_rows": 1,
+    }
+
+    marker = json.loads(marker_path.read_text())
+    marker["n_vector_files"] = 2
+    marker_path.write_text(json.dumps(marker))
+    with pytest.raises(RuntimeError, match="legacy central.*different mass grid"):
+        campaign_runner._validate_central_production_reference(
+            marker_path,
+            central_dir / "llp_4vectors",
+            {"grid_sha256": "grid-hash"},
+            600_000,
+            hash_vectors=True,
+            mass_grid=mass_grid,
+        )
+
+
 def test_mass_grid_file_is_hashed_and_requires_strict_order(tmp_path):
     path = tmp_path / "dense_grid.csv"
     pd.DataFrame({"mass_GeV": [1.18, 1.19, 1.20]}).to_csv(path, index=False)

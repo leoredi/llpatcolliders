@@ -399,9 +399,10 @@ def _validate_central_production_reference(
         raise RuntimeError("reused central production has a different pool size")
     if float(central.get("cbs_amplitude_scale", 1.0)) != 1.0:
         raise RuntimeError("reused central production has non-central C_bs")
+    recorded_mass_hash = marker.get("mass_grid", {}).get("canonical_sha256")
     if (
-        marker.get("mass_grid", {}).get("canonical_sha256")
-        != mass_grid["canonical_sha256"]
+        recorded_mass_hash is not None
+        and recorded_mass_hash != mass_grid["canonical_sha256"]
     ):
         raise RuntimeError("reused central production has a different mass grid")
     vector_info = _validate_vectors(
@@ -411,6 +412,29 @@ def _validate_central_production_reference(
     if hash_vectors and vector_info["vector_tree_sha256"] != expected_hash:
         raise RuntimeError("reused central production vector checksum changed")
     vector_info["vector_tree_sha256"] = expected_hash
+    if recorded_mass_hash is None:
+        expected_vectors = len(_supported_masses(mass_grid["masses_GeV"]))
+        if (
+            marker.get("n_vector_files") != expected_vectors
+            or vector_info["n_vector_files"] != expected_vectors
+        ):
+            raise RuntimeError(
+                "legacy central production marker has a different mass grid"
+            )
+        central_curve = marker_path.parent / "analysis" / "bc10_sensitivity.csv"
+        sensitivity_info = _validate_sensitivity_csv(
+            central_curve, mass_grid["masses_GeV"]
+        )
+        vector_info["mass_grid_validation"] = {
+            "mode": "legacy_vector_tree_and_sensitivity_csv",
+            "central_sensitivity_csv": str(central_curve),
+            **sensitivity_info,
+        }
+    else:
+        vector_info["mass_grid_validation"] = {
+            "mode": "production_marker",
+            "canonical_sha256": recorded_mass_hash,
+        }
     return marker, vector_info
 
 
