@@ -16,6 +16,7 @@ from uncertainty_campaign import (  # noqa: E402
     decay_structure_variation,
     numerical_control_variations,
     stable_seed,
+    structural_alternative_from_curves,
     structural_alternative_table,
 )
 import run_uncertainty_campaign as campaign_runner  # noqa: E402
@@ -502,6 +503,85 @@ def test_structural_table_publishes_restored_heavy_pseudoscalar_topology():
     assert not result["included_in_pointwise_halo"].any()
     assert (result["invf_min"] == 1e-7).all()
     assert (result["invf_max"] == 1e-5).all()
+
+
+def test_dense_structural_table_requires_and_preserves_exact_mass_grid():
+    central = pd.DataFrame({
+        "mass_GeV": [1.30, 1.31],
+        "has_sensitivity": [False, True],
+        "peak_N": [0.5, 4.0],
+        "peak_invf": [1e-7, 2e-7],
+        "invf_min": [np.nan, 1e-8],
+        "invf_max": [np.nan, 1e-6],
+        "invf_min_open": [False, False],
+        "invf_max_open": [False, False],
+    })
+    structural = central.copy()
+    structural["has_sensitivity"] = True
+    structural["peak_N"] = [30.0, 35.0]
+    structural["invf_min"] = [2e-8, 2.1e-8]
+    structural["invf_max"] = [2e-6, 2.1e-6]
+
+    result = structural_alternative_from_curves(central, structural)
+
+    assert list(result["mass_GeV"]) == [1.30, 1.31]
+    assert list(result["restores_sensitivity"]) == [True, False]
+    assert list(result["topology_differs"]) == [True, False]
+    assert (result["variation"] == "decay_2310_structural").all()
+
+    with pytest.raises(ValueError, match="mass grids differ"):
+        structural_alternative_from_curves(
+            central,
+            structural[structural["mass_GeV"] != 1.31],
+        )
+
+
+def test_dense_structural_collector_pins_curve_and_central_hashes(tmp_path):
+    columns = {
+        "mass_GeV": [1.30],
+        "has_sensitivity": [True],
+        "peak_N": [30.0],
+        "peak_invf": [2e-7],
+        "invf_min": [2e-8],
+        "invf_max": [2e-6],
+        "invf_min_open": [False],
+        "invf_max_open": [False],
+    }
+    central_path = tmp_path / "central.csv"
+    structural_path = tmp_path / "structural.csv"
+    provenance_path = tmp_path / "provenance.json"
+    pd.DataFrame(columns).to_csv(central_path, index=False)
+    pd.DataFrame(columns).to_csv(structural_path, index=False)
+    provenance = {
+        "inputs": {
+            "central_curve": {
+                "sha256": campaign_definitions.sha256_file(central_path),
+            },
+        },
+        "output": {
+            "sha256": campaign_definitions.sha256_file(structural_path),
+            "rows": 1,
+        },
+    }
+    provenance_path.write_text(json.dumps(provenance))
+
+    dense, observed = campaign_collector._load_dense_structural(
+        central_path,
+        structural_path,
+        provenance_path,
+    )
+
+    assert len(dense) == 1
+    assert observed == provenance
+
+    provenance["output"]["sha256"] = "wrong"
+    provenance_path.write_text(json.dumps(provenance))
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        campaign_collector._load_dense_structural(
+            central_path,
+            structural_path,
+            provenance_path,
+        )
 
 
 def test_post_validation_compaction_is_atomic_and_idempotent(tmp_path):

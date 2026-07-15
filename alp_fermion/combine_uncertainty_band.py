@@ -17,6 +17,7 @@ from alp_fermion.uncertainty_campaign import (
     atomic_json,
     combine_band,
     sha256_file,
+    structural_alternative_from_curves,
     structural_alternative_table,
 )
 
@@ -182,6 +183,25 @@ def _campaign_code_states(registry: list[dict]) -> tuple[dict, dict]:
     return json.loads(next(iter(halo))), json.loads(next(iter(structural)))
 
 
+def _load_dense_structural(
+    central_curve: Path,
+    structural_curve: Path,
+    provenance_path: Path,
+) -> tuple[pd.DataFrame, dict]:
+    """Validate and build the refined-grid structural comparison artifact."""
+    provenance = json.loads(Path(provenance_path).read_text())
+    output = provenance.get("output", {})
+    if output.get("sha256") != sha256_file(structural_curve):
+        raise ValueError("dense structural curve/provenance checksum mismatch")
+    central_input = provenance.get("inputs", {}).get("central_curve", {})
+    if central_input.get("sha256") != sha256_file(central_curve):
+        raise ValueError("dense structural provenance uses a different central curve")
+    dense = structural_alternative_from_curves(central_curve, structural_curve)
+    if int(output.get("rows", -1)) != len(dense):
+        raise ValueError("dense structural curve/provenance row-count mismatch")
+    return dense, provenance
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -205,7 +225,24 @@ def main(argv=None):
             Path(__file__).resolve().parent / "data" / "published" / "bundle"
         ),
     )
+    parser.add_argument(
+        "--dense-structural-curve",
+        type=Path,
+        help=(
+            "optional refined-grid exact 2310 contour; requires "
+            "--dense-structural-manifest"
+        ),
+    )
+    parser.add_argument(
+        "--dense-structural-manifest",
+        type=Path,
+        help="portable provenance manifest for --dense-structural-curve",
+    )
     args = parser.parse_args(argv)
+    if bool(args.dense_structural_curve) != bool(args.dense_structural_manifest):
+        parser.error(
+            "--dense-structural-curve and --dense-structural-manifest are required together"
+        )
     scratch = Path(args.scratch_root).expanduser().resolve()
     variations = all_variations(args.grid_dir)
     raw, registry = load_completed(scratch, variations)
@@ -215,11 +252,61 @@ def main(argv=None):
     raw_path = out_dir / "bc10_uncertainty_variations.csv"
     band_path = out_dir / "bc10_single_source_variation_envelope.csv"
     structural_path = out_dir / "bc10_decay_2310_structural_alternative.csv"
+    dense_structural_path = (
+        out_dir / "bc10_decay_2310_structural_alternative_dense.csv"
+    )
+    dense_manifest_path = out_dir / "DENSE_STRUCTURAL_MANIFEST.json"
     manifest_path = out_dir / "UNCERTAINTY_MANIFEST.json"
     _atomic_csv(raw, raw_path)
     _atomic_csv(band, band_path)
     _atomic_csv(structural, structural_path)
+    dense_structural = None
+    dense_provenance = None
+    if args.dense_structural_curve:
+        dense_structural, dense_provenance = _load_dense_structural(
+            args.central_curve,
+            args.dense_structural_curve,
+            args.dense_structural_manifest,
+        )
+        _atomic_csv(dense_structural, dense_structural_path)
+        atomic_json(dense_manifest_path, dense_provenance)
     halo_code, structural_code = _campaign_code_states(registry)
+    inputs = {
+        "canonical_central_curve": {
+            "file": args.central_curve.name,
+            "role": "canonical high-statistics central contour",
+            "sha256": sha256_file(args.central_curve),
+        },
+    }
+    outputs = {
+        raw_path.name: sha256_file(raw_path),
+        band_path.name: sha256_file(band_path),
+        structural_path.name: sha256_file(structural_path),
+    }
+    if dense_structural is not None:
+        inputs["dense_structural_curve"] = {
+            "file": args.dense_structural_curve.name,
+            "role": "refined-grid direct exact 2310 contour",
+            "sha256": sha256_file(args.dense_structural_curve),
+        }
+        inputs["dense_structural_provenance"] = {
+            "file": args.dense_structural_manifest.name,
+            "role": "portable provenance for refined-grid direct exact 2310 contour",
+            "sha256": sha256_file(args.dense_structural_manifest),
+        }
+        outputs[dense_structural_path.name] = sha256_file(dense_structural_path)
+        outputs[dense_manifest_path.name] = sha256_file(dense_manifest_path)
+
+    headline = _headline(band)
+    if dense_structural is not None:
+        headline["dense_decay_structure"] = {
+            "n_mass_points": len(dense_structural),
+            "n_sensitive": int(dense_structural["has_sensitivity"].sum()),
+            "n_restored": int(dense_structural["restores_sensitivity"].sum()),
+            "n_removed": int(dense_structural["removes_sensitivity"].sum()),
+            "n_topology_differences": int(dense_structural["topology_differs"].sum()),
+        }
+
     atomic_json(manifest_path, {
         "artifact": "GRENDEL BC10 exact single-source variation envelope",
         "generated_unix": time.time(),
@@ -243,6 +330,11 @@ def main(argv=None):
                 "Pythia templates and full geometry/reconstruction; exact central "
                 "production-vector reuse; published as a dashed one-sided structural "
                 "comparison and excluded from the pointwise halo"
+            ),
+            "dense_decay_structure": (
+                "the same exact 2310 model rerun directly on the refined canonical "
+                "mass grid and high-statistics central production vectors; published "
+                "as the definitive topology diagnostic outside the pointwise halo"
             ),
             "numerical_control": (
                 "two same-physics central repeats with fresh independent 600000-"
@@ -271,18 +363,9 @@ def main(argv=None):
             "physics_plus_structural_total": 115,
             "total_with_controls": 117,
         },
-        "inputs": {
-            args.central_curve.name: {
-                "role": "canonical high-statistics central contour",
-                "sha256": sha256_file(args.central_curve),
-            },
-        },
-        "outputs": {
-            raw_path.name: sha256_file(raw_path),
-            band_path.name: sha256_file(band_path),
-            structural_path.name: sha256_file(structural_path),
-        },
-        "headline": _headline(band),
+        "inputs": inputs,
+        "outputs": outputs,
+        "headline": headline,
         "code": halo_code,
         "decay_structure_code": structural_code,
         "registry": registry,
@@ -290,6 +373,9 @@ def main(argv=None):
     print(f"wrote {raw_path} ({len(raw)} rows)")
     print(f"wrote {band_path} ({len(band)} rows)")
     print(f"wrote {structural_path} ({len(structural)} rows)")
+    if dense_structural is not None:
+        print(f"wrote {dense_structural_path} ({len(dense_structural)} rows)")
+        print(f"wrote {dense_manifest_path}")
     print(f"wrote {manifest_path} ({len(registry)} exact variations)")
     return 0
 

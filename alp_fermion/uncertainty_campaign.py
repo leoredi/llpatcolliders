@@ -511,24 +511,47 @@ def combine_band(
     return band
 
 
-def structural_alternative_table(raw: pd.DataFrame) -> pd.DataFrame:
-    """Publish the one-sided structural contour with explicit topology state."""
-    central = raw.loc[raw["axis"] == "central"].copy()
-    structural = raw.loc[raw["axis"] == "decay_structure"].copy()
-    if central["variation"].nunique() != 1 or len(central) != len(structural):
-        raise ValueError("central/decay-structure contour counts are incomplete")
-    if structural["variation"].nunique() != 1:
-        raise ValueError("expected exactly one decay-structure variation")
-
+def structural_alternative_from_curves(
+    central: pd.DataFrame | str | Path,
+    structural: pd.DataFrame | str | Path,
+    variation: str = "decay_2310_structural",
+) -> pd.DataFrame:
+    """Compare exact central/structural curves on one identical mass grid."""
+    central = (
+        pd.read_csv(central)
+        if isinstance(central, (str, Path))
+        else central.copy()
+    )
+    structural = (
+        pd.read_csv(structural)
+        if isinstance(structural, (str, Path))
+        else structural.copy()
+    )
     keep = [
         "mass_GeV", "has_sensitivity", "peak_N", "peak_invf",
         "invf_min", "invf_max", "invf_min_open", "invf_max_open",
     ]
+    for label, frame in (("central", central), ("structural", structural)):
+        missing = sorted(set(keep) - set(frame.columns))
+        if missing:
+            raise ValueError(f"{label} curve is missing columns: {missing}")
+        if frame["mass_GeV"].duplicated().any():
+            raise ValueError(f"{label} curve contains duplicate masses")
+    central_masses = np.asarray(central["mass_GeV"], dtype=float)
+    structural_masses = np.asarray(structural["mass_GeV"], dtype=float)
+    if (
+        len(central_masses) != len(structural_masses)
+        or not np.array_equal(np.sort(central_masses), np.sort(structural_masses))
+    ):
+        raise ValueError("central/decay-structure mass grids differ")
+
     central_state = central[keep].rename(columns={
         column: f"central_{column}"
         for column in keep if column != "mass_GeV"
     })
-    result = structural[["variation", *keep]].merge(
+    result = structural[keep].copy()
+    result.insert(0, "variation", variation)
+    result = result.merge(
         central_state, on="mass_GeV", validate="one_to_one"
     )
     result.insert(1, "axis", "decay_structure")
@@ -554,3 +577,18 @@ def structural_alternative_table(raw: pd.DataFrame) -> pd.DataFrame:
     result["comparison_role"] = "one_sided_structural_model_comparison"
     result["included_in_pointwise_halo"] = False
     return result.sort_values("mass_GeV")
+
+
+def structural_alternative_table(raw: pd.DataFrame) -> pd.DataFrame:
+    """Publish the campaign-grid structural contour with explicit topology state."""
+    central = raw.loc[raw["axis"] == "central"].copy()
+    structural = raw.loc[raw["axis"] == "decay_structure"].copy()
+    if central["variation"].nunique() != 1 or len(central) != len(structural):
+        raise ValueError("central/decay-structure contour counts are incomplete")
+    if structural["variation"].nunique() != 1:
+        raise ValueError("expected exactly one decay-structure variation")
+    return structural_alternative_from_curves(
+        central,
+        structural,
+        variation=str(structural["variation"].iloc[0]),
+    )

@@ -153,12 +153,41 @@ $PY -m alp_fermion.run_uncertainty_campaign \
   --mass-grid-file /scratch/final_mass_grid.csv \
   --axes numerical_control --resume
 
+# Rerun the exact 2310 contour directly on the refined high-statistics central
+# grid, then pin its vectors, geometry, templates, code, and output hashes.
+ALP_LLP_VECTORS_DIR=/scratch/bc10_final/llp_4vectors \
+ALP_TEMPLATE_DIR=/scratch/bc10_final/decay_templates_2310 \
+ALP_ANALYSIS_DIR=/scratch/bc10_final/analysis_2310 \
+ALP_GEOM_CACHE_DIR=/scratch/bc10_final/geometry_cache \
+$PY -m alp_fermion.sensitivity \
+  --output /scratch/bc10_final/analysis_2310/bc10_sensitivity.csv \
+  --decay-samples 60 --resume
+
+RUN_COMMIT=0123456789abcdef0123456789abcdef01234567
+RUN_COMMAND='ALP_* paths as above; python -m alp_fermion.sensitivity --output ... --decay-samples 60 --resume'
+$PY -m alp_fermion.record_dense_structural \
+  --central-curve /scratch/bc10_final/analysis/bc10_sensitivity.csv \
+  --structural-curve /scratch/bc10_final/analysis_2310/bc10_sensitivity.csv \
+  --mass-grid /scratch/bc10_final/mass_grid.csv \
+  --vector-dir /scratch/bc10_final/llp_4vectors \
+  --geometry-dir /scratch/bc10_final/geometry_cache \
+  --template-dir /scratch/bc10_final/decay_templates_2310 \
+  --producer-git-sha "$RUN_COMMIT" \
+  --command "$RUN_COMMAND" \
+  --output /scratch/bc10_final/analysis_2310/DENSE_STRUCTURAL_MANIFEST.json
+
 $PY -m alp_fermion.combine_uncertainty_band \
   --scratch-root /scratch/bc10_uncertainty \
-  --grid-dir /path/to/fonll-nnpdf40/output
+  --grid-dir /path/to/fonll-nnpdf40/output \
+  --dense-structural-curve \
+    /scratch/bc10_final/analysis_2310/bc10_sensitivity.csv \
+  --dense-structural-manifest \
+    /scratch/bc10_final/analysis_2310/DENSE_STRUCTURAL_MANIFEST.json
 ```
 
 `final_mass_grid.csv` must contain a strictly increasing `mass_GeV` column.
+Replace `RUN_COMMIT` and `RUN_COMMAND` with the exact committed code state and
+fully expanded launch command used for the direct refined-grid run.
 The runner records both its file hash and a canonical hash of the parsed mass
 list in every production and variation marker, and refuses to reuse central
 vectors generated on a different grid. Omit `--mass-grid-file` only when

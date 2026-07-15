@@ -14,10 +14,15 @@ Files:
   named source extrema, PDF percentiles, and PDF log-coupling standard
   deviation for audit. It also contains the repeat-control boundary shifts and
   numerical-spread flags.
-- `bc10_decay_2310_structural_alternative.csv` - the one-sided structural
-  contour and central comparison state, including explicit restored/removed
-  sensitivity and open-boundary topology flags. It is the dashed-contour input
-  and is excluded from the pointwise halo.
+- `bc10_decay_2310_structural_alternative.csv` - the matched 99-point campaign
+  audit of the one-sided structural contour, including explicit
+  restored/removed sensitivity and open-boundary topology flags.
+- `bc10_decay_2310_structural_alternative_dense.csv` - the definitive
+  145-point structural-topology diagnostic, rerun directly with the refined
+  canonical grid and high-statistics central production vectors. It is the
+  dashed-contour input and is excluded from the pointwise halo.
+- `DENSE_STRUCTURAL_MANIFEST.json` - hashes, code state, templates, production
+  vectors, and command provenance for the refined structural run.
 - `UNCERTAINTY_MANIFEST.json` - exact variation registry, input and output
   checksums, code/template provenance, combination prescription, and headline
   shifts.
@@ -28,9 +33,10 @@ bottom-mass, `C_bs`, and `a -> gg` surrogate alternatives use their named
 pointwise extrema. The 100 NNPDF replicas use their 16th and 84th percentiles
 in `log10(1/f)`; their raw extrema do not define the display envelope. The
 overall edge is the outermost of these source intervals with one source varied
-at a time. Sources are not added in quadrature. The 2310 structural contour is
-a named model comparison, not an interval endpoint, and never enters this
-envelope.
+at a time. Sources are not added in quadrature. Both 2310 structural files are
+named model comparisons, not interval endpoints, and never enter this envelope;
+use the dense file for topology interpretation and the matched-grid file only
+to audit the 117-run campaign.
 
 Two same-physics central repeats use fresh 600,000-parent pools, independent
 production seeds, distinct reconstruction RNG offsets, and the central
@@ -58,5 +64,7 @@ Reproduce in the `llpatcolliders_FONLL` environment using the commands in
 ```bash
 python -m alp_fermion.combine_uncertainty_band \
   --scratch-root /scratch/bc10_uncertainty \
-  --grid-dir /path/to/fonll-nnpdf40/output
+  --grid-dir /path/to/fonll-nnpdf40/output \
+  --dense-structural-curve /scratch/bc10_2310_dense.csv \
+  --dense-structural-manifest /scratch/bc10_2310_dense.manifest.json
 ```
