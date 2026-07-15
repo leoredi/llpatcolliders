@@ -7,9 +7,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import scalar.uncertainty_band as uncertainty_band
 from scalar.uncertainty_band import (
     DECAY_VARIATION, NUMERICAL_CONTROL_VARIATIONS,
-    _finalize_and_compact, _stable_seed,
+    _campaign_config, _finalize_and_compact, _git_head,
+    _load_recorded_config, _stable_seed,
     _validate_retained_completion, combine_band, discover_variations)
 
 
@@ -188,6 +190,73 @@ def test_completed_variation_is_checksummed_then_compacted(tmp_path):
     assert (run_dir / "results" / "mS_0p500.json").exists()
     assert json.loads((run_dir / "complete.json").read_text())["state"] == "compacted"
     assert _validate_retained_completion(run_dir, config, [mass]) is not None
+
+
+def test_collector_uses_verified_recorded_producer_config(tmp_path, monkeypatch):
+    grid = tmp_path / "central.dat"
+    grid.write_text("grid\n")
+    variation = {
+        "name": "central",
+        "axis": "central",
+        "width_scheme": "winkler",
+        "path": grid,
+        "sha256": hashlib.sha256(grid.read_bytes()).hexdigest(),
+    }
+    masses = [0.5]
+    producer_head = _git_head()
+    committed_hashes = {
+        relative: hashlib.sha256(uncertainty_band.subprocess.check_output(
+            ["git", "show", f"{producer_head}:{relative}"],
+            cwd=uncertainty_band._REPO_ROOT,
+        )).hexdigest()
+        for relative in uncertainty_band.CODE_INPUTS
+    }
+    monkeypatch.setattr(
+        uncertainty_band, "_code_hashes", lambda: committed_hashes
+    )
+    recorded = _campaign_config(variation, masses, 10, 3, 42)
+    run_dir = tmp_path / "runs" / "central"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_metadata.json").write_text(json.dumps({
+        **recorded,
+        "producer_git_head_at_start": producer_head,
+    }))
+
+    monkeypatch.setattr(
+        uncertainty_band, "_code_hashes", lambda: {"collector.py": "new-state"}
+    )
+    loaded = _load_recorded_config(
+        run_dir, variation, masses, n_pool=10, n_samples=3, seed=42
+    )
+
+    assert loaded["config_sha256"] == recorded["config_sha256"]
+    assert loaded["code_sha256"] == recorded["code_sha256"]
+    assert loaded["producer_git_head_at_start"] == producer_head
+
+
+def test_collector_rejects_tampered_recorded_config(tmp_path):
+    grid = tmp_path / "central.dat"
+    grid.write_text("grid\n")
+    variation = {
+        "name": "central",
+        "axis": "central",
+        "width_scheme": "winkler",
+        "path": grid,
+        "sha256": hashlib.sha256(grid.read_bytes()).hexdigest(),
+    }
+    recorded = _campaign_config(variation, [0.5], 10, 3, 42)
+    recorded["n_parent_pool"] = 11
+    run_dir = tmp_path / "runs" / "central"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_metadata.json").write_text(json.dumps({
+        **recorded,
+        "producer_git_head_at_start": _git_head(),
+    }))
+
+    with pytest.raises(RuntimeError, match="retained config checksum mismatch"):
+        _load_recorded_config(
+            run_dir, variation, [0.5], n_pool=10, n_samples=3, seed=42
+        )
 
 
 def test_default_scratch_can_be_overridden_without_symlink(monkeypatch):

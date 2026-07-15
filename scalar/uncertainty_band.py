@@ -48,12 +48,14 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 
@@ -119,6 +121,24 @@ CODE_INPUTS = (
     "higgs/reco_common.py",
     "higgs/grendel_geometry.py",
     "hnl/environment.yml",
+)
+
+CONFIG_KEYS = (
+    "schema_version",
+    "variation",
+    "axis",
+    "width_scheme",
+    "grid_file",
+    "grid_sha256",
+    "n_parent_pool",
+    "n_scalar_events_expected",
+    "n_decay_samples_per_hit",
+    "base_seed",
+    "parent_pool_seed",
+    "mass_grid_GeV",
+    "coupling_grid",
+    "ray_backend",
+    "code_sha256",
 )
 
 
@@ -225,6 +245,35 @@ def _git_head() -> str:
         ["git", "rev-parse", "HEAD"], cwd=_REPO_ROOT,
         text=True, capture_output=True, check=False)
     return proc.stdout.strip() if proc.returncode == 0 else "unknown"
+
+
+def _config_sha256(payload: dict) -> str:
+    stable = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(stable).hexdigest()
+
+
+@lru_cache(maxsize=None)
+def _validate_recorded_code_state(commit: str, serialized_hashes: str) -> str:
+    """Prove that retained producer hashes match files in the named commit."""
+    resolved = subprocess.check_output(
+        ["git", "rev-parse", f"{commit}^{{commit}}"], cwd=_REPO_ROOT, text=True
+    ).strip()
+    hashes = json.loads(serialized_hashes)
+    if set(hashes) != set(CODE_INPUTS):
+        raise RuntimeError("recorded producer code inventory is incomplete")
+    for relative in CODE_INPUTS:
+        recorded = hashes[relative]
+        if not re.fullmatch(r"[0-9a-f]{64}", str(recorded)):
+            raise RuntimeError(f"invalid recorded code checksum for {relative}")
+        content = subprocess.check_output(
+            ["git", "show", f"{resolved}:{relative}"], cwd=_REPO_ROOT
+        )
+        actual = hashlib.sha256(content).hexdigest()
+        if actual != recorded:
+            raise RuntimeError(
+                f"recorded producer checksum does not match {resolved}:{relative}"
+            )
+    return resolved
 
 
 def _stable_seed(base_seed: int, *parts) -> int:
@@ -374,9 +423,53 @@ def _campaign_config(variation, masses, n_pool, n_samples, seed):
         "ray_backend": _ray_backend_provenance(),
         "code_sha256": _code_hashes(),
     }
-    stable = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    payload["config_sha256"] = hashlib.sha256(stable).hexdigest()
+    payload["config_sha256"] = _config_sha256(payload)
     return payload
+
+
+def _load_recorded_config(run_dir: Path, variation, masses, n_pool, n_samples,
+                          seed):
+    """Load a completed run's producer config without assuming collector HEAD.
+
+    Campaigns can finish while collection and documentation evolve on another
+    worktree. The physics configuration must still match the current campaign
+    definition, but code identity is verified against the producer commit
+    recorded when the run began rather than against the collector checkout.
+    """
+    metadata_path = run_dir / "run_metadata.json"
+    if not metadata_path.is_file():
+        raise RuntimeError(f"{run_dir.name}: missing retained run metadata")
+    metadata = json.loads(metadata_path.read_text())
+    missing = [key for key in CONFIG_KEYS if key not in metadata]
+    if missing:
+        raise RuntimeError(
+            f"{run_dir.name}: incomplete retained config: {', '.join(missing)}"
+        )
+    recorded = {key: metadata[key] for key in CONFIG_KEYS}
+    if metadata.get("config_sha256") != _config_sha256(recorded):
+        raise RuntimeError(f"{run_dir.name}: retained config checksum mismatch")
+
+    expected = _campaign_config(variation, masses, n_pool, n_samples, seed)
+    for key in CONFIG_KEYS:
+        if key == "code_sha256":
+            continue
+        if recorded[key] != expected[key]:
+            raise RuntimeError(
+                f"{run_dir.name}: retained campaign definition differs at {key}"
+            )
+
+    producer_commit = metadata.get("producer_git_head_at_start")
+    if not producer_commit:
+        raise RuntimeError(f"{run_dir.name}: missing producer commit")
+    serialized_hashes = json.dumps(
+        recorded["code_sha256"], sort_keys=True, separators=(",", ":")
+    )
+    resolved = _validate_recorded_code_state(producer_commit, serialized_hashes)
+    return {
+        **recorded,
+        "config_sha256": metadata["config_sha256"],
+        "producer_git_head_at_start": resolved,
+    }
 
 
 def _ensure_run_metadata(run_dir: Path, config) -> None:
@@ -946,7 +1039,9 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
     frames, run_records, missing = [], [], []
     for variation in variations:
         run_dir = scratch_dir / "runs" / variation["name"]
-        config = _campaign_config(variation, production.MASS_GRID, n_pool, n_samples, seed)
+        config = _load_recorded_config(
+            run_dir, variation, production.MASS_GRID, n_pool, n_samples, seed
+        )
         completed = _validate_retained_completion(run_dir, config, masses)
         if completed is None:
             missing.append(f"{variation['name']}:not_compacted")
@@ -967,6 +1062,8 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
                 "config_sha256": config["config_sha256"],
                 "n_masses": len(frame),
                 "parent_pool_seed": config["parent_pool_seed"],
+                "producer_git_head_at_start": config["producer_git_head_at_start"],
+                "producer_code_sha256": config["code_sha256"],
                 "completion_state": completion["state"],
                 "curve_sha256": completion["curve_sha256"],
                 "artifacts_manifest_sha256": completion["artifacts_manifest_sha256"],
@@ -986,6 +1083,21 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
     _atomic_csv(band, Path(band_out))
 
     source_manifest = Path(variations[0]["path"]).parent / "variation_manifest.json"
+    producer_states = {
+        json.dumps(
+            {
+                "git_head": record["producer_git_head_at_start"],
+                "code_sha256": record["producer_code_sha256"],
+            },
+            sort_keys=True,
+        )
+        for record in run_records
+    }
+    if len(producer_states) != 1:
+        raise RuntimeError(
+            "campaign variations were produced from different code states"
+        )
+    producer_state = json.loads(next(iter(producer_states)))
 
     def control_summary(boundary):
         prefix = f"{boundary}_numerical_repeat"
@@ -1022,8 +1134,12 @@ def collect_campaign(variations, scratch_dir, masses, n_pool, n_samples, seed,
         "schema_version": 2,
         "published_utc": datetime.now(timezone.utc).isoformat(),
         "producer_repo": "llpatcolliders (branch bc4-scalar)",
-        "producer_git_head": _git_head(),
-        "producer_code_sha256": _code_hashes(),
+        "producer_git_head": producer_state["git_head"],
+        "producer_code_sha256": producer_state["code_sha256"],
+        "collector": {
+            "git_head": _git_head(),
+            "uncertainty_band_sha256": _sha256(Path(__file__).resolve()),
+        },
         "scratch_artifacts": (
             "external campaign workspace; published outputs are identified by "
             "content hashes rather than a machine-specific path"
