@@ -62,14 +62,22 @@ def _dex_densify(bm, b_cen, b_lo, b_hi, cm, c_edge):
     """
     ok = (np.isfinite(b_cen) & (b_cen > 0) & np.isfinite(b_lo) & (b_lo > 0)
           & np.isfinite(b_hi) & (b_hi > 0))
-    if ok.sum() >= 2:
-        dex_lo = np.log10(b_cen[ok] / b_lo[ok])     # downward half-width [dex]
-        dex_hi = np.log10(b_hi[ok] / b_cen[ok])     # upward half-width   [dex]
-        lo = c_edge * 10.0 ** (-np.interp(cm, bm[ok], dex_lo))
-        hi = c_edge * 10.0 ** (+np.interp(cm, bm[ok], dex_hi))
-    else:
-        lo = np.full(len(cm), np.nan)
-        hi = np.full(len(cm), np.nan)
+    lo = np.full(len(cm), np.nan)
+    hi = np.full(len(cm), np.nan)
+    # Interpolate each contiguous finite anchor segment independently.  In
+    # particular, do not extrapolate the last ordinary ribbon through a point
+    # where a nuisance variation creates or destroys the exclusion island.
+    valid = np.flatnonzero(ok)
+    for run in np.split(valid, np.flatnonzero(np.diff(valid) > 1) + 1):
+        if len(run) < 2:
+            continue
+        support = (cm >= bm[run[0]]) & (cm <= bm[run[-1]])
+        dex_lo = np.log10(b_cen[run] / b_lo[run])
+        dex_hi = np.log10(b_hi[run] / b_cen[run])
+        lo[support] = c_edge[support] * 10.0 ** (
+            -np.interp(cm[support], bm[run], dex_lo))
+        hi[support] = c_edge[support] * 10.0 ** (
+            +np.interp(cm[support], bm[run], dex_hi))
     return cm, lo, hi
 
 
@@ -188,7 +196,10 @@ def main(argv=None) -> int:
             bcf = bc[bc.flavor == fl].sort_values("mass_GeV")
             m, lo, hi = _dex_densify(
                 bcf["mass_GeV"].to_numpy(float), bcf["u2_min"].to_numpy(float),
-                bcf["u2_min_bc_lo"].to_numpy(float), bcf["u2_min_bc_hi"].to_numpy(float),
+                # Bc-up strengthens the limit (lower boundary); Bc-down weakens
+                # it (upper boundary).  The historical column suffixes name the
+                # nuisance direction, not the plotted vertical ordering.
+                bcf["u2_min_bc_hi"].to_numpy(float), bcf["u2_min_bc_lo"].to_numpy(float),
                 cm, c_min)
             _ribbon(ax, m, lo, hi, "teal", "Bc band (lower)", zorder=4)
 
