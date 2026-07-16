@@ -419,18 +419,21 @@ compatibility module.
 
 - The heavy-meson backend is the committed central NNPDF4.0 NLO FONLL grid in
   `data/production/fonll/central/`, generated in the external workspace
-  `/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local`.
+  `/Volumes/sandbox/projects/aaaPHYSICSaaa/shared/NNPDF40/fonll-local`.
 - The FONLL tables stop at `pT = 50 GeV`. The central curve uses one central
   scale/PDF choice; scale/PDF/mass variation grids are produced in that external
   FONLL workspace and propagated into a band via `run_variation_band.py`
   (`--grid-dir`, default `tmp/fonll/output`) + `analysis/combine_band.py`; the
   latter also folds the PDF4LHC alpha_s term from companion curves
-  (`--alphas-lo/--alphas-hi`). The full 111-variation band has been propagated
-  and is overlaid on both exclusion boundaries by `analysis/plot_money.py` (the
-  GRENDEL "money plot"); it is ~0.24 dex (lower, scale-dominated) / ~0.27 dex
-  (upper, scale + `m_Q` with spectral-shape effect) median, PDF sub-dominant. The
-  band is a generated overlay, not folded into the committed central run (see
-  `REMAINING_WORK.md` items 5 and 22).
+  (`--alphas-lo/--alphas-hi`). The post-`beta=p/E` exact-hit campaign propagated
+  all 111 variations with no topology changes among the 110 non-central members.
+  Its median combined half-widths are `-0.101/+0.131` dex on the lower edge
+  (scale dominated) and `-0.0066/+0.0081` dex on finite upper edges.  The largest
+  upper shift, 0.114 dex, survives independent exact-200 controls; the previous
+  order-one upper band was an artifact of a 4,000-hit resampling cap.  The full
+  raw table, manifests, controls, and combined result are tracked in
+  `data/published/bundle/`.  `analysis/plot_money.py` renders these as a separate
+  theory/model diagnostic; the paper comparison remains central-only.
 - Charm and bottom species share one heavy-flavor shape per table; species
   fractions are applied in the event weights. `Bc` reuses the bottom shape at
   the Bc mass. Per-species and dedicated-Bc shapes are planned
@@ -461,8 +464,11 @@ compatibility module.
 - The HNL total-width / lifetime quark-hadron duality is propagated as a separate
   seam-derived decay-model band `delta(m)` (`analysis/width_band.py` +
   `analysis/decay_model_band.py`), driven coherently through `ctau` and
-  `vis_frac` (the composition leg self-cancels to ~1%); it owns the upper edge /
-  dome (~0.08 dex). The *absolute* visible-BR normalization is a distinct,
+  `vis_frac` (the composition leg self-cancels to ~1%); stable finite upper-edge
+  shifts have median half-widths near `-0.094/+0.115` dex.  One nuisance
+  direction removes the island near high-mass closure, so those endpoints are
+  recorded as topology changes rather than drawn as a smooth ribbon. The
+  *absolute* visible-BR normalization is a distinct,
   still-unpropagated decay nuisance (see `REMAINING_WORK.md` item 15).
 - The electroweak K-factor is a per-process table whose entries all currently
   hold the inclusive `1.3` constant; differential NLO/LO values are an optional

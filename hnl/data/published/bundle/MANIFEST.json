@@ -1,0 +1,409 @@
+{
+  "schema_version": 1,
+  "artifact": "GRENDEL HNL production-and-decay uncertainty diagnostic bundle",
+  "date_published": "2026-07-16",
+  "central_curve": {
+    "file": "../grendel_hnl_sensitivity.csv",
+    "sha256": "43d16bc23259664b4efc46bc0128119c09c0310f548e3d736d93eb5492268a01",
+    "analysis_fix_revision": "79c7337",
+    "canonical_publish_revision": "fad3a8b"
+  },
+  "campaign": {
+    "code_revision": "6482484dc928342cf3cb132a63d8df0f364dde17",
+    "postprocessing_revision": "2ab1f98bc636ca30e3848f1525c0542bd1a01710",
+    "variations": 111,
+    "anchor_points": 54,
+    "raw_rows": 5994,
+    "decay_samples": 50,
+    "hit_estimator": "exact",
+    "event_chunk": 1000,
+    "production_pool_per_channel": 100000
+  },
+  "plot_policy": {
+    "main_paper_comparison": "central contour only",
+    "diagnostic_money_plot": "bands shown separately",
+    "interpretation": "theory/model variation diagnostics, not statistical confidence bands",
+    "forbidden_projection_curves_added": false
+  },
+  "topology": {
+    "fonll_all_members_stable": true,
+    "fonll_member_count_per_anchor": 110,
+    "decay_model": {
+      "rows": 59,
+      "central_finite_upper": 52,
+      "stable_finite_rows": 41,
+      "topology_changing_rows": 11,
+      "stable_down": {
+        "n": 41,
+        "median_dex": 0.09442972893208829,
+        "p95_dex": 0.14602476863879854,
+        "max_dex": 0.17933731646034615
+      },
+      "stable_up": {
+        "n": 41,
+        "median_dex": 0.11473483222639003,
+        "p95_dex": 0.15969498702579,
+        "max_dex": 0.18009676782889
+      },
+      "topology_points": [
+        [
+          "Ue",
+          3.6
+        ],
+        [
+          "Ue",
+          3.62
+        ],
+        [
+          "Umu",
+          3.6
+        ],
+        [
+          "Umu",
+          3.62
+        ],
+        [
+          "Utau",
+          3.6
+        ],
+        [
+          "Utau",
+          3.62
+        ],
+        [
+          "Utau",
+          3.63
+        ],
+        [
+          "Utau",
+          3.64
+        ],
+        [
+          "Utau",
+          3.65
+        ],
+        [
+          "Utau",
+          3.675
+        ],
+        [
+          "Utau",
+          3.685
+        ]
+      ]
+    },
+    "bc_normalization": {
+      "rows": 51,
+      "stable_finite_rows": 37,
+      "central_absent_bc_up_present": 2,
+      "central_present_bc_down_absent": 1,
+      "stable_down": {
+        "n": 37,
+        "median_dex": 0.04446108921387274,
+        "p95_dex": 0.09563647161505491,
+        "max_dex": 0.10372151531643944
+      },
+      "stable_up": {
+        "n": 37,
+        "median_dex": 0.03771362493662696,
+        "p95_dex": 0.09813032800662348,
+        "max_dex": 0.12172218025703432
+      },
+      "topology_points": [
+        [
+          "Ue",
+          3.63,
+          false,
+          false,
+          true
+        ],
+        [
+          "Umu",
+          3.62,
+          true,
+          false,
+          true
+        ],
+        [
+          "Umu",
+          3.63,
+          false,
+          false,
+          true
+        ]
+      ]
+    }
+  },
+  "fonll_summary": {
+    "u2_min": {
+      "total_down": {
+        "n": 54,
+        "median_dex": 0.1008307575928371,
+        "p95_dex": 0.16927899168802177,
+        "max_dex": 0.17788254581581944
+      },
+      "total_up": {
+        "n": 54,
+        "median_dex": 0.13062007383522006,
+        "p95_dex": 0.29204915706004425,
+        "max_dex": 0.30101108428336604
+      },
+      "scale_down": {
+        "n": 54,
+        "median_dex": 0.09369725339439665,
+        "p95_dex": 0.16458236079983243,
+        "max_dex": 0.173549619328396
+      },
+      "scale_up": {
+        "n": 54,
+        "median_dex": 0.12731918673596795,
+        "p95_dex": 0.28744110958741087,
+        "max_dex": 0.2976883478786343
+      },
+      "pdf_sigma": {
+        "n": 54,
+        "median_dex": 0.014713803632545049,
+        "p95_dex": 0.028631858182410496,
+        "max_dex": 0.0340966149955371
+      },
+      "mass": {
+        "n": 54,
+        "median_dex": 0.034120394558154,
+        "p95_dex": 0.050076818949207666,
+        "max_dex": 0.0620680008283809
+      },
+      "topology_changed_points": 0
+    },
+    "u2_max": {
+      "total_down": {
+        "n": 45,
+        "median_dex": 0.00658649624576734,
+        "p95_dex": 0.029914583897669884,
+        "max_dex": 0.05057099113819682
+      },
+      "total_up": {
+        "n": 45,
+        "median_dex": 0.008143031860574213,
+        "p95_dex": 0.03329999712580973,
+        "max_dex": 0.11397579918386896
+      },
+      "scale_down": {
+        "n": 45,
+        "median_dex": 0.0019087385775513,
+        "p95_dex": 0.010413918893095713,
+        "max_dex": 0.0370678688563277
+      },
+      "scale_up": {
+        "n": 45,
+        "median_dex": 0.003408350194511,
+        "p95_dex": 0.029020450213107993,
+        "max_dex": 0.1109717323059951
+      },
+      "pdf_sigma": {
+        "n": 45,
+        "median_dex": 0.0030634233025307,
+        "p95_dex": 0.01523081186495783,
+        "max_dex": 0.0215852043057396
+      },
+      "mass": {
+        "n": 45,
+        "median_dex": 0.0035804761146351,
+        "p95_dex": 0.023022348829115597,
+        "max_dex": 0.0349772141496515
+      },
+      "topology_changed_points": 0
+    }
+  },
+  "numerical_controls": {
+    "file": "NUMERICAL_CONTROLS.json",
+    "exact50_vs_exact100_max_lower_dex": 0.04440575547943848,
+    "exact50_vs_exact100_max_upper_dex": 0.03306672185864045,
+    "chunked_vs_unchunked_max_lower_dex": 0.0053708449743581875,
+    "chunked_vs_unchunked_max_upper_dex": 0.0010304813340176993,
+    "worker_count_bitwise_equal": true,
+    "bc_endpoint_topologies_agree_across_exact400_repeats": true
+  },
+  "files": {
+    "hnl_band_fonll.csv": {
+      "sha256": "e3d78184ece1ba201c7debd617c512fa29a870b6a62fab8d3d78769db45c9fc4",
+      "bytes": 18549,
+      "rows": 54,
+      "columns": [
+        "flavor",
+        "mass_GeV",
+        "has_sensitivity",
+        "u2_min_central",
+        "u2_min_open",
+        "u2_min_n_members_expected",
+        "u2_min_n_members_sensitive",
+        "u2_min_n_members_finite",
+        "u2_min_n_members_open",
+        "u2_min_topology_changed",
+        "u2_min_band_lo",
+        "u2_min_band_hi",
+        "u2_min_scale_up_dex",
+        "u2_min_scale_dn_dex",
+        "u2_min_pdf_sigma_dex",
+        "u2_min_mass_dev_dex",
+        "u2_max_central",
+        "u2_max_open",
+        "u2_max_n_members_expected",
+        "u2_max_n_members_sensitive",
+        "u2_max_n_members_finite",
+        "u2_max_n_members_open",
+        "u2_max_topology_changed",
+        "u2_max_band_lo",
+        "u2_max_band_hi",
+        "u2_max_scale_up_dex",
+        "u2_max_scale_dn_dex",
+        "u2_max_pdf_sigma_dex",
+        "u2_max_mass_dev_dex"
+      ]
+    },
+    "hnl_band_fonll_raw.csv": {
+      "sha256": "7a3d158ca735a2d9fbe2ea5d537cb64f0bc7a0a112a4c0009c2336e47f4a3417",
+      "bytes": 1261992,
+      "rows": 5994,
+      "columns": [
+        "variation_index",
+        "variation_name",
+        "variation_axis",
+        "variation_direction",
+        "run_tag",
+        "bottom_grid_tag",
+        "charm_grid_tag",
+        "u2_min",
+        "u2_max",
+        "u2_min_open",
+        "u2_max_open",
+        "peak_N",
+        "peak_u2",
+        "has_sensitivity",
+        "mass_GeV",
+        "flavor",
+        "n_events",
+        "n_hits",
+        "n_hits_eval",
+        "decay_samples",
+        "hit_estimator",
+        "event_chunk",
+        "seed_salt"
+      ]
+    },
+    "decay_model_band.csv": {
+      "sha256": "1cd4b10f948559c6796633c07dfb54cdf53bb7abd0774b3c739981a865beacff",
+      "bytes": 14367,
+      "rows": 59,
+      "columns": [
+        "u2_min",
+        "u2_max",
+        "u2_min_open",
+        "u2_max_open",
+        "peak_N",
+        "peak_u2",
+        "has_sensitivity",
+        "u2_max_dm_lo",
+        "u2_min_dm_lo",
+        "u2_max_dm_hi",
+        "u2_min_dm_hi",
+        "width_delta",
+        "had_frac",
+        "mass_GeV",
+        "flavor",
+        "n_events",
+        "n_hits",
+        "n_hits_eval",
+        "decay_samples",
+        "hit_estimator",
+        "event_chunk",
+        "seed_salt"
+      ]
+    },
+    "bc_nuisance_band.csv": {
+      "sha256": "0b2668d55b6d56c41a52b4a8605979c12db8c08bca05c15e1ef3a1f8b7d49f7f",
+      "bytes": 6483,
+      "rows": 51,
+      "columns": [
+        "flavor",
+        "mass_GeV",
+        "delta_bc",
+        "u2_min",
+        "u2_min_bc_lo",
+        "u2_min_bc_hi",
+        "bc_frac_at_u2min",
+        "decay_samples",
+        "max_hit_events",
+        "seed_salt",
+        "source_stage",
+        "central_has_sensitivity",
+        "bc_down_has_sensitivity",
+        "bc_up_has_sensitivity"
+      ]
+    },
+    "channel_breakdown_u2min.csv": {
+      "sha256": "c5cf58575147c4710c56252481674abc6e701c0d20e51b656de45e695af897e0",
+      "bytes": 66101,
+      "rows": 952,
+      "columns": [
+        "flavor",
+        "mass_GeV",
+        "boundary",
+        "u2",
+        "channel",
+        "N",
+        "frac"
+      ]
+    },
+    "fonll_outlier_controls.csv": {
+      "sha256": "3f0f1348924fda0c790e05a8a94ee23f27a160784a0447468e252346a5f1647f",
+      "bytes": 773,
+      "rows": 4,
+      "columns": [
+        "control",
+        "decay_samples",
+        "flavor",
+        "mass_GeV",
+        "variation",
+        "u2_min_central",
+        "u2_min_varied",
+        "u2_min_shift_dex",
+        "u2_max_central",
+        "u2_max_varied",
+        "u2_max_shift_dex"
+      ]
+    },
+    "bc_nuisance_endpoint_controls.csv": {
+      "sha256": "bc5137d0f608f26341b01859b4f3a0b27e2ef210a1f78981e9f2161f56003817",
+      "bytes": 1455,
+      "rows": 12,
+      "columns": [
+        "flavor",
+        "mass_GeV",
+        "delta_bc",
+        "u2_min",
+        "u2_min_bc_lo",
+        "u2_min_bc_hi",
+        "bc_frac_at_u2min",
+        "control",
+        "has",
+        "has_bc_down",
+        "has_bc_up",
+        "decay_samples",
+        "max_hit_events",
+        "seed_salt"
+      ]
+    },
+    "FONLL_GRID_MANIFEST.json": {
+      "sha256": "03419d76aa150a4c515936707e8cb80e0c9d71e60975b278ab77eb254e4e87d1",
+      "bytes": 109748
+    },
+    "FONLL_MANIFEST.json": {
+      "sha256": "79f4696318096ade19d66de1727a3c0f81c58f4606e00d9b0ff516cc83f7483a",
+      "bytes": 43305
+    },
+    "NUMERICAL_CONTROLS.json": {
+      "sha256": "12c7cd1f36efee54bbb95e4de3812e56cc1aab9e4348368ec2773d26395f9b7c",
+      "bytes": 4945
+    }
+  }
+}

@@ -176,23 +176,21 @@ the band has now been propagated through the full production+analysis chain
 into a per-mass envelope (see Progress below). The `pT`/rapidity truncation is
 still unbounded.
 
-**Progress (2026-06-26): FONLL band propagated and rendered.** The 111 coherent
-variations (6-point scale + 100 NNPDF4.0 replicas + 4 `m_b`/`m_c`) were run end
-to end via `run_variation_band.py` (reusing the FONLL-independent channels,
-exact per-variation geometry -- item 19) and combined by
-`analysis/combine_band.py` into `hnl_band.csv` (asymmetric scale envelope,
-replica `std` for PDF, per-quark mass quadrature; alpha_s foldable via
-`--alphas-lo/--alphas-hi`). The band is overlaid on both exclusion boundaries by
-`analysis/plot_money.py` (the GRENDEL "money plot"). Magnitudes: lower edge
-~0.24 dex median (scale-dominated, comparable to the Bc and form-factor
-normalizations), upper edge ~0.27 dex median with peaks ~1 dex at the `m ~ 1.4`
-GeV charm kinematic edge -- the full propagation regenerates the `pT`-`y`
-spectrum, so the boost -> decay-length -> acceptance shape shifts the lifetime
-(upper) edge, an effect the normalization-only reweight audit
-(`audits/curve_impact_20260610`, ~0.002 dex upper) does not capture. **PDF is
-confirmed sub-dominant** (replica `std` ~0.02-0.05 dex), so the scale and `m_Q`
-legs dominate. The band is a generated artifact (`tmp/runs/`, git-ignored), not
-folded into the committed central run; the code path is tracked.
+**Progress (2026-07-16): post-beta-fix exact FONLL campaign published.** The 111
+coherent variations (6-point scale + 100 NNPDF4.0 replicas + 4 `m_b`/`m_c`)
+were rerun end to end after the timing `beta=p/E` correction, using all detector
+hits, 50 decay samples, `event_chunk=1000`, and two analysis workers.  All 111
+curves retain all 54 anchors, and all 110 non-central members agree with central
+on finite/open topology.  `analysis/combine_band.py` now records contributing
+member counts and refuses to turn a topology change into a numeric ribbon.
+
+The median combined half-widths are `-0.101/+0.131` dex on the lower edge
+(scale dominated) and `-0.0066/+0.0081` dex on finite upper edges.  The largest
+upper shift, 0.114 dex, survives independent exact-200 controls.  The previous
+order-one upper structure was caused by the 4,000-hit weighted-resampling cap
+and is retired.  The 5,994-row raw table, grid/campaign manifests, hashes,
+combined band, and numerical controls are tracked in `data/published/bundle/`.
+The diagnostic is separate from the central-only paper comparison.
 
 **Required work:**
 
@@ -207,8 +205,9 @@ Use the same three-column rectangular table format as the committed grids:
 # pT_GeV  rapidity  d2sigma_dpTdy_pb_per_GeV
 ```
 
-Add a variation manifest containing the FONLL revision, PDF ID/member,
-`m_b`/`m_c`, scales, beam energy, grid bounds, and checksums.
+The tracked `data/published/bundle/FONLL_GRID_MANIFEST.json` and
+`FONLL_MANIFEST.json` now contain the FONLL revision, PDF member, masses, scales,
+beam energy, grid bounds, campaign configuration, and checksums.
 
 **Completion test:** central and varied grids can be regenerated from the
 manifest, and the full production plus analysis chain yields an uncertainty
@@ -565,7 +564,17 @@ grid has a minimum spacing of 15 MeV and becomes much coarser at high mass;
 plotted lines simply connect calculated points. `run_sensitivity.py` now exposes
 `--decay-samples`, `--max-hit-events`, and `--mass-stride` (2026-06-23) so
 `DECAY_SAMPLES` and the hit-event count can be varied for convergence/approximate
-scans without code edits, but a convergence demonstration is not yet recorded.
+scans without code edits.
+
+**Progress (2026-07-16): exact-hit convergence controls recorded.** Exact-50
+versus the published exact-100 central anchors differs by at most 0.0444 dex on
+the lower edge and 0.0331 dex on finite upper edges.  Chunked versus unchunked
+exact evaluation differs by at most 0.00537/0.00103 dex (lower/upper), and the
+tested one-worker/two-worker point is bit-for-bit identical.  Independent
+exact-200 repeats validate the largest FONLL upper shifts.  Three independent
+exact-400 Bc endpoint repeats agree on island topology; their finite boundary
+spread is at most 4.5%.  Machine-readable results and hashes are in
+`data/published/bundle/NUMERICAL_CONTROLS.json`.
 
 **Required work:**
 
@@ -671,14 +680,16 @@ production+decay bands: FONLL theory (item 5), direct-Bc normalization
 item 15). Detector, background, numerical, and luminosity bands are still absent
 (P0 items 1-3), and external constraints are not overlaid.
 
-**Progress (2026-06-26): money-plot deliverable.** `analysis/plot_money.py`
+**Progress (2026-07-16): topology-safe diagnostic deliverable.** `analysis/plot_money.py`
 produces the single-flavor (m_N, |U|^2) projection with: the FONLL/Bc/decay-model
 bands above; a `band_registry`-driven combination (`combine_band.py`); a
-high-mass closure cap that pinches each dome to its interpolated production/
-lifetime crossing (~3.7 GeV) instead of a blunt residual-gap wall; a
+real-point high-mass closure; a
 hypothesis/scope `run_metadata.json` (Majorana, single-flavor, N>=3, idealized
 partner handoff); and a machine-readable bundle (central + per-band CSVs). It is
-run on demand into `tmp/runs/` (git-ignored); the code path is tracked. Still
+reproducible from the tracked `data/published/bundle/` on a clean clone.  Ribbon
+interpolation is limited to contiguous finite anchor segments and stops before
+nuisance-induced topology changes.  The publication comparison figure remains
+central-only; these are theory/model diagnostics, not confidence bands. Still
 open: detector/background/luminosity/numerical bands, a formal correlated
 combination across all axes, and external-constraint overlays.
 
@@ -695,7 +706,7 @@ outputs and regenerated from the run manifest.
 ## Work that can be done in the NNPDF40 workspace
 
 The active FONLL grid-generation workspace is external to this repository:
-`/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local`. Do not maintain
+`/Volumes/sandbox/projects/aaaPHYSICSaaa/shared/NNPDF40/fonll-local`. Do not maintain
 a second active copy under this HNL tree; use the external workspace for item 5
 and part of item 6. Status as of 2026-06-23:
 

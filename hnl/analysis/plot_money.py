@@ -40,14 +40,15 @@ LAB = {"Ue": r"$|U_e|^2$", "Umu": r"$|U_\mu|^2$", "Utau": r"$|U_\tau|^2$"}
 
 def _provenance(have_fonll):
     fonll = ("FONLL production (orange)" if have_fonll
-             else "FONLL production (band PENDING -- not yet on this figure)")
+             else "FONLL production (variation PENDING -- not yet on this figure)")
     return (
-        f"In-band: {fonll}; Bc direct-norm ±40% (teal, LHCb arXiv:1910.13404; induced-tau Bc 0.06% negligible); "
+        f"Theory/model variations: {fonll}; Bc direct-norm ±40% (teal, LHCb arXiv:1910.13404; induced-tau Bc 0.06% negligible); "
         "HNL total-width/lifetime duality δ(m) (blue, cap 20% conservative vs ~10% post-QCD residual).  "
         "NOT banded (named limitations): production form factors, absolute visible-BR norm, kaon flux, FONLL αs.  "
         "Reconstruction / detector / background / statistics IDEALIZED at the partner handoff (background-free, N≥3).  "
         "Island closes on real refined grid points where peak_N crosses 3 (config_mass_grid 3.62-3.70): "
-        "~3.62 GeV (Ue/Umu), ~3.69 GeV (Utau) -- no extrapolation/synthetic pinch."
+        "~3.62 GeV (Ue/Umu), ~3.69 GeV (Utau) -- no extrapolation/synthetic pinch.  "
+        "Nuisance-induced topology changes are recorded in the bundle but not drawn as ordinary ribbons."
     )
 
 
@@ -100,7 +101,7 @@ def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
     if not have_fonll:
         lim.insert(0, "FONLL scale/PDF/m_Q band -- PENDING, not on this figure")
     return {
-        "result": "GRENDEL HNL sensitivity projection (single-flavor)",
+        "result": "GRENDEL HNL theory/model variation diagnostic (single-flavor)",
         "hypothesis": {"mixing": "single-flavor", "flavors": ["Ue", "Umu", "Utau"],
                        "observable": "|U_alpha|^2", "nature": "Majorana",
                        "charge_conjugate_counting": "included (NDecayWidth x2/channel; production both charges)",
@@ -109,12 +110,13 @@ def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
         "limit": {"method": "background-free", "criterion": "N_signal >= 3",
                   "track_momentum_cut_MeV": p_cut_mev},
         "scope": {"in_band": in_band,
+                  "interpretation": "theory/model variation diagnostic, not a statistical confidence band",
                   "idealized_partner_handoff": ["reconstruction", "detector response",
                                                 "background", "statistics"]},
         "central_run": run,
-        "band_sources": {"fonll_lower_edge": "hnl_band.csv (run_variation_band + combine_band)"
+        "band_sources": {"fonll_lower_edge": "hnl_band_fonll.csv (run_variation_band + combine_band)"
                                              if have_fonll else "PENDING",
-                         "decay_model_upper_edge": "decay_model_band_combined.csv (width_band delta(m))",
+                         "decay_model_upper_edge": "decay_model_band.csv (width_band delta(m))",
                          "bc_lower_edge": "bc_nuisance_band.csv (SIGMA_BC_REL_UNCERT=0.40)"},
         "limitations_not_banded": lim,
         "known_features": ["Umu/Utau low-mass step where N->l pi closes (m_mu+m_pi=0.245 GeV) -- "
@@ -181,7 +183,7 @@ def main(argv=None) -> int:
                     bsub[f"{col}_band_hi"].to_numpy(float),
                     cm, c_edge)
                 _ribbon(ax, m, lo, hi, "orange",
-                        None if labelled else "FONLL theory band", zorder=4)
+                        None if labelled else "FONLL production variation", zorder=4)
                 labelled = True
 
         # Decay-model width band (upper edge) and Bc normalization band (lower edge).
@@ -191,7 +193,7 @@ def main(argv=None) -> int:
                 dmf["mass_GeV"].to_numpy(float), dmf["u2_max"].to_numpy(float),
                 dmf["u2_max_dm_lo"].to_numpy(float), dmf["u2_max_dm_hi"].to_numpy(float),
                 cm, c_max)
-            _ribbon(ax, m, lo, hi, "steelblue", "decay-model band (upper)", zorder=4)
+            _ribbon(ax, m, lo, hi, "steelblue", "decay-model variation (upper)", zorder=4)
         if bc is not None:
             bcf = bc[bc.flavor == fl].sort_values("mass_GeV")
             m, lo, hi = _dex_densify(
@@ -201,7 +203,7 @@ def main(argv=None) -> int:
                 # nuisance direction, not the plotted vertical ordering.
                 bcf["u2_min_bc_hi"].to_numpy(float), bcf["u2_min_bc_lo"].to_numpy(float),
                 cm, c_min)
-            _ribbon(ax, m, lo, hi, "teal", "Bc band (lower)", zorder=4)
+            _ribbon(ax, m, lo, hi, "teal", "Bc normalization variation (lower)", zorder=4)
 
         ax.set_title(f"HNL {LAB[fl]}", fontsize=13)
         if fl in ("Umu", "Utau"):
@@ -209,7 +211,7 @@ def main(argv=None) -> int:
                         xytext=(0.33, 5e-5), fontsize=7, color="dimgray",
                         arrowprops=dict(arrowstyle="->", color="dimgray", lw=0.8))
         ax.legend(fontsize=7, loc="lower right")
-    fig.suptitle("GRENDEL HNL sensitivity projection (single-flavor, Majorana, 14 TeV, "
+    fig.suptitle("GRENDEL HNL theory/model variation diagnostics (single-flavor, Majorana, 14 TeV, "
                  f"{a.l_int_fb:.0f} fb$^{{-1}}$, P>{a.p_cut_mev} MeV)", y=1.0, fontsize=13)
     fig.text(0.5, 0.005, _provenance(have_fonll), ha="center", va="bottom",
              fontsize=6.2, style="italic", wrap=True)

@@ -26,19 +26,22 @@ cp tmp/runs/<tag>/analysis/hnl_sensitivity.csv \
 ## Current contents
 
 - Source run: `central_newgrids_20260623/analysis_exact_100_betafix` (P>100 MeV,
-  timing-χ² β=p/E fix — PR #15 `f3d69bc`; reuses the same production 4-vectors as
-  the pre-fix run). The conservative P>600 MeV variant is `exact_600`.
+  timing-chi2 `beta=p/E` fix -- implementation `79c7337`, canonical publication
+  `fad3a8b`; reuses the same production 4-vectors as the pre-fix run). The
+  conservative P>600 MeV variant is `exact_600`.
 - Reach: `|U_e|^2` 5.9e-9 @0.40 GeV, `|U_mu|^2` 8.4e-9 @0.37 GeV,
   `|U_tau|^2` 3.0e-7 @2.8 GeV; window 0.2-3.6 GeV (closure is the cτ∝1/m^5
   lifetime law, not a production cutoff — see `MANIFEST.json`).
-- **Timing β-fix note:** the previous publish computed the 4-hit timing χ² with
-  β=1 for every daughter; it now uses each track's true β=p/E, which imposes a
+- **Timing beta-fix note:** the previous publish computed the 4-hit timing chi2
+  with `beta=1` for every daughter; it now uses each track's true `beta=p/E`, which imposes a
   species-dependent effective momentum floor above the 100 MeV cut. No mass points
   are lost and the closure is unchanged; `u2_min` degrades modestly (median
-  +3.7/+4.5/+9% for Ue/Umu/Utau, worst +33% at low mass). The FONLL/decay-model/Bc
-  ribbons in `bundle/` are **not re-derived** — they are dex (log₁₀U²) half-widths,
-  which are β-fix-invariant to second order, and `plot_money` re-anchors them onto
-  this central automatically.
+  +3.7/+4.5/+9% for Ue/Umu/Utau, worst +33% at low mass).
+- The tracked diagnostics in `bundle/` were fully re-derived after this fix:
+  111 exact-hit FONLL variations plus refreshed decay-model, Bc-normalization,
+  and channel-composition scans.  Their campaign and post-processing revisions
+  are `6482484` and `2ab1f98`; see `bundle/MANIFEST.json`.  These are separate
+  theory/model diagnostics, not confidence bands on the central paper contour.
 
 ## Consumer
 
