@@ -1,6 +1,6 @@
 # BC10 production audit against arXiv:2501.04525
 
-_Audit date: 2026-07-13._ This is an implementation audit for the GRENDEL
+_Audit date: 2026-07-13; status reconciled 2026-07-17._ This is an implementation audit for the GRENDEL
 geometry, not a claim that every production mode discussed in the paper must
 be included in every experiment. GRENDEL is a transverse detector covering
 approximately `|eta| < 0.5`; both the total production probability and the
@@ -37,7 +37,7 @@ The relevant SensCalc source hashes are:
 | Production mode | GRENDEL status | Decision and evidence |
 |---|---|---|
 | Exclusive `B` decays | Included | The current code samples `B+` and `B0` from the 14 TeV FONLL spectrum and sums the nine-state kaon tower. This is the GKOZ channel set retained by the 2501 implementation and is more differential than SensCalc's merged `Bcharged -> PiCharged + a` event topology. Keep it. |
-| Drell-Yan / gluon fusion | Not included | GKOZ's LHC production plot places this channel roughly five to six orders below the `B` tower over the current GRENDEL island. The tabulation starts at 1.5 GeV, while the present island closes near 2.7 GeV and `B` production remains open to about 4.8 GeV. It cannot affect the published island at current precision; document the omission. |
+| Drell-Yan / gluon fusion | Not included | GKOZ's LHC production plot places this channel roughly five to six orders below the `B` tower over the current GRENDEL island. The tabulation starts at 1.5 GeV, while the canonical island closes at 3.293 GeV and `B` production remains open to about 4.8 GeV. It cannot affect the published island at current precision; document the omission. |
 | Old flux-times-mixing | Deliberately excluded | ArXiv:2501.04525 identifies this approximation as chiral-rotation dependent and kinematically ambiguous. SensCalc still exposes `Old-Mixing-Pi0/Eta/EtaPr`; they must not be enabled as a shortcut. |
 | Proton bremsstrahlung | Not included | The 2501 calculation is a forward quasi-real approximation with a large theory uncertainty. For a transverse detector it requires a dedicated angular acceptance calculation. It is not justified to add a total-rate reweighting to the FONLL `B` sample. |
 | Quark fragmentation | Omitted off pole; pole windows excluded | The decoded generalized-mixing probability and LHC four-vector grid give a central cross section of `7.36e6 pb` at 0.96 GeV, about 52% of the current B-tower value. This point lies inside the eta-prime window where both arXiv:2501.04525 and SensCalc exclude the mixing description. Outside the excluded eta/eta-prime windows, the largest tested central contribution is 0.15% of the B tower (1.0 GeV); omit it at current precision. |
@@ -98,7 +98,7 @@ over five orders below the accepted B-tower cross section. The remaining
 light-parent modes are smaller. Their three-body matrix elements therefore do
 not need to enter the GRENDEL event generator at present precision.
 
-For an indicative rate threshold, the current 120,000-pool B-tower sample has
+For an indicative rate threshold, the earlier 120,000-pool audit sample has
 a central (`|eta| < 0.5`) reference cross section of `15.0--15.8 microbarn`
 over `m_a = 0.22--0.60 GeV` at `1/f_BNT = 1e-3 GeV^-1`. Dividing by the
 SensCalc LHC inelastic cross section (`72 mb`) and the per-unit-BR central
@@ -194,9 +194,9 @@ revised channels. GRENDEL imports verified physics inputs and applies its own
 geometry, decay sampling, stable-particle handling, and four-hit track
 selection rather than substituting the SensCalc detector acceptance.
 
-## Gate for the final 600k scan
+## Final-campaign gate and outcome
 
-Run the expensive production/template/sensitivity campaign once, after:
+The production/template/sensitivity campaign was gated on:
 
 1. the 2501 decay widths, branching ratios, and squared matrix elements have
    been exported and validated together, and the full branching mixture is
@@ -206,6 +206,10 @@ Run the expensive production/template/sensitivity campaign once, after:
 3. any retained production mode has a real four-vector sample rather than a
    total-rate-only correction.
 
-All three gates are satisfied. The remaining flat-primary-phase-space and
-two-gluon jet-surrogate choices are explicit decay-acceptance systematics;
-they do not require another production campaign before the 600k scan.
+All three gates were satisfied before the canonical campaign. The published
+result uses a 1.2-million-event high-pT importance production pool, 20,000
+Pythia templates at each supported mass, a 145-point scan, and the exact
+exported three-body matrix-element reweighting. Flat primary phase space is no
+longer the central three-body model. The remaining two-gluon light-quark
+surrogate is explicit and propagated through named template variations; it
+does not require another central production campaign.

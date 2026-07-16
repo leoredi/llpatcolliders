@@ -19,7 +19,8 @@ INV_F_REF = 1.0e-3
 
 # Stable or Pythia-known primary PDG products corresponding positionally to
 # decay_channels.json. Pythia subsequently decays unstable mesons and taus and
-# showers/hadronizes quark or gluon pairs.
+# showers/hadronizes quark pairs. The isolated two-gluon channel is replaced
+# by the configured light-quark surrogate during template generation.
 DECAY_PRODUCTS_PDG = {
     "channel_001": (-11, 11),
     "channel_002": (-13, 13),

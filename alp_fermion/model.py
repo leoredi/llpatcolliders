@@ -110,7 +110,8 @@ TAU_BPLUS_S = 1.638e-12
 TAU_B0_S = 1.519e-12
 
 # --------------------------------------------------------------------------
-# External-input anchors (provenance: module docstring + data/alpinist/)
+# Production-coupling anchor (provenance: module docstring + data/alpinist/).
+# Central decay inputs are loaded from data/senscalc_2501/ below.
 # --------------------------------------------------------------------------
 # b -> s a coefficient per unit (1/f): ALPINIST above_EW.C_qq_ij_mu at
 # Lambda = 1 TeV, universal c_f = 1 (tools/compute_cbs_alpinist.py).

@@ -1,8 +1,10 @@
 """Evaluate the universal-fermion ALP FCNC coefficient c_bs (BC10, Lambda=1 TeV)
 with the ALPINIST implementation of the GKOZ (arXiv:2310.03524) RG equations.
 
-This regenerates ``model.CBS_EFF`` (printed as ``cbs_t``) and ``model.CLL_RG``
-(printed as ``cel``).  Run:
+This evaluates ALPINIST's ``cbs_t``; the convention-mapped value used as
+``model.CBS_EFF`` is printed as ``cbs_t/2``. It also prints the low-scale
+universal charged-lepton coefficient as the diagnostic ``cel``. The current
+decay model does not consume a separate ``CLL_RG`` constant. Run:
 
     python alp_fermion/tools/compute_cbs_alpinist.py
 

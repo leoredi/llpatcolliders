@@ -29,8 +29,10 @@ The key trick that makes the reuse exact: map the coupling to the HNL scan
 variable `u2 ≡ (1/f / 1/f_ref)²`. Off the single reference point
 (`model.INV_F_REF`), production ∝ `u2` (since BR(B→K a) ∝ (1/f)²) and
 cτ ∝ `1/u2` (since Γ_tot ∝ (1/f)²) — exactly the structure `scan_u2` already
-implements. The only new analysis code is the `u2 ↔ 1/f` remap and the island
-extraction.
+implements. This exact scaling is why the shared acceptance and lifetime scan
+can be reused. BC10-specific production, decay tables, full-branching
+templates, matrix-element weights, pole handling, and component extraction
+supply the model inputs around that shared core.
 
 ## Layout
 ```
@@ -47,7 +49,7 @@ alp_fermion/
   sensitivity.py    (m_a, 1/f) closed-island scan; N_signal ≥ 3, 3000 fb⁻¹
   plot.py           BC10 island in the (m_a, 1/f) plane (+ optional overlay curves)
   paths.py          output-dir policy (ALP_TMP_DIR override) + hnl/ import shim
-  data/alpinist/    digitized GKOZ decay-width tables via ALPINIST (PROVENANCE.md, pinned SHA)
+  data/alpinist/    historical digitized GKOZ widths plus production-RG provenance
   data/senscalc_2501/ provenance and production audit for the pinned arXiv:2501.04525 upgrade
   data/senscalc_2310/ exact arXiv:2310.03524 structural widths, BRs, and MEs
   data/published/   canonical published sensitivity curve (CSV + MANIFEST; see its README)
@@ -62,7 +64,8 @@ alp_fermion/
 ```
 PY=/Volumes/sandbox/conda/envs/llpatcolliders_FONLL/bin/python
 PYROOT=/Volumes/sandbox/projects/aaaPHYSICSaaa/.venvs/fairship/bin/python
-$PY -m alp_fermion.alp_production --n-pool 600000
+$PY -m alp_fermion.alp_production --n-pool 1200000 \
+  --high-pt-tilt-scale 5 --nominal-mixture-fraction 0.5
 $PYROOT -m alp_fermion.generate_decay_templates_pythia --n-templates 20000
 $PY -m alp_fermion.sensitivity
 python -m pytest alp_fermion/tests -q

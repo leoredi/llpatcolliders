@@ -7,7 +7,7 @@ yield, the lifetime ctau, and the visible BRs simultaneously -- exactly like the
 HNL mixing |U|^2.  We exploit that by mapping the coupling to the HNL scan
 variable
 
-    u2 = (1/f) / (1/f_ref))^2          (1/f_ref = model.INV_F_REF)
+    u2 = ((1/f) / (1/f_ref))^2         (1/f_ref = model.INV_F_REF)
 
 so that, off the single reference point at which production.py weights the a's
 and templates.py stores ctau,
@@ -19,10 +19,12 @@ and templates.py stores ctau,
 This is precisely the structure of the imported
 ``analysis.decay_reco_acceptance.scan_u2``, so the acceptance MC
 (``build_event_mc`` -> best-two-track -> higgs/reco_common -> PR#13
-``selection_mask``) and the lifetime reweighting are reused verbatim; only the
-u2 <-> 1/f remapping and the closed-island extraction are new here.  N_signal >=
-3, background-free, 3000 fb^-1.  The island closes with a lower edge (too little
-production) and an upper edge (a decays before reaching PX56).
+``selection_mask``) and lifetime reweighting are reused verbatim. BC10-specific
+production, decay templates, pole handling, and disconnected-component
+extraction provide the inputs around that shared core. N_signal >= 3,
+background-free, 3000 fb^-1. Each supported component has a lower edge (too
+little production) and an upper edge (the ALP decays before reaching PX56);
+unsupported eta/eta-prime pole rows are not bridged.
 
 Usage:
     python -m alp_fermion.sensitivity                 # full grid
@@ -159,13 +161,10 @@ def process_mass(
     p_mag = data["beta_gamma"][idx] * m_a
     energy = data["gamma"][idx] * m_a
     p4 = np.column_stack([energy, p_mag[:, None] * direction])
-    # Memory-bounded acceptance MC: one build_event_mc over all hit events
-    # peaks at ~3.5 GB inside the vectorized reconstruction (reco_common
-    # intermediates scale with n_events * n_samples), which does not fit the
-    # 4 GB dense-grid runner.  Chunk the events and give every chunk its own
-    # deterministic sub-seed; results are reproducible (fixed chunk size +
-    # seeds) and statistically identical, but not bit-identical to the
-    # single-call path used for the original 29-point scan.
+    # Memory-bounded acceptance MC: reco_common intermediates scale with
+    # n_events * n_samples. Chunking keeps that allocation bounded and assigns
+    # each chunk a deterministic sub-seed, making the published path exactly
+    # reproducible for a fixed chunk size and configuration.
     EVENT_CHUNK = 256
     d_parts, passed_parts, template_index_parts = [], [], []
     base_seed = int(round(m_a * 1000)) * 100_000 + int(reco_seed_offset)

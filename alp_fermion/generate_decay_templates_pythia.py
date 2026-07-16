@@ -10,9 +10,9 @@ primaries are generated in flat phase space and carry normalized weights from
 the corresponding exact exported matrix elements. Pythia cannot hadronize an
 isolated two-gluon colour singlet through this external-decay interface, so
 ``a -> gg`` is represented by an equal u/d/s light-quark jet mixture. The
-``--gluon-surrogate``
-option generates the pure-u, pure-d, and pure-s alternatives used to propagate
-this implementation choice as a decay-acceptance uncertainty.
+``--gluon-surrogate`` option generates the pure-u, pure-d, and pure-s
+alternatives used to propagate this implementation choice as a
+decay-acceptance uncertainty.
 
 Run with the same Homebrew ROOT environment used by the HNL templates:
 
