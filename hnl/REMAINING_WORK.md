@@ -31,15 +31,16 @@ scenarios; they are not a statistical uncertainty band.
 ## Curve-visibility triage (production x analysis, by PBC scenario)
 
 The items below are ordered by physics priority, not by their effect on the
-*current* curves. As of 2026-06-16 every PBC scenario -- 100 (Ue), 010 (Umu),
-001 (Utau) -- has complete production (116 combined CSVs each) and complete
-decay templates (116 each); the live selection in
+*current* curves. As of the 2026-07-17 reconciliation, every PBC scenario --
+100 (Ue), 010 (Umu), 001 (Utau) -- has complete production and decay templates
+on the published 123-point grid; the live selection in
 `analysis/decay_reco_acceptance.py` matches the upstream `higgs/` GRENDEL
 reconstruction cut-for-cut, and the exclusion threshold is the standard
-zero-background 95% CL value (`N >= 3`). No remaining item moves any of the three
-curves visibly: each is an NLO refinement (sub-leading uncertainty, provenance,
-convergence) or a model gap that changes the *meaning* of the result
-(backgrounds, detector response) rather than the plotted central line.
+zero-background 95% CL value (`N >= 3`). No further large central Monte Carlo
+campaign is currently indicated by the convergence checks. The remaining items
+still matter: some refine production or decay theory, while detector response,
+backgrounds, and statistical modelling can change the *meaning* of the result
+and may ultimately move the plotted contour.
 
 | layer \ scenario | 100 (Ue) | 010 (Umu) | 001 (Utau) |
 |---|---|---|---|
@@ -50,8 +51,10 @@ Robustness fixes that *prevent* a future silent curve corruption (not a current
 defect) were applied on 2026-06-16: the geometry cache now invalidates when its
 source CSV is newer (mtime guard, item 19); `run_sensitivity.py` records every
 skipped `(flavor, mass)` with its reason in `run_metadata.json` and exits
-non-zero when nothing is processed; and `run_full_all.sh` generates decay
-templates before the analysis so a clean checkout cannot emit an empty plot. The
+non-zero when nothing is processed; and `run_full_all.sh` uses
+`HNL_TEMPLATE_PYTHON` for the ROOT/Pythia stage when supplied, or consumes
+pre-generated templates. A clean checkout without templates therefore fails
+rather than emitting an empty plot. The
 dead, stale `SEP_MIN/SEP_MAX/P_CUT` block was removed from
 `analysis/constants.py` (the live cuts were always sourced from
 `decay_reco_acceptance.py`).
@@ -139,20 +142,21 @@ or asymptotic validation, and produces expected limits with uncertainty bands.
 ### 4. Fix the physics-hypothesis definition
 
 **Current code:** production and lifetime tables are evaluated for the three
-single-flavor patterns `Ue`, `Umu`, and `Utau`. The exclusion labels only
-`|U|^2`; the Majorana/Dirac convention, charge-conjugate counting, and the
-relationship between production mixing and total lifetime are not stated in
-the result metadata. The convention itself is, however, no longer open: both
+single-flavor patterns `Ue`, `Umu`, and `Utau`. The canonical
+`data/published/MANIFEST.json` and diagnostic `run_metadata.json` now state the
+single-flavour Majorana hypothesis. The convention itself is no longer open:
+both
 the HeavyN UFO (`N1` self-conjugate) and HNLCalc (charge-conjugate modes summed
 per channel) are Majorana, so the result is self-consistently Majorana, matching
 PBC BC6/7/8 and ANUBIS (see the 2026-06-29 resolution under the appended note).
-The outstanding work is to state Majorana in the metadata and audit the
-remaining factors of two under that convention -- not to choose it.
+The outstanding work is to complete the independent factor-of-two audit and,
+if needed, support non-single-flavour hypotheses -- not to choose or document
+the convention again.
 
 **Required work:**
 
-- state and validate the Majorana/Dirac convention used by HNLCalc and the
-  MadGraph UFO;
+- retain the machine-readable Majorana declaration and independently validate
+  the convention used by HNLCalc and the MadGraph UFO;
 - audit all factors of two and charge-conjugate channels under that convention;
 - support arbitrary mixing ratios if the intended result is not restricted to
   the three single-flavor hypotheses;
@@ -171,10 +175,11 @@ and agrees with independent benchmark rates for the same convention.
 `NNPDF40_nlo_as_01180` member, stopping at `pT = 50 GeV` and `|y| = 3`. The full
 variation set has now been generated in the external NNPDF40 workspace -- a
 218-grid SHA-256 `variation_manifest.json` (7-point scale, 100 NNPDF4.0 NLO
-replicas, `m_b`/`m_c`) plus the `as_01170`/`as_01190` alpha_s companions, and
-the band has now been propagated through the full production+analysis chain
-into a per-mass envelope (see Progress below). The `pT`/rapidity truncation is
-still unbounded.
+replicas, `m_b`/`m_c`) plus the `as_01170`/`as_01190` alpha_s companions. The
+published per-mass band propagates the 111 coherent central/scale/PDF/heavy-mass
+curves; the alpha_s production+analysis companion chains are supported by
+post-processing but are not included in the current bundle. The `pT`/rapidity
+truncation is still unbounded.
 
 **Progress (2026-07-16): post-beta-fix exact FONLL campaign published.** The 111
 coherent variations (6-point scale + 100 NNPDF4.0 replicas + 4 `m_b`/`m_c`)
@@ -678,7 +683,9 @@ plot" (`analysis/plot_money.py`) builds on it and overlays the in-scope
 production+decay bands: FONLL theory (item 5), direct-Bc normalization
 (`bc_nuisance.py`, item 9), and the decay-model width band (`decay_model_band.py`,
 item 15). Detector, background, numerical, and luminosity bands are still absent
-(P0 items 1-3), and external constraints are not overlaid.
+(P0 items 1-3). External constraints are not overlaid by this package-local
+diagnostic; the central publication comparison in `shared/curves_PBC` does
+include versioned existing bounds and proposal curves.
 
 **Progress (2026-07-16): topology-safe diagnostic deliverable.** `analysis/plot_money.py`
 produces the single-flavor (m_N, |U|^2) projection with: the FONLL/Bc/decay-model
@@ -728,16 +735,16 @@ and part of item 6. Status as of 2026-06-23:
    below the NNPDF4.0 grid minimum at low pT (suppression x14-20 for
    pT <~ 2 GeV); see `fonll-local/PUBLICATION_BASELINE.md` for the
    prescription caveat before quoting the low-mass charm scale band.
-5. **Alpha_s done; coverage/fragmentation outstanding.** The alpha_s companion
+5. **Alpha_s grids and combiner done; propagated companion runs outstanding.** The alpha_s companion
    grids are generated -- `as_01170`/`as_01190` central grids for both quarks --
    and `combine_alphas.py` writes the PDF4LHC alpha_s envelope to
    `output/envelopes/alphas_manifest.json` (diagnostic-only, refused by the
    sampler; only the three coherent central grids are sampled). On the HNL side
-   the alpha_s term is now folded by **tracked** code:
+   tracked code can fold an alpha_s term:
    `analysis/combine_band.py --alphas-lo/--alphas-hi` adds the PDF4LHC
-   half-difference of the `as_01170`/`as_01190` companion curves in quadrature
-   into the band (retiring the earlier `/tmp/fold_alphas.py` side script).
-   Outstanding: a tracked driver for the companion production+analysis chains
+   half-difference of supplied `as_01170`/`as_01190` companion curves in
+   quadrature. The current published bundle does not supply or include those
+   curves. Outstanding: a tracked driver for the companion production+analysis chains
    (currently run by hand via the `run_variation_band` pattern); extended
    `pT`/rapidity coverage to bound the GRENDEL-accepted tail (item 6); and
    per-species fragmentation outputs/variations (item 8).

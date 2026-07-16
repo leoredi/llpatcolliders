@@ -71,5 +71,5 @@
       "n_sensitive_points": 95
     }
   },
-  "consumer": "../curves_PBC (digitize/make_plots_three_flavor.py overlays PBC BC7 + HNLimits)"
+  "consumer": "GRENDEL competitor-curves plotting package (digitize/make_plots_three_flavor.py overlays PBC BC7 + HNLimits)"
 }

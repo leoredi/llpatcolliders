@@ -45,7 +45,8 @@ cp tmp/runs/<tag>/analysis/hnl_sensitivity.csv \
 
 ## Consumer
 
-`../curves_PBC` reads this file (default in `digitize/paths.py`, overridable via
-`CURVES_PBC_GRENDEL_CSV`) and overlays the PBC BC7 contours + the HNLimits
-community compilation to produce the final comparison plots. **This repo only
-produces the GRENDEL curve; the comparison/final figures are made there.**
+`shared/curves_PBC` reads this file through `digitize/paths.py`; override the
+default with `HNL_GRENDEL_CSV` (`CURVES_PBC_GRENDEL_CSV` is a legacy alias).
+It overlays the PBC BC7 contours and the HNLimits community compilation to
+produce the final comparison plots. **This repo only produces the GRENDEL
+curve; the comparison/final figures are made there.**
