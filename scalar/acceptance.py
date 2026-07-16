@@ -77,8 +77,8 @@ _MODE_DAUGHTER = {
 
 # Bound the daughter-to-wall ray-cast allocation. Decays are independent; this
 # changes only RNG ordering relative to the old monolithic call, not the MC
-# estimator. It prevents a full 600k-event x 100-sample campaign from exhausting
-# memory during a single reconstruction call.
+# estimator. It prevents a large production-pool x multi-sample campaign from
+# exhausting memory during a single reconstruction call.
 EVENT_RECO_CHUNK = 25_000
 
 

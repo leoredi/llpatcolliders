@@ -7,8 +7,8 @@ with universally suppressed couplings ``L = -(s_theta m_f / v) S f f``
 ``HNLCalc``: it maps the single coupling ``sin^2 theta`` (at fixed ``m_S``) onto
 the three quantities the sensitivity needs SIMULTANEOUSLY:
 
-  * production rate   -> BR(B -> K S)(theta)         [+ inclusive B -> X_s S,
-                                                       + K -> pi S at very low mass]
+  * production rate   -> inclusive BR(B -> X_s S)(theta)
+                         [with exclusive B -> K S and K -> pi S helpers]
   * lifetime          -> c*tau(m_S, theta)
   * visible decay     -> branching ratios S -> mu mu, ee, tau tau, pi pi, K K,
                          s s, c c, g g vs mass
@@ -27,8 +27,10 @@ References
   below (eq. 12, 15, 21, 30-33, A2-A9) refer to this paper.
 * Unified FIP sensitivity calculation, arXiv:2311.00507 (the source the 2025 PBC
   report arXiv:2505.00947 uses for BC4 conventions and competitor curves): the
-  BC4 parameter plane is ``(m_S, sin^2 theta)`` with production by ``B -> K S``,
-  the same Winkler decay rates, and ``N_signal >= 3`` background-free limits.
+  BC4 parameter plane is ``(m_S, sin^2 theta)`` with B-meson production, the
+  same Winkler decay rates, and ``N_signal >= 3`` background-free limits. The
+  canonical GRENDEL normalization is the inclusive ``b -> X_s S`` rate; a
+  two-body ``B -> K S`` recoil supplies the unobserved-system kinematics.
 
 The central result uses digitized matched/dispersive widths from Winkler Fig. 4.
 The analytic leading-order ChPT form factors below 2 GeV and perturbative

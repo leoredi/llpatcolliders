@@ -144,7 +144,9 @@ def write_scalar_csv(m_S, out_dir, n_pool, rng, sigma_bottom=None, pool=None):
 def main(argv=None):
     import argparse
 
-    p = argparse.ArgumentParser(description="Generate BC4 B -> K S four-vector CSVs")
+    p = argparse.ArgumentParser(
+        description="Generate inclusive BC4 b -> X_s S events with a K-recoil proxy"
+    )
     p.add_argument("--out-dir", default=str(_SCALAR_ROOT / "tmp" / "llp_4vectors"))
     p.add_argument("--n-pool", type=int, default=N_POOL_DEFAULT)
     p.add_argument("--seed", type=int, default=42)

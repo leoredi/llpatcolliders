@@ -1,12 +1,10 @@
-"""BC4 money plot: the GRENDEL (m_S, sin^2 theta) exclusion island.
+"""BC4 package-local diagnostic plot of the GRENDEL exclusion island.
 
-Overlays competitor / existing-bound curves (CHARM, LHCb B->K mu mu, MATHUSLA,
-CODEX-b, ANUBIS, SHiP) when their digitized curves are present in
+This retains a legacy optional loader for competitor/existing-bound CSVs in
 ``scalar/data/competitors/`` (one CSV per experiment, columns
-``m_S_GeV,sin2theta``).  These are external digitized data products from the
-unified FIP calculation (arXiv:2311.00507) / the 2025 PBC report
-(arXiv:2505.00947) BC4 figure -- see ``scalar/EXTERNAL_INPUTS_NEEDED.md``.  The
-plot is produced with or without them; missing curves are skipped with a note.
+``m_S_GeV,sin2theta``). The authoritative publication comparison and its
+curated source set live in ``shared/curves_PBC``; this module is not the paper
+figure source. Missing local curves are skipped with a note.
 """
 from __future__ import annotations
 

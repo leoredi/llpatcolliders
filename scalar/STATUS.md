@@ -1,86 +1,76 @@
-# BC4 (light dark scalar) — status: GRENDEL curve FINAL
+# BC4 (light dark scalar) -- publication status
 
-_Last updated 2026-07-09. Worktree `aaaPHYSICSaaa/bc4-scalar` (top level, sibling of `bc10-alp`), branch `bc4-scalar`, package `scalar/`._
+_Last reviewed 2026-07-17. Active worktree:
+`signal-models/bc4-scalar/llpatcolliders_BC4_PR17`, branch `bc4-scalar`,
+package `scalar/`._
 
-**2026-07-09 β-fix republish.** The PR #15 timing-χ² fix (daughter β = p/E
-instead of β = 1) is now propagated through the BC4 acceptance (commit
-7f792dc) and the full 82-mass grid was rerun (`tmp/rerun_betafix2.log`,
-finished 00:58). The canonical curve now lives at
-`scalar/data/published/bc4_island.csv` (+ MANIFEST): island spans
-**0.22–3.70 GeV**, deepest **sin²θ = 7.4e-12 @ 0.975 GeV**. Versus the
-2026-07-02 pre-fix run: the lower edge is ~4% shallower (consistent with the
-HNL β-fix median) and the 3.80 GeV point drops below N = 3, closing the span
-at 3.70 GeV. The numbers below in "Results" refer to the superseded pre-fix
-run and are kept for the exclusive-vs-inclusive comparison.
+## Canonical result
 
-**2026-07-08 close-out.** The deliverable is the GRENDEL exclusion curve; the
-former TODOs are resolved as follows (details in the TODO section):
-- **gg→S: out of scope for BC4.** The competitor projections define the
-  benchmark as B-meson production only — Evans (arXiv:1708.08503, the MATHUSLA
-  scalar treatment: inclusive BR(B→X_s S) ≈ 6.2 (1−m_S²/m_B²)² sin²θ, kaons a
-  "small correction", no gluon fusion) and the CODEX-b physics case
-  (arXiv:1911.00481: b→s penguin dominant; direct Higgs production only enters
-  the non-minimal quartic scenario = BC5). Our inclusive b→X_s S with Winkler
-  dispersive widths meets or exceeds that standard; the ~3.8 GeV meson ceiling
-  is the benchmark's own ceiling.
-- **Competitor overlays: dropped by decision** (GRENDEL curve only).
-- **Committed** as 6dc4a74 on `bc4-scalar`, pushed to leoredi/llpatcolliders.
-The curve in `scalar/tmp/bc4_exclusion.{png,pdf}` / `bc4_island.csv` (full run
-2026-07-02) is the final BC4 result.
+The stable curve is `scalar/data/published/bc4_island.csv`; its exact source,
+configuration, checksum, topology, and convergence controls are pinned in the
+adjacent `MANIFEST.json` and described in `data/published/README.md`.
 
-## What BC4 is
-Coupling-controlled, model-complete GRENDEL sensitivity for the PBC **BC4** benchmark
-(Higgs-portal dark scalar S mixing with the SM Higgs, mixing angle sin²θ). A single
-coupling sets production, lifetime cτ, and all decay BRs simultaneously → a **closed
-island** in (m_S, sin²θ), requiring N_signal ≥ 3 at 3000 fb⁻¹, background-free.
-Reuses the `higgs/` shared reco (`grendel_geometry` + `reco_common`) and the `hnl/`
-FONLL b-hadron sampler — never copied, imported.
+- 86-point grid, `m_S = 0.14--4.70 GeV`.
+- Sensitive grid run `0.14--3.70 GeV`; log-yield interpolation places the
+  final closure at `3.7975 GeV`.
+- Deepest lower edge `sin^2(theta) = 7.3988e-12` at `m_S = 0.975 GeV`.
+- In the electron-only `0.14--0.20 GeV` interval, the upper edge lies above
+  the configured coupling scan and is stored as open, not artificially closed.
+- Central production uses 400,000 importance-sampled FONLL parents for each of
+  `B+`, `B0`, and `Bs` (1.2 million scalar events per mass), with a 5 GeV
+  high-pT tilt, a 50% nominal mixture, and 100 decay/reconstruction samples per
+  scalar entering the detector.
+- The four-hit timing calculation uses each daughter track's true
+  `beta = p/E`.
 
-## Current physics (both refinements applied 2026-07-02)
-1. **Decay widths — Winkler dispersive.** Hadronic widths from digitized Winkler
-   (arXiv:1809.01876) Fig. 4 (`scalar/data/winkler_widths.csv`, log-log interp in
-   `model._winkler_width`). `M_SPECTATOR = 2.0` gates the below-2 GeV (ππ/KK/4π)
-   vs above-2 GeV (gg/ss/cc) channels to avoid a double-count seam. This moved the
-   hadronic pinch from a spurious ~1.7 GeV LO-ChPT artifact onto the physical
-   **f₀(980)/2m_K peak at ~0.98 GeV**.
-2. **Production — inclusive `b → X_s S`.** Switched from exclusive `B → K S` to the
-   inclusive spectator rate (`model.br_B_to_Xs_S`, Winkler eq. A7, ~5.3·sin²θ),
-   summed over **B⁺, B⁰, B_s** (the HNL inclusive bottom set; b-baryons omitted).
-   Rationale: GRENDEL reconstructs only the S vertex — the prompt X_s system is
-   invisible, so we sum over it inclusively, exactly as for HNLs. S-spectrum
-   kinematics unchanged (recoil = m_K, spectrum <2% sensitive to it at a 5.3 GeV
-   parent); only the normalization moves.
+Independent six-million-event controls at 3.75, 3.80, and 3.85 GeV reproduce
+the high-mass closure within 0.006 GeV. The endpoint is therefore not a
+finite-pool artifact.
 
-## Results
-| | exclusive B→K S | **inclusive b→X_s S (current)** |
-|---|---|---|
-| deepest reach (sin²θ) | 4.7e-11 @ 2.8 GeV | **7.1e-12 @ 0.975 GeV** |
-| deepening at matched mass | — | ~3.5× (√10 from rate) |
-| sensitive mass span | 0.22 – 3.5 GeV | **0.22 – 3.8 GeV** |
-| f₀(980) region (~1 GeV) | island closed (gap) | **open, and deepest** |
+## Physics definition
 
-The f₀(980) pinch flipped from a closed gap into the deepest point: the width peak
-gives the best lower edge (sin²θ_min ∝ 1/√Γ_total in the long-lifetime regime), and
-inclusive rate finally lifts peak_N there (4 → 34) above threshold to exploit it.
-Above ~3.8 GeV: rate-starved (peak_N → 1 as m_S → m_B) — meson ceiling is real.
+BC4 is the minimal Higgs-mixing benchmark: one parameter, `sin^2(theta)`,
+controls production, lifetime, and all decay branching fractions. The signal
+criterion is `N_signal >= 3` at `3000 fb^-1` under the paper's explicit
+zero-background working assumption.
 
-Outputs: `scalar/tmp/bc4_exclusion.{png,pdf}`, `scalar/tmp/bc4_island.csv`.
-Superseded (exclusive) outputs preserved in `scalar/tmp/pre_inclusive/`.
+Production is normalized inclusively with `b -> X_s S` (Winkler
+arXiv:1809.01876, Eq. A7), summed over `B+`, `B0`, and `Bs`. The unobserved
+strange system is represented kinematically by two-body `B -> K S` recoil; this
+proxy does not change the inclusive normalization. Direct `gg -> S` production
+belongs outside the minimal B-meson BC4 definition used here.
 
-## TODO — all resolved 2026-07-08
-- [x] **gg→S direct production** — RESOLVED: out of scope. The BC4 standard set
-      by the competitor studies (Evans arXiv:1708.08503 / MATHUSLA; CODEX-b
-      arXiv:1911.00481) is B-meson production only; none include gg→S. BC4 is
-      held as the ≤3.8 GeV inclusive-meson benchmark.
-- [x] **Competitor / existing-bound overlays** — DROPPED by decision: the
-      GRENDEL curve is the deliverable. (`plot_exclusion` still picks up
-      `scalar/data/competitors/*.csv` if that is ever revisited.)
-- [x] **Commit / PR decision** — committed as 6dc4a74 on `bc4-scalar`, pushed
-      to leoredi/llpatcolliders. Upstream PR deferred until the paper decides
-      which benchmarks it carries.
+The central decay model uses the digitized Winkler dispersive hadronic widths
+below 2 GeV and the perturbative spectator treatment above 2 GeV, together
+with analytic leptonic widths. The alternate LO-ChPT/spectator model is used
+only as a named model diagnostic.
 
-## Related (portal-wide)
-- **BC10 fermiophilic ALP** — worktree `../bc10-alp`, package `alp_fermion/`. Built,
-  closed island, reach 1/f ≈ 2e-8 GeV⁻¹; rate-starved above ~2.5 GeV. NOT yet given
-  the inclusive-production treatment applied to BC4 here — candidate for the same fix.
-- Done & leading already on `main`: BC5 (higgs portal h→SS) and BC6/7/8 (HNL).
+## Variation diagnostics and figures
+
+`scalar/data/published/bundle/` contains 109 coherent FONLL-grid curves, one
+alternate decay-model curve, and two excluded same-physics numerical repeats.
+The derived outer envelope is a one-source-at-a-time diagnostic in
+`log10(sin^2(theta))`; it is not a confidence interval and sources are not
+combined in quadrature.
+
+The publication comparison is produced in `shared/curves_PBC`, not by the
+package-local legacy overlay loader. It includes the current excluded region
+and the in-scope SHiP, CODEX-b, and FASER2 projections. MATHUSLA and ANUBIS are
+omitted because no current-geometry mixing-only curves are available. By user
+policy, no ATLAS, CMS, or LHCb projection curve is used; existing LHCb bounds
+remain in scope.
+
+## Remaining limitations
+
+- Detector response and backgrounds are not yet validated at publication
+  fidelity; the paper labels zero background as a working assumption.
+- `K -> pi S` exists in the model layer, but a realistic LHC kaon-flux sample
+  is not included in the central production model.
+- The strange recoil system and exclusive decay topology are approximations
+  documented in the package and manifests.
+- The named theory/model curves are diagnostics rather than probabilistic
+  uncertainty bands, so the primary proposed-experiment plot remains
+  central-only.
+
+For rerun commands use `scalar/README.md`; for external-input history and plot
+policy use `scalar/EXTERNAL_INPUTS_NEEDED.md`.

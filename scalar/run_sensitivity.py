@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""BC4 driver: produce B -> K S four-vectors, scan the coupling, plot the island.
+"""BC4 driver: produce inclusive b -> X_s S events and scan the coupling.
 
 Coupling-controlled, model-complete (like the HNL, not the model-agnostic
 (BR, c*tau) scan the higgs/ BC5 analysis uses): for each (m_S, sin^2 theta) the
 *single* coupling sets the production yield, the lifetime c*tau and the visible
 BR simultaneously, and we require N_signal >= 3 at 3000 fb^-1 background-free.
-The result is a CLOSED ISLAND in (m_S, sin^2 theta): a lower edge (too little
-production) and an upper edge (decays before reaching GRENDEL).
+The result is normally a closed island in (m_S, sin^2 theta): a lower edge
+(too little production) and an upper edge (decays before reaching GRENDEL).
+At the lowest electron-only masses the upper crossing lies beyond the scan and
+is represented explicitly as an open edge.
 
 Usage:
     python -m scalar.run_sensitivity                 # full grid; produces only missing

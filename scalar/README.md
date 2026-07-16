@@ -2,7 +2,8 @@
 
 Purely-additive package implementing the PBC benchmark **BC4**: a light scalar
 `S` that mixes with the Higgs through one angle `theta` (`sin^2 theta`),
-produced in `B -> K S` and decaying `S -> SM` via the mixing. This is the
+produced inclusively in `b -> X_s S` (with two-body `B -> K S` recoil as a
+kinematic proxy) and decaying `S -> SM` via the mixing. This is the
 low-mass partner of the already-done BC5 (`higgs/`, `h -> SS`).
 
 Everything geometric and reconstruction-related is **imported, not copied**, from
@@ -31,7 +32,7 @@ we evaluate the actual `c*tau`, production yield and visible BR, require
 | file | role |
 |------|------|
 | `model.py` | **model layer** (the core deliverable): `c*tau(m_S, theta)`, `BR(B->K S)` / `B->X_s S` / `K->pi S`, and the visible BRs (`mu mu, ee, tau tau, pi pi, K K, s s, c c, g g`) from Winkler arXiv:1809.01876. The BC4 analogue of HNLCalc. |
-| `production.py` | FONLL bottom pool → `B+/B0 -> K S` two-body → weighted `S` four-vector CSVs. |
+| `production.py` | FONLL bottom pool -> inclusive `b -> X_s S` normalization over `B+`, `B0`, and `Bs`, with two-body `B -> K S` recoil -> weighted `S` four-vector CSVs. |
 | `acceptance.py` | scalar decay engine → best-two-track → shared reco → PR#13 `selection_mask`; folds the visible BR in via the decay outcome (neutral sub-modes fail). |
 | `run_sensitivity.py` | driver: produce → coupling scan (`N_signal >= 3`) → island CSV → plot. |
 | `uncertainty_band.py` | independent full-statistics propagation of 109 coherent FONLL bottom grids, a fresh Winkler-vs-LO-ChPT/spectator decay-model run, and two excluded fresh-seed central numerical controls. |
@@ -41,10 +42,15 @@ we evaluate the actual `c*tau`, production yield and visible BR, require
 ## Run
 
 ```
-# full grid: produce 4-vectors, scan sin^2 theta, write the island + plot
-/Volumes/sandbox/conda/envs/hnl/bin/python -m scalar.run_sensitivity
+# Canonical publication configuration: first build the 1.2M-event/mass
+# importance pools, then reuse them in the coupling scan.
+PY=/Volumes/sandbox/conda/envs/llpatcolliders_FONLL/bin/python
+$PY -m scalar.production --n-pool 400000 \
+  --high-pt-tilt-scale 5 --nominal-mixture-fraction 0.5
+$PY -m scalar.run_sensitivity --n-pool 400000 --resume
 
-# a few masses / re-plot only
+# Development-size run, a few masses, or re-plot only
+python -m scalar.run_sensitivity
 python -m scalar.run_sensitivity --masses 0.5 1.0 2.0 --n-pool 100000
 python -m scalar.run_sensitivity --plot-only
 
@@ -82,8 +88,8 @@ single-source envelope prescription and limitations.
 
 The central decay model uses the supplied Winkler dispersive table, and
 production uses the inclusive `B -> X_s S` rate. `EXTERNAL_INPUTS_NEEDED.md`
-records the resolved input history and the deliberately omitted local
-competitor overlays. The analytic LO-ChPT/spectator calculation is retained as
+records the resolved input history and the centralized comparison-plot
+policy. The analytic LO-ChPT/spectator calculation is retained as
 an alternate-model uncertainty, not used for the central curve. The `K -> pi S`
 production channel is implemented in the model layer but kaon-flux sampling at
 the LHC IP is deferred.
