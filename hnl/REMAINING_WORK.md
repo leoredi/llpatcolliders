@@ -256,20 +256,50 @@ produce correlated curve variations.
 fragmentation allocation as `Lambda_c+`, `Xi_c0`, `Xi_c+`, and `J/psi`, but
 none contributes to direct HNL production or to the induced-tau pool.
 
-**Required work:**
+**Measured impact of the dominant term (Lambda_c, 2026-07-17): negligible,
+below MC noise.** Using HNLCalc's `get_3body_dbr_baryon` (the `Lambda_c -> Lambda`
+form factors, `dq2dm122` integrator), the charm-sector yield boost from adding
+`Lambda_c -> Lambda l N` is `frag_Lc * BR(Lc) / sum_D frag_D * BR(D)`. Folded
+with the charm channel's accepted-yield fraction (audit baseline), the lower-edge
+shift is **<= 1.2% (<= 0.005 dex)** across the whole charm-relevant range, for
+both `Ue` and `Umu`:
 
-- identify and implement the relevant `Lambda_c` and `Xi_c` leptonic or
-  semileptonic HNL production channels with current form factors;
-- provide their production spectra and fragmentation fractions with
-  uncertainties;
-- evaluate whether charmonium HNL modes are relevant over the 0.2--10 GeV
-  mass grid and either implement or quantitatively dismiss them;
+| m_N (GeV) | Ue edge shift | Umu edge shift |
+|---|---|---|
+| 0.4-0.5 | -1.1% | -1.2% (max) |
+| 0.7 | -0.6% | -0.5% |
+| >= 1.0 | <= -0.03% | ~0 |
+
+This is far below the 4.1% median production-MC noise, so **`Lambda_c` is not a
+curve mover** and does not need to be generated. The reason it is so much smaller
+than the analogous BC4 `Lambda_b` fix (`-10` to `-14%`): a baryon has **no
+2-body leptonic mode**. `D+`/`Ds -> l N` is helicity-enhanced and two-body;
+`Lambda_c -> l N` is forbidden (baryon number), leaving only the phase-space-
+suppressed semileptonic `Lambda_c -> Lambda l N` (`BR ~ 1%`, confined to
+`m_N < m_Lc - m_Lambda - m_l ~ 1.17 GeV`). This **supersedes** the audit's
+`missing_charm_baryon_channels` proxy (median 0.1%, max 16.9%), which
+overestimated by ~14x by scaling on fragmentation without the semileptonic
+suppression. Caveat: the estimate is a production-BR ratio; the softer `Lambda_c`
+HNLs would have somewhat lower acceptance, so `<= 1.2%` is an upper bound.
+
+**Required work (residual):**
+
+- `Lambda_c`: **bounded above (<= 1.2%, below noise)** per the measurement above;
+  generation is optional. If ever generated, `get_3body_dbr_baryon('4122',
+  '3122', lepton)` with the `dq2dm122` integrator supplies the rate, exactly as
+  the `Bbaryon` channel already uses `Lambda_b -> Lambda_c l N`;
+- `Xi_c0`/`Xi_c+`: even more phase-space suppressed (heavier `Xi` recoil) and a
+  smaller fragmentation share than `Lambda_c`, so bounded below the `Lambda_c`
+  number by the same argument -- a short explicit check would close them;
+- evaluate whether charmonium (`J/psi`) HNL modes are relevant over the
+  0.2--10 GeV mass grid and either implement or quantitatively dismiss them;
 - audit any additional weakly decaying charm species omitted from the current
   closure.
 
 **Completion test:** the charm fragmentation accounting is explicit and every
 omitted component has either a generated channel or a documented negligible
-bound on the final curves.
+bound on the final curves. `Lambda_c` now has a documented bound; `Xi_c`/`J/psi`
+remain to be closed.
 
 ### 8. Replace the inclusive bottom-baryon closure approximation
 
@@ -530,6 +560,30 @@ as unpolarized, although their polarization depends on charge, phase space,
 and production kinematics. Tau-to-HNL decay generation includes only `pi`,
 `K`, `rho`, `K*`, and leptonic three-body modes; multi-hadron spectral modes
 such as `a1/3pi` are absent.
+
+**Partial bound on the analyzing-power error (2026-07-17): a candidate BC8
+(Utau) mover, not dismissible.** The unit-analyzing-power approximation is
+**exact** for the pseudoscalar 2-body modes (`pi`, `K`): a spin-0 daughter
+carries the full tau polarization, so `asym = +-1` is correct there. The error
+lives only in the **vector** modes (`rho`, `K*`), whose true analyzing power is
+`alpha_V = (m_tau^2 - 2 m_V^2)/(m_tau^2 + 2 m_V^2) = 0.45` (`rho`), `0.33`
+(`K*`), not 1. From `compute_tau_production_br_components`, the vector modes are
+**33-39% of total tau -> N production for `m_N < 1 GeV`** (falling to ~0 above
+1.2 GeV as the 2-body vector channels close). That gives an upper bound on the
+fractional yield perturbation of `f_vector x (1 - alpha_V) ~ 18-22%` at low
+`m_N`, i.e. an edge shift bound of very roughly `<= 10%` -- **above the 4.1% MC
+noise floor**, and consistent with the audit `production_spin_and_residual_angles`
+(median 7.1%, max 16.8%).
+
+Unlike `Lambda_c` (item 7, dismissed below noise), tau spin **cannot be
+dismissed from the branching ratios alone**. The bound is an overestimate,
+because the tau boost from the `D`/`B` parent partly washes the rest-frame
+angle out (the asymmetry mostly shifts the HNL *energy* spectrum, hence the
+decay length and fiducial fraction, rather than its direction). Pinning the
+actual BC8 curve shift needs the controlled acceptance measurement below --
+generating the induced-tau HNL 4-vectors under (A) the current `asym = +-1` and
+(B) per-mode analyzing power (`+-1` for `pi`/`K`, `alpha_V x sign` for `rho`/`K*`)
+and re-scanning. This is Utau-only; BC6/BC7 (`Ue`/`Umu`) are unaffected.
 
 **Required work:**
 
