@@ -412,6 +412,27 @@ at a ~5.6 GeV parent. The earlier concern that a kaon recoil would make the
 `-0.045` dex optimistic is therefore not borne out numerically — but `m_Lambda`
 remains the correct implementation.
 
+**Full-consistency republication is a pending campaign.** The central island was
+rescanned with `Lambda_b` and validated (the table above; the full 86-mass 400k
+rescan reproduces the controlled A/B measurement -- deepest reach `6.519e-12`
+vs the published meson-only `7.399e-12`, and the closure extends `3.70 -> 3.80`
+GeV, adding one sensitive point). But the **published set is deliberately kept
+meson-only and self-consistent** until three dependent artifacts are regenerated
+with `Lambda_b`: the 109-variation uncertainty `bundle/`, the six-million-event
+high-mass closure control, and the paper figure. `test_published_curve.py`
+enforces central/bundle hash linkage, so a central-only overwrite is not a valid
+published state. Reproduce the validated central with:
+
+```sh
+python -m scalar.run_sensitivity --n-pool 400000 --n-samples 100 --seed 42 \
+    --high-pt-tilt-scale 5.0 --nominal-mixture-fraction 0.5 --force-produce \
+    --output tmp/bc4_island_lambdab.csv --vector-dir tmp/llp_4vectors_lambdab
+```
+
+The remaining campaign is a `Lambda_b` `uncertainty_band.py` run (109 variations)
+plus the 6M closure control, after which the central + bundle + MANIFEST + paper
+figure promote together.
+
 **Remaining (item 8 residual):** Lambda_b lumps `Xi_b`/`Omega_b` (different mass
 and lifetime, a small fraction of b-baryons); a per-species baryon split and a
 `pT`-dependent fragmentation model are still open, and the shared-shape and
