@@ -108,3 +108,24 @@ def test_ctau_inverse_in_coupling():
 def test_K_to_pi_S_only_below_threshold():
     assert model.br_K_to_pi_S(0.2) > 0.0
     assert float(model.br_K_to_pi_S(0.4)) == 0.0   # above m_K - m_pi ~ 0.354
+
+
+def test_lambda_b_is_a_valid_inclusive_parent():
+    # b -> X_s S is spectator-independent, so the b-baryon pool (lumped as
+    # Lambda_b) enters br_B_to_Xs_S on the same footing as the mesons.
+    br = float(model.br_B_to_Xs_S(0.975, parent="Lambda_b"))
+    assert br > 0.0
+
+
+def test_lambda_b_br_ratio_is_mass_and_lifetime_driven():
+    # At low m_S the rate ~ (m_B^2 - m_S^2)^2 / m_B^3 * tau, so the Lambda_b/B+
+    # ratio is ~ (m_Lambda_b / m_B+) * (tau_Lambda_b / tau_B+) ~ 1.064 * 0.896.
+    br_b = float(model.br_B_to_Xs_S(0.975, parent="B+"))
+    br_lb = float(model.br_B_to_Xs_S(0.975, parent="Lambda_b"))
+    predicted = (model.M_LAMBDA_B / model.M_BPLUS) * (model.TAU_LAMBDA_B / model.TAU_BPLUS)
+    assert br_lb / br_b == pytest.approx(predicted, rel=0.02)
+
+
+def test_lambda_b_br_closes_above_parent_mass():
+    # The inclusive rate must vanish once m_S reaches the parent mass.
+    assert float(model.br_B_to_Xs_S(model.M_LAMBDA_B + 0.1, parent="Lambda_b")) == 0.0

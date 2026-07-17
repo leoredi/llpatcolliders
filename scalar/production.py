@@ -30,7 +30,7 @@ for _p in (str(_REPO_ROOT), str(_HNL_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from production.constants import FRAG_B                      # noqa: E402
+from production.constants import FRAG_B, FRAG_LAMBDA_B       # noqa: E402
 from production.fonll.fonll_parser import get_sigma_total    # noqa: E402
 from production.fonll.meson_sampler import (                 # noqa: E402
     sample_meson_4vectors, meson_4vec_from_kinematics)
@@ -59,15 +59,27 @@ MASS_GRID = sorted({round(x, 3) for x in (
 )})
 
 # Inclusive b -> s S is a b-quark process, so every b-hadron contributes; we sum
-# over B+, B0, Bs (the hnl inclusive bottom set -- b-baryons omitted, as there).
-# GRENDEL reconstructs only the S vertex, so the prompt X_s system is invisible;
-# the S spectrum is insensitive to the recoil mass at a ~5.3 GeV parent, so a
-# kaon-mass recoil sets the two-body kinematics for all species.
+# over the full pool: B+, B0, Bs, and the b-baryons (lumped as Lambda_b, the
+# FRAG_LAMBDA_B = 0.18755 fraction the hnl set omits). The rate BR(b -> X_s S) is
+# spectator-independent (model.br_B_to_Xs_S), so a baryon enters on the same
+# footing as a meson -- it is only the recoil mass and lifetime that differ.
+#
+# The recoil mass sets the two-body S momentum and the production ceiling
+# (m_S < m_parent - m_recoil). We use the *lightest strange hadron* of the right
+# type as the inclusive-minimum recoil proxy: the kaon for mesons (Bs keeps the
+# kaon proxy for its s-sbar recoil, a pre-existing approximation), and the Lambda
+# for the b-baryon. The two choices are NOT interchangeable: at a ~5.3-5.6 GeV
+# parent the S spectrum is nearly recoil-insensitive for light m_S (deep-reach
+# region), but near the kinematic closure the recoil sets both the spectrum shape
+# and the ceiling -- m_Lambda closes Lambda_b at 4.50 GeV, whereas a kaon proxy
+# would wrongly leak it to 5.13 GeV. Using m_Lambda is therefore the physically
+# correct choice, not m_K.
 # PDG id -> (parent tag, m_parent, m_recoil, fragmentation frac).
 B_SPECIES = {
-    521: ("B+", model.M_BPLUS, model.M_KPLUS, FRAG_B[521]),
-    511: ("B0", model.M_B0,    model.M_K0,    FRAG_B[511]),
-    531: ("Bs", model.M_BS,    model.M_KPLUS, FRAG_B[531]),
+    521:  ("B+",       model.M_BPLUS,    model.M_KPLUS,  FRAG_B[521]),
+    511:  ("B0",       model.M_B0,       model.M_K0,     FRAG_B[511]),
+    531:  ("Bs",       model.M_BS,       model.M_KPLUS,  FRAG_B[531]),
+    5122: ("Lambda_b", model.M_LAMBDA_B, model.M_LAMBDA, FRAG_LAMBDA_B),
 }
 
 N_POOL_DEFAULT = 200_000
@@ -102,16 +114,16 @@ def generate_scalar_4vectors(
     sampling_weight = pool.get("sampling_weight", np.ones(n_each))
 
     weights, E, px, py, pz = [], [], [], [], []
-    for pdg, (parent, m_B, m_K, frag) in B_SPECIES.items():
-        if m_S >= m_B - m_K:
+    for pdg, (parent, m_B, m_recoil, frag) in B_SPECIES.items():
+        if m_S >= m_B - m_recoil:
             continue
         br = float(model.br_B_to_Xs_S(m_S, parent=parent, sin2theta=1.0))
         if br <= 0:
             continue
         v = meson_4vec_from_kinematics(pool["pt"], pool["y"], pool["phi"], m_B)
-        # Two-body b-hadron -> X_s(m_K proxy) S(m_S); decay_2body returns (d1, d2=S).
-        _, s4 = decay_2body(v["E"], v["px"], v["py"], v["pz"], m_B, m_K, m_S, rng=rng)
-        # factor 2: b and bbar both hadronize to a B (matches hnl convention).
+        # Two-body b-hadron -> X_s(m_recoil proxy) S(m_S); decay_2body returns (d1, d2=S).
+        _, s4 = decay_2body(v["E"], v["px"], v["py"], v["pz"], m_B, m_recoil, m_S, rng=rng)
+        # factor 2: b and bbar both hadronize to a b-hadron (matches hnl convention).
         w = 2.0 * sigma_bottom * frag * br / n_each
         weights.append(w * sampling_weight)
         E.append(s4[:, 0]); px.append(s4[:, 1]); py.append(s4[:, 2]); pz.append(s4[:, 3])

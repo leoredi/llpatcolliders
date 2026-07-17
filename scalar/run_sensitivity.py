@@ -74,6 +74,8 @@ def run(
     vector_dir=VEC_DIR,
     output=ISLAND_CSV,
     resume=False,
+    high_pt_tilt_scale=None,
+    nominal_mixture_fraction=0.5,
 ):
     """Produce-if-missing + cached ray-casts (the BC10/HNL pattern): the
     four-vector CSVs are only (re)generated for masses that have none, or for
@@ -93,7 +95,10 @@ def run(
                       if not (vector_dir / f"mS_{prod._mass_label(m)}.csv").exists()]
     if to_produce:
         sigma_bottom = get_sigma_total("bottom")
-        pool = sample_meson_4vectors(n_pool, "bottom", rng=rng)
+        pool = sample_meson_4vectors(
+            n_pool, "bottom", rng=rng,
+            high_pt_tilt_scale=high_pt_tilt_scale,
+            nominal_mixture_fraction=nominal_mixture_fraction)
         print(f"sigma_FONLL(bottom) = {sigma_bottom:.3e} pb; "
               f"producing {len(to_produce)}/{len(masses)} masses")
         for m_S in to_produce:
@@ -158,6 +163,11 @@ def main(argv=None):
     p.add_argument("--n-pool", type=int, default=prod.N_POOL_DEFAULT)
     p.add_argument("--n-samples", type=int, default=100)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--high-pt-tilt-scale", type=float, default=None,
+                   help="importance-sample a nominal/high-pT FONLL mixture "
+                        "tilted by exp(pT/scale) (published campaign used 5.0)")
+    p.add_argument("--nominal-mixture-fraction", type=float, default=0.5,
+                   help="nominal fraction of the high-pT proposal mixture")
     p.add_argument("--vector-dir", type=Path, default=VEC_DIR)
     p.add_argument("--output", type=Path, default=ISLAND_CSV)
     p.add_argument("--resume", action="store_true",
@@ -176,7 +186,9 @@ def main(argv=None):
     masses = args.masses if args.masses else prod.MASS_GRID
     run(masses, args.n_pool, args.seed, args.n_samples,
         force_produce=args.force_produce, vector_dir=args.vector_dir,
-        output=args.output, resume=args.resume)
+        output=args.output, resume=args.resume,
+        high_pt_tilt_scale=args.high_pt_tilt_scale,
+        nominal_mixture_fraction=args.nominal_mixture_fraction)
     return 0
 
 

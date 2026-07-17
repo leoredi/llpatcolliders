@@ -71,8 +71,11 @@ _TAU = lambda pid: Particle.from_pdgid(pid).lifetime * 1e-9  # s
 M_BPLUS = _M(521)
 M_B0 = _M(511)
 M_BS = _M(531)
+M_LAMBDA_B = _M(5122)   # lightest b-baryon; proxy for the whole b-baryon pool
 M_KPLUS = _M(321)
 M_K0 = _M(311)
+M_LAMBDA = _M(3122)     # lightest s-baryon: the Lambda_b -> Lambda S recoil,
+                        # the baryonic analogue of the kaon recoil for mesons
 M_PIPLUS = _M(211)
 M_PI0 = _M(111)
 M_D0 = _M(421)        # lightest c-meson: spectator c-cbar threshold
@@ -83,6 +86,7 @@ M_TAU = _M(15)
 TAU_BPLUS = _TAU(521)
 TAU_B0 = _TAU(511)
 TAU_BS = _TAU(531)
+TAU_LAMBDA_B = _TAU(5122)
 TAU_KPLUS = _TAU(321)
 
 # B -> K S kinematic ceiling (production closes here).
@@ -368,10 +372,13 @@ def br_B_to_Xs_S(m_S, parent="B+", sin2theta=1.0):
     ~10x the exclusive K mode at low mass (~5.3 sin^2 theta).  This is the
     production normalization used by the scan -- GRENDEL reconstructs only the
     S vertex, so the prompt X_s system is summed over inclusively.  g_{phi s b}
-    is a b-quark process (spectator-independent), so only m_B, tau vary."""
+    is a b-quark process (spectator-independent), so only m_B, tau vary -- which
+    is exactly why b-baryons enter here on the same footing as the mesons, with
+    just the Lambda_b mass and lifetime (the b-baryon pool proxy)."""
     m_B, tau_B = {"B+": (M_BPLUS, TAU_BPLUS),
                   "B0": (M_B0, TAU_B0),
-                  "Bs": (M_BS, TAU_BS)}[parent]
+                  "Bs": (M_BS, TAU_BS),
+                  "Lambda_b": (M_LAMBDA_B, TAU_LAMBDA_B)}[parent]
     m_S = np.asarray(m_S, float)
     g2 = g_phisb(sin2theta) ** 2
     gamma = np.where(m_S < m_B,

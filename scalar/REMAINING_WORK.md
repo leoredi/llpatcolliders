@@ -372,41 +372,50 @@ Use the same three-column rectangular format as the committed grids:
 acceptance-folded bound shows the omitted tail is below a declared tolerance on
 both island edges.
 
-### 8. Add b-baryons and replace the shared shape / static fragmentation fractions
+### 8. b-baryons: DONE (measured 2026-07-17). Shared shape / static fragmentation: residual
 
-**Current code:** `production.py:67-71` sums `B+`, `B0`, and `Bs` with constant
-fractions from `hnl/production/constants.py:66-70`. Those sum to
-`0.36206 + 0.36206 + 0.08834 = 0.81246`. The remainder is
-`OMITTED_FRAG_B["b_baryons"] = 0.18755`
-(`hnl/production/constants.py:78-80`) — **18.75% of the b-hadron pool is dropped
-from BC4 production entirely.** `production.py:62` records this ("b-baryons
-omitted, as there") but the effect is not bounded.
+**Status:** the b-baryon pool is now included. `production.py` sums `B+`, `B0`,
+`Bs`, **and `Lambda_b`** (PDG 5122, the `FRAG_LAMBDA_B = 0.18755` fraction that
+lumps the whole b-baryon pool). Previously `production.py` summed only the three
+mesons (`0.36206 + 0.36206 + 0.08834 = 0.81246`), dropping 18.75% of the
+b-hadron pool. Because `b -> s S` is spectator-independent
+(`model.br_B_to_Xs_S` takes only `(m_parent, tau_parent)`), the baryon enters
+the rate on the same footing as a meson; only the recoil mass and lifetime
+differ. `br_B_to_Xs_S` now accepts `parent="Lambda_b"`, and `B_SPECIES[5122]`
+uses the **Lambda recoil** `m_Lambda = 1.1157 GeV` (the lightest strange baryon,
+the baryonic analogue of the kaon recoil for mesons), **not** `M_KPLUS` — with
+`m_Lambda` the Lambda_b closes at `5.62 - 1.12 = 4.50 GeV`; a kaon recoil would
+wrongly leak it to `5.13 GeV`.
 
-This omission is not incidental for BC4. `b -> s S` is a b-quark process:
-`model.py:371` states `g_phisb` is "spectator-independent, so only `m_B`, `tau`
-vary", and `br_B_to_Xs_S` (`model.py:366-379`) takes exactly `(m_parent,
-tau_parent)` as its species dependence. A `Lambda_b` entry is therefore
-straightforward to add — it needs `m_Lambda_b`, `tau_Lambda_b`, and the
-`FRAG_LAMBDA_B = 0.18755` fraction already defined at
-`hnl/production/constants.py:86`. Because `Gamma ~ (m_B^2 - m_S^2)^2 / m_B^3`
-and `tau_Lambda_b < tau_B`, the contribution will not be exactly `+18.8%`, but
-the current central yield is **low by roughly that order across the whole mass
-range**, i.e. the published limit is conservative in normalization.
+**Measured impact (controlled A/B/C scan, `n_pool=1e5`, `n_samples=50`; config A
+reproduces the published `u2_min` to 0.4%, so the shifts are trustworthy):**
 
-**This is the one omission in this document expected to move the central
-exclusion curve above statistical noise.** Restoring the full b-hadron pool
-raises the yield by `1/0.8125 = +23%` at most (`FRAG_LAMBDA_B` alone; less once
-the shorter `Lambda_b` lifetime is folded in). On the long-lifetime *lower*
-boundary the accepted signal scales as `N ~ sin^4(theta) x yield` (production
-`~ sin^2` times a decay probability `~ Gamma ~ sin^2`), so holding `N` at the
-`>= 3` threshold gives `sin^2(theta) ~ yield^(-1/2)`. A `+23%` yield therefore
-lowers the lower boundary by about `-10%` in `sin^2(theta)`, i.e. `~ -0.045`
-dex -- a *strengthening* of the reach, roughly uniform across the B-produced
-mass range. That is well above the finite-edge Monte-Carlo noise (`~0.007` dex
-on resolved edges in the HNL campaign) and comparable to the largest tractable
-production refinements in the other benchmarks, so it should be implemented
-rather than left as a stated conservatism. It does **not** affect the upper
-boundary or the deepest-reach tip, only the long-lifetime lower edge.
+| m_S (GeV) | Lambda_b shift in `u2_min` | dex | recoil error (m_Lambda vs m_K) |
+|---|---|---|---|
+| 0.975 (deep reach) | **-11.3%** | -0.052 | +0.3% |
+| 2.000 (mid) | **-9.9%** | -0.045 | -0.2% |
+| 3.500 (near closure) | **-13.9%** | -0.065 | -0.8% |
+
+So Lambda_b **strengthens** the lower edge by 10-14% (`-0.045` to `-0.065` dex)
+across the sensitive range, growing toward closure (the heavier parent has more
+phase space at high `m_S`: `(m_Lambda_b^2 - m_S^2)^2` beats `(m_B^2 - m_S^2)^2`).
+This is well above the `~0.007` dex finite-edge MC noise and is the one omission
+in this document that moves the central curve. It is a strengthening: the
+published limit was conservative in normalization by this amount.
+
+**On the recoil-mass choice:** using `m_Lambda` is physically correct, but the
+measurement shows the choice is numerically **immaterial** for this island
+(`<= 0.8%`, `<= 0.004` dex, even at 3.5 GeV). The region where `m_Lambda` and
+`m_K` diverge (the Lambda_b kinematic ceiling, 4.5-5.1 GeV) sits far above the
+island's 3.7 GeV closure, and at lower `m_S` the S spectrum is recoil-insensitive
+at a ~5.6 GeV parent. The earlier concern that a kaon recoil would make the
+`-0.045` dex optimistic is therefore not borne out numerically — but `m_Lambda`
+remains the correct implementation.
+
+**Remaining (item 8 residual):** Lambda_b lumps `Xi_b`/`Omega_b` (different mass
+and lifetime, a small fraction of b-baryons); a per-species baryon split and a
+`pT`-dependent fragmentation model are still open, and the shared-shape and
+static-fraction approximations below persist.
 
 Two further approximations sit on the same code path:
 
