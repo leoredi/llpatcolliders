@@ -348,6 +348,40 @@ bending, material survival, interaction losses, and the displaced HNL
 production vertex are therefore absent. This model can dominate the
 lowest-mass result.
 
+**Decision gate (measured 2026-07-17): transport dominates; do NOT ship a
+spectrum-only fix.** A Pythia 8.315 `SoftQCD:inelastic` run at 14 TeV
+(`sigma_inel = 78.9 mb`, `<n_K+-> = 8.28` per inelastic event) was compared
+against the Tsallis stub through the actual HNL geometry (accepted-yield proxy
+`mean(hit * path_len / beta_gamma)` at the long-lifetime edge, `Ue`/`Umu`,
+`m_N = 0.2-0.4 GeV`):
+
+- **Spectrum + normalization arm (both prompt-at-IP): the two errors nearly
+  cancel.** The stub's normalization is 2.18x too low
+  (`SIGMA_KAON_PB` should be ~6.54e11, not 3.0e11), but its Tsallis rapidity
+  (`sigma = 2.5`) is too central -- the true Pythia spectrum is more forward, so
+  its accepted fraction is only 0.50-0.57 of the stub's. Net yield ratio is
+  1.08-1.25, i.e. a lower-edge shift of only **-4% to -10%** (a slight
+  strengthening). The current published BC6/BC7 is therefore accidentally close
+  to the correct *prompt-IP* spectrum result.
+- **Transport arm dominates and flips the sign.** Charged kaons are long-lived
+  (`ctau = 3.7 m`) and the stub decays them promptly at IP5. Applying a realistic
+  survival fraction `S = 0.1-0.7` weakens the lower edge by **+7% to +204%** --
+  an order of magnitude larger than the spectrum arm and in the opposite
+  direction.
+
+**Consequence for scope.** Shipping the Pythia spectrum alone would move BC6/BC7
+slightly *stronger* while silently omitting the larger transport loss that moves
+it *weaker* -- a biased-optimistic curve. So the spectrum fix must NOT be shipped
+on its own. This is `Ue`/`Umu` low-mass only (`m_N <~ 0.5 GeV`, the K -> l N
+window); `Utau` has no kaon channel (`m_tau > m_K`). Two acceptable resolutions:
+(1) **paper-final** -- implement charged-kaon transport (magnetic bending +
+material survival + displaced HNL origin) together with the Pythia spectrum, or
+(2) **interim** -- keep the current parametric flux and label BC6/BC7 below
+~0.5 GeV explicitly provisional, transport-dominated. Neutral `K_S/K_L` remain a
+smaller separate omission (audit additive proxy `<= 19%`). The Pythia SoftQCD driver is committed at
+`production/decay_engine/kaon_softqcd.cc` (build with `pythia8-config`), for
+whichever path is chosen.
+
 **Required work:**
 
 - produce charged- and neutral-kaon spectra from measured data and/or tuned
