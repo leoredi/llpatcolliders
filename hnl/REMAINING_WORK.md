@@ -199,10 +199,20 @@ The diagnostic is separate from the central-only paper comparison.
 
 **Required work:**
 
+- correct the charm `mu_F = 0.5` scale prescription, which currently requests
+  the NNPDF4.0 PDF below its `QMin = 1.65 GeV` for all `pT < 2.94 GeV` and so
+  sets the charm scale envelope's `-76%` lower edge from an LHAPDF
+  extrapolation rather than from perturbative uncertainty. This is the largest
+  single term in the charm production budget and the highest-value item in this
+  section; it is expected to *narrow* the band. See the workspace item 4 below
+  for the measured ratios, the two-chain cost, and the accepted-yield check
+  that should precede it;
 - extend the `pT` and rapidity grids, or place a quantitative bound on the
   omitted contribution after GRENDEL acceptance (still outstanding);
 - add a tracked driver for the alpha_s companion production+analysis chains
-  (currently the `--alphas-lo/--alphas-hi` curves are run by hand).
+  (currently the `--alphas-lo/--alphas-hi` curves are run by hand). Measured
+  effect is negligible (0.44%/1.49% half-spread); do this for PDF4LHC
+  prescription completeness, not for physics -- see workspace item 5 below.
 
 Use the same three-column rectangular table format as the committed grids:
 
@@ -731,10 +741,62 @@ and part of item 6. Status as of 2026-06-23:
    biased the band low). Envelope grids are pointwise constructions marked
    `envelope_band` and are refused by `production/fonll/fonll_parser.py`;
    only coherent individual grids may be sampled.
-4. **Known artifact.** The charm `(0.5, 0.5)` scale point drives `mu_F`
-   below the NNPDF4.0 grid minimum at low pT (suppression x14-20 for
-   pT <~ 2 GeV); see `fonll-local/PUBLICATION_BASELINE.md` for the
-   prescription caveat before quoting the low-mass charm scale band.
+4. **Known artifact (restated 2026-07-17; the earlier text misattributed it).**
+   Both charm `mu_F = 0.5` scale points request the proton PDF below the
+   NNPDF4.0 grid minimum at low `pT`. The resulting suppression is an LHAPDF
+   extrapolation, not a scale uncertainty. `NNPDF40_nlo_as_01180` has
+   `QMin = 1.65 GeV`; the charm central scale is `mu = sqrt(m_c^2 + pT^2)` with
+   `m_c = 1.5 GeV`, so `mu_F = 0.5 mu` starts at 0.75 GeV at `pT = 0` and stays
+   below `QMin` for all `pT < 2.94 GeV`. Bottom is structurally immune:
+   `mu_F = 0.5 sqrt(m_b^2 + pT^2) >= 2.375 GeV` always exceeds `QMin`, which is
+   why its scale spread is well behaved.
+
+   An earlier revision of this item named only the `(0.5, 0.5)` point and
+   quoted "suppression x14-20 for pT <~ 2 GeV". That figure is *accurate* for
+   the point it names (at y=0 it is x14 at pT=0.51 and x20 at pT=1.01); the
+   defect is that it is **incomplete**. Two points are affected, and the
+   omitted one -- `(1, 0.5)` -- is roughly twice as severe and is the one that
+   actually sets the band edge. Ratios to central, integrated over rapidity:
+
+   | pT (GeV) | `muR1_muF0p5` | `muR0p5_muF0p5` |
+   |---|---|---|
+   | 0.51 | 0.035 | 0.076 |
+   | 1.01 | 0.023 | 0.051 |
+   | 2.02 | 0.093 | 0.220 |
+   | 4.04 | 0.440 | 0.819 |
+
+   The suppression switches off at the `QMin` crossing, as an extrapolation
+   artifact should. This matters because `(1, 0.5)` sets the *lower edge* of
+   the charm scale envelope: its trapezoid-integrated ratio is 0.236, i.e.
+   `-76%`, the single largest term in the charm production budget (PDF 1sigma
+   is 14.8%; alpha_s 0.44%, item 5). The published charm scale band's lower
+   edge is therefore likely too wide, and a correct prescription should
+   *narrow* the band rather than widen it. See
+   `fonll-local/PUBLICATION_BASELINE.md` for the prescription caveat before
+   quoting the low-mass charm scale band.
+
+   **This is a band-edge problem, not a central-curve problem.** The central
+   charm grid also dips below `QMin` -- `mu_F = sqrt(m_c^2 + pT^2) < 1.65 GeV`
+   for `pT < 0.687 GeV` -- but at the 0.505 GeV node spacing that is a single
+   populated node carrying 2.8% of the charm trapezoid integral, below the 4.1%
+   median production-MC noise measured in `audits/curve_impact_20260610/`. The
+   published central exclusion curve is therefore not materially affected; only
+   the scale band's lower edge is.
+
+   **Required work:** regenerate the two charm `mu_F = 0.5` grids under a
+   defensible prescription (freeze `mu_F` at `QMin`, or restrict the variation
+   range and document the restriction), then rerun those two coherent chains --
+   the same two-chain cost as the alpha_s companions in item 5, for a far
+   larger effect. Before committing to it, compute the GRENDEL-accepted charm
+   yield below `pT ~ 3 GeV`: the artifact is confined to that region, so the
+   accepted fraction determines whether the contour moves or only the grid
+   does. 60% of the charm trapezoid integral lies below `pT = 3 GeV`, but that
+   is a production-level figure with no acceptance folded in, and it is not a
+   substitute for the accepted-yield calculation.
+
+   This item is charm-only, and so applies to the HNL benchmark alone: the BC4
+   scalar and BC10 fermiophilic-ALP benchmarks sample bottom exclusively and
+   are immune by construction.
 5. **Alpha_s grids and combiner done; propagated companion runs outstanding.** The alpha_s companion
    grids are generated -- `as_01170`/`as_01190` central grids for both quarks --
    and `combine_alphas.py` writes the PDF4LHC alpha_s envelope to
@@ -748,6 +810,27 @@ and part of item 6. Status as of 2026-06-23:
    (currently run by hand via the `run_variation_band` pattern); extended
    `pT`/rapidity coverage to bound the GRENDEL-accepted tail (item 6); and
    per-species fragmentation outputs/variations (item 8).
+
+   **Expected effect (measured 2026-07-17): negligible.** The PDF4LHC alpha_s
+   half-spread on the trapezoid-integrated grids is 0.44% (charm) and 1.49%
+   (bottom). Folded in quadrature with the terms it joins -- bottom scale
+   `+-42%`, charm scale `-76%/+112%`, PDF 1sigma 14.8% (charm) / 3.9% (bottom)
+   -- it moves the bottom band by `sqrt(42^2 + 1.49^2) - 42 = 0.03` percentage
+   points, below the campaign's own MC noise and invisible on any plot. Run it
+   for PDF4LHC prescription completeness and provenance, not for physics; it
+   should not be scheduled ahead of the charm `mu_F` artifact in item 4, which
+   costs the same two chains and is ~100x larger.
+
+   **Mechanical blocker (why it is still "by hand").** Two things, both small.
+   `run_variation_band.py:67` hardcodes
+   `GRID_STEM = "..._as_01180_..."`, and `_env_for` (line 178) rebuilds each
+   grid path from that stem rather than from the manifest's `path` field -- the
+   alpha_s companions differ *in the stem*, not the variation tag, so they are
+   unreachable. And `variation_manifest.json` indexes only `as_01180` grids
+   (2 central + 12 scale + 200 pdf + 4 mass = 218), so `discover_variations`
+   cannot see the companions or their checksums. Fixing means parametrizing the
+   stem per entry and synthesizing two coherent variation dicts; alpha_s is
+   coherent across both quarks, so it is structurally a scale point.
 
 A full replica campaign takes days and produces large logs unless run with
 `--compress-logs`; it is resumable via `--reuse-existing-grids`.
