@@ -382,6 +382,39 @@ smaller separate omission (audit additive proxy `<= 19%`). The Pythia SoftQCD dr
 `production/decay_engine/kaon_softqcd.cc` (build with `pythia8-config`), for
 whichever path is chosen.
 
+**IMPLEMENTED 2026-07-17 (paper-final path chosen): Pythia spectrum + transport.**
+`generate_kaon_csvs.py` now defaults to:
+- **Pythia SoftQCD spectrum + normalization.** The committed
+  `production/data/kaon_softqcd_spectrum.npz` (a 200x160 `(pT, y)` histogram from
+  `kaon_softqcd.cc`) replaces the Tsallis stub, and `SIGMA_KAON_PB = 6.535e11`
+  (`sigma_inel = 78.93 mb` x `<n_K+-> = 8.28`) replaces the `3.0e11` stub. The
+  legacy path stays behind `--spectrum tsallis`.
+- **Charged-kaon transport as a survival weight.** Each kaon carries
+  `w = 1 - exp(-d_esc / (beta*gamma * ctau_K))`, the probability it decays before
+  being absorbed in dense material. This is exact *because the displaced decay
+  origin is immaterial*: measured geometric-lifetime ratio is `~1.0` (the kaon
+  decays along its path toward the detector and the forward-boosted HNL continues
+  from a closer point), and a `displaced-origin+reject` control agrees with the
+  `weight-from-IP` estimator -- so no per-origin acceptance change is needed.
+  `KAON_D_ESC = 1.5 m` (varied `[1, 3] m`) is a proxy for the CMS material budget
+  (calorimeter front ~1.3 m). `--no-transport` restores the prompt-at-IP behaviour.
+  `run_all.py` uses the new model by default.
+
+**Measured combined impact on BC6/BC7 (Ue/Umu, m_N < 0.5 GeV):** the transport
+survival suppresses the accepted kaon yield to `~0.3-0.55` of the stub
+(`d_esc = 1.5-2 m`), and the Pythia spectrum modestly raises it (net `x1.1-1.25`);
+the product **weakens the low-mass lower edge by roughly +30% to +80%**. The
+current *published* BC6/BC7 low-mass curve is therefore too strong by this amount
+and must be rerun. `Utau` is unaffected (`m_tau > m_K`).
+
+**Remaining:** (1) rerun and republish BC6/BC7 low-mass with the new default
+model (a production+sensitivity pass, analogous to the BC4 `Lambda_b` republish);
+(2) pin `d_esc` against a real CMS material map -- it is the dominant kaon-sector
+uncertainty and is currently a parametrized proxy varied over `[1, 3] m`;
+(3) neutral `K_S/K_L -> pi l N` remain omitted (audit additive proxy `<= 19%`);
+(4) magnetic bending of the kaon trajectory is not modelled (second-order given
+the survival-weight equivalence, but a soft-kaon check is worthwhile).
+
 **Required work:**
 
 - produce charged- and neutral-kaon spectra from measured data and/or tuned
@@ -550,15 +583,59 @@ gone. Templates are generated on a fixed mass grid and matched per mass label
   normalizations (item 13 form factors, item 9 Bc). Also open: pin the FairShip
   revision + manifest, the GRENDEL visible definition, finite-template statistics.
 
-**Known result feature (document for referees, 2026-06-25):** the `Umu` limit
-degrades sharply below `m_N ~= 0.25 GeV` (e.g. `u2_min` at 0.2 GeV is ~10x
-weaker for `Umu` than `Ue`). This is **correct physics, not a bug**: the
-dominant visible 2-charged-track decay `N -> mu+- pi-+` closes below
-`m_mu + m_pi = 0.245 GeV`, so the `Umu` visible fraction collapses (only the
-softer 3-body `N -> mu e nu` survives), whereas `N -> e+- pi-+` keeps the `Ue`
-channel open down to ~0.14 GeV. Expect a visible step/weakening in the low-mass
-`Umu` (and analogously the `Utau`) contour at the corresponding meson threshold;
-state it explicitly so it is not read as an artifact.
+**Known result feature (document for referees, 2026-06-25; literature
+cross-check 2026-07-17):** the `Umu` limit degrades sharply below
+`m_N ~= 0.25 GeV` (e.g. `u2_min` at 0.2 GeV is ~10x weaker for `Umu` than
+`Ue`). This is **correct physics, not a bug**: GRENDEL acceptance requires
+`>= 2` charged stable daughters (`analysis/decay_reco_acceptance.py`); the
+dominant visible 2-track mode `N -> mu+- pi-+` closes below
+`m_mu + m_pi = 0.245 GeV`, so the `Umu` visible fraction collapses. Soft
+3-body (`N -> mu e nu`, NC `N -> nu e e`) remain at the few-percent level;
+`N -> nu pi0 (-> gamma gamma)` dominates below threshold but has **zero**
+charged tracks and is invisible to GRENDEL. `N -> e+- pi-+` keeps `Ue` open
+down to ~0.14 GeV. Expect a visible step in the low-mass `Umu` (and
+analogously `Utau`) contour at the corresponding meson threshold; state it
+explicitly so it is not read as an artifact.
+
+**Template measurement (FairShip caches, 2026-07-17):** rest-frame fraction
+of templates with `>= 2` charged stable daughters:
+
+| m_N (GeV) | Ue | Umu |
+|---|---|---|
+| 0.200 | ~61% | ~4% |
+| 0.245 | ~63% | ~5% |
+| 0.260 | ~63% | ~30% |
+
+`Umu` jumps ~6x when `N -> mu pi` opens; published `u2_min` moves
+`1.16e-7 -> 2.17e-8` over the same step. Production is kaon-dominated on
+both flavors in this window (~100% `Kmeson` at 0.305 GeV) -- the cliff is
+**decay visibility**, not production.
+
+**Why HNLimits / community U_mu plots do not show this cliff:**
+
+1. **Existing low-mass exclusions are mostly peak searches, not displaced
+   LLP.** E949 (~0.18-0.30 GeV) and NA62 (~0.20-0.38 GeV) constrain
+   `K+ -> mu+ N` via missing mass and assume the HNL escapes undecayed.
+   They never require `N -> mu pi`, so they cannot exhibit a 0.245 GeV
+   visibility cliff. Those fill the Hostert grey band below ~0.4 GeV
+   ([mhostert/Heavy-Neutrino-Limits](https://github.com/mhostert/Heavy-Neutrino-Limits)).
+
+2. **SHiP's published sub-kaon reach omits kaons.** arXiv:1811.00930:
+   for `M_N <~ 500 MeV` kaons dominate production, but most stop in the
+   target/hadron stopper, so SHiP includes **only charm and beauty**; the
+   Fig. 5 dashed extension below the kaon mass is **D-only**. SHiP also
+   requires `>= 2` charged tracks and would cliff if it claimed
+   kaon-sourced `Umu` there -- it simply does not claim that shelf.
+
+3. **GRENDEL does include the kaon channel** (parametric prompt-IP stub;
+   see item 10). That populates the kaon window and therefore *exposes*
+   the `Umu` 2-track cliff. Comparing GRENDEL's displaced contour to the
+   Hostert composite below 0.25 GeV is apples-to-oranges.
+
+Separate from this cliff: absolute strength of the whole BC6/BC7 shelf
+below ~0.5 GeV is still limited by **kaon transport** (item 10), which is
+a modeling uncertainty, not the reason community plots lack the 0.245 GeV
+step.
 
 **Required work:**
 

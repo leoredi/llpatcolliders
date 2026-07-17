@@ -51,9 +51,27 @@ K_FACTOR_EW_BY_PROCESS = {
     "DY": K_FACTOR_EW,  # p p -> gamma*/Z -> tau tau (Drell-Yan tau pool)
 }
 
-# Approximate K+ + K- flux: no current data/generator validation is attached.
-# Replace with a measured or Pythia-derived (pT, y) spectrum when available.
-SIGMA_KAON_PB = 3.0e11  # ~80 mb × ~4 K± per inelastic event (approximate)
+# Charged-kaon flux normalization sigma_inel * <n_K+->. The DEFAULT is now the
+# Pythia 8.315 SoftQCD:inelastic value at 14 TeV (sigma_inel = 78.93 mb,
+# <n_K+-> = 8.28 per inelastic event), measured with
+# production/decay_engine/kaon_softqcd.cc and stored in
+# production/data/kaon_softqcd_spectrum.npz. The old 3.0e11 stub assumed ~4 K+-
+# per inelastic event and is retained for the legacy `--spectrum tsallis` path.
+SIGMA_KAON_PB = 6.535e11        # Pythia SoftQCD (supersedes the 3.0e11 stub)
+SIGMA_KAON_PB_TSALLIS = 3.0e11  # legacy stub normalization (~80 mb x ~4 K+-)
+
+# Charged-kaon transport: a charged kaon (ctau = 3.712 m) must decay before it is
+# absorbed in dense material to produce an escaping HNL. The survival probability
+# is P(decay within d_esc) = 1 - exp(-d_esc / (beta*gamma * ctau)), applied as a
+# per-kaon weight (the displaced-origin geometry is immaterial, measured ~1x, so
+# no per-origin acceptance change is needed). KAON_D_ESC is the escape path length
+# before dense material -- a proxy for the CMS material budget (calorimeter front
+# ~1.3 m; the tracker is largely transparent to a decaying kaon). The default and
+# the [1, 3] m variation are the dominant kaon-sector uncertainty pending a real
+# material map. Set KAON_D_ESC = None (or --no-transport) for the legacy
+# prompt-at-IP behaviour.
+KAON_D_ESC = 1.5        # m, central escape distance before dense material
+KAON_D_ESC_RANGE = (1.0, 3.0)   # m, uncertainty variation
 
 KAON_TSALLIS_T = 0.17   # GeV
 KAON_TSALLIS_N = 7.0

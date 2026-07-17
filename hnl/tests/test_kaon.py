@@ -20,6 +20,35 @@ def test_kaon_pool_is_on_shell(rng):
     assert 0.3 < pool['pt'].mean() < 1.0
 
 
+def test_pythia_and_tsallis_spectra_both_available(rng):
+    # The default is the committed Pythia SoftQCD spectrum; tsallis is the legacy.
+    py = K.sample_kaon_4vectors(20000, np.random.default_rng(1), spectrum="pythia")
+    ts = K.sample_kaon_4vectors(20000, np.random.default_rng(1), spectrum="tsallis")
+    for pool in (py, ts):
+        m2 = pool['E']**2 - pool['px']**2 - pool['py']**2 - pool['pz']**2
+        assert np.allclose(np.sqrt(np.clip(m2, 0, None)), M_KAON, atol=1e-6)
+    # Pythia is more forward than the Gaussian-rapidity Tsallis stub.
+    assert np.abs(py['y']).mean() > np.abs(ts['y']).mean()
+
+
+def test_transport_survival_weight_is_a_suppression(rng):
+    pool = K.sample_kaon_4vectors(20000, rng, spectrum="pythia")
+    prompt = K.kaon_survival_weight(pool, None)
+    assert np.all(prompt == 1.0)                       # no transport => no loss
+    for d_esc in (1.0, 1.5, 3.0):
+        w = K.kaon_survival_weight(pool, d_esc)
+        assert np.all((w > 0.0) & (w < 1.0))           # strict suppression
+    # larger escape distance => more kaons survive
+    assert (K.kaon_survival_weight(pool, 3.0).mean()
+            > K.kaon_survival_weight(pool, 1.0).mean())
+    # a soft (short decay length) kaon survives more than a hard one
+    soft = {k: np.array([v]) for k, v in
+            dict(E=np.hypot(0.2, M_KAON), px=0.2, py=0.0, pz=0.0).items()}
+    hard = {k: np.array([v]) for k, v in
+            dict(E=50.0, px=0.0, py=0.0, pz=50.0).items()}
+    assert K.kaon_survival_weight(soft, 1.5)[0] > K.kaon_survival_weight(hard, 1.5)[0]
+
+
 def test_kaon_channel_open_for_electron_and_closed_above_threshold(tmp_path, rng, monkeypatch):
     monkeypatch.setattr(K, "OUTPUT_BASE", tmp_path / "llp_4vectors")
     pool = K.sample_kaon_4vectors(3000, rng)
