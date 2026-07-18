@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """Charged-kaon -> HNL production CSVs with a Pythia SoftQCD spectrum + transport.
 
-Default model (paper-final):
+Default model (Pythia spectrum + transport survival weight):
   * spectrum   -- Pythia 8.315 SoftQCD:inelastic (pT, y) histogram, committed in
                   ``production/data/kaon_softqcd_spectrum.npz`` (built by
-                  ``kaon_softqcd.cc``); normalization sigma_inel * <n_K+->.
+                  ``kaon_softqcd.cc``, rebuilt from tracked sources via
+                  ``make_kaon_spectrum.py``); normalization sigma_inel * <n_K+->.
   * transport  -- a charged kaon (ctau = 3.712 m) is absorbed in dense material
                   unless it decays first; each kaon carries a survival weight
                   P(decay within d_esc) = 1 - exp(-d_esc / (beta*gamma * ctau)).
                   The displaced decay origin is immaterial (measured ~1x), so the
                   HNL is still cast from IP and no per-origin acceptance change is
-                  needed. ``d_esc`` (KAON_D_ESC = 1.5 m, varied [1, 3] m) is the
-                  dominant kaon-sector uncertainty pending a CMS material map.
+                  needed. ``d_esc`` (KAON_D_ESC = 1.5 m; the KAON_D_ESC_RANGE
+                  [1, 3] m is declared for the pending BC6/BC7 uncertainty pass)
+                  is the dominant kaon-sector uncertainty pending a CMS material map.
 
 Legacy behaviour (``--spectrum tsallis`` and/or ``--no-transport``) reproduces
 the old parametric prompt-at-IP stub for A/B comparison.

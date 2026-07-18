@@ -382,11 +382,17 @@ smaller separate omission (audit additive proxy `<= 19%`). The Pythia SoftQCD dr
 `production/decay_engine/kaon_softqcd.cc` (build with `pythia8-config`), for
 whichever path is chosen.
 
-**IMPLEMENTED 2026-07-17 (paper-final path chosen): Pythia spectrum + transport.**
-`generate_kaon_csvs.py` now defaults to:
+**IMPLEMENTED 2026-07-17 -- Pythia spectrum + transport survival weight.** This is
+the paper-final *approach* of option (1), with two deliberate, physics-justified
+simplifications relative to that option's full wording: the material survival is a
+fixed-`d_esc` *proxy* (not a propagated material map) and the kaon's magnetic
+bending is not modelled (both second-order given the survival-weight equivalence;
+see Remaining). `generate_kaon_csvs.py` now defaults to:
 - **Pythia SoftQCD spectrum + normalization.** The committed
   `production/data/kaon_softqcd_spectrum.npz` (a 200x160 `(pT, y)` histogram from
-  `kaon_softqcd.cc`) replaces the Tsallis stub, and `SIGMA_KAON_PB = 6.535e11`
+  `kaon_softqcd.cc`, reproducible from tracked sources via
+  `production/decay_engine/make_kaon_spectrum.py` at the pinned seed 42 with the
+  vendored Pythia 8.315) replaces the Tsallis stub, and `SIGMA_KAON_PB = 6.535e11`
   (`sigma_inel = 78.93 mb` x `<n_K+-> = 8.28`) replaces the `3.0e11` stub. The
   legacy path stays behind `--spectrum tsallis`.
 - **Charged-kaon transport as a survival weight.** Each kaon carries
@@ -396,8 +402,10 @@ whichever path is chosen.
   decays along its path toward the detector and the forward-boosted HNL continues
   from a closer point), and a `displaced-origin+reject` control agrees with the
   `weight-from-IP` estimator -- so no per-origin acceptance change is needed.
-  `KAON_D_ESC = 1.5 m` (varied `[1, 3] m`) is a proxy for the CMS material budget
-  (calorimeter front ~1.3 m). `--no-transport` restores the prompt-at-IP behaviour.
+  `KAON_D_ESC = 1.5 m` is a proxy for the CMS material budget (calorimeter front
+  ~1.3 m); `KAON_D_ESC_RANGE = [1, 3] m` is declared for the pending BC6/BC7
+  uncertainty pass but is not yet propagated into a band. `--no-transport` restores
+  the prompt-at-IP behaviour.
   `run_all.py` uses the new model by default.
 
 **Measured combined impact on BC6/BC7 (Ue/Umu, m_N < 0.5 GeV):** the transport
@@ -410,7 +418,8 @@ and must be rerun. `Utau` is unaffected (`m_tau > m_K`).
 **Remaining:** (1) rerun and republish BC6/BC7 low-mass with the new default
 model (a production+sensitivity pass, analogous to the BC4 `Lambda_b` republish);
 (2) pin `d_esc` against a real CMS material map -- it is the dominant kaon-sector
-uncertainty and is currently a parametrized proxy varied over `[1, 3] m`;
+uncertainty, currently a parametrized proxy with `KAON_D_ESC_RANGE = [1, 3] m`
+reserved for (but not yet propagated into) that rerun's band;
 (3) neutral `K_S/K_L -> pi l N` remain omitted (audit additive proxy `<= 19%`);
 (4) magnetic bending of the kaon trajectory is not modelled (second-order given
 the survival-weight equivalence, but a soft-kaon check is worthwhile).
