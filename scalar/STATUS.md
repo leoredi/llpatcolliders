@@ -21,15 +21,19 @@ adjacent `MANIFEST.json` and described in `data/published/README.md`.
 - In the electron-only `0.14--0.20 GeV` interval, the upper edge lies above
   the configured coupling scan and is stored as open, not artificially closed.
 - Central production uses 400,000 importance-sampled FONLL parents for each of
-  `B+`, `B0`, and `Bs` (1.2 million scalar events per mass), with a 5 GeV
-  high-pT tilt, a 50% nominal mixture, and 100 decay/reconstruction samples per
-  scalar entering the detector.
+  `B+`, `B0`, `Bs`, and `Lambda_b` (1.6 million scalar events per mass), with a
+  5 GeV high-pT tilt, a 50% nominal mixture, and 100 decay/reconstruction samples
+  per scalar entering the detector. The mesons recoil against a kaon; `Lambda_b`
+  recoils against a physical `Lambda`.
 - The four-hit timing calculation uses each daughter track's true
   `beta = p/E`.
 
-Independent six-million-event controls at 3.75, 3.80, and 3.85 GeV reproduce
-the high-mass closure within 0.006 GeV. The endpoint is therefore not a
-finite-pool artifact.
+Independent six-million-event **meson-only** controls at 3.75, 3.80, and 3.85 GeV
+reproduce the meson-only closure (3.792 GeV) within 0.006 GeV, so that endpoint is
+not a finite-pool artifact. The published `Lambda_b` closure (3.825 GeV) instead
+rests on the at-least-2049 effective events at every sensitive peak; a matching
+`Lambda_b` six-million-event control is a small pending refresh (see
+`MANIFEST.json`).
 
 ## Physics definition
 
@@ -39,10 +43,12 @@ criterion is `N_signal >= 3` at `3000 fb^-1` under the paper's explicit
 zero-background working assumption.
 
 Production is normalized inclusively with `b -> X_s S` (Winkler
-arXiv:1809.01876, Eq. A7), summed over `B+`, `B0`, and `Bs`. The unobserved
-strange system is represented kinematically by two-body `B -> K S` recoil; this
-proxy does not change the inclusive normalization. Direct `gg -> S` production
-belongs outside the minimal B-meson BC4 definition used here.
+arXiv:1809.01876, Eq. A7), summed over the `B+`, `B0`, `Bs`, and `Lambda_b`
+b-hadron pool (the rate is spectator-independent). The unobserved strange system
+is represented kinematically by two-body recoil -- a kaon for the mesons and a
+physical `Lambda` for `Lambda_b`; this proxy does not change the inclusive
+normalization. Direct `gg -> S` production belongs outside the minimal b-hadron
+BC4 definition used here.
 
 The central decay model uses the digitized Winkler dispersive hadronic widths
 below 2 GeV and the perturbative spectator treatment above 2 GeV, together

@@ -121,10 +121,14 @@ def test_uncertainty_bundle_is_complete_and_hash_linked():
     assert numerical["topology_vs_canonical"]["difference_masses_GeV"] == []
     assert numerical["u2_min"]["masses_not_subdominant_GeV"] == []
     # Lower edge (the headline reach) is fully physics-dominated. On the noisier
-    # short-lifetime upper edge, the 100k-parent Lambda_b bundle leaves the
-    # numerical control not-subdominant at two masses (2.0, 2.3 GeV) -- a known,
-    # documented limitation of the disk-constrained variation statistics; it does
-    # not affect the lower edge or the deepest reach.
+    # short-lifetime upper edge, the 100k-parent-per-species Lambda_b bundle
+    # leaves the numerical control not-subdominant at two masses (2.0, 2.3 GeV).
+    # This is the accepted statistics level of the published bundle (not a runtime
+    # or disk limit): there the same-physics repeat spread is comparable to the
+    # physical variation, so those two upper-edge points are diagnostic-only and
+    # must not be read as converged. The lower edge and deepest reach are
+    # unaffected; a higher-statistics bundle would resolve them if the upper edge
+    # ever entered the headline.
     assert numerical["u2_max"]["masses_not_subdominant_GeV"] == [2.0, 2.3]
     physical = manifest["physical_variation_topology_summary"]
     assert physical["topology_vs_campaign"]["difference_masses_GeV"] == [3.8]

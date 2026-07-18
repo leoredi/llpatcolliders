@@ -1,7 +1,8 @@
 {
  "artifact": "GRENDEL BC4 dark-scalar sensitivity (canonical published curve)",
  "producer_repo": "llpatcolliders (branch bc4-scalar)",
- "producer_git_sha": "8c6fa509397f102e1d4cd713896ea18fe6d1f896",
+ "producer_git_sha": "8c9b830ae3e788ffda674775743cc8061d18f4e7",
+ "producer_git_note": "Publish commit on llpatcolliders bc4-scalar: the Lambda_b production and uncertainty-band event-count-fix code together with the promoted central and 109-variation bundle CSVs. Supersedes the pre-Lambda_b producer sha 8c6fa509; grendel_scalar mirrors this tree.",
  "source_run": "Lambda_b republication 2026-07-18: central island from an 86-point, 400000-parent high-pT importance-sampled FONLL pool per b-hadron species (B+, B0, Bs, Lambda_b; tilt 5 GeV, 50% nominal mixture, seed 42, 100 decay/reconstruction samples); the uncertainty bundle is a matching 109-variation + 2 numerical-control campaign at 100000 parents per species.",
  "generated_from": "scalar.run_sensitivity (central) + scalar.uncertainty_band run/collect (bundle), both with the Lambda_b b-baryon pool and the physical Lambda recoil",
  "csv_sha256": "45aec445068cfe77ec2d75bf20e251255559545561cde3f77f1c2ba74c35e84c",
@@ -65,7 +66,7 @@
   },
   "independent_control_closure_GeV": 3.7923545732986583,
   "independent_control_csv_sha256": "af1f2ab5cdf58662f8eabf384eec38243e5929ec86c9c2c5389d3bb58000b511",
-  "interpretation": "The six-million-event controls retain sensitivity at 3.75 GeV and independently reject 3.80 and 3.85 GeV. Their interpolated closure agrees with the published central closure within 0.006 GeV, so the high-mass endpoint is not a finite-pool artifact.",
+  "interpretation": "These six-million-event controls are the MESON-ONLY baseline: they retain sensitivity at 3.75 GeV, independently reject 3.80 and 3.85 GeV, and their interpolated closure (3.792 GeV) matches the meson-only central closure (3.798 GeV) within 0.006 GeV -- so the meson-only high-mass endpoint is not a finite-pool artifact. The published Lambda_b central closure is 3.825 GeV; its finite-pool robustness rests on the >= 2049 effective events at every sensitive peak (not on these meson-only controls), and a matching Lambda_b 6M control is a pending refresh (see lambda_b_note).",
   "lambda_b_note": "The six-million-event controls below are the MESON-ONLY baseline; the Lambda_b central retains sensitivity at 3.80 GeV. A Lambda_b 6M control is a pending refresh (does not affect the published central or bundle)."
  },
  "closure_note": "With the Lambda_b pool the inclusive b -> X_s S yield retains N_signal >= 3 at 3.80 GeV (peak_N = 3.44); log-yield interpolation between the 3.80 and 3.90 GeV central grid rows places the closure at 3.825 GeV (up from 3.7975 GeV meson-only). The deepest point remains at the f0(980) enhancement.",
