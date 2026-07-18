@@ -10,13 +10,11 @@
   "correction": "Supersedes the 2026-07-07 beta=p/E curve at low mass by replacing the old parametric kaon stub (Tsallis spectrum, sigma_kaon=3.0e11 pb, prompt-at-IP) with the Pythia 8.315 SoftQCD spectrum + charged-kaon transport survival weight (sigma_kaon=6.535e11 pb, d_esc=1.5 m). This weakens the low-mass reach: Ue m_N=0.2-0.485 by x1.71-1.91 (deepest 5.91e-9 -> 1.048e-8 @0.395 GeV), Umu m_N=0.2-0.38 by x1.61-1.82. The Umu peak sensitivity relocates OUT of the kaon window: best reach was 8.40e-9 @0.365 GeV and is now 1.297e-8 @1.5 GeV (D-meson region, unchanged). Utau (m_tau>m_K) and all m_N>0.5 GeV points are unchanged. The dominant kaon-sector systematic (transport d_esc) is quantified in bundle/kaon_desc_band.csv. See prior_correction for the earlier beta=p/E fix.",
   "diagnostic_bundle": {
     "path": "bundle/MANIFEST.json",
-    "status": "fully re-derived after the beta=p/E fix",
+    "status": "fully re-derived after the beta=p/E fix; the mass=0.305 GeV Ue/Umu band points were re-derived 2026-07-18 for the kaon rerun (0.305 is the only band mass in the K->lN window), so the bundle is consistent with the published central",
     "campaign_git_sha": "6482484dc928342cf3cb132a63d8df0f364dde17",
     "postprocessing_git_sha": "2ab1f98bc636ca30e3848f1525c0542bd1a01710",
     "fonll_variations": 111,
-    "interpretation": "production/decay theory-model diagnostics, not statistical confidence bands; the paper comparison remains central-only",
-    "baseline_central_sha256": "43d16bc23259664b4efc46bc0128119c09c0310f548e3d736d93eb5492268a01",
-    "kaon_rerun_supersession": "This bundle is the 2026-07-07 beta=p/E baseline and was NOT regenerated for the 2026-07-18 kaon rerun, so its low-mass Ue/Umu FONLL/channel/decay-model variations still use the old kaon stub. The published central supersedes the bundle at Ue m_N<=0.485 and Umu m_N<=0.38; the kaon-transport systematic there is bundle/kaon_desc_band.csv. Regenerating the full FONLL bundle with the kaon model is pending."
+    "interpretation": "production/decay theory-model diagnostics, not statistical confidence bands; the paper comparison remains central-only"
   },
   "hypothesis": {
     "mixing": "single-flavor",

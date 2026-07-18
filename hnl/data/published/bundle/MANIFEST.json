@@ -4,9 +4,10 @@
   "date_published": "2026-07-16",
   "central_curve": {
     "file": "../grendel_hnl_sensitivity.csv",
-    "sha256": "43d16bc23259664b4efc46bc0128119c09c0310f548e3d736d93eb5492268a01",
+    "sha256": "b051ac77b1c2dd677c809e6acd6f3a34c8db374fb0d474a775d1678777a9b407",
     "analysis_fix_revision": "79c7337",
-    "canonical_publish_revision": "fad3a8b"
+    "canonical_publish_revision": "fad3a8b",
+    "kaon_rerun_revision": "80668e6"
   },
   "campaign": {
     "code_revision": "6482484dc928342cf3cb132a63d8df0f364dde17",
@@ -225,8 +226,8 @@
   },
   "files": {
     "hnl_band_fonll.csv": {
-      "sha256": "e3d78184ece1ba201c7debd617c512fa29a870b6a62fab8d3d78769db45c9fc4",
-      "bytes": 18549,
+      "sha256": "853321885463a43e316e0e642fa0d30071f9d8b57587bc709bc5eb075dfa5b1b",
+      "bytes": 17733,
       "rows": 54,
       "columns": [
         "flavor",
@@ -261,8 +262,8 @@
       ]
     },
     "hnl_band_fonll_raw.csv": {
-      "sha256": "7a3d158ca735a2d9fbe2ea5d537cb64f0bc7a0a112a4c0009c2336e47f4a3417",
-      "bytes": 1261992,
+      "sha256": "4bbc22014257a1c2dd87d157982d87edd6ae9b9a262d3b0ff3acd44697657725",
+      "bytes": 1262566,
       "rows": 5994,
       "columns": [
         "variation_index",
@@ -291,8 +292,8 @@
       ]
     },
     "decay_model_band.csv": {
-      "sha256": "1cd4b10f948559c6796633c07dfb54cdf53bb7abd0774b3c739981a865beacff",
-      "bytes": 14367,
+      "sha256": "3c3f21a64663e75a68802c6a19990c3c46cf1147c982acad7652dfb6f9485903",
+      "bytes": 14152,
       "rows": 59,
       "columns": [
         "u2_min",
@@ -341,8 +342,8 @@
       ]
     },
     "channel_breakdown_u2min.csv": {
-      "sha256": "c5cf58575147c4710c56252481674abc6e701c0d20e51b656de45e695af897e0",
-      "bytes": 66101,
+      "sha256": "6b904a78e0661cb53f2eb4f55c46413889149fbc56de9d9a5c382dddee38fdf0",
+      "bytes": 65175,
       "rows": 952,
       "columns": [
         "flavor",
@@ -404,6 +405,20 @@
     "NUMERICAL_CONTROLS.json": {
       "sha256": "12c7cd1f36efee54bbb95e4de3812e56cc1aab9e4348368ec2773d26395f9b7c",
       "bytes": 4945
+    },
+    "kaon_desc_band.csv": {
+      "sha256": "d780b0935302658933b255541f34e453c0a03049f08c2b199afa18387c199098",
+      "bytes": 2588,
+      "rows": 33,
+      "columns": [
+        "flavor",
+        "mass_GeV",
+        "u2_min_desc1p0",
+        "u2_min_desc1p5",
+        "u2_min_desc3p0"
+      ],
+      "note": "charged-kaon transport d_esc = 1/1.5/3 m diagnostic band on the low-mass Ue/Umu edge (nominal 1.5 m; same seed -> pure systematic)"
     }
-  }
+  },
+  "kaon_0p305_update": "2026-07-18: the mass=0.305 GeV Ue/Umu points of hnl_band_fonll(.csv/_raw), channel_breakdown_u2min, and decay_model_band were recomputed with the Pythia 8.315 + transport kaon model (0.305 is the only band mass <= the K->lN threshold). All other masses and all Utau points are unchanged; the bundle is now consistent with the kaon-rerun central curve."
 }

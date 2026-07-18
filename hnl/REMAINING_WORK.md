@@ -424,9 +424,9 @@ and must be rerun. `Utau` is unaffected (`m_tau > m_K`).
 Pythia 8.315 + transport kaon model (`d_esc=1.5 m`): the low-mass Ue/Umu edge
 weakened by x1.6-1.9 and the Umu peak relocated out of the kaon window
 (`8.40e-9 @0.365 -> 1.30e-8 @1.5 GeV`). See `data/published/MANIFEST.json`. The
-`bundle/` FONLL diagnostics were NOT regenerated and remain the beta=p/E baseline
-(their low-mass Ue/Umu variations still use the old kaon stub -- documented in the
-manifest's `diagnostic_bundle.kaon_rerun_supersession`).
+`bundle/` FONLL band + channel/decay diagnostics were re-derived at the one
+affected band mass (`0.305 GeV`, Ue/Umu) with the new kaon model (111-variation
+FONLL campaign), so the bundle is consistent with the republished central.
 (2) pin `d_esc` against a real CMS material map -- the dominant kaon-sector
 uncertainty; the `KAON_D_ESC_RANGE = [1, 3] m` band is now published as
 `data/published/bundle/kaon_desc_band.csv` (~+-20-25% on the low-mass edge), but

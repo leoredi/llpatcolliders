@@ -20,27 +20,17 @@ def _sha256(path):
     return digest.hexdigest()
 
 
-def test_published_bundle_internal_hashes_match():
+def test_published_bundle_hashes_match_manifest():
+    # The bundle is consistent with the published central: its central_curve hash
+    # equals the live curve (the 0.305 GeV Ue/Umu band points were re-derived for
+    # the 2026-07-18 kaon rerun), and every bundle file matches its recorded hash.
     manifest = json.loads((BUNDLE / "MANIFEST.json").read_text())
+    assert manifest["central_curve"]["sha256"] == _sha256(
+        PUBLISHED / "grendel_hnl_sensitivity.csv")
     for name, metadata in manifest["files"].items():
         path = BUNDLE / name
         assert path.exists(), name
         assert metadata["sha256"] == _sha256(path), name
-
-
-def test_bundle_is_beta_fix_baseline_superseded_by_kaon_rerun():
-    # The bundle is the 2026-07-07 beta=p/E baseline. The 2026-07-18 kaon rerun
-    # superseded the published central at low-mass Ue/Umu WITHOUT regenerating the
-    # bundle, so bundle central_curve.sha256 records the baseline it was built against
-    # (echoed by the top MANIFEST) and no longer equals the live central curve.
-    bundle = json.loads((BUNDLE / "MANIFEST.json").read_text())
-    top = json.loads((PUBLISHED / "MANIFEST.json").read_text())
-    baseline = bundle["central_curve"]["sha256"]
-    assert top["diagnostic_bundle"]["baseline_central_sha256"] == baseline
-    live = _sha256(PUBLISHED / "grendel_hnl_sensitivity.csv")
-    assert top["csv_sha256"] == live      # top manifest tracks the live central
-    assert live != baseline               # which the kaon rerun moved at low mass
-    assert "kaon" in top["diagnostic_bundle"]["kaon_rerun_supersession"].lower()
 
 
 def test_fonll_bundle_has_every_member_and_stable_topology():
