@@ -42,6 +42,10 @@ N_EVENTS = 60_000
 SEED = 42
 PT_MAX, PT_BINS = 10.0, 200
 Y_ABS, Y_BINS = 8.0, 160
+# Fixed by kaon_softqcd.cc; embedded in the .npz for provenance and checked by --verify.
+PROCESS = "SoftQCD:inelastic"
+ECM_GEV = 14000.0
+EXPECTED_VERSION = "8.315"   # the committed spectrum's Pythia; 8.317 shifts <n_K+-> ~0.5%
 
 
 def pythia8_config():
@@ -101,7 +105,7 @@ def run(binary, cfg, n_events, seed):
     return np.asarray(pt), np.asarray(y), meta
 
 
-def build_arrays(pt, y, meta):
+def build_arrays(pt, y, meta, pythia_version):
     pt_edges = np.linspace(0.0, PT_MAX, PT_BINS + 1)
     y_edges = np.linspace(-Y_ABS, Y_ABS, Y_BINS + 1)
     hist, _, _ = np.histogram2d(pt, y, bins=[pt_edges, y_edges])
@@ -118,6 +122,7 @@ def build_arrays(pt, y, meta):
     sigma_inel_mb = float(meta["SIGMA_INEL_MB"])
     n_kaon_per_inelastic = n_kaon / n_events
     sigma_kaon_pb = sigma_inel_mb * 1.0e9 * n_kaon_per_inelastic
+    # Key order matches the committed .npz (savez_compressed writes in this order).
     return {
         "hist": hist,
         "pt_edges": pt_edges,
@@ -127,6 +132,9 @@ def build_arrays(pt, y, meta):
         "sigma_kaon_pb": np.float64(sigma_kaon_pb),
         "n_events": np.int64(n_events),
         "n_kaon": np.int64(n_kaon),
+        "pythia_version": np.asarray(pythia_version),
+        "process": np.asarray(PROCESS),
+        "ecm_gev": np.float64(ECM_GEV),
     }
 
 
@@ -135,15 +143,22 @@ def compare_to_committed(arrays):
         raise SystemExit(f"no committed spectrum at {DATA} to verify against")
     ref = np.load(DATA)
     ok = True
-    if not np.array_equal(arrays["hist"], ref["hist"]):
-        ndiff = int(np.count_nonzero(arrays["hist"] != ref["hist"]))
-        print(f"  hist DIFFERS: {ndiff}/{arrays['hist'].size} bins changed", file=sys.stderr)
-        ok = False
-    for key in ("sigma_inel_mb", "n_kaon_per_inelastic", "sigma_kaon_pb", "n_events", "n_kaon"):
-        a, b = arrays[key], ref[key]
-        if not np.isclose(float(a), float(b), rtol=0, atol=0):
-            print(f"  {key} DIFFERS: got {a}, committed {b}", file=sys.stderr)
+    for key in ref.files:  # every committed field, incl. edges + version/process/ecm
+        if key not in arrays:
+            print(f"  {key} MISSING from rebuild", file=sys.stderr)
             ok = False
+            continue
+        if not np.array_equal(arrays[key], ref[key]):
+            if key == "hist":
+                detail = f"{int(np.count_nonzero(arrays[key] != ref[key]))}/{arrays[key].size} bins changed"
+            else:
+                detail = f"got {arrays[key]!r}, committed {ref[key]!r}"
+            print(f"  {key} DIFFERS: {detail}", file=sys.stderr)
+            ok = False
+    extra = [k for k in arrays if k not in ref.files]
+    if extra:
+        print(f"  rebuild has EXTRA keys {extra}", file=sys.stderr)
+        ok = False
     return ok
 
 
@@ -154,14 +169,25 @@ def main(argv=None):
     ap.add_argument("-o", "--output", type=Path, default=DATA)
     ap.add_argument("--verify", action="store_true",
                     help="rebuild and compare to the committed .npz; do not write")
+    ap.add_argument("--force", action="store_true",
+                    help="allow writing even when the Pythia version is not "
+                         f"{EXPECTED_VERSION} (which would not reproduce the committed spectrum)")
     args = ap.parse_args(argv)
 
     cfg = pythia8_config()
+    version = subprocess.check_output([cfg, "--version"], text=True).strip()
+    if not args.verify and version != EXPECTED_VERSION and not args.force:
+        raise SystemExit(
+            f"refusing to overwrite {args.output}: built against Pythia {version}, but the "
+            f"committed spectrum is Pythia {EXPECTED_VERSION} (8.317 shifts <n_K+-> ~0.5%). "
+            "Pass --verify to compare without writing, or --force to override."
+        )
     with tempfile.TemporaryDirectory() as tmp:
         binary = build(cfg, Path(tmp))
-        print(f"running {args.n_events} events (seed {args.seed}) ...", file=sys.stderr)
+        print(f"running {args.n_events} events (seed {args.seed}, Pythia {version}) ...",
+              file=sys.stderr)
         pt, y, meta = run(binary, cfg, args.n_events, args.seed)
-    arrays = build_arrays(pt, y, meta)
+    arrays = build_arrays(pt, y, meta, version)
     print(
         f"sigma_inel={float(arrays['sigma_inel_mb']):.4f} mb, "
         f"<n_K+->={float(arrays['n_kaon_per_inelastic']):.4f}, "
@@ -175,7 +201,7 @@ def main(argv=None):
         print("VERIFY: match" if ok else "VERIFY: MISMATCH", file=sys.stderr)
         return 0 if ok else 1
 
-    np.savez(args.output, **arrays)
+    np.savez_compressed(args.output, **arrays)
     print(f"wrote {args.output}", file=sys.stderr)
     return 0
 

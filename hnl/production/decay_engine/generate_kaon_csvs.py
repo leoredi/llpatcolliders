@@ -9,9 +9,10 @@ Default model (Pythia spectrum + transport survival weight):
   * transport  -- a charged kaon (ctau = 3.712 m) is absorbed in dense material
                   unless it decays first; each kaon carries a survival weight
                   P(decay within d_esc) = 1 - exp(-d_esc / (beta*gamma * ctau)).
-                  The displaced decay origin is immaterial (measured ~1x), so the
-                  HNL is still cast from IP and no per-origin acceptance change is
-                  needed. ``d_esc`` (KAON_D_ESC = 1.5 m; the KAON_D_ESC_RANGE
+                  The displaced decay origin shifts the HNL start by <= d_esc, which
+                  make_kaon_spectrum's sibling transport_control.py measures to change
+                  the acceptance by only a few % on the sensitivity plateau, so the
+                  HNL is cast from IP. ``d_esc`` (KAON_D_ESC = 1.5 m; the KAON_D_ESC_RANGE
                   [1, 3] m is declared for the pending BC6/BC7 uncertainty pass)
                   is the dominant kaon-sector uncertainty pending a CMS material map.
 

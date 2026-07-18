@@ -65,8 +65,10 @@ SIGMA_KAON_PB_TSALLIS = 3.0e11  # legacy stub normalization (~80 mb x ~4 K+-)
 # Charged-kaon transport: a charged kaon (ctau = 3.712 m) must decay before it is
 # absorbed in dense material to produce an escaping HNL. The survival probability
 # is P(decay within d_esc) = 1 - exp(-d_esc / (beta*gamma * ctau)), applied as a
-# per-kaon weight (the displaced-origin geometry is immaterial, measured ~1x, so
-# no per-origin acceptance change is needed). KAON_D_ESC is the escape path length
+# per-kaon weight (the HNL is cast from the IP, not the displaced kaon-decay point;
+# decay_engine/transport_control.py measures a displaced/IP acceptance ratio of ~1.0
+# within a few % on the sensitivity-relevant long-lifetime plateau, so no per-origin
+# change is applied). KAON_D_ESC is the escape path length
 # before dense material -- a proxy for the CMS material budget (calorimeter front
 # ~1.3 m; the tracker is largely transparent to a decaying kaon). The default and
 # the declared [1, 3] m range (KAON_D_ESC_RANGE, reserved for the pending BC6/BC7

@@ -397,11 +397,16 @@ see Remaining). `generate_kaon_csvs.py` now defaults to:
   legacy path stays behind `--spectrum tsallis`.
 - **Charged-kaon transport as a survival weight.** Each kaon carries
   `w = 1 - exp(-d_esc / (beta*gamma * ctau_K))`, the probability it decays before
-  being absorbed in dense material. This is exact *because the displaced decay
-  origin is immaterial*: measured geometric-lifetime ratio is `~1.0` (the kaon
-  decays along its path toward the detector and the forward-boosted HNL continues
-  from a closer point), and a `displaced-origin+reject` control agrees with the
-  `weight-from-IP` estimator -- so no per-origin acceptance change is needed.
+  being absorbed in dense material. The HNL is then cast from the IP rather than
+  from the displaced kaon-decay point (median ~0.7 m, `<= d_esc ~ 1.5 m`): a good
+  approximation because that shift is small and nearly collinear with the
+  forward-boosted HNL compared with the ~22 m flight to the fiducial volume.
+  `production/decay_engine/transport_control.py` casts each HNL from both origins
+  against the real fiducial mesh (`production/data/transport_control.json`) and
+  finds a displaced/IP accepted-yield ratio of `1.00` within `~3%` on the
+  long-lifetime plateau that sets the sensitivity (`ctau_N >= 10 m`: 1.03, 1.00,
+  0.99, 0.99), rising to `~1.1-1.2` only in the negligible short-lifetime tail --
+  so no per-origin acceptance change is applied (small where it matters, not zero).
   `KAON_D_ESC = 1.5 m` is a proxy for the CMS material budget (calorimeter front
   ~1.3 m); `KAON_D_ESC_RANGE = [1, 3] m` is declared for the pending BC6/BC7
   uncertainty pass but is not yet propagated into a band. `--no-transport` restores

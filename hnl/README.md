@@ -155,8 +155,8 @@ W/Z rows use their MadGraph event weights and the electroweak K-factor, which
 is now keyed per process (`K_FACTOR_EW_BY_PROCESS` in
 `production/constants.py`: the W value for `W/Z -> ell N`, and the W vs
 Drell-Yan values per tau origin) rather than a single flat constant in the
-drivers. The kaon channel uses the approximate inclusive kaon flux documented
-in `production/constants.py`.
+drivers. The charged-kaon channel uses the Pythia 8.315 SoftQCD spectrum and
+transport weight documented in `production/constants.py`.
 
 ## Setup
 
@@ -490,9 +490,11 @@ compatibility module.
   different acceptances and are extrapolated as constants over the FONLL
   phase space; their uncertainties are not propagated
   (see `REMAINING_WORK.md`).
-- The kaon flux is a parametrized soft-QCD approximation and dominates the
-  normalization uncertainty at the lightest masses. A measured/Pythia kaon
-  spectrum is planned (see `REMAINING_WORK.md`).
+- The charged-kaon flux uses a Pythia 8.315 SoftQCD spectrum and a
+  decay-before-absorption transport weight (see `REMAINING_WORK.md`); it
+  dominates the normalization uncertainty at the lightest masses. The BC6/BC7
+  low-mass curves have not yet been rerun with this model, and the transport
+  escape length is still a proxy pending a real material map.
 - Meson, baryon, and tau three-body energy/`q^2` distributions are
   HNLCalc-weighted, but complete multidimensional matrix-element spin
   correlations are not modeled (see `REMAINING_WORK.md`).
