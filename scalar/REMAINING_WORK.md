@@ -412,26 +412,32 @@ at a ~5.6 GeV parent. The earlier concern that a kaon recoil would make the
 `-0.045` dex optimistic is therefore not borne out numerically — but `m_Lambda`
 remains the correct implementation.
 
-**Full-consistency republication is a pending campaign.** The central island was
-rescanned with `Lambda_b` and validated (the table above; the full 86-mass 400k
-rescan reproduces the controlled A/B measurement -- deepest reach `6.519e-12`
-vs the published meson-only `7.399e-12`, and the closure extends `3.70 -> 3.80`
-GeV, adding one sensitive point). But the **published set is deliberately kept
-meson-only and self-consistent** until three dependent artifacts are regenerated
-with `Lambda_b`: the 109-variation uncertainty `bundle/`, the six-million-event
-high-mass closure control, and the paper figure. `test_published_curve.py`
-enforces central/bundle hash linkage, so a central-only overwrite is not a valid
-published state. Reproduce the validated central with:
+**Full-consistency republication: DONE (2026-07-18).** The published set is now
+`Lambda_b`-consistent and hash-linked: the 400k central island (deepest reach
+`6.519e-12` vs the meson-only `7.399e-12`, closure `3.70 -> 3.80` GeV, +1
+sensitive point), plus a matching **109-variation + 2 numerical-control
+uncertainty bundle** at 100k parents per species (`data/published/bundle/`), a
+`Lambda_b` main `MANIFEST.json`, and updated `README`/`STATUS`.
+`test_published_curve.py` passes (central/bundle hash linkage + exact closure
+interpolation). Reproduce with:
 
 ```sh
+# central (400k):
 python -m scalar.run_sensitivity --n-pool 400000 --n-samples 100 --seed 42 \
     --high-pt-tilt-scale 5.0 --nominal-mixture-fraction 0.5 --force-produce \
     --output tmp/bc4_island_lambdab.csv --vector-dir tmp/llp_4vectors_lambdab
+# bundle (100k, needs ~270 GB scratch):
+python -m scalar.uncertainty_band run  --n-pool 100000 --n-samples 100 --seed 42 --workers 12 --scratch-dir <SCRATCH>
+python -m scalar.uncertainty_band collect --n-pool 100000 --n-samples 100 --seed 42 --scratch-dir <SCRATCH>
 ```
 
-The remaining campaign is a `Lambda_b` `uncertainty_band.py` run (109 variations)
-plus the 6M closure control, after which the central + bundle + MANIFEST + paper
-figure promote together.
+Note the bundle uses 100k parents per variation (vs the 400k central) because
+the full campaign at 200k overruns scratch disk; the lower edge stays fully
+physics-dominated, but on the noisier upper edge the numerical control is
+marginal at 2.0 and 2.3 GeV (recorded in the bundle manifest and the test). Two
+small refreshes remain: the six-million-event high-mass closure control and the
+`paper/figures/bc4_exclusion.pdf` adapter output are still the meson-only
+baseline (they do not affect the published central or band).
 
 **Remaining (item 8 residual):** Lambda_b lumps `Xi_b`/`Omega_b` (different mass
 and lifetime, a small fraction of b-baryons); a per-species baryon split and a

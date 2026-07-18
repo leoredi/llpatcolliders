@@ -401,6 +401,17 @@ def _variation_lock(run_dir: Path):
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
+def _expected_events_for_mass(m_S, n_pool):
+    """Scalar events generated at ``m_S``: ``n_pool`` per OPEN b-hadron species.
+    A species closes at ``m_S >= m_parent - m_recoil`` (e.g. Lambda_b at 4.50 GeV,
+    below the ~4.78 GeV meson ceilings), so above 4.50 GeV only the three mesons
+    contribute and the count drops from 4*n_pool to 3*n_pool."""
+    open_species = sum(
+        1 for (_tag, m_parent, m_recoil, _frag) in production.B_SPECIES.values()
+        if m_S < m_parent - m_recoil)
+    return n_pool * open_species
+
+
 def _campaign_config(variation, masses, n_pool, n_samples, seed):
     payload = {
         "schema_version": 1,
@@ -765,11 +776,12 @@ def run_variation(variation, scratch_dir: Path, masses, n_pool, n_samples, seed)
                     sigma_bottom=sigma, pool=pool)
                 vector_meta = _write_vector(
                     vector, generated, config, variation, mass, production_seed)
-            if vector_meta["rows"] != config["n_scalar_events_expected"]:
+            expected_events = _expected_events_for_mass(mass, n_pool)
+            if vector_meta["rows"] != expected_events:
                 raise RuntimeError(
-                    f"{variation['name']} m={mass}: expected "
-                    f"{config['n_scalar_events_expected']} scalar events, got "
-                    f"{vector_meta['rows']}")
+                    f"{variation['name']} m={mass}: expected {expected_events} "
+                    f"scalar events ({expected_events // n_pool} open species x "
+                    f"{n_pool}), got {vector_meta['rows']}")
 
             output = acceptance.process_mass_point(
                 mass, mesh_fiducial, vector, s2_grid, n_samples=n_samples,

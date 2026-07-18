@@ -24,14 +24,23 @@ cp scalar/tmp/bc4_island.csv scalar/data/published/bc4_island.csv
 
 ## Current contents
 
-- Source: the 2026-07-15 high-statistics campaign with a 1.2M-scalar high-pT
-  importance production pool per mass, 100 decay/reconstruction samples per
-  entering scalar, and the timing-chi2 daughter `beta = p/E` correction.
-- Reach: the sensitive grid spans `m_S = 0.14-3.70 GeV`; the upper boundary is
+- Source (Lambda_b republication, 2026-07-18): the central island uses a
+  1.6M-scalar high-pT importance production pool per mass (400000 parents x
+  B+, B0, Bs, Lambda_b), 100 decay/reconstruction samples per entering scalar,
+  and the timing-chi2 daughter `beta = p/E` correction. The uncertainty bundle
+  is a matching 109-variation + 2 numerical-control campaign at 100000 parents
+  per species; central and bundle are hash-linked.
+- Reach: the sensitive grid spans `m_S = 0.14-3.80 GeV`; the upper boundary is
   open above the scan ceiling for the electron-only `0.14-0.20 GeV` extension.
-  The deepest lower edge is `sin^2 theta = 7.3988e-12` at 0.975 GeV, near the
+  The deepest lower edge is `sin^2 theta = 6.5193e-12` at 0.975 GeV, near the
   f0(980) enhancement. Log-yield interpolation places the final closure at
-  approximately 3.798 GeV.
+  approximately 3.825 GeV. This supersedes the 2026-07-15 meson-only curve
+  (deepest `7.3988e-12`, closure `3.798`): adding the b-baryon pool (`Lambda_b`,
+  physical `Lambda` recoil) strengthens the lower edge by 8-18% (growing toward
+  closure). The lower edge is fully physics-dominated; on the noisier upper edge
+  the 100k-parent bundle leaves the numerical control marginal at 2.0 and
+  2.3 GeV. The six-million-event closure control and the paper figure remain the
+  meson-only baseline (small pending refreshes; see `MANIFEST.json`).
 
 ## Numerical convergence
 

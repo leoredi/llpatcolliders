@@ -11,9 +11,13 @@ configuration, checksum, topology, and convergence controls are pinned in the
 adjacent `MANIFEST.json` and described in `data/published/README.md`.
 
 - 86-point grid, `m_S = 0.14--4.70 GeV`.
-- Sensitive grid run `0.14--3.70 GeV`; log-yield interpolation places the
-  final closure at `3.7975 GeV`.
-- Deepest lower edge `sin^2(theta) = 7.3988e-12` at `m_S = 0.975 GeV`.
+- Sensitive grid run `0.14--3.80 GeV` (Lambda_b, 2026-07-18); log-yield
+  interpolation places the final closure at `~3.825 GeV`.
+- Deepest lower edge `sin^2(theta) = 6.5193e-12` at `m_S = 0.975 GeV`.
+- The 2026-07-18 curve adds the b-baryon pool (`Lambda_b`, physical `Lambda`
+  recoil) to `b -> X_s S`; it strengthens the lower edge by 8-18% over the
+  meson-only curve (deepest was `7.3988e-12`, closure `3.7975`). The central and
+  its 109-variation uncertainty bundle are regenerated together and hash-linked.
 - In the electron-only `0.14--0.20 GeV` interval, the upper edge lies above
   the configured coupling scan and is stored as open, not artificially closed.
 - Central production uses 400,000 importance-sampled FONLL parents for each of
