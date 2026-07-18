@@ -181,8 +181,9 @@ the central result.** `model.br_K_to_pi_S` (`model.py:389-402`) computes the
 Winkler eq. A8/A9 branching ratio and is gated to `m_S < m_K - m_pi`
 (`model.py:400`), and `tests/test_model.py::test_K_to_pi_S_only_below_threshold`
 exercises it. But no production or analysis code calls it: `production.py`
-imports only `br_B_to_Xs_S` (`production.py:108`), `B_SPECIES` contains only
-`521`/`511`/`531` (`production.py:67-71`), and `generate_scalar_4vectors` returns
+imports only `br_B_to_Xs_S` (`production.py:108`), `B_SPECIES` covers the
+b-hadron pool `521`/`511`/`531`/`5122` (`production.py:67-71`) but no light kaon,
+and `generate_scalar_4vectors` returns
 empty above the `B -> K S` ceiling (`production.py:89`). Its own docstring states
 "Sampling a kaon flux at the LHC IP is deferred" (`model.py:393`). The published
 `MANIFEST.json` `physics_inputs.production` says "inclusive `b -> X_s S` ...
@@ -205,7 +206,7 @@ acceptance from the displaced origin.
 
 **Scope note — what this cannot change.** The affected region is only
 `m_S < m_K - m_pi ~= 0.354 GeV`. It does **not** touch the headline reach
-(`sin^2 theta = 7.3988e-12` at `m_S = 0.975 GeV`) or the `~3.798 GeV` high-mass
+(`sin^2 theta = 6.5193e-12` at `m_S = 0.975 GeV`) or the `~3.825 GeV` high-mass
 closure (`MANIFEST.json` `headline_reach`). It can only extend or deepen the
 low-mass end.
 
@@ -492,7 +493,7 @@ two-body pair. The approximations, in the code's own terms
   "a documented approximation; these channels are sub-dominant in the < 2 GeV
   region that drives the reach"; that is a correct statement about the *deepest*
   point (`0.975 GeV`) but these channels are exactly the ones that set the
-  high-mass end, where the island closes (`~3.798 GeV`).
+  high-mass end, where the island closes (`~3.825 GeV`).
 - `tautau` -> two taus at `M_TAU` with charged fraction `1.0`
   (`acceptance.py:69`, "tau directions proxy the leading tracks"). The taus'
   own decays are not generated: `BR(tau -> 1 charged prong) ~ 0.85`, so
@@ -592,14 +593,16 @@ invalidates the cache automatically.
 
 **Current code — what is already done (do not redo):** the published curve
 records at least 2,249 effective events on every finite sensitive lower edge and
-at least 2,049 at every sensitive peak; independent six-million-event controls at
-3.75/3.80/3.85 GeV place the closure within 0.006 GeV of the published
-3.7975 GeV, so the high-mass endpoint is **not** a finite-pool artifact
-(`MANIFEST.json` `numerical_validation`; `data/published/README.md`). Two
-fresh-seed same-physics central repeats are carried as numerical controls,
-reported separately and excluded from the envelope
-(`uncertainty_band.py:1331-1334`); `test_published_curve.py` asserts they are
-subdominant to the physical sources at every mass except `u2_max` at `0.22 GeV`.
+at least 2,049 at every sensitive peak; independent six-million-event **meson-only**
+controls at 3.75/3.80/3.85 GeV place the meson-only closure within 0.006 GeV of the
+meson-only central 3.7975 GeV, so that endpoint is **not** a finite-pool artifact
+(`MANIFEST.json` `numerical_validation`; `data/published/README.md`). The published
+Lambda_b closure (3.825 GeV) rests on the same >=2,049 effective events per peak; a
+matching Lambda_b 6M control is a pending refresh. Two fresh-seed same-physics
+central repeats are carried as numerical controls, reported separately and excluded
+from the envelope (`uncertainty_band.py:1331-1334`); `test_published_curve.py`
+asserts they are subdominant to the physical sources at every mass except `u2_max`
+at `2.0` and `2.3 GeV`.
 
 **What is still open:**
 
@@ -617,8 +620,8 @@ subdominant to the physical sources at every mass except `u2_max` at `0.22 GeV`.
   (`hnl/analysis/exclusion.py:77`); the refinement is present, but its tolerance
   is not reported in the manifest;
 - mass-grid stability: spacing ranges from 20 MeV to 100 MeV
-  (`production.py:46-59`) and the published closure at 3.7975 GeV is a
-  **log-yield interpolation between the 3.70 and 3.80 GeV rows**
+  (`production.py:46-59`) and the published closure at 3.825 GeV is a
+  **log-yield interpolation between the 3.80 and 3.90 GeV rows**
   (`MANIFEST.json` `closure_note`, reproduced in
   `test_published_curve.py`). Do not quote sub-grid precision beyond what the
   six-million-event controls independently support;
