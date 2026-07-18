@@ -420,11 +420,17 @@ the product **weakens the low-mass lower edge by roughly +30% to +80%**. The
 current *published* BC6/BC7 low-mass curve is therefore too strong by this amount
 and must be rerun. `Utau` is unaffected (`m_tau > m_K`).
 
-**Remaining:** (1) rerun and republish BC6/BC7 low-mass with the new default
-model (a production+sensitivity pass, analogous to the BC4 `Lambda_b` republish);
-(2) pin `d_esc` against a real CMS material map -- it is the dominant kaon-sector
-uncertainty, currently a parametrized proxy with `KAON_D_ESC_RANGE = [1, 3] m`
-reserved for (but not yet propagated into) that rerun's band;
+**Remaining:** (1) DONE 2026-07-18 -- BC6/BC7 low-mass republished with the
+Pythia 8.315 + transport kaon model (`d_esc=1.5 m`): the low-mass Ue/Umu edge
+weakened by x1.6-1.9 and the Umu peak relocated out of the kaon window
+(`8.40e-9 @0.365 -> 1.30e-8 @1.5 GeV`). See `data/published/MANIFEST.json`. The
+`bundle/` FONLL diagnostics were NOT regenerated and remain the beta=p/E baseline
+(their low-mass Ue/Umu variations still use the old kaon stub -- documented in the
+manifest's `diagnostic_bundle.kaon_rerun_supersession`).
+(2) pin `d_esc` against a real CMS material map -- the dominant kaon-sector
+uncertainty; the `KAON_D_ESC_RANGE = [1, 3] m` band is now published as
+`data/published/bundle/kaon_desc_band.csv` (~+-20-25% on the low-mass edge), but
+d_esc itself remains a proxy pending the material map;
 (3) neutral `K_S/K_L -> pi l N` remain omitted (audit additive proxy `<= 19%`);
 (4) magnetic bending of the kaon trajectory is not modelled (second-order given
 the survival-weight equivalence, but a soft-kaon check is worthwhile).

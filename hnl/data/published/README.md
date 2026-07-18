@@ -25,13 +25,19 @@ cp tmp/runs/<tag>/analysis/hnl_sensitivity.csv \
 
 ## Current contents
 
-- Source run: `central_newgrids_20260623/analysis_exact_100_betafix` (P>100 MeV,
-  timing-chi2 `beta=p/E` fix -- implementation `79c7337`, canonical publication
-  `fad3a8b`; reuses the same production 4-vectors as the pre-fix run). The
-  conservative P>600 MeV variant is `exact_600`.
-- Reach: `|U_e|^2` 5.9e-9 @0.40 GeV, `|U_mu|^2` 8.4e-9 @0.37 GeV,
+- Source run: the 2026-07-07 `analysis_exact_100_betafix` curve (P>100 MeV,
+  exact-100, timing-chi2 `beta=p/E`, `fad3a8b`) with its **low-mass Ue/Umu kaon
+  channel rerun (2026-07-18)** using the Pythia 8.315 SoftQCD spectrum + charged-
+  kaon transport (`d_esc=1.5 m`, seed 42), reusing the `central_newgrids_20260623`
+  non-kaon 4-vectors. Only Ue `m_N<=0.485` and Umu `m_N<=0.38` change; Utau and
+  all `m_N>0.5 GeV` are unchanged. The conservative P>600 MeV variant is `exact_600`.
+- Reach: `|U_e|^2` 1.05e-8 @0.40 GeV, `|U_mu|^2` 1.30e-8 @1.5 GeV,
   `|U_tau|^2` 3.0e-7 @2.8 GeV; window 0.2-3.6 GeV (closure is the cτ∝1/m^5
-  lifetime law, not a production cutoff — see `MANIFEST.json`).
+  lifetime law, not a production cutoff — see `MANIFEST.json`). The kaon rerun
+  weakened the low-mass Ue/Umu edge by x1.6-1.9 and relocated the Umu peak out of
+  the kaon window (was `|U_mu|^2` 8.4e-9 @0.37); the transport `d_esc` band
+  (1/1.5/3 m) is `bundle/kaon_desc_band.csv`. Prior kaon-stub reach was
+  `|U_e|^2` 5.9e-9, `|U_mu|^2` 8.4e-9.
 - **Timing beta-fix note:** the previous publish computed the 4-hit timing chi2
   with `beta=1` for every daughter; it now uses each track's true `beta=p/E`, which imposes a
   species-dependent effective momentum floor above the 100 MeV cut. No mass points
