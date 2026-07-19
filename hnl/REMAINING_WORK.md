@@ -31,27 +31,30 @@ scenarios; they are not a statistical uncertainty band.
 ## Curve-visibility triage (production x analysis, by PBC scenario)
 
 The items below are ordered by physics priority, not by their effect on the
-*current* curves. As of 2026-06-16 every PBC scenario -- 100 (Ue), 010 (Umu),
-001 (Utau) -- has complete production (116 combined CSVs each) and complete
-decay templates (116 each); the live selection in
+*current* curves. As of the 2026-07-17 reconciliation, every PBC scenario --
+100 (Ue), 010 (Umu), 001 (Utau) -- has complete production and decay templates
+on the published 123-point grid; the live selection in
 `analysis/decay_reco_acceptance.py` matches the upstream `higgs/` GRENDEL
 reconstruction cut-for-cut, and the exclusion threshold is the standard
-zero-background 95% CL value (`N >= 3`). No remaining item moves any of the three
-curves visibly: each is an NLO refinement (sub-leading uncertainty, provenance,
-convergence) or a model gap that changes the *meaning* of the result
-(backgrounds, detector response) rather than the plotted central line.
+zero-background 95% CL value (`N >= 3`). No further large central Monte Carlo
+campaign is currently indicated by the convergence checks. The remaining items
+still matter: some refine production or decay theory, while detector response,
+backgrounds, and statistical modelling can change the *meaning* of the result
+and may ultimately move the plotted contour.
 
 | layer \ scenario | 100 (Ue) | 010 (Umu) | 001 (Utau) |
 |---|---|---|---|
-| **production** | mesons + W/Z EW; kaon flux parametric (NLO) | mesons + W/Z EW; kaon flux parametric (NLO) | mesons + tau-parent + W/Z EW; tau Kallen & W-tau polarization already fixed |
+| **production** | mesons + W/Z EW; Pythia charged-kaon flux + transport proxy | mesons + W/Z EW; Pythia charged-kaon flux + transport proxy | mesons + tau-parent + W/Z EW; tau Kallen & W-tau polarization already fixed |
 | **analysis** | cuts/geometry/threshold single-sourced with `higgs/` -- aligned | aligned | aligned |
 
 Robustness fixes that *prevent* a future silent curve corruption (not a current
 defect) were applied on 2026-06-16: the geometry cache now invalidates when its
 source CSV is newer (mtime guard, item 19); `run_sensitivity.py` records every
 skipped `(flavor, mass)` with its reason in `run_metadata.json` and exits
-non-zero when nothing is processed; and `run_full_all.sh` generates decay
-templates before the analysis so a clean checkout cannot emit an empty plot. The
+non-zero when nothing is processed; and `run_full_all.sh` uses
+`HNL_TEMPLATE_PYTHON` for the ROOT/Pythia stage when supplied, or consumes
+pre-generated templates. A clean checkout without templates therefore fails
+rather than emitting an empty plot. The
 dead, stale `SEP_MIN/SEP_MAX/P_CUT` block was removed from
 `analysis/constants.py` (the live cuts were always sourced from
 `decay_reco_acceptance.py`).
@@ -139,15 +142,21 @@ or asymptotic validation, and produces expected limits with uncertainty bands.
 ### 4. Fix the physics-hypothesis definition
 
 **Current code:** production and lifetime tables are evaluated for the three
-single-flavor patterns `Ue`, `Umu`, and `Utau`. The exclusion labels only
-`|U|^2`; the Majorana/Dirac convention, charge-conjugate counting, and the
-relationship between production mixing and total lifetime are not stated in
-the result metadata.
+single-flavor patterns `Ue`, `Umu`, and `Utau`. The canonical
+`data/published/MANIFEST.json` and diagnostic `run_metadata.json` now state the
+single-flavour Majorana hypothesis. The convention itself is no longer open:
+both
+the HeavyN UFO (`N1` self-conjugate) and HNLCalc (charge-conjugate modes summed
+per channel) are Majorana, so the result is self-consistently Majorana, matching
+PBC BC6/7/8 and ANUBIS (see the 2026-06-29 resolution under the appended note).
+The outstanding work is to complete the independent factor-of-two audit and,
+if needed, support non-single-flavour hypotheses -- not to choose or document
+the convention again.
 
 **Required work:**
 
-- state and validate the Majorana/Dirac convention used by HNLCalc and the
-  MadGraph UFO;
+- retain the machine-readable Majorana declaration and independently validate
+  the convention used by HNLCalc and the MadGraph UFO;
 - audit all factors of two and charge-conjugate channels under that convention;
 - support arbitrary mixing ratios if the intended result is not restricted to
   the three single-flavor hypotheses;
@@ -166,35 +175,44 @@ and agrees with independent benchmark rates for the same convention.
 `NNPDF40_nlo_as_01180` member, stopping at `pT = 50 GeV` and `|y| = 3`. The full
 variation set has now been generated in the external NNPDF40 workspace -- a
 218-grid SHA-256 `variation_manifest.json` (7-point scale, 100 NNPDF4.0 NLO
-replicas, `m_b`/`m_c`) plus the `as_01170`/`as_01190` alpha_s companions, and
-the band has now been propagated through the full production+analysis chain
-into a per-mass envelope (see Progress below). The `pT`/rapidity truncation is
-still unbounded.
+replicas, `m_b`/`m_c`) plus the `as_01170`/`as_01190` alpha_s companions. The
+published per-mass band propagates the 111 coherent central/scale/PDF/heavy-mass
+curves; the alpha_s production+analysis companion chains are supported by
+post-processing but are not included in the current bundle. The `pT`/rapidity
+truncation is still unbounded.
 
-**Progress (2026-06-26): FONLL band propagated and rendered.** The 111 coherent
-variations (6-point scale + 100 NNPDF4.0 replicas + 4 `m_b`/`m_c`) were run end
-to end via `run_variation_band.py` (reusing the FONLL-independent channels,
-exact per-variation geometry -- item 19) and combined by
-`analysis/combine_band.py` into `hnl_band.csv` (asymmetric scale envelope,
-replica `std` for PDF, per-quark mass quadrature; alpha_s foldable via
-`--alphas-lo/--alphas-hi`). The band is overlaid on both exclusion boundaries by
-`analysis/plot_money.py` (the GRENDEL "money plot"). Magnitudes: lower edge
-~0.24 dex median (scale-dominated, comparable to the Bc and form-factor
-normalizations), upper edge ~0.27 dex median with peaks ~1 dex at the `m ~ 1.4`
-GeV charm kinematic edge -- the full propagation regenerates the `pT`-`y`
-spectrum, so the boost -> decay-length -> acceptance shape shifts the lifetime
-(upper) edge, an effect the normalization-only reweight audit
-(`audits/curve_impact_20260610`, ~0.002 dex upper) does not capture. **PDF is
-confirmed sub-dominant** (replica `std` ~0.02-0.05 dex), so the scale and `m_Q`
-legs dominate. The band is a generated artifact (`tmp/runs/`, git-ignored), not
-folded into the committed central run; the code path is tracked.
+**Progress (2026-07-16): post-beta-fix exact FONLL campaign published.** The 111
+coherent variations (6-point scale + 100 NNPDF4.0 replicas + 4 `m_b`/`m_c`)
+were rerun end to end after the timing `beta=p/E` correction, using all detector
+hits, 50 decay samples, `event_chunk=1000`, and two analysis workers.  All 111
+curves retain all 54 anchors, and all 110 non-central members agree with central
+on finite/open topology.  `analysis/combine_band.py` now records contributing
+member counts and refuses to turn a topology change into a numeric ribbon.
+
+The median combined half-widths are `-0.101/+0.131` dex on the lower edge
+(scale dominated) and `-0.0066/+0.0081` dex on finite upper edges.  The largest
+upper shift, 0.114 dex, survives independent exact-200 controls.  The previous
+order-one upper structure was caused by the 4,000-hit weighted-resampling cap
+and is retired.  The 5,994-row raw table, grid/campaign manifests, hashes,
+combined band, and numerical controls are tracked in `data/published/bundle/`.
+The diagnostic is separate from the central-only paper comparison.
 
 **Required work:**
 
+- correct the charm `mu_F = 0.5` scale prescription, which currently requests
+  the NNPDF4.0 PDF below its `QMin = 1.65 GeV` for all `pT < 2.94 GeV` and so
+  sets the charm scale envelope's `-76%` lower edge from an LHAPDF
+  extrapolation rather than from perturbative uncertainty. This is the largest
+  single term in the charm production budget and the highest-value item in this
+  section; it is expected to *narrow* the band. See the workspace item 4 below
+  for the measured ratios, the two-chain cost, and the accepted-yield check
+  that should precede it;
 - extend the `pT` and rapidity grids, or place a quantitative bound on the
   omitted contribution after GRENDEL acceptance (still outstanding);
 - add a tracked driver for the alpha_s companion production+analysis chains
-  (currently the `--alphas-lo/--alphas-hi` curves are run by hand).
+  (currently the `--alphas-lo/--alphas-hi` curves are run by hand). Measured
+  effect is negligible (0.44%/1.49% half-spread); do this for PDF4LHC
+  prescription completeness, not for physics -- see workspace item 5 below.
 
 Use the same three-column rectangular table format as the committed grids:
 
@@ -202,8 +220,9 @@ Use the same three-column rectangular table format as the committed grids:
 # pT_GeV  rapidity  d2sigma_dpTdy_pb_per_GeV
 ```
 
-Add a variation manifest containing the FONLL revision, PDF ID/member,
-`m_b`/`m_c`, scales, beam energy, grid bounds, and checksums.
+The tracked `data/published/bundle/FONLL_GRID_MANIFEST.json` and
+`FONLL_MANIFEST.json` now contain the FONLL revision, PDF member, masses, scales,
+beam energy, grid bounds, campaign configuration, and checksums.
 
 **Completion test:** central and varied grids can be regenerated from the
 manifest, and the full production plus analysis chain yields an uncertainty
@@ -237,20 +256,50 @@ produce correlated curve variations.
 fragmentation allocation as `Lambda_c+`, `Xi_c0`, `Xi_c+`, and `J/psi`, but
 none contributes to direct HNL production or to the induced-tau pool.
 
-**Required work:**
+**Measured impact of the dominant term (Lambda_c, 2026-07-17): negligible,
+below MC noise.** Using HNLCalc's `get_3body_dbr_baryon` (the `Lambda_c -> Lambda`
+form factors, `dq2dm122` integrator), the charm-sector yield boost from adding
+`Lambda_c -> Lambda l N` is `frag_Lc * BR(Lc) / sum_D frag_D * BR(D)`. Folded
+with the charm channel's accepted-yield fraction (audit baseline), the lower-edge
+shift is **<= 1.2% (<= 0.005 dex)** across the whole charm-relevant range, for
+both `Ue` and `Umu`:
 
-- identify and implement the relevant `Lambda_c` and `Xi_c` leptonic or
-  semileptonic HNL production channels with current form factors;
-- provide their production spectra and fragmentation fractions with
-  uncertainties;
-- evaluate whether charmonium HNL modes are relevant over the 0.2--10 GeV
-  mass grid and either implement or quantitatively dismiss them;
+| m_N (GeV) | Ue edge shift | Umu edge shift |
+|---|---|---|
+| 0.4-0.5 | -1.1% | -1.2% (max) |
+| 0.7 | -0.6% | -0.5% |
+| >= 1.0 | <= -0.03% | ~0 |
+
+This is far below the 4.1% median production-MC noise, so **`Lambda_c` is not a
+curve mover** and does not need to be generated. The reason it is so much smaller
+than the analogous BC4 `Lambda_b` fix (`-10` to `-14%`): a baryon has **no
+2-body leptonic mode**. `D+`/`Ds -> l N` is helicity-enhanced and two-body;
+`Lambda_c -> l N` is forbidden (baryon number), leaving only the phase-space-
+suppressed semileptonic `Lambda_c -> Lambda l N` (`BR ~ 1%`, confined to
+`m_N < m_Lc - m_Lambda - m_l ~ 1.17 GeV`). This **supersedes** the audit's
+`missing_charm_baryon_channels` proxy (median 0.1%, max 16.9%), which
+overestimated by ~14x by scaling on fragmentation without the semileptonic
+suppression. Caveat: the estimate is a production-BR ratio; the softer `Lambda_c`
+HNLs would have somewhat lower acceptance, so `<= 1.2%` is an upper bound.
+
+**Required work (residual):**
+
+- `Lambda_c`: **bounded above (<= 1.2%, below noise)** per the measurement above;
+  generation is optional. If ever generated, `get_3body_dbr_baryon('4122',
+  '3122', lepton)` with the `dq2dm122` integrator supplies the rate, exactly as
+  the `Bbaryon` channel already uses `Lambda_b -> Lambda_c l N`;
+- `Xi_c0`/`Xi_c+`: even more phase-space suppressed (heavier `Xi` recoil) and a
+  smaller fragmentation share than `Lambda_c`, so bounded below the `Lambda_c`
+  number by the same argument -- a short explicit check would close them;
+- evaluate whether charmonium (`J/psi`) HNL modes are relevant over the
+  0.2--10 GeV mass grid and either implement or quantitatively dismiss them;
 - audit any additional weakly decaying charm species omitted from the current
   closure.
 
 **Completion test:** the charm fragmentation accounting is explicit and every
 omitted component has either a generated channel or a documented negligible
-bound on the final curves.
+bound on the final curves. `Lambda_c` now has a documented bound; `Xi_c`/`J/psi`
+remain to be closed.
 
 ### 8. Replace the inclusive bottom-baryon closure approximation
 
@@ -288,16 +337,108 @@ also normalizes `Bc -> tau nu`.
 **Completion test:** a versioned grid and uncertainty set replace both the
 shape reuse and `SIGMA_BC_PB`, with independent cross-section benchmarks.
 
-### 10. Replace the kaon production and transport model
+### 10. Replace the kaon production and transport model -- DONE (2026-07-18)
 
-**Current code:** `generate_kaon_csvs.py` samples only charged kaons using a
-Tsallis `pT` model and a Gaussian rapidity with
-`SIGMA_KAON_PB = 3.0e11 pb`. Neutral `K_S/K_L -> pi l N` modes available in
-HNLCalc are omitted. Every kaon is decayed immediately, only the HNL momentum
-is stored, and analysis rays every HNL from IP5. Parent lifetime, magnetic
-bending, material survival, interaction losses, and the displaced HNL
-production vertex are therefore absent. This model can dominate the
-lowest-mass result.
+**Status:** the default `generate_kaon_csvs.py` now uses the Pythia 8.315 SoftQCD
+spectrum (`SIGMA_KAON_PB = 6.535e11 pb`) plus a charged-kaon transport survival
+weight (`d_esc`), and BC6/BC7 low-mass was rerun and republished with it (see the
+transport bullet above and `data/published/`). The paragraphs below record the
+original (pre-2026-07-18) state and the decision gate that led here.
+
+**Original code (superseded):** `generate_kaon_csvs.py` sampled only charged kaons
+using a Tsallis `pT` model and a Gaussian rapidity with `SIGMA_KAON_PB = 3.0e11 pb`
+(now the legacy `--spectrum tsallis` fallback). Neutral `K_S/K_L -> pi l N` modes
+available in HNLCalc are omitted. Every kaon was decayed immediately, only the HNL
+momentum stored, and analysis rayed every HNL from IP5. Parent lifetime, magnetic
+bending, material survival, interaction losses, and the displaced HNL production
+vertex were therefore absent. This model can dominate the lowest-mass result.
+
+**Decision gate (measured 2026-07-17): transport dominates; do NOT ship a
+spectrum-only fix.** A Pythia 8.315 `SoftQCD:inelastic` run at 14 TeV
+(`sigma_inel = 78.9 mb`, `<n_K+-> = 8.28` per inelastic event) was compared
+against the Tsallis stub through the actual HNL geometry (accepted-yield proxy
+`mean(hit * path_len / beta_gamma)` at the long-lifetime edge, `Ue`/`Umu`,
+`m_N = 0.2-0.4 GeV`):
+
+- **Spectrum + normalization arm (both prompt-at-IP): the two errors nearly
+  cancel.** The stub's normalization is 2.18x too low
+  (`SIGMA_KAON_PB` should be ~6.54e11, not 3.0e11), but its Tsallis rapidity
+  (`sigma = 2.5`) is too central -- the true Pythia spectrum is more forward, so
+  its accepted fraction is only 0.50-0.57 of the stub's. Net yield ratio is
+  1.08-1.25, i.e. a lower-edge shift of only **-4% to -10%** (a slight
+  strengthening). At that decision point, the published BC6/BC7 was therefore
+  accidentally close to the correct *prompt-IP* spectrum result.
+- **Transport arm dominates and flips the sign.** Charged kaons are long-lived
+  (`ctau = 3.7 m`) and the stub decays them promptly at IP5. Applying a realistic
+  survival fraction `S = 0.1-0.7` weakens the lower edge by **+7% to +204%** --
+  an order of magnitude larger than the spectrum arm and in the opposite
+  direction.
+
+**Consequence for scope.** Shipping the Pythia spectrum alone would move BC6/BC7
+slightly *stronger* while silently omitting the larger transport loss that moves
+it *weaker* -- a biased-optimistic curve. So the spectrum fix must NOT be shipped
+on its own. This is `Ue`/`Umu` low-mass only (`m_N <~ 0.5 GeV`, the K -> l N
+window); `Utau` has no kaon channel (`m_tau > m_K`). Two acceptable resolutions:
+(1) **paper-final** -- implement charged-kaon transport (magnetic bending +
+material survival + displaced HNL origin) together with the Pythia spectrum, or
+(2) **interim** -- keep the then-current parametric flux and label BC6/BC7 below
+~0.5 GeV explicitly provisional, transport-dominated. Neutral `K_S/K_L` remain a
+smaller separate omission (audit additive proxy `<= 19%`). The Pythia SoftQCD driver is committed at
+`production/decay_engine/kaon_softqcd.cc` (build with `pythia8-config`), for
+whichever path is chosen.
+
+**IMPLEMENTED 2026-07-17 -- Pythia spectrum + transport survival weight.** This is
+the paper-final *approach* of option (1), with two deliberate, physics-justified
+simplifications relative to that option's full wording: the material survival is a
+fixed-`d_esc` *proxy* (not a propagated material map) and the kaon's magnetic
+bending is not modelled (both second-order given the survival-weight equivalence;
+see Remaining). `generate_kaon_csvs.py` now defaults to:
+- **Pythia SoftQCD spectrum + normalization.** The committed
+  `production/data/kaon_softqcd_spectrum.npz` (a 200x160 `(pT, y)` histogram from
+  `kaon_softqcd.cc`, reproducible from tracked sources via
+  `production/decay_engine/make_kaon_spectrum.py` at the pinned seed 42 with the
+  vendored Pythia 8.315) replaces the Tsallis stub, and `SIGMA_KAON_PB = 6.535e11`
+  (`sigma_inel = 78.93 mb` x `<n_K+-> = 8.28`) replaces the `3.0e11` stub. The
+  legacy path stays behind `--spectrum tsallis`.
+- **Charged-kaon transport as a survival weight.** Each kaon carries
+  `w = 1 - exp(-d_esc / (beta*gamma * ctau_K))`, the probability it decays before
+  being absorbed in dense material. The HNL is then cast from the IP rather than
+  from the displaced kaon-decay point (median ~0.7 m, `<= d_esc ~ 1.5 m`): a good
+  approximation because that shift is small and nearly collinear with the
+  forward-boosted HNL compared with the ~22 m flight to the fiducial volume.
+  `production/decay_engine/transport_control.py` casts each HNL from both origins
+  against the real fiducial mesh (`production/data/transport_control.json`) and
+  finds a displaced/IP accepted-yield ratio of `1.00` within `~3%` on the
+  long-lifetime plateau that sets the sensitivity (`ctau_N >= 10 m`: 1.03, 1.00,
+  0.99, 0.99), rising to `~1.1-1.2` only in the negligible short-lifetime tail --
+  so no per-origin acceptance change is applied (small where it matters, not zero).
+  `KAON_D_ESC = 1.5 m` is a proxy for the CMS material budget (calorimeter front
+  ~1.3 m); `KAON_D_ESC_RANGE = [1, 3] m` is propagated in the published
+  `data/published/bundle/kaon_desc_band.csv`. `--no-transport` restores the
+  prompt-at-IP behaviour.
+  `run_all.py` uses the new model by default.
+
+**Pre-rerun impact estimate for BC6/BC7 (Ue/Umu, m_N < 0.5 GeV):** the transport
+survival suppresses the accepted kaon yield to `~0.3-0.55` of the stub
+(`d_esc = 1.5-2 m`), and the Pythia spectrum modestly raises it (net `x1.1-1.25`);
+the product was expected to **weaken the low-mass lower edge by roughly +30% to
++80%**. The subsequent published rerun measured the larger x1.6-1.9 weakening
+reported below. `Utau` is unaffected (`m_tau > m_K`).
+
+**Remaining:** (1) DONE 2026-07-18 -- BC6/BC7 low-mass republished with the
+Pythia 8.315 + transport kaon model (`d_esc=1.5 m`): the low-mass Ue/Umu edge
+weakened by x1.6-1.9 and the Umu peak relocated out of the kaon window
+(`8.40e-9 @0.365 -> 1.30e-8 @1.5 GeV`). See `data/published/MANIFEST.json`. The
+`bundle/` FONLL band + channel/decay diagnostics were re-derived at the one
+affected band mass (`0.305 GeV`, Ue/Umu) with the new kaon model (111-variation
+FONLL campaign), so the bundle is consistent with the republished central.
+(2) pin `d_esc` against a real CMS material map -- the dominant kaon-sector
+uncertainty; the `KAON_D_ESC_RANGE = [1, 3] m` band is now published as
+`data/published/bundle/kaon_desc_band.csv` (~+-20-25% on the low-mass edge), but
+d_esc itself remains a proxy pending the material map;
+(3) neutral `K_S/K_L -> pi l N` remain omitted (audit additive proxy `<= 19%`);
+(4) magnetic bending of the kaon trajectory is not modelled (second-order given
+the survival-weight equivalence, but a soft-kaon check is worthwhile).
 
 **Required work:**
 
@@ -467,15 +608,60 @@ gone. Templates are generated on a fixed mass grid and matched per mass label
   normalizations (item 13 form factors, item 9 Bc). Also open: pin the FairShip
   revision + manifest, the GRENDEL visible definition, finite-template statistics.
 
-**Known result feature (document for referees, 2026-06-25):** the `Umu` limit
-degrades sharply below `m_N ~= 0.25 GeV` (e.g. `u2_min` at 0.2 GeV is ~10x
-weaker for `Umu` than `Ue`). This is **correct physics, not a bug**: the
-dominant visible 2-charged-track decay `N -> mu+- pi-+` closes below
-`m_mu + m_pi = 0.245 GeV`, so the `Umu` visible fraction collapses (only the
-softer 3-body `N -> mu e nu` survives), whereas `N -> e+- pi-+` keeps the `Ue`
-channel open down to ~0.14 GeV. Expect a visible step/weakening in the low-mass
-`Umu` (and analogously the `Utau`) contour at the corresponding meson threshold;
-state it explicitly so it is not read as an artifact.
+**Known result feature (document for referees, 2026-06-25; literature
+cross-check 2026-07-17):** the `Umu` limit degrades sharply below
+`m_N ~= 0.25 GeV` (e.g. `u2_min` at 0.2 GeV is ~10x weaker for `Umu` than
+`Ue`). This is **correct physics, not a bug**: GRENDEL acceptance requires
+`>= 2` charged stable daughters (`analysis/decay_reco_acceptance.py`); the
+dominant visible 2-track mode `N -> mu+- pi-+` closes below
+`m_mu + m_pi = 0.245 GeV`, so the `Umu` visible fraction collapses. Soft
+3-body (`N -> mu e nu`, NC `N -> nu e e`) remain at the few-percent level;
+`N -> nu pi0 (-> gamma gamma)` dominates below threshold but has **zero**
+charged tracks and is invisible to GRENDEL. `N -> e+- pi-+` keeps `Ue` open
+down to ~0.14 GeV. Expect a visible step in the low-mass `Umu` (and
+analogously `Utau`) contour at the corresponding meson threshold; state it
+explicitly so it is not read as an artifact.
+
+**Template measurement (FairShip caches, 2026-07-17):** rest-frame fraction
+of templates with `>= 2` charged stable daughters:
+
+| m_N (GeV) | Ue | Umu |
+|---|---|---|
+| 0.200 | ~61% | ~4% |
+| 0.245 | ~63% | ~5% |
+| 0.260 | ~63% | ~30% |
+
+`Umu` jumps ~6x when `N -> mu pi` opens; published `u2_min` moves
+`1.16e-7 -> 2.17e-8` over the same step. Production is kaon-dominated on
+both flavors in this window (~100% `Kmeson` at 0.305 GeV) -- the cliff is
+**decay visibility**, not production.
+
+**Why HNLimits / community U_mu plots do not show this cliff:**
+
+1. **Existing low-mass exclusions are mostly peak searches, not displaced
+   LLP.** E949 (~0.18-0.30 GeV) and NA62 (~0.20-0.38 GeV) constrain
+   `K+ -> mu+ N` via missing mass and assume the HNL escapes undecayed.
+   They never require `N -> mu pi`, so they cannot exhibit a 0.245 GeV
+   visibility cliff. Those fill the Hostert grey band below ~0.4 GeV
+   ([mhostert/Heavy-Neutrino-Limits](https://github.com/mhostert/Heavy-Neutrino-Limits)).
+
+2. **SHiP's published sub-kaon reach omits kaons.** arXiv:1811.00930:
+   for `M_N <~ 500 MeV` kaons dominate production, but most stop in the
+   target/hadron stopper, so SHiP includes **only charm and beauty**; the
+   Fig. 5 dashed extension below the kaon mass is **D-only**. SHiP also
+   requires `>= 2` charged tracks and would cliff if it claimed
+   kaon-sourced `Umu` there -- it simply does not claim that shelf.
+
+3. **GRENDEL does include the kaon channel** (Pythia 8.315 SoftQCD spectrum plus
+   the charged-kaon transport proxy; see item 10). That populates the kaon
+   window and therefore *exposes*
+   the `Umu` 2-track cliff. Comparing GRENDEL's displaced contour to the
+   Hostert composite below 0.25 GeV is apples-to-oranges.
+
+Separate from this cliff: absolute strength of the whole BC6/BC7 shelf
+below ~0.5 GeV is still limited by **kaon transport** (item 10), which is
+a modeling uncertainty, not the reason community plots lack the 0.245 GeV
+step.
 
 **Required work:**
 
@@ -511,6 +697,30 @@ as unpolarized, although their polarization depends on charge, phase space,
 and production kinematics. Tau-to-HNL decay generation includes only `pi`,
 `K`, `rho`, `K*`, and leptonic three-body modes; multi-hadron spectral modes
 such as `a1/3pi` are absent.
+
+**Partial bound on the analyzing-power error (2026-07-17): a candidate BC8
+(Utau) mover, not dismissible.** The unit-analyzing-power approximation is
+**exact** for the pseudoscalar 2-body modes (`pi`, `K`): a spin-0 daughter
+carries the full tau polarization, so `asym = +-1` is correct there. The error
+lives only in the **vector** modes (`rho`, `K*`), whose true analyzing power is
+`alpha_V = (m_tau^2 - 2 m_V^2)/(m_tau^2 + 2 m_V^2) = 0.45` (`rho`), `0.33`
+(`K*`), not 1. From `compute_tau_production_br_components`, the vector modes are
+**33-39% of total tau -> N production for `m_N < 1 GeV`** (falling to ~0 above
+1.2 GeV as the 2-body vector channels close). That gives an upper bound on the
+fractional yield perturbation of `f_vector x (1 - alpha_V) ~ 18-22%` at low
+`m_N`, i.e. an edge shift bound of very roughly `<= 10%` -- **above the 4.1% MC
+noise floor**, and consistent with the audit `production_spin_and_residual_angles`
+(median 7.1%, max 16.8%).
+
+Unlike `Lambda_c` (item 7, dismissed below noise), tau spin **cannot be
+dismissed from the branching ratios alone**. The bound is an overestimate,
+because the tau boost from the `D`/`B` parent partly washes the rest-frame
+angle out (the asymmetry mostly shifts the HNL *energy* spectrum, hence the
+decay length and fiducial fraction, rather than its direction). Pinning the
+actual BC8 curve shift needs the controlled acceptance measurement below --
+generating the induced-tau HNL 4-vectors under (A) the current `asym = +-1` and
+(B) per-mode analyzing power (`+-1` for `pi`/`K`, `alpha_V x sign` for `rho`/`K*`)
+and re-scanning. This is Utau-only; BC6/BC7 (`Ue`/`Umu`) are unaffected.
 
 **Required work:**
 
@@ -560,7 +770,17 @@ grid has a minimum spacing of 15 MeV and becomes much coarser at high mass;
 plotted lines simply connect calculated points. `run_sensitivity.py` now exposes
 `--decay-samples`, `--max-hit-events`, and `--mass-stride` (2026-06-23) so
 `DECAY_SAMPLES` and the hit-event count can be varied for convergence/approximate
-scans without code edits, but a convergence demonstration is not yet recorded.
+scans without code edits.
+
+**Progress (2026-07-16): exact-hit convergence controls recorded.** Exact-50
+versus the published exact-100 central anchors differs by at most 0.0444 dex on
+the lower edge and 0.0331 dex on finite upper edges.  Chunked versus unchunked
+exact evaluation differs by at most 0.00537/0.00103 dex (lower/upper), and the
+tested one-worker/two-worker point is bit-for-bit identical.  Independent
+exact-200 repeats validate the largest FONLL upper shifts.  Three independent
+exact-400 Bc endpoint repeats agree on island topology; their finite boundary
+spread is at most 4.5%.  Machine-readable results and hashes are in
+`data/published/bundle/NUMERICAL_CONTROLS.json`.
 
 **Required work:**
 
@@ -664,16 +884,20 @@ plot" (`analysis/plot_money.py`) builds on it and overlays the in-scope
 production+decay bands: FONLL theory (item 5), direct-Bc normalization
 (`bc_nuisance.py`, item 9), and the decay-model width band (`decay_model_band.py`,
 item 15). Detector, background, numerical, and luminosity bands are still absent
-(P0 items 1-3), and external constraints are not overlaid.
+(P0 items 1-3). External constraints are not overlaid by this package-local
+diagnostic; the central publication comparison in `shared/curves_PBC` does
+include versioned existing bounds and proposal curves.
 
-**Progress (2026-06-26): money-plot deliverable.** `analysis/plot_money.py`
+**Progress (2026-07-16): topology-safe diagnostic deliverable.** `analysis/plot_money.py`
 produces the single-flavor (m_N, |U|^2) projection with: the FONLL/Bc/decay-model
 bands above; a `band_registry`-driven combination (`combine_band.py`); a
-high-mass closure cap that pinches each dome to its interpolated production/
-lifetime crossing (~3.7 GeV) instead of a blunt residual-gap wall; a
+real-point high-mass closure; a
 hypothesis/scope `run_metadata.json` (Majorana, single-flavor, N>=3, idealized
 partner handoff); and a machine-readable bundle (central + per-band CSVs). It is
-run on demand into `tmp/runs/` (git-ignored); the code path is tracked. Still
+reproducible from the tracked `data/published/bundle/` on a clean clone.  Ribbon
+interpolation is limited to contiguous finite anchor segments and stops before
+nuisance-induced topology changes.  The publication comparison figure remains
+central-only; these are theory/model diagnostics, not confidence bands. Still
 open: detector/background/luminosity/numerical bands, a formal correlated
 combination across all axes, and external-constraint overlays.
 
@@ -690,7 +914,7 @@ outputs and regenerated from the run manifest.
 ## Work that can be done in the NNPDF40 workspace
 
 The active FONLL grid-generation workspace is external to this repository:
-`/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local`. Do not maintain
+`/Volumes/sandbox/projects/aaaPHYSICSaaa/shared/NNPDF40/fonll-local`. Do not maintain
 a second active copy under this HNL tree; use the external workspace for item 5
 and part of item 6. Status as of 2026-06-23:
 
@@ -708,23 +932,96 @@ and part of item 6. Status as of 2026-06-23:
    biased the band low). Envelope grids are pointwise constructions marked
    `envelope_band` and are refused by `production/fonll/fonll_parser.py`;
    only coherent individual grids may be sampled.
-4. **Known artifact.** The charm `(0.5, 0.5)` scale point drives `mu_F`
-   below the NNPDF4.0 grid minimum at low pT (suppression x14-20 for
-   pT <~ 2 GeV); see `fonll-local/PUBLICATION_BASELINE.md` for the
-   prescription caveat before quoting the low-mass charm scale band.
-5. **Alpha_s done; coverage/fragmentation outstanding.** The alpha_s companion
+4. **Known artifact (restated 2026-07-17; the earlier text misattributed it).**
+   Both charm `mu_F = 0.5` scale points request the proton PDF below the
+   NNPDF4.0 grid minimum at low `pT`. The resulting suppression is an LHAPDF
+   extrapolation, not a scale uncertainty. `NNPDF40_nlo_as_01180` has
+   `QMin = 1.65 GeV`; the charm central scale is `mu = sqrt(m_c^2 + pT^2)` with
+   `m_c = 1.5 GeV`, so `mu_F = 0.5 mu` starts at 0.75 GeV at `pT = 0` and stays
+   below `QMin` for all `pT < 2.94 GeV`. Bottom is structurally immune:
+   `mu_F = 0.5 sqrt(m_b^2 + pT^2) >= 2.375 GeV` always exceeds `QMin`, which is
+   why its scale spread is well behaved.
+
+   An earlier revision of this item named only the `(0.5, 0.5)` point and
+   quoted "suppression x14-20 for pT <~ 2 GeV". That figure is *accurate* for
+   the point it names (at y=0 it is x14 at pT=0.51 and x20 at pT=1.01); the
+   defect is that it is **incomplete**. Two points are affected, and the
+   omitted one -- `(1, 0.5)` -- is roughly twice as severe and is the one that
+   actually sets the band edge. Ratios to central, integrated over rapidity:
+
+   | pT (GeV) | `muR1_muF0p5` | `muR0p5_muF0p5` |
+   |---|---|---|
+   | 0.51 | 0.035 | 0.076 |
+   | 1.01 | 0.023 | 0.051 |
+   | 2.02 | 0.093 | 0.220 |
+   | 4.04 | 0.440 | 0.819 |
+
+   The suppression switches off at the `QMin` crossing, as an extrapolation
+   artifact should. This matters because `(1, 0.5)` sets the *lower edge* of
+   the charm scale envelope: its trapezoid-integrated ratio is 0.236, i.e.
+   `-76%`, the single largest term in the charm production budget (PDF 1sigma
+   is 14.8%; alpha_s 0.44%, item 5). The published charm scale band's lower
+   edge is therefore likely too wide, and a correct prescription should
+   *narrow* the band rather than widen it. See
+   `fonll-local/PUBLICATION_BASELINE.md` for the prescription caveat before
+   quoting the low-mass charm scale band.
+
+   **This is a band-edge problem, not a central-curve problem.** The central
+   charm grid also dips below `QMin` -- `mu_F = sqrt(m_c^2 + pT^2) < 1.65 GeV`
+   for `pT < 0.687 GeV` -- but at the 0.505 GeV node spacing that is a single
+   populated node carrying 2.8% of the charm trapezoid integral, below the 4.1%
+   median production-MC noise measured in `audits/curve_impact_20260610/`. The
+   published central exclusion curve is therefore not materially affected; only
+   the scale band's lower edge is.
+
+   **Required work:** regenerate the two charm `mu_F = 0.5` grids under a
+   defensible prescription (freeze `mu_F` at `QMin`, or restrict the variation
+   range and document the restriction), then rerun those two coherent chains --
+   the same two-chain cost as the alpha_s companions in item 5, for a far
+   larger effect. Before committing to it, compute the GRENDEL-accepted charm
+   yield below `pT ~ 3 GeV`: the artifact is confined to that region, so the
+   accepted fraction determines whether the contour moves or only the grid
+   does. 60% of the charm trapezoid integral lies below `pT = 3 GeV`, but that
+   is a production-level figure with no acceptance folded in, and it is not a
+   substitute for the accepted-yield calculation.
+
+   This item is charm-only, and so applies to the HNL benchmark alone: the BC4
+   scalar and BC10 fermiophilic-ALP benchmarks sample bottom exclusively and
+   are immune by construction.
+5. **Alpha_s grids and combiner done; propagated companion runs outstanding.** The alpha_s companion
    grids are generated -- `as_01170`/`as_01190` central grids for both quarks --
    and `combine_alphas.py` writes the PDF4LHC alpha_s envelope to
    `output/envelopes/alphas_manifest.json` (diagnostic-only, refused by the
    sampler; only the three coherent central grids are sampled). On the HNL side
-   the alpha_s term is now folded by **tracked** code:
+   tracked code can fold an alpha_s term:
    `analysis/combine_band.py --alphas-lo/--alphas-hi` adds the PDF4LHC
-   half-difference of the `as_01170`/`as_01190` companion curves in quadrature
-   into the band (retiring the earlier `/tmp/fold_alphas.py` side script).
-   Outstanding: a tracked driver for the companion production+analysis chains
+   half-difference of supplied `as_01170`/`as_01190` companion curves in
+   quadrature. The current published bundle does not supply or include those
+   curves. Outstanding: a tracked driver for the companion production+analysis chains
    (currently run by hand via the `run_variation_band` pattern); extended
    `pT`/rapidity coverage to bound the GRENDEL-accepted tail (item 6); and
    per-species fragmentation outputs/variations (item 8).
+
+   **Expected effect (measured 2026-07-17): negligible.** The PDF4LHC alpha_s
+   half-spread on the trapezoid-integrated grids is 0.44% (charm) and 1.49%
+   (bottom). Folded in quadrature with the terms it joins -- bottom scale
+   `+-42%`, charm scale `-76%/+112%`, PDF 1sigma 14.8% (charm) / 3.9% (bottom)
+   -- it moves the bottom band by `sqrt(42^2 + 1.49^2) - 42 = 0.03` percentage
+   points, below the campaign's own MC noise and invisible on any plot. Run it
+   for PDF4LHC prescription completeness and provenance, not for physics; it
+   should not be scheduled ahead of the charm `mu_F` artifact in item 4, which
+   costs the same two chains and is ~100x larger.
+
+   **Mechanical blocker (why it is still "by hand").** Two things, both small.
+   `run_variation_band.py:67` hardcodes
+   `GRID_STEM = "..._as_01180_..."`, and `_env_for` (line 178) rebuilds each
+   grid path from that stem rather than from the manifest's `path` field -- the
+   alpha_s companions differ *in the stem*, not the variation tag, so they are
+   unreachable. And `variation_manifest.json` indexes only `as_01180` grids
+   (2 central + 12 scale + 200 pdf + 4 mass = 218), so `discover_variations`
+   cannot see the companions or their checksums. Fixing means parametrizing the
+   stem per entry and synthesizing two coherent variation dicts; alpha_s is
+   coherent across both quarks, so it is structurally a scale point.
 
 A full replica campaign takes days and produces large logs unless run with
 `--compress-logs`; it is resumable via `--reuse-existing-grids`.
@@ -743,3 +1040,97 @@ A full replica campaign takes days and produces large logs unless run with
 Until the P0 items are resolved, curve-shift estimates for the remaining items
 are diagnostics of the current simplified analysis, not uncertainties on a
 fully defined experimental exclusion.
+
+## Appended note: production-definition mismatch in comparison plots
+
+The current published GRENDEL HNL curve is inclusive in production: it combines
+mesons, kaons, baryons, induced taus, prompt taus, and direct electroweak `WZ`
+samples. External proposal curves are not necessarily inclusive in the same
+way, so overlays against ANUBIS, FASER/FASER2, SHiP, CODEX-b, or similar
+proposals can become a result-definition problem rather than a simple
+sensitivity comparison.
+
+The immediate ANUBIS issue is important. The current GRENDEL `WZ` channel
+contains explicit MadGraph decay-chain samples `pp -> W -> ell N` and
+`pp -> Z -> nu N`, merged under one channel. The newer SET-ANUBIS HNL study
+uses direct electroweak production through charged-current Drell-Yan,
+neutral-current Drell-Yan, and `W gamma` fusion, and leaves hadronic HNL
+production for future work. Therefore the current GRENDEL `WZ` sample overlaps
+with the ANUBIS electroweak category, but it is not the same production model:
+it is missing `W gamma` fusion and does not keep per-row W/Z/process tags.
+
+Comparison plots should be split by production class before making strong
+claims:
+
+- meson/tau-only GRENDEL for forward or beam-dump-like comparisons such as
+  FASER/FASER2 and SHiP;
+- electroweak-only GRENDEL for ANUBIS/ATLAS/CMS displaced-style comparisons;
+- inclusive GRENDEL as a separately labeled "all production modes included"
+  result;
+- a channel-dominance diagnostic along the exclusion boundary, so each part of
+  the contour can be interpreted by its controlling production mode.
+
+Required follow-up:
+
+- publish separate inclusive, meson/tau-only, and electroweak-only sensitivity
+  CSVs, or add a channel-filter option to the sensitivity and plotting paths;
+- add `W gamma` fusion to the direct-electroweak production set, or quantify
+  its absence before using ANUBIS as an electroweak benchmark;
+- carry direct-electroweak process identity through LHE-to-CSV conversion so
+  W, Z, and future `W gamma` rows can be reweighted and plotted separately;
+- update comparison captions so they state the production classes being
+  compared, and avoid claiming "GRENDEL competes with ANUBIS/FASER" from the
+  inclusive envelope alone.
+
+**Completion test:** the comparison repository can produce committed overlays
+for inclusive, meson/tau-only, and electroweak-only GRENDEL curves, plus a
+channel-dominance diagnostic. Any ANUBIS comparison either includes
+CCDY/NCDY/`W gamma` in the GRENDEL electroweak sample, or carries an explicit
+caveat quantifying the missing `W gamma` component.
+
+### Resolution (2026-06-29): PBC conformance, Majorana convention, CL, EW K-factor
+
+Cross-checked against the PBC summary report (arXiv:2505.00947, Fig. 23, BC7
+muon-coupled HNL) and the SET-ANUBIS HNL study. Three points that looked like
+open conformance gaps are now settled; one production gap (`W gamma` fusion,
+per-row W/Z tags, mass-range) remains as written above.
+
+- **Majorana/Dirac (settled: Majorana, self-consistent).** GRENDEL is already
+  Majorana on both sides, so this is not a free choice. Production: the HeavyN
+  UFO declares `N1` self-conjugate (`name == antiname == 'N1'` in
+  `vendored/SM_HeavyN_CKM_AllMasses_LO/particles.py`). Decay/lifetime: HNLCalc
+  sums each charged-current mode together with its charge conjugate
+  (`HNLCalc.py` ~L1690-1762: `lP`, `lV`, `lud`, `lhad` each append both `mode`
+  and `conjugate(mode)`; `llnu` lists both orderings), i.e. a single `N` decays
+  to lepton-number +1 and -1 final states -- the Majorana ~2x-width convention,
+  not Dirac. This matches BC7 (defined as one Majorana HNL) and ANUBIS's
+  minimal-Majorana BC7. P0 item 4 therefore reduces from "determine the
+  convention" to "declare Majorana in the result metadata and audit the
+  remaining factors of two under it"; the convention itself is no longer open.
+
+- **Confidence level (settled: no change; keep zero-background `N >= 3`).** In
+  PBC Fig. 23 the *existing* upper limits carry mixed CLs (90% for the
+  beam-dump/fixed-target set, 95% for ATLAS/CMS), but the *projection* curves we
+  sit among (ANUBIS, CODEX-b, FLArE, FASER2, SHiP) are not held to a common CL:
+  the caption uses line style for background-estimate maturity (solid = data
+  extrapolation, dashed = full MC, dotted = toy MC / negligible background), not
+  a confidence level. A zero-background `N >= 3` (95%) contour is a legitimate
+  member of that set, and `N >= 3` vs `N >= 2.3` (90%) is a ~30% yield shift --
+  invisible on a log-log reach boundary. Conformance work is therefore labeling,
+  not recomputation: state our contour definition explicitly, and tag GRENDEL's
+  curve at the **dotted** maturity tier (zero background assumed; the cosmic
+  decay-in-flight is modelled in `../higgs/` but not yet folded into the limit,
+  P0 item 3), promoting to dashed only once that background enters the limit.
+
+- **Electroweak K-factor (settled: flat 1.3 for W and Z is sound).**
+  `K_FACTOR_EW = 1.3` is an upper-but-in-band NLO single-boson on-peak value;
+  W and Z K-factors are driven by the same `q qbar -> V` QCD and differ by only
+  a few percent, so a common value is well justified (the W/Z gap is far below
+  the order/PDF ambiguity). The mass grid stops at 10 GeV, far below
+  `m_W ~ 80.4` / `m_Z ~ 91.2`, so the W/Z are on-shell across the whole grid and
+  the on-peak 1.3 is mass-independent here (the off-shell/high-mass K-factor
+  rise only matters if the grid is extended toward and above the boson pole).
+  Consequently the "unsplit Z scaled by the W K-factor" caveat above is a
+  sub-few-percent normalization effect, not a normalization error: the per-row
+  W/Z tag is needed for the EW-only-vs-inclusive comparison split and for future
+  `W gamma` tagging, not to correct the inclusive normalization.

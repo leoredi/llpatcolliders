@@ -155,8 +155,8 @@ W/Z rows use their MadGraph event weights and the electroweak K-factor, which
 is now keyed per process (`K_FACTOR_EW_BY_PROCESS` in
 `production/constants.py`: the W value for `W/Z -> ell N`, and the W vs
 Drell-Yan values per tau origin) rather than a single flat constant in the
-drivers. The kaon channel uses the approximate inclusive kaon flux documented
-in `production/constants.py`.
+drivers. The charged-kaon channel uses the Pythia 8.315 SoftQCD spectrum and
+transport weight documented in `production/constants.py`.
 
 ## Setup
 
@@ -204,14 +204,14 @@ cd hnl
 ./run_full_all.sh
 ```
 
-The script performs the complete three-flavor chain. It first runs non-W/Z
-production, then runs W/Z production in independent mass shards, combines all
-channels, and runs the analysis.
-
-It does **not** generate the FairShip decay templates (that stage needs ROOT +
-Pythia8, which the conda env lacks). Generate them once beforehand -- see
-"Decay templates" under Manual Operation -- or the analysis will skip every
-mass point with a "no decay templates" note.
+The script runs non-W/Z production, W/Z production in independent mass shards,
+channel combination, and analysis. FairShip template generation uses a
+separate interpreter: set `HNL_TEMPLATE_PYTHON` to a Python with
+`ROOT.TPythia8`, or pre-generate the templates as described under Manual
+Operation. If the main `HNL_PYTHON` already provides `ROOT.TPythia8`, the
+runner detects and uses it. Otherwise template generation is skipped and the
+analysis consumes existing files; a clean run with no templates fails rather
+than publishing an empty result.
 
 By default it uses:
 
@@ -238,6 +238,7 @@ are retained. Other useful overrides are:
 
 ```bash
 HNL_PYTHON=/path/to/python \
+HNL_TEMPLATE_PYTHON=/path/to/root-enabled-python \
 HNL_PRODUCTION_WORKERS=6 \
 HNL_PROMPT_TAU_CORES=12 \
 HNL_WZ_JOBS=8 \
@@ -340,7 +341,7 @@ Use `--plot-only` to regenerate the plot from an existing sensitivity CSV and
 This repository **only produces the GRENDEL curve.** The final comparison
 figures -- GRENDEL overlaid on the PBC BC7 contours and the HNLimits community
 compilation of existing exclusions + competitor projections -- are made in the
-**sibling `../curves_PBC` repository**, which reads our curve as input.
+workspace repository `shared/curves_PBC`, which reads our curve as input.
 
 The contract is a single CSV with (at minimum) the columns
 `mass_GeV, flavor, u2_min, u2_max` (plus `has_sensitivity`, `u2_max_open`),
@@ -359,13 +360,15 @@ data/published/MANIFEST.json                 # provenance: run, sha, cut, reach
 data/published/README.md                     # how to re-publish
 ```
 
-`curves_PBC` points its default `GRENDEL_CSV` at this file (overridable with the
-`CURVES_PBC_GRENDEL_CSV` env var). After producing a better run, re-publish by
+`shared/curves_PBC` points its default HNL input at this file. Override it with
+`HNL_GRENDEL_CSV`; `CURVES_PBC_GRENDEL_CSV` remains a legacy alias. After
+producing a better run, re-publish by
 copying its `hnl_sensitivity.csv` into `data/published/` and refreshing the
 manifest (see `data/published/README.md`); do **not** point the consumer at a
 `tmp/runs/<tag>` path.
 
-The current published curve is the `central_newgrids_20260623/analysis_exact_100`
+The current published curve is the
+`central_newgrids_20260623/analysis_exact_100_betafix`
 run (`P > 100 MeV` track cut, the deepest/latest). Note for the figure caption:
 the high-mass island closes near `m_N ~ 3.6 GeV` because of the `ctau ~ 1/m_N^5`
 lifetime law (peak yield `~ sigma * beta*gamma / m_N^5`), **not** a B-meson /
@@ -381,32 +384,35 @@ read directly from `data/published/`:
 - **It is not missing production.** At the closure point the electroweak
   channel already dominates: `bundle/channel_breakdown_u2min.csv` gives the
   `WZ` channel **89.5% of the peak yield at 3.6 GeV (Umu)** (Bmeson 5.9%,
-  Bc 4.6%). Adding more W/Z statistics or channels cannot reopen the island.
+  Bc 4.5%). More W/Z Monte Carlo statistics cannot reopen the island. A
+  genuinely missing production channel would be a model change and would need
+  enough accepted yield to overcome the steep lifetime suppression discussed
+  below.
 - **The collapse is the m^-6 lifetime wall.** `peak_N` in
   `grendel_hnl_sensitivity.csv` is the yield at the *optimal* mixing, i.e.
   the best GRENDEL can do at that mass: 3.02 at 3.62 GeV (last point with
-  `N >= 3`), 1.63 at 4 GeV, 0.40 at 5 GeV, 0.022 at 8 GeV, 0.0056 at 10 GeV.
-  From 4 to 8 GeV both `peak_N` and `peak_u2` fall by ~70 = 2^6: five powers
-  of m from `Gamma_N ~ G_F^2 U^2 m^5`, one from the boost `beta*gamma ~ E/m`
-  at the roughly mass-independent `E ~ m_W/2` of on-shell `W -> l N`.
+  `N >= 3`), 1.63 at 4 GeV, 0.40 at 5 GeV, 0.022 at 8 GeV, and 0.0056 at
+  10 GeV. From 4 to 8 GeV both `peak_N` and `peak_u2` fall by about
+  `70 ~= 2^6`: five powers of mass from
+  `Gamma_N ~ G_F^2 U^2 m^5`, and one from the boost
+  `beta*gamma ~ E/m` at the approximately mass-independent
+  `E ~ m_W/2` of on-shell `W -> l N`.
 - **Analytic form.** For a shell detector at distance `d` with fiducial depth
   `dL`, writing `lambda_1 = beta*gamma * ctau(U^2=1) ~ m^-6`, the scan
   `N(U^2) = sigma_1 U^2 L * (dL U^2/lambda_1) exp(-d U^2/lambda_1)` peaks at
-  `U^2_opt = 2 lambda_1/d` with `N_max ~ sigma_W L dL lambda_1 / d^2`. At
-  10 GeV even the optimal coupling (`peak_u2 = 9.7e-10`) yields only ~60
-  produced HNLs in all of 3 ab^-1, before any acceptance.
-- **Geometry enters only as the 1/6 power.** The closure mass scales as
-  `(sigma L dL / d^2)^(1/6)`, so it is brutally insensitive to detector
-  placement. Digitized competitor projections (HNLimits compilation) confirm
-  the family pattern (Umu): CODEX-b ~3.0-3.3 GeV, **GRENDEL 3.63-3.69 GeV**,
-  MATHUSLA 4.05 GeV, SHiP 5.1-5.8 GeV (beam-dump flux), ANUBIS 6.8-7.7 GeV
-  (starts ~5-20 m from the IP with larger solid angle). Only FCC-ee reaches
-  61 GeV -- a detector *at* the IP. Moving GRENDEL's closure from 3.63 to
-  10 GeV would need `(10/3.63)^6 ~ 440x` more peak yield; no transverse
-  tunnel geometry provides that. The "on-shell W/Z" regime above 10 GeV in
-  the generic mass-coupling cartoons sits at `ctau << 1 m` and is the domain
-  of ATLAS/CMS near-IP displaced-vertex searches and EWPD, not of any
-  O(20 m)-distant detector.
+  `U^2_opt = 2 lambda_1/d` with
+  `N_max ~ sigma_W L dL lambda_1 / d^2`. At 10 GeV even the optimal coupling
+  (`peak_u2 = 9.7e-10`) yields only about 60 produced HNLs in all of
+  `3 ab^-1`, before acceptance.
+- **Geometry enters only through a sixth root.** The closure mass scales as
+  `(sigma L dL / d^2)^(1/6)`, so large geometric or rate changes move it
+  modestly. Digitized projections in `shared/curves_PBC` show the same family
+  pattern for Umu: CODEX-b about 3.0--3.3 GeV, GRENDEL 3.63--3.69 GeV,
+  MATHUSLA 4.05 GeV, SHiP 5.1--5.8 GeV, and ANUBIS 6.8--7.7 GeV. Moving the
+  GRENDEL closure from 3.63 to 10 GeV would require roughly
+  `(10/3.63)^6 ~= 440` times more peak yield. The higher-mass on-shell W/Z
+  regime therefore belongs to near-IP searches rather than a detector about
+  20 m from the IP.
 
 ## Paths and Files
 
@@ -454,18 +460,24 @@ compatibility module.
 
 - The heavy-meson backend is the committed central NNPDF4.0 NLO FONLL grid in
   `data/production/fonll/central/`, generated in the external workspace
-  `/Volumes/sandbox/projects/aaaPHYSICSaaa/NNPDF40/fonll-local`.
+  `/Volumes/sandbox/projects/aaaPHYSICSaaa/shared/NNPDF40/fonll-local`.
 - The FONLL tables stop at `pT = 50 GeV`. The central curve uses one central
   scale/PDF choice; scale/PDF/mass variation grids are produced in that external
   FONLL workspace and propagated into a band via `run_variation_band.py`
-  (`--grid-dir`, default `tmp/fonll/output`) + `analysis/combine_band.py`; the
-  latter also folds the PDF4LHC alpha_s term from companion curves
-  (`--alphas-lo/--alphas-hi`). The full 111-variation band has been propagated
-  and is overlaid on both exclusion boundaries by `analysis/plot_money.py` (the
-  GRENDEL "money plot"); it is ~0.24 dex (lower, scale-dominated) / ~0.27 dex
-  (upper, scale + `m_Q` with spectral-shape effect) median, PDF sub-dominant. The
-  band is a generated overlay, not folded into the committed central run (see
-  `REMAINING_WORK.md` items 5 and 22).
+  (`--grid-dir`, default `tmp/fonll/output`) + `analysis/combine_band.py`.
+  `combine_band.py` can optionally fold a PDF4LHC alpha_s term from companion
+  curves (`--alphas-lo/--alphas-hi`), but those companion analysis chains are
+  not part of the published bundle. The post-`beta=p/E` exact-hit campaign
+  propagated 111 coherent curves (central plus 110 non-central scale, PDF, and
+  heavy-quark-mass members) with no topology changes among the non-central
+  members.
+  Its median combined half-widths are `-0.101/+0.131` dex on the lower edge
+  (scale dominated) and `-0.0066/+0.0081` dex on finite upper edges.  The largest
+  upper shift, 0.114 dex, survives independent exact-200 controls; the previous
+  order-one upper band was an artifact of a 4,000-hit resampling cap.  The full
+  raw table, manifests, controls, and combined result are tracked in
+  `data/published/bundle/`.  `analysis/plot_money.py` renders these as a separate
+  theory/model diagnostic; the paper comparison remains central-only.
 - Charm and bottom species share one heavy-flavor shape per table; species
   fractions are applied in the event weights. `Bc` reuses the bottom shape at
   the Bc mass. Per-species and dedicated-Bc shapes are planned
@@ -478,9 +490,12 @@ compatibility module.
   different acceptances and are extrapolated as constants over the FONLL
   phase space; their uncertainties are not propagated
   (see `REMAINING_WORK.md`).
-- The kaon flux is a parametrized soft-QCD approximation and dominates the
-  normalization uncertainty at the lightest masses. A measured/Pythia kaon
-  spectrum is planned (see `REMAINING_WORK.md`).
+- The charged-kaon flux uses a Pythia 8.315 SoftQCD spectrum and a
+  decay-before-absorption transport weight (see `REMAINING_WORK.md`); it
+  dominates the normalization uncertainty at the lightest masses. The BC6/BC7
+  low-mass curves were rerun and republished with this model (2026-07-18,
+  `d_esc = 1.5 m`; the transport band is `data/published/bundle/kaon_desc_band.csv`).
+  The transport escape length remains a proxy pending a real material map.
 - Meson, baryon, and tau three-body energy/`q^2` distributions are
   HNLCalc-weighted, but complete multidimensional matrix-element spin
   correlations are not modeled (see `REMAINING_WORK.md`).
@@ -496,8 +511,11 @@ compatibility module.
 - The HNL total-width / lifetime quark-hadron duality is propagated as a separate
   seam-derived decay-model band `delta(m)` (`analysis/width_band.py` +
   `analysis/decay_model_band.py`), driven coherently through `ctau` and
-  `vis_frac` (the composition leg self-cancels to ~1%); it owns the upper edge /
-  dome (~0.08 dex). The *absolute* visible-BR normalization is a distinct,
+  `vis_frac` (the composition leg self-cancels to ~1%); stable finite upper-edge
+  shifts have median half-widths near `-0.094/+0.115` dex.  One nuisance
+  direction removes the island near high-mass closure, so those endpoints are
+  recorded as topology changes rather than drawn as a smooth ribbon. The
+  *absolute* visible-BR normalization is a distinct,
   still-unpropagated decay nuisance (see `REMAINING_WORK.md` item 15).
 - The electroweak K-factor is a per-process table whose entries all currently
   hold the inclusive `1.3` constant; differential NLO/LO values are an optional

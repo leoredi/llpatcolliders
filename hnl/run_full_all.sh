@@ -9,6 +9,7 @@ PROMPT_TAU_CORES="${HNL_PROMPT_TAU_CORES:-12}"
 WZ_JOBS="${HNL_WZ_JOBS:-8}"
 WZ_CORES_PER_JOB="${HNL_WZ_CORES_PER_JOB:-1}"
 ANALYSIS_WORKERS="${HNL_ANALYSIS_WORKERS:-3}"
+TEMPLATE_PYTHON="${HNL_TEMPLATE_PYTHON:-}"
 
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   echo "ERROR: Python executable not found: $PYTHON_BIN" >&2
@@ -34,6 +35,25 @@ printf '  Prompt-tau MG5 cores: %s\n' "$PROMPT_TAU_CORES"
 printf '  W/Z shards: %s x %s core(s)\n' "$WZ_JOBS" "$WZ_CORES_PER_JOB"
 printf '  Analysis workers: %s\n\n' "$ANALYSIS_WORKERS"
 
+if [[ -z "$TEMPLATE_PYTHON" ]] && "$PYTHON_BIN" -c \
+  'import ROOT; assert hasattr(ROOT, "TPythia8")' >/dev/null 2>&1; then
+  TEMPLATE_PYTHON="$PYTHON_BIN"
+fi
+
+if [[ -n "$TEMPLATE_PYTHON" ]]; then
+  if ! command -v "$TEMPLATE_PYTHON" >/dev/null 2>&1; then
+    echo "ERROR: template Python executable not found: $TEMPLATE_PYTHON" >&2
+    exit 1
+  fi
+  "$TEMPLATE_PYTHON" -c \
+    'import numpy, scipy, ROOT; assert hasattr(ROOT, "TPythia8")'
+  printf '  Template Python: %s\n\n' \
+    "$("$TEMPLATE_PYTHON" -c 'import sys; print(sys.executable)')"
+else
+  printf '%s\n\n' \
+    '  Template generation: skipped (pre-generate templates or set HNL_TEMPLATE_PYTHON)'
+fi
+
 "$PYTHON_BIN" -u run_all.py \
   --flavor Ue Umu Utau \
   --no-wz \
@@ -54,13 +74,14 @@ done
 "$PYTHON_BIN" -m production.combine_channels --flavor Ue Umu Utau \
   2>&1 | tee "tmp/${HNL_RUN_TAG}_combine.log"
 
-# Rest-frame decay templates feed the acceptance MC; without them every mass
-# point is dropped and the analysis would emit an empty plot. --skip-existing
-# keeps re-runs cheap (templates live under tmp/decay_templates, shared tags).
-"$PYTHON_BIN" -u -m analysis.generate_decay_templates \
-  --flavor Ue Umu Utau \
-  --skip-existing \
-  2>&1 | tee "tmp/${HNL_RUN_TAG}_templates.log"
+# Rest-frame templates require a ROOT/Pythia-enabled interpreter, which is
+# normally distinct from the production/analysis conda environment.
+if [[ -n "$TEMPLATE_PYTHON" ]]; then
+  "$TEMPLATE_PYTHON" -u -m analysis.generate_decay_templates \
+    --flavor Ue Umu Utau \
+    --skip-existing \
+    2>&1 | tee "tmp/${HNL_RUN_TAG}_templates.log"
+fi
 
 "$PYTHON_BIN" -u run_analysis.py \
   --flavor Ue Umu Utau \

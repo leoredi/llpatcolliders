@@ -47,13 +47,22 @@ def _f(v):
     return float(v) if v is not None else float("nan")
 
 
-def run(flavors, masses) -> pd.DataFrame:
+def run(flavors, masses, decay_samples, max_hit_events, event_chunk,
+        seed_salt) -> pd.DataFrame:
     mesh = _get_mesh()
     rows = []
     for flavor in flavors:
         for mass in masses:
             d, hf = width_band.delta_and_hadfrac(flavor, mass)
-            r = process_mass_point(flavor, mass, mesh, width_delta=d, had_frac=hf)
+            r = process_mass_point(
+                flavor, mass, mesh,
+                decay_samples=decay_samples,
+                max_hit_events=max_hit_events,
+                event_chunk=event_chunk,
+                seed_salt=seed_salt,
+                width_delta=d,
+                had_frac=hf,
+            )
             if r is None:
                 print(f"  {flavor:5s} m={mass}: SKIPPED -- no 4-vectors "
                       f"(mass not in MASS_GRID / not produced in the central run)",
@@ -73,10 +82,25 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--flavor", nargs="+", default=["Ue", "Umu", "Utau"])
     ap.add_argument("--mass", nargs="+", type=float, default=None)
+    ap.add_argument("--decay-samples", type=int, default=50)
+    ap.add_argument("--max-hit-events", type=int, default=None,
+                    help="Optional weighted-resampling cap; omit for exact hits")
+    ap.add_argument("--event-chunk", type=int, default=1000,
+                    help="Exact-hit memory chunk (default: 1000)")
+    ap.add_argument("--seed-salt", default="")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
 
-    df = run(args.flavor, args.mass or DEFAULT_MASSES)
+    if args.decay_samples < 1:
+        ap.error("--decay-samples must be >= 1")
+    if args.max_hit_events is not None and args.max_hit_events < 1:
+        ap.error("--max-hit-events must be >= 1 when provided")
+    if args.event_chunk is not None and args.event_chunk < 1:
+        ap.error("--event-chunk must be >= 1 when provided")
+
+    df = run(args.flavor, args.mass or DEFAULT_MASSES,
+             args.decay_samples, args.max_hit_events, args.event_chunk,
+             args.seed_salt)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out, index=False)
     print(f"wrote {args.out} ({len(df)} rows with sensitivity)")
