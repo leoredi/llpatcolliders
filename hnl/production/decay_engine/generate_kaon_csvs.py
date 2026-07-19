@@ -12,9 +12,9 @@ Default model (Pythia spectrum + transport survival weight):
                   The displaced decay origin shifts the HNL start by <= d_esc, which
                   make_kaon_spectrum's sibling transport_control.py measures to change
                   the acceptance by only a few % on the sensitivity plateau, so the
-                  HNL is cast from IP. ``d_esc`` (KAON_D_ESC = 1.5 m; the KAON_D_ESC_RANGE
-                  [1, 3] m is declared for the pending BC6/BC7 uncertainty pass)
-                  is the dominant kaon-sector uncertainty pending a CMS material map.
+                  HNL is cast from IP. ``d_esc`` (KAON_D_ESC = 1.5 m) is varied over
+                  KAON_D_ESC_RANGE = [1, 3] m in the published BC6/BC7 transport band;
+                  it remains a proxy pending a CMS material map.
 
 Legacy behaviour (``--spectrum tsallis`` and/or ``--no-transport``) reproduces
 the old parametric prompt-at-IP stub for A/B comparison.

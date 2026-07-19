@@ -77,7 +77,7 @@ SIGMA_KAON_PB_TSALLIS = 3.0e11  # legacy stub normalization (~80 mb x ~4 K+-)
 # proxy pending a real material map. Set KAON_D_ESC = None (or --no-transport)
 # for the legacy prompt-at-IP behaviour.
 KAON_D_ESC = 1.5        # m, central escape distance before dense material
-KAON_D_ESC_RANGE = (1.0, 3.0)   # m, reserved for the pending BC6/BC7 uncertainty pass (not yet propagated)
+KAON_D_ESC_RANGE = (1.0, 3.0)   # m, published transport-band endpoints
 
 KAON_TSALLIS_T = 0.17   # GeV
 KAON_TSALLIS_N = 7.0

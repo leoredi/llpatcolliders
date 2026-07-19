@@ -44,7 +44,7 @@ and may ultimately move the plotted contour.
 
 | layer \ scenario | 100 (Ue) | 010 (Umu) | 001 (Utau) |
 |---|---|---|---|
-| **production** | mesons + W/Z EW; kaon flux parametric (NLO) | mesons + W/Z EW; kaon flux parametric (NLO) | mesons + tau-parent + W/Z EW; tau Kallen & W-tau polarization already fixed |
+| **production** | mesons + W/Z EW; Pythia charged-kaon flux + transport proxy | mesons + W/Z EW; Pythia charged-kaon flux + transport proxy | mesons + tau-parent + W/Z EW; tau Kallen & W-tau polarization already fixed |
 | **analysis** | cuts/geometry/threshold single-sourced with `higgs/` -- aligned | aligned | aligned |
 
 Robustness fixes that *prevent* a future silent curve corruption (not a current
@@ -366,8 +366,8 @@ against the Tsallis stub through the actual HNL geometry (accepted-yield proxy
   (`sigma = 2.5`) is too central -- the true Pythia spectrum is more forward, so
   its accepted fraction is only 0.50-0.57 of the stub's. Net yield ratio is
   1.08-1.25, i.e. a lower-edge shift of only **-4% to -10%** (a slight
-  strengthening). The current published BC6/BC7 is therefore accidentally close
-  to the correct *prompt-IP* spectrum result.
+  strengthening). At that decision point, the published BC6/BC7 was therefore
+  accidentally close to the correct *prompt-IP* spectrum result.
 - **Transport arm dominates and flips the sign.** Charged kaons are long-lived
   (`ctau = 3.7 m`) and the stub decays them promptly at IP5. Applying a realistic
   survival fraction `S = 0.1-0.7` weakens the lower edge by **+7% to +204%** --
@@ -381,7 +381,7 @@ on its own. This is `Ue`/`Umu` low-mass only (`m_N <~ 0.5 GeV`, the K -> l N
 window); `Utau` has no kaon channel (`m_tau > m_K`). Two acceptable resolutions:
 (1) **paper-final** -- implement charged-kaon transport (magnetic bending +
 material survival + displaced HNL origin) together with the Pythia spectrum, or
-(2) **interim** -- keep the current parametric flux and label BC6/BC7 below
+(2) **interim** -- keep the then-current parametric flux and label BC6/BC7 below
 ~0.5 GeV explicitly provisional, transport-dominated. Neutral `K_S/K_L` remain a
 smaller separate omission (audit additive proxy `<= 19%`). The Pythia SoftQCD driver is committed at
 `production/decay_engine/kaon_softqcd.cc` (build with `pythia8-config`), for
@@ -413,17 +413,17 @@ see Remaining). `generate_kaon_csvs.py` now defaults to:
   0.99, 0.99), rising to `~1.1-1.2` only in the negligible short-lifetime tail --
   so no per-origin acceptance change is applied (small where it matters, not zero).
   `KAON_D_ESC = 1.5 m` is a proxy for the CMS material budget (calorimeter front
-  ~1.3 m); `KAON_D_ESC_RANGE = [1, 3] m` is declared for the pending BC6/BC7
-  uncertainty pass but is not yet propagated into a band. `--no-transport` restores
-  the prompt-at-IP behaviour.
+  ~1.3 m); `KAON_D_ESC_RANGE = [1, 3] m` is propagated in the published
+  `data/published/bundle/kaon_desc_band.csv`. `--no-transport` restores the
+  prompt-at-IP behaviour.
   `run_all.py` uses the new model by default.
 
-**Measured combined impact on BC6/BC7 (Ue/Umu, m_N < 0.5 GeV):** the transport
+**Pre-rerun impact estimate for BC6/BC7 (Ue/Umu, m_N < 0.5 GeV):** the transport
 survival suppresses the accepted kaon yield to `~0.3-0.55` of the stub
 (`d_esc = 1.5-2 m`), and the Pythia spectrum modestly raises it (net `x1.1-1.25`);
-the product **weakens the low-mass lower edge by roughly +30% to +80%**. The
-current *published* BC6/BC7 low-mass curve is therefore too strong by this amount
-and must be rerun. `Utau` is unaffected (`m_tau > m_K`).
+the product was expected to **weaken the low-mass lower edge by roughly +30% to
++80%**. The subsequent published rerun measured the larger x1.6-1.9 weakening
+reported below. `Utau` is unaffected (`m_tau > m_K`).
 
 **Remaining:** (1) DONE 2026-07-18 -- BC6/BC7 low-mass republished with the
 Pythia 8.315 + transport kaon model (`d_esc=1.5 m`): the low-mass Ue/Umu edge
@@ -652,8 +652,9 @@ both flavors in this window (~100% `Kmeson` at 0.305 GeV) -- the cliff is
    requires `>= 2` charged tracks and would cliff if it claimed
    kaon-sourced `Umu` there -- it simply does not claim that shelf.
 
-3. **GRENDEL does include the kaon channel** (parametric prompt-IP stub;
-   see item 10). That populates the kaon window and therefore *exposes*
+3. **GRENDEL does include the kaon channel** (Pythia 8.315 SoftQCD spectrum plus
+   the charged-kaon transport proxy; see item 10). That populates the kaon
+   window and therefore *exposes*
    the `Umu` 2-track cliff. Comparing GRENDEL's displaced contour to the
    Hostert composite below 0.25 GeV is apples-to-oranges.
 

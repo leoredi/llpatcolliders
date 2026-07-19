@@ -7,10 +7,12 @@ as a separate diagnostic from a clean clone, with no `tmp/` run tree required.
 
 ## Contents
 
-- `../grendel_hnl_sensitivity.csv` -- canonical beta-fixed central contour.
+- `../grendel_hnl_sensitivity.csv` -- canonical beta-fixed central contour with
+  the 2026-07-18 charged-kaon low-mass republication.
 - `hnl_band_fonll.csv` -- combined FONLL scale/PDF/heavy-quark-mass result.
 - `hnl_band_fonll_raw.csv` -- all 111 x 54 = 5,994 variation results.
-- `FONLL_MANIFEST.json` -- campaign configuration and per-variation CSV hashes.
+- `FONLL_MANIFEST.json` -- base-campaign configuration and per-variation CSV
+  hashes plus the structured 0.305 GeV partial-recompute contract.
 - `FONLL_GRID_MANIFEST.json` -- sanitized 218-grid source manifest; original
   source-manifest SHA-256 is embedded.
 - `decay_model_band.csv` -- coherent total-width/lifetime and visible-fraction
@@ -20,6 +22,8 @@ as a separate diagnostic from a clean clone, with no `tmp/` run tree required.
   or exact-400 endpoint controls.
 - `channel_breakdown_u2min.csv` -- exact-hit, eight-channel composition at the
   lower edge, peak, and finite upper edge.
+- `kaon_desc_band.csv` -- charged-kaon `d_esc=1/1.5/3 m` transport diagnostic
+  on the low-mass Ue/Umu lower edge.
 - `NUMERICAL_CONTROLS.json`, `fonll_outlier_controls.csv`, and
   `bc_nuisance_endpoint_controls.csv` -- convergence and independent-seed checks.
 - `MANIFEST.json` -- bundle hashes, schemas, summary statistics, and topology.
@@ -32,6 +36,13 @@ all detector hits, 50 decay samples per hit, `event_chunk=1000`, two analysis
 workers, and 100,000 generated events per production channel.  Every variation
 has all 54 requested anchors.  All 110 non-central members agree with central on
 finite/open topology at every lower and upper boundary.
+
+The tracked raw table is hybrid only at `m_N=0.305 GeV`: its Ue/Umu rows were
+recomputed for all 111 members after the Pythia-plus-transport kaon publication;
+the other 5,772 rows retain the original campaign.  At this 99.85%-kaon-dominated
+anchor the apparent member spread is acceptance-MC noise, so the combined FONLL
+lower-edge ribbon is deliberately blank.  The raw rows and dex components remain
+auditable, while `kaon_desc_band.csv` carries the relevant low-mass systematic.
 
 In `log10(U^2)`, the combined FONLL lower-edge diagnostic has median
 `-0.101/+0.131` dex half-widths (scale dominated; largest upward shift 0.301
@@ -69,6 +80,6 @@ From `hnl/` in the `hnl` conda environment:
 python -m analysis.plot_money --out-dir tmp/money_repro
 ```
 
-This writes `money_plot.pdf`, `money_plot.png`, copied input CSVs, and
-`run_metadata.json`.  Ribbons are interpolated only within contiguous finite
+This writes `money_plot.pdf`, `money_plot.png`, all plotted input CSVs (including
+the kaon transport band), and `run_metadata.json`.  Ribbons are interpolated only within contiguous finite
 anchor segments, so the renderer never extrapolates through a topology change.

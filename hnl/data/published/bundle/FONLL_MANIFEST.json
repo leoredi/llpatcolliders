@@ -1,12 +1,13 @@
 {
-  "schema_version": 1,
-  "artifact": "GRENDEL HNL exact FONLL variation campaign",
-  "generated_utc": "2026-07-16T19:14:31.731195+00:00",
-  "campaign_started": "2026-07-15T22:47:00+02:00",
-  "campaign_completed": "2026-07-16T18:18:21+02:00",
-  "campaign_code_revision": "6482484dc928342cf3cb132a63d8df0f364dde17",
-  "postprocessing_code_revision": "2ab1f98bc636ca30e3848f1525c0542bd1a01710",
-  "configuration": {
+  "schema_version": 2,
+  "artifact": "GRENDEL HNL hybrid exact FONLL variation campaign",
+  "base_manifest_generated_utc": "2026-07-16T19:14:31.731195+00:00",
+  "last_updated_utc": "2026-07-19T08:29:30Z",
+  "base_campaign_started": "2026-07-15T22:47:00+02:00",
+  "base_campaign_completed": "2026-07-16T18:18:21+02:00",
+  "base_campaign_code_revision": "6482484dc928342cf3cb132a63d8df0f364dde17",
+  "base_postprocessing_code_revision": "2ab1f98bc636ca30e3848f1525c0542bd1a01710",
+  "base_configuration": {
     "code_revision": "6482484dc928342cf3cb132a63d8df0f364dde17",
     "flavors": [
       "Ue",
@@ -75,7 +76,8 @@
       "sha256": "ab812c5b6a29e1201bd08fc19202781e6beec10c5fa4cc2d1e3525524168c561"
     }
   },
-  "variations": [
+  "base_variation_entries_scope": "Each entry below describes one original cfg81825753 54-row sensitivity CSV and its SHA-256. The tracked raw table replaces exactly the Ue/Umu mass=0.305 GeV rows from every entry with the partial recompute declared after this list.",
+  "base_variations": [
     {
       "index": 0,
       "name": "central",
@@ -1409,5 +1411,24 @@
       "sensitivity_sha256": "d747a70252b589b9056031318f76d0fa9b8898b189e9f849173ab3532b9111c7"
     }
   ],
-  "kaon_0p305_recompute": "The 0.305 GeV Ue/Umu rows were recomputed 2026-07-18 with the Pythia 8.315 + transport kaon model (campaign cfg769a8d0e), superseding the original cfg81825753 values at that mass; all other masses and all Utau rows are the original campaign. The FONLL RIBBON at 0.305 (u2_min_band_lo/hi in combined_band) is intentionally OMITTED (set to NaN): at ~99.85% kaon dominance the 111-member spread is acceptance-MC noise (pdf_sigma ~ 0.4%), not a resolvable bottom/charm FONLL uncertainty. The physical low-mass systematic is the charged-kaon transport band (kaon_desc_band.csv). The per-member raw rows and the central/dex components are retained for transparency."
+  "partial_recomputes": [
+    {
+      "id": "kaon_0p305_20260718",
+      "completed_date": "2026-07-18",
+      "source_code_revision": "61aa73c65e321a85faa195eb4f6670f93a37585e",
+      "publication_revision": "ab1e6f8812e66780e2ed052d26f7a1e4107121a4",
+      "ribbon_policy_revision": "337eddec910624bff665a87c74c3844ea99431fe",
+      "base_campaign_config_suffix": "cfg81825753",
+      "recompute_campaign_config_suffix": "cfg769a8d0e",
+      "variation_count": 111,
+      "affected_rows": 222,
+      "replaced_selector": {
+        "mass_GeV": [0.305],
+        "flavors": ["Ue", "Umu"]
+      },
+      "source_sensitivity_files_shipped": false,
+      "source_policy": "The 111 partial sensitivity CSVs are not shipped; their 222 rows and exact run tags are retained in hnl_band_fonll_raw.csv, whose hash is recorded above.",
+      "ribbon_policy": "The Ue/Umu lower-edge FONLL ribbon at 0.305 GeV is omitted (band_lo/hi are NaN). At approximately 99.85% kaon dominance, the member spread is acceptance-MC noise rather than a resolvable bottom/charm FONLL uncertainty. Central and dex components remain for auditability; kaon_desc_band.csv carries the relevant low-mass systematic."
+    }
+  ]
 }

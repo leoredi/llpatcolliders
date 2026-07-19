@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from analysis.plot_money import _dex_densify
+from analysis.plot_money import _dex_densify, _metadata, _provenance
 
 
 def test_dex_densify_does_not_extrapolate_past_finite_support():
@@ -38,3 +38,17 @@ def test_dex_densify_does_not_bridge_invalid_topology_anchor():
     assert np.all(np.isnan(hi[gap]))
     assert np.all(np.isfinite(lo[~gap]))
     assert np.all(np.isfinite(hi[~gap]))
+
+
+def test_metadata_and_provenance_record_kaon_transport_band():
+    metadata = _metadata("test", 3000.0, 100, have_fonll=True, have_kaon=True)
+
+    assert any("charged-kaon transport" in item
+               for item in metadata["scope"]["in_band"])
+    assert "kaon_lower_edge" in metadata["band_sources"]
+    assert not any("kaon flux/transport" in item
+                   for item in metadata["limitations_not_banded"])
+
+    provenance = _provenance(have_fonll=True, have_kaon=True)
+    assert "charged-kaon transport" in provenance
+    assert "purple" in provenance
