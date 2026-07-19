@@ -129,9 +129,47 @@ def discover_variations(grid_dir: Path, which: list[str] | None) -> list[dict]:
     return variations
 
 
-def band_run_tag(v: dict) -> str:
+def band_run_tag(v: dict, campaign_config: dict | None = None) -> str:
     h = hashlib.sha256((v["bottom"]["sha256"] + v["charm"]["sha256"]).encode()).hexdigest()[:8]
-    return f"band_{v['name']}_{h}"
+    tag = f"band_{v['name']}_{h}"
+    if campaign_config:
+        payload = json.dumps(campaign_config, sort_keys=True, separators=(",", ":"))
+        config_hash = hashlib.sha256(payload.encode()).hexdigest()[:8]
+        tag += f"_cfg{config_hash}"
+    return tag
+
+
+def _code_revision() -> str:
+    """Return the exact worktree revision, marking uncommitted code explicitly."""
+    try:
+        revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=HNL_ROOT,
+            text=True, stderr=subprocess.DEVNULL).strip()
+        dirty = subprocess.run(
+            ["git", "diff", "--quiet", "HEAD", "--", "hnl"],
+            cwd=HNL_ROOT, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL).returncode != 0
+        return f"{revision}-dirty" if dirty else revision
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def _campaign_config(args, flavors, masses) -> dict:
+    return {
+        "code_revision": _code_revision(),
+        "flavors": list(flavors),
+        "masses_GeV": [float(mass) for mass in masses],
+        "n_pool": int(args.n_pool),
+        "production_seed": int(args.seed),
+        "decay_samples": int(args.decay_samples),
+        "max_hit_events": args.max_hit_events,
+        "event_chunk": args.event_chunk,
+        "analysis_seed_salt": args.analysis_seed_salt,
+        "track_momentum_cut_GeV": float(os.environ.get("HNL_P_CUT", "0.100")),
+        "reuse_from": args.reuse_from,
+        "fonll_channels_only": bool(args.fonll_channels_only),
+        "wz_nb_core": int(args.wz_nb_core),
+    }
 
 
 def _env_for(v: dict, grid_dir: Path, tag: str) -> dict:
@@ -178,8 +216,9 @@ def reuse_central_channels(central_vec: Path, var_vec: Path, flavors, masses,
     return n
 
 
-def run_variation(v, grid_dir, source_vec, flavors, masses, args) -> dict:
-    tag = band_run_tag(v)
+def run_variation(v, grid_dir, source_vec, flavors, masses, args,
+                  campaign_config) -> dict:
+    tag = band_run_tag(v, campaign_config)
     run_dir, var_vec, analysis_dir = _run_dirs(tag)
     env = _env_for(v, grid_dir, tag)
     is_central = v["axis"] == "central"
@@ -190,6 +229,7 @@ def run_variation(v, grid_dir, source_vec, flavors, masses, args) -> dict:
         "bottom_grid_tag": v["bottom"]["variation_tag"],
         "charm_grid_tag": v["charm"]["variation_tag"],
         "sensitivity_csv": str(sens_csv),
+        "configuration": campaign_config,
     }
     # Resume: a finished variation keeps only its small sensitivity CSV; skip it.
     if sens_csv.exists() and not args.force:
@@ -207,7 +247,8 @@ def run_variation(v, grid_dir, source_vec, flavors, masses, args) -> dict:
     # 1. production
     prod = [sys.executable, "-u", "run_all.py",
             "--flavor", *flavors, "--n-pool", str(args.n_pool),
-            "--workers", str(args.prod_workers), "--skip-combine"]
+            "--workers", str(args.prod_workers), "--seed", str(args.seed),
+            "--skip-combine"]
     if args.mass:
         prod += ["--masses", *[str(m) for m in masses]]
     if full_central:
@@ -232,7 +273,14 @@ def run_variation(v, grid_dir, source_vec, flavors, masses, args) -> dict:
 
     # 4. analysis -> hnl_sensitivity.csv
     analyze = [sys.executable, "-u", "-m", "analysis.run_sensitivity",
-               "--flavor", *flavors, "--workers", str(args.analysis_workers)]
+               "--flavor", *flavors, "--workers", str(args.analysis_workers),
+               "--decay-samples", str(args.decay_samples)]
+    if args.max_hit_events is not None:
+        analyze += ["--max-hit-events", str(args.max_hit_events)]
+    if args.event_chunk is not None:
+        analyze += ["--event-chunk", str(args.event_chunk)]
+    if args.analysis_seed_salt:
+        analyze += ["--seed-salt", args.analysis_seed_salt]
     if args.mass:
         analyze += ["--mass", *[str(m) for m in masses]]
     _run(analyze, env, f"analysis[{v['name']}]")
@@ -261,8 +309,28 @@ def main(argv=None) -> int:
     ap.add_argument("--variations", nargs="+", default=None,
                     help="restrict to variation names or axes (central/scale/pdf/mass)")
     ap.add_argument("--n-pool", type=int, default=100_000)
+    ap.add_argument("--seed", type=int, default=42,
+                    help="base production RNG seed (default: 42)")
     ap.add_argument("--prod-workers", type=int, default=6)
     ap.add_argument("--analysis-workers", type=int, default=3)
+    ap.add_argument(
+        "--decay-samples", type=int,
+        default=int(os.environ.get("HNL_DECAY_SAMPLES", "100")),
+        help="decay positions per selected hit event")
+    ap.add_argument(
+        "--max-hit-events", type=int,
+        default=(int(os.environ["HNL_MAX_HIT_EVENTS"])
+                 if os.environ.get("HNL_MAX_HIT_EVENTS") else None),
+        help="optional weighted-resampling cap; omit for exact hit evaluation")
+    ap.add_argument(
+        "--event-chunk", type=int,
+        default=(int(os.environ["HNL_EVENT_CHUNK"])
+                 if os.environ.get("HNL_EVENT_CHUNK") else None),
+        help="exact-hit memory chunk; does not change the statistical sample")
+    ap.add_argument(
+        "--analysis-seed-salt",
+        default=os.environ.get("HNL_ANALYSIS_SEED_SALT", ""),
+        help="deterministic salt for independent analysis repeats")
     ap.add_argument("--wz-nb-core", type=int, default=1)
     ap.add_argument("--reuse-from", default=None,
                     help="run tag of an existing complete run whose Bc/Kmeson/tau/WZ "
@@ -278,7 +346,19 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="recompute variations even if their sensitivity CSV exists "
                          "(default: resume by skipping finished variations)")
+    ap.add_argument(
+        "--registry-out", default=None,
+        help="registry output path (default: <HNL_TMP_DIR>/runs/band_registry.json)")
     args = ap.parse_args(argv)
+
+    if args.n_pool < 1:
+        ap.error("--n-pool must be >= 1")
+    if args.decay_samples < 1:
+        ap.error("--decay-samples must be >= 1")
+    if args.max_hit_events is not None and args.max_hit_events < 1:
+        ap.error("--max-hit-events must be >= 1 when provided")
+    if args.event_chunk is not None and args.event_chunk < 1:
+        ap.error("--event-chunk must be >= 1 when provided")
 
     grid_dir = Path(args.grid_dir).expanduser().resolve()
     if not (grid_dir / "variation_manifest.json").exists():
@@ -291,9 +371,16 @@ def main(argv=None) -> int:
         print("variation set must include 'central' (the baseline to reuse from)")
         return 1
 
+    campaign_config = _campaign_config(args, args.flavor, masses)
+
     print(f"FONLL-variation band: {len(variations)} coherent runs "
           f"({', '.join(v['name'] for v in variations)})")
     print(f"  flavors={args.flavor}  masses={len(masses)}  grids={grid_dir}")
+    print(f"  production: n_pool={args.n_pool}, seed={args.seed}")
+    hit_note = (f"weighted cap={args.max_hit_events}"
+                if args.max_hit_events is not None else "exact all hits")
+    print(f"  analysis: decay_samples={args.decay_samples}, {hit_note}, "
+          f"event_chunk={args.event_chunk}")
 
     # Source of the reused MadGraph/kaon channels: an existing complete run if
     # --reuse-from is given, else the central band run (which does full production).
@@ -304,17 +391,29 @@ def main(argv=None) -> int:
             return 1
         print(f"  reusing Bc/Kmeson/tau/WZ from {source_vec}")
     else:
-        _, source_vec, _ = _run_dirs(band_run_tag(variations[0]))
+        _, source_vec, _ = _run_dirs(
+            band_run_tag(variations[0], campaign_config))
 
     registry = []
-    for v in variations:
-        registry.append(run_variation(v, grid_dir, source_vec, args.flavor, masses, args))
-
-    reg_path = _tmp_dir() / "runs" / "band_registry.json"
+    reg_path = (Path(args.registry_out).expanduser()
+                if args.registry_out else _tmp_dir() / "runs" / "band_registry.json")
     reg_path.parent.mkdir(parents=True, exist_ok=True)
-    reg_path.write_text(json.dumps(
-        {"grid_dir": str(grid_dir), "flavors": args.flavor,
-         "n_masses": len(masses), "variations": registry}, indent=2) + "\n")
+
+    def write_registry():
+        payload = json.dumps(
+            {"grid_dir": str(grid_dir), "configuration": campaign_config,
+             "flavors": args.flavor, "n_masses": len(masses),
+             "variations": registry}, indent=2) + "\n"
+        tmp_path = reg_path.with_name(f".{reg_path.name}.tmp")
+        tmp_path.write_text(payload)
+        tmp_path.replace(reg_path)
+
+    for v in variations:
+        registry.append(run_variation(
+            v, grid_dir, source_vec, args.flavor, masses, args,
+            campaign_config))
+        write_registry()
+
     print(f"\nwrote {reg_path} ({len(registry)} variations)")
     print("next: python -m analysis.combine_band")
     return 0

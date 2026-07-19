@@ -51,7 +51,8 @@ from analysis._engine import (                               # noqa: E402
 DEFAULT_MASSES = [2.0, 2.2, 2.4, 2.6, 2.8, 3.0, 3.2, 3.4, 3.6]
 
 
-def _scan_csv(csv, flavor, mass, tag, mesh, templates, u2_grid, max_hit_events, decay_samples):
+def _scan_csv(csv, flavor, mass, tag, mesh, templates, u2_grid,
+              max_hit_events, decay_samples, seed_salt):
     """N(U^2) for one channel/combined CSV (zeros if empty)."""
     if not csv.exists() or csv.stat().st_size == 0:
         return np.zeros(len(u2_grid))
@@ -62,7 +63,8 @@ def _scan_csv(csv, flavor, mass, tag, mesh, templates, u2_grid, max_hit_events, 
     idx_all = np.where(hits & np.isfinite(entry_d) & np.isfinite(exit_d))[0]
     if len(idx_all) == 0:
         return np.zeros(len(u2_grid))
-    rng = np.random.default_rng(_seed_for(flavor, f"{format_mass_for_filename(mass)}_{tag}"))
+    rng = np.random.default_rng(_seed_for(
+        flavor, f"{format_mass_for_filename(mass)}_{tag}", seed_salt))
     idx, w, _ = _select_hit_sample(idx_all, data["weight"][idx_all], max_hit_events, rng)
     direction = _eta_phi_to_directions_batch(data["eta"][idx], data["phi"][idx])
     p4 = np.column_stack([data["gamma"][idx] * mass,
@@ -75,7 +77,8 @@ def _scan_csv(csv, flavor, mass, tag, mesh, templates, u2_grid, max_hit_events, 
     return N
 
 
-def run(flavors, masses, delta_bc, max_hit_events, decay_samples):
+def run(flavors, masses, delta_bc, max_hit_events, decay_samples,
+        seed_salt=""):
     mesh = _get_mesh()
     u2_grid = np.logspace(LOG_U2_MIN, LOG_U2_MAX, N_U2_POINTS)
     rows = []
@@ -87,9 +90,11 @@ def run(flavors, masses, delta_bc, max_hit_events, decay_samples):
                 continue
             base = LLP_VECTORS_DIR / flavor
             N_tot = _scan_csv(base / "combined" / f"mN_{ml}.csv", flavor, mass, "comb",
-                              mesh, templates, u2_grid, max_hit_events, decay_samples)
+                              mesh, templates, u2_grid, max_hit_events,
+                              decay_samples, seed_salt)
             N_bc = _scan_csv(base / "Bc" / f"mN_{ml}.csv", flavor, mass, "Bc",
-                             mesh, templates, u2_grid, max_hit_events, decay_samples)
+                             mesh, templates, u2_grid, max_hit_events,
+                             decay_samples, seed_salt)
 
             def u2min(N):
                 r = find_exclusion_band(u2_grid, N, N_THRESHOLD)
@@ -105,7 +110,10 @@ def run(flavors, masses, delta_bc, max_hit_events, decay_samples):
                 f_bc = N_bc[iu] / N_tot[iu] if N_tot[iu] > 0 else 0.0
             rows.append({"flavor": flavor, "mass_GeV": mass, "delta_bc": delta_bc,
                          "u2_min": c, "u2_min_bc_lo": lo, "u2_min_bc_hi": hi,
-                         "bc_frac_at_u2min": f_bc})
+                         "bc_frac_at_u2min": f_bc,
+                         "decay_samples": decay_samples,
+                         "max_hit_events": max_hit_events,
+                         "seed_salt": seed_salt})
             shift = (np.log10(lo / hi) if np.isfinite(lo) and np.isfinite(hi) and hi > 0
                      else np.nan)
             print(f"  {flavor:5s} m={mass:<4} Bc_frac={f_bc*100:4.0f}%  "
@@ -121,10 +129,13 @@ def main(argv=None) -> int:
     ap.add_argument("--delta-bc", type=float, default=SIGMA_BC_REL_UNCERT)
     ap.add_argument("--max-hit-events", type=int, default=4000)
     ap.add_argument("--decay-samples", type=int, default=50)
+    ap.add_argument(
+        "--seed-salt", default="",
+        help="Optional deterministic salt for independent numerical-control repeats")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
     df = run(args.flavor, args.mass or DEFAULT_MASSES, args.delta_bc,
-             args.max_hit_events, args.decay_samples)
+             args.max_hit_events, args.decay_samples, args.seed_salt)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out, index=False)
     print(f"wrote {args.out} ({len(df)} rows, delta_bc={args.delta_bc})")

@@ -22,7 +22,10 @@ each exclusion boundary into an uncertainty ribbon, per the agreed prescription:
 
 Open-edge (``u2_*_open``) and no-sensitivity states are preserved: a boundary
 is reported open if central or any contributing variation ran off the scan
-edge, and masses where central has no sensitivity carry no band.
+edge, and masses where central has no sensitivity carry no band.  If any
+contributing member creates or destroys an island/boundary relative to central,
+the point is marked ``*_topology_changed`` and no numeric ribbon is reported;
+topology changes are not silently reduced to a band from the surviving members.
 """
 from __future__ import annotations
 
@@ -84,6 +87,7 @@ def combine_band(registry_path: Path, alphas_lo=None, alphas_hi=None) -> pd.Data
         raise ValueError("registry has no central variation")
     central_name = axes["central"][0]
     central = curves[central_name]
+    registry_members = axes["scale"] + axes["pdf"] + axes["mass"]
 
     # alpha_s (PDF4LHC) is folded from two standalone companion grids, not
     # registry replicas; both must be present for the term to contribute.
@@ -104,11 +108,40 @@ def combine_band(registry_path: Path, alphas_lo=None, alphas_hi=None) -> pd.Data
             xc, c_open, _ = _boundary(central, (flavor, mass), mass, col, open_col)
             rec[f"{col}_central"] = crow.get(col, np.nan)
             rec[f"{col}_open"] = c_open
+            member_states = [
+                _boundary(curves[name], (flavor, mass), mass, col, open_col)
+                for name in registry_members
+            ]
+            if fold_alphas:
+                member_states.extend([
+                    _boundary(as_lo, (flavor, mass), mass, col, open_col),
+                    _boundary(as_hi, (flavor, mass), mass, col, open_col),
+                ])
+            rec[f"{col}_n_members_expected"] = len(member_states)
+            rec[f"{col}_n_members_sensitive"] = sum(
+                int(has_sens) for _, _, has_sens in member_states)
+            rec[f"{col}_n_members_finite"] = sum(
+                int(x is not None) for x, _, _ in member_states)
+            rec[f"{col}_n_members_open"] = sum(
+                int(is_open) for _, is_open, _ in member_states)
+            topology_changed = any(
+                (not has_sens)
+                or (is_open != c_open)
+                or ((x is not None) != (xc is not None))
+                for x, is_open, has_sens in member_states
+            )
+            rec[f"{col}_topology_changed"] = topology_changed
             if xc is None:
                 # central boundary open/undefined -> ribbon open on this side
                 rec[f"{col}_band_lo"] = np.nan
                 rec[f"{col}_band_hi"] = np.nan
                 rec[f"{col}_open"] = True
+                continue
+            if topology_changed:
+                rec[f"{col}_band_lo"] = np.nan
+                rec[f"{col}_band_hi"] = np.nan
+                rec[f"{col}_open"] = c_open or any(
+                    is_open for _, is_open, _ in member_states)
                 continue
 
             any_open = c_open

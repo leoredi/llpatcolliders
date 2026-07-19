@@ -56,6 +56,7 @@ from analysis.constants import (
     N_THRESHOLD,
 )
 from analysis.plot_exclusion import plot_exclusion
+from analysis.decay_reco_acceptance import P_CUT
 from analysis._engine import (
     process_mass_point,
     _get_mesh,
@@ -78,12 +79,14 @@ def _worker_init():
 
 
 def _worker_process_point(args):
-    flavor, mass, force_geom, save_diag, decay_samples, max_hit_events = args
+    (flavor, mass, force_geom, save_diag, decay_samples, max_hit_events,
+     event_chunk, seed_salt) = args
     t0 = time.time()
     result = process_mass_point(
         flavor, mass, _WORKER_MESH,
         force_geometry=force_geom, save_diagnostic=save_diag,
-        decay_samples=decay_samples, max_hit_events=max_hit_events)
+        decay_samples=decay_samples, max_hit_events=max_hit_events,
+        event_chunk=event_chunk, seed_salt=seed_salt)
     elapsed = time.time() - t0
     mass_label = format_mass_for_filename(mass)
     tag = f"{flavor}/mN_{mass_label}"
@@ -102,7 +105,8 @@ def _worker_process_point(args):
 
 def run(flavors, masses, n_workers=1, force_geometry=False,
         save_diagnostics=False, decay_samples=DECAY_SAMPLES,
-        max_hit_events=None, checkpoint_every=0):
+        max_hit_events=None, event_chunk=None, seed_salt="",
+        checkpoint_every=0):
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
     GEOM_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -111,7 +115,7 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
         for mass in masses:
             work_items.append((
                 flavor, mass, force_geometry, save_diagnostics,
-                decay_samples, max_hit_events))
+                decay_samples, max_hit_events, event_chunk, seed_salt))
 
     n_total = len(work_items)
     print(f"\nProcessing {n_total} mass points "
@@ -146,11 +150,12 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
     if n_workers <= 1:
         mesh = _get_mesh()
         for i, item in enumerate(work_items):
-            flavor, mass, fg, sd, ds, mhe = item
+            flavor, mass, fg, sd, ds, mhe, echunk, salt = item
             t0 = time.time()
             r = process_mass_point(flavor, mass, mesh,
                                    force_geometry=fg, save_diagnostic=sd,
-                                   decay_samples=ds, max_hit_events=mhe)
+                                   decay_samples=ds, max_hit_events=mhe,
+                                   event_chunk=echunk, seed_salt=salt)
             elapsed = time.time() - t0
             mass_label = format_mass_for_filename(mass)
             if r is not None:
@@ -210,6 +215,7 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
     meta = {
         "timestamp": datetime.now().isoformat(),
         "flavors": flavors,
+        "masses_GeV": [float(mass) for mass in masses],
         "n_masses": len(masses),
         "n_points_requested": n_requested,
         "n_points_processed": n_processed,
@@ -218,6 +224,9 @@ def run(flavors, masses, n_workers=1, force_geometry=False,
         "n_workers": n_workers,
         "decay_samples": decay_samples,
         "max_hit_events": max_hit_events,
+        "event_chunk": event_chunk,
+        "seed_salt": seed_salt,
+        "track_momentum_cut_GeV": P_CUT,
         "checkpoint_every": checkpoint_every,
         "n_results": n_processed,
         "n_sensitive": 0,
@@ -287,6 +296,13 @@ def main(argv=None):
         default=(int(os.environ["HNL_MAX_HIT_EVENTS"]) if os.environ.get("HNL_MAX_HIT_EVENTS") else None),
         help="Approximate mode: weighted-resample at most this many hit events per mass point (env HNL_MAX_HIT_EVENTS)")
     parser.add_argument(
+        "--event-chunk", type=int,
+        default=(int(os.environ["HNL_EVENT_CHUNK"]) if os.environ.get("HNL_EVENT_CHUNK") else None),
+        help="Bound peak memory by processing this many selected hit events at a time without changing their statistical sample (env HNL_EVENT_CHUNK)")
+    parser.add_argument(
+        "--seed-salt", default=os.environ.get("HNL_ANALYSIS_SEED_SALT", ""),
+        help="Optional deterministic salt for independent numerical-control repeats (env HNL_ANALYSIS_SEED_SALT)")
+    parser.add_argument(
         "--mass-stride", type=int, default=int(os.environ.get("HNL_MASS_STRIDE", "1")),
         help="Approximate mode: keep every Nth mass-grid point (default: 1; env HNL_MASS_STRIDE)")
     parser.add_argument(
@@ -301,6 +317,8 @@ def main(argv=None):
         parser.error("--decay-samples must be >= 1")
     if args.max_hit_events is not None and args.max_hit_events < 1:
         parser.error("--max-hit-events must be >= 1 when provided")
+    if args.event_chunk is not None and args.event_chunk < 1:
+        parser.error("--event-chunk must be >= 1 when provided")
     if args.mass_stride < 1:
         parser.error("--mass-stride must be >= 1")
     if args.mass_offset < 0 or args.mass_offset >= args.mass_stride:
@@ -331,6 +349,12 @@ def main(argv=None):
     print(f"  Decay samples: {args.decay_samples}")
     if args.max_hit_events:
         print(f"  Hit-event cap: {args.max_hit_events} (weighted resampling)")
+    else:
+        print("  Hit-event sample: exact (all detector hits)")
+    if args.event_chunk:
+        print(f"  Event chunk: {args.event_chunk} (memory bound only)")
+    if args.seed_salt:
+        print(f"  Analysis seed salt: {args.seed_salt}")
     if args.mass_stride > 1:
         print(f"  Mass stride: every {args.mass_stride} point(s), offset {args.mass_offset}")
     print(f"  Luminosity: {L_INT_PB:.0f} pb^-1 ({L_INT_PB/1e3:.0f} fb^-1)")
@@ -344,6 +368,8 @@ def main(argv=None):
                       save_diagnostics=args.diagnostics,
                       decay_samples=args.decay_samples,
                       max_hit_events=args.max_hit_events,
+                      event_chunk=args.event_chunk,
+                      seed_salt=args.seed_salt,
                       checkpoint_every=args.checkpoint_every)
     if not n_processed:
         print("ERROR: analysis produced no results; see run_metadata.json "

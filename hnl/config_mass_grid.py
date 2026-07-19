@@ -4,12 +4,12 @@ hnl/config_mass_grid.py
 
 HNL mass grid used by the production drivers.
 
-The grid (119 points, 0.20 - 10.00 GeV) is denser where the physics changes
+The grid (123 points, 0.20 - 10.00 GeV) is denser where the physics changes
 fastest:
 
 - 0.200 - 0.500 GeV step 15 MeV    21 points   kaon-threshold region
 - 0.525 - 2.000 GeV step 25 MeV    60 points   charm and tau thresholds
-- 2.200 - 8.000 GeV mostly 200 MeV 36 points   bottom and Bc production
+- 2.200 - 8.000 GeV mostly 200 MeV 38 points   bottom and Bc production
   (incl. 3.62-3.70 closure refinement where the islands pinch shut)
 - 8.500 - 10.00 GeV step 500 MeV    4 points   electroweak tail
 
