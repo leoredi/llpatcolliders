@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from analysis.exclusion import find_exclusion_band
+from analysis.exclusion import find_exclusion_band, find_exclusion_band_refined
 from analysis.plot_exclusion import _sensitive_segments, _thin_marker_mask
 
 
@@ -57,6 +57,27 @@ def test_no_sensitivity_has_no_open_edges():
     assert not result["u2_max_open"]
     assert np.isnan(result["u2_min"])
     assert np.isnan(result["u2_max"])
+
+
+def test_refined_band_calls_exact_evaluator_at_edges_and_peak():
+    # N(x) = A x^2 exp(-B x) peaks at x=2/B.  A deliberately coarse scan
+    # makes interpolation visibly inadequate while still bracketing the island.
+    amplitude = 40.0
+    slope = 3.0
+
+    def signal(x):
+        return amplitude * x**2 * np.exp(-slope * x)
+
+    u2 = np.logspace(-2.0, 1.0, 18)
+    result = find_exclusion_band_refined(
+        u2, signal(u2), signal, N_threshold=1.0,
+    )
+
+    assert result["has_sensitivity"]
+    assert np.isclose(result["peak_u2"], 2.0 / slope, rtol=2.0e-5)
+    assert np.isclose(result["peak_N"], signal(2.0 / slope), rtol=1.0e-9)
+    assert np.isclose(signal(result["u2_min"]), 1.0, rtol=2.0e-5)
+    assert np.isclose(signal(result["u2_max"]), 1.0, rtol=2.0e-5)
 
 
 def test_open_edge_markers_thin_to_sparse_evenly_spaced_subset():

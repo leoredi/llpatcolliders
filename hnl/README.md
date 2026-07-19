@@ -146,6 +146,10 @@ Direct meson weights use
 
 where the factor of two converts the FONLL quark-plus-antiquark convention to
 the total rate. `Bc` uses its separately configured cross section.
+`sample_meson_4vectors` also supports an optional high-`pT` proposal mixture;
+in that mode its `sampling_weight` is the exact nominal/proposal probability
+ratio and must multiply the ordinary event weight. The default sampler remains
+the nominal FONLL distribution with unit sampling weights.
 
 Induced-tau weights additionally include the parent-to-tau branching ratios
 (`parent -> tau nu` for the two-body modes, `B -> D(*) tau nu` for the
@@ -169,8 +173,9 @@ conda activate hnl
 
 The direct runtime dependencies include `numpy`, `pandas`, `scipy`, `sympy`,
 `mpmath`, `particle`, `matplotlib`, `tqdm`, `trimesh`, `rtree`, `numba`, and
-`cycler`. `pytest` is included for tests. The full runner checks these imports
-before starting expensive production.
+`cycler`. The frozen campaigns pin `embreex==4.4.0` for deterministic,
+accelerated ray intersections. `pytest` is included for tests. The full runner
+checks these imports before starting expensive production.
 
 MadGraph5_aMC@NLO v3.6.6 is required for prompt-tau and W/Z production. Its
 executable is resolved in this order:
@@ -333,6 +338,13 @@ CSV stores a `NaN` boundary and sets `u2_min_open` or `u2_max_open`. The plot
 fills to the corresponding axis edge, omits a false closing line, and marks
 the open direction.
 
+`analysis.exclusion.find_exclusion_band_refined` can refine a bracketed island
+against an already-built deterministic yield evaluator without resampling the
+Monte Carlo. `analysis.decay_reco_acceptance.signal_contribution_diagnostics`
+reports sample- and event-level effective statistics for the same frozen
+weighted estimator. These shared helpers are used by the BC4/BC10 convergence
+campaigns and do not alter the default HNL scan unless called explicitly.
+
 Use `--plot-only` to regenerate the plot from an existing sensitivity CSV and
 `--force-geometry` to rebuild cached ray intersections.
 
@@ -367,9 +379,10 @@ copying its `hnl_sensitivity.csv` into `data/published/` and refreshing the
 manifest (see `data/published/README.md`); do **not** point the consumer at a
 `tmp/runs/<tag>` path.
 
-The current published curve is the
+The current published curve uses the
 `central_newgrids_20260623/analysis_exact_100_betafix`
-run (`P > 100 MeV` track cut, the deepest/latest). Note for the figure caption:
+run (`P > 100 MeV` track cut) with the low-mass BC6/BC7 charged-kaon channel
+replaced by the 2026-07-18 Pythia/transport rerun. Note for the figure caption:
 the high-mass island closes near `m_N ~ 3.6 GeV` because of the `ctau ~ 1/m_N^5`
 lifetime law (peak yield `~ sigma * beta*gamma / m_N^5`), **not** a B-meson /
 `|V_ub|^2` production cutoff -- `W/Z` produce `N` out to 10 GeV but those are too
@@ -448,11 +461,13 @@ conda activate hnl
 python -P -m pytest hnl/tests/ -q
 ```
 
-The tests cover FONLL parsing and sampling, mass labels, channel combination,
+The tests cover FONLL parsing, nominal and importance sampling, mass labels,
+channel combination,
 two- and three-body kinematics, tau and kaon production, W/Z CSV conversion,
-open contour handling, the FairShip->GRENDEL acceptance core (boost, best-two
-tracks, reconstruction/selection, and the interior lifetime peak of the `U^2`
-scan), and a meson-production smoke path. `-P` prevents any
+open and refined contour handling, weighted-signal effective statistics, the
+FairShip->GRENDEL acceptance core (boost, best-two tracks,
+reconstruction/selection, and the interior lifetime peak of the `U^2` scan),
+and a meson-production smoke path. `-P` prevents any
 stale ignored MG5 parser cache named `py.py` from shadowing pytest's
 compatibility module.
 
