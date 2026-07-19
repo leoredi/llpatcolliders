@@ -6,7 +6,7 @@ The default production backend uses two local FONLL+LHAPDF
 double-differential heavy-meson production cross sections, `dsigma/dpT/dy`,
 generated for the HL-LHC pp 14 TeV setup.
 
-- Generator release: [`leoredi/fonll-nnpdf40` v0.1.0](https://github.com/leoredi/fonll-nnpdf40/releases/tag/v0.1.0),
+- Generator release: [`leoredi/grendel-fonll` v0.1.0](https://github.com/leoredi/grendel-fonll/releases/tag/v0.1.0),
   commit `34cd8b8`. The vendored `.dat` files here are byte-identical to
   the v0.1.0 release artifacts except for one header comment line
   (`# meson_mass: ...`), which is annotated in the PR1 copies to document
