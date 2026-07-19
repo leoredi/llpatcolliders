@@ -39,3 +39,7 @@ dependencies:
   # this env with `lhapdf install NNPDF40_nlo_as_01180`, see README)
   - lhapdf=6.5.*
   - pip
+  - pip:
+      # Deterministic accelerated ray backend used by the full BC4 uncertainty
+      # campaign; validated against trimesh's triangle intersector to <3e-14 m.
+      - embreex==4.4.0
