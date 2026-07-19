@@ -47,7 +47,11 @@ from analysis._engine import (                                # noqa: E402
 # low-mass -> high-mass production ordering (for stacked plots)
 CHANNELS = ["Kmeson", "Dmeson", "tau", "induced_tau", "Bmeson", "Bbaryon", "Bc", "WZ"]
 BOUNDS = ["u2_min", "peak_u2", "u2_max"]
-DEFAULT_MASSES = [0.2, 0.305, 0.5, 0.8, 1.0, 1.4, 1.8, 2.0, 2.4, 2.8, 3.2, 3.6]
+# The default broad scan excludes 0.2 GeV: below ~0.3 GeV the accepted-hit
+# statistics are too sparse for a stable channel breakdown.  It can still be
+# requested explicitly with ``--mass 0.2`` for audits.  The published bundle
+# starts at 0.305 GeV and adds controlled high-mass closure anchors separately.
+DEFAULT_MASSES = [0.305, 0.5, 0.8, 1.0, 1.4, 1.8, 2.0, 2.4, 2.8, 3.2, 3.6]
 
 
 def _channel_yields(flavor, mass, mass_label, mesh, templates, u2_targets,

@@ -2,10 +2,11 @@
 
 Built ON `analysis.plot_exclusion` (the proper renderer: excluded-region fill,
 open-edge markers, ylim to the scan ceiling 1e-1, segment-aware drawing, and the
-FONLL theory ribbon via `band_csv`). On top of that base it layers the two extra
+FONLL theory ribbon via `band_csv`). On top of that base it layers the additional
 in-scope boundary bands:
-  * lower edge: FONLL production band (orange, from `combine_band.py`)  AND
-                Bc normalization band (teal, `bc_nuisance.py`);
+  * lower edge: FONLL production band (orange, from `combine_band.py`),
+                Bc normalization band (teal, `bc_nuisance.py`), and charged-kaon
+                transport band (purple, `kaon_desc_band.csv`);
   * upper edge: decay-model width band (blue, `decay_model_band.py`).
 Plus the F17 provenance line, the Umu low-mass `N->l pi` callout, the A2
 hypothesis metadata (`run_metadata.json`), and a bundle dir with the tables.
@@ -38,16 +39,21 @@ BUNDLE = PUBLISHED / "bundle"                  # tracked money-plot input CSVs (
 LAB = {"Ue": r"$|U_e|^2$", "Umu": r"$|U_\mu|^2$", "Utau": r"$|U_\tau|^2$"}
 
 
-def _provenance(have_fonll):
+def _provenance(have_fonll, have_kaon):
     fonll = ("FONLL production (orange)" if have_fonll
-             else "FONLL production (band PENDING -- not yet on this figure)")
+             else "FONLL production (variation PENDING -- not yet on this figure)")
+    kaon = ("charged-kaon transport d_esc=[1,3] m (purple)" if have_kaon
+            else "charged-kaon transport d_esc variation PENDING")
     return (
-        f"In-band: {fonll}; Bc direct-norm ±40% (teal, LHCb arXiv:1910.13404; induced-tau Bc 0.06% negligible); "
+        f"Theory/model variations: {fonll}; {kaon}; Bc direct-norm ±40% "
+        "(teal, LHCb arXiv:1910.13404; induced-tau Bc 0.06% negligible); "
         "HNL total-width/lifetime duality δ(m) (blue, cap 20% conservative vs ~10% post-QCD residual).  "
-        "NOT banded (named limitations): production form factors, absolute visible-BR norm, kaon flux, FONLL αs.  "
+        "NOT banded (named limitations): production form factors, absolute visible-BR norm, neutral kaons, "
+        "detailed material/magnetic transport beyond the d_esc proxy, FONLL αs.  "
         "Reconstruction / detector / background / statistics IDEALIZED at the partner handoff (background-free, N≥3).  "
         "Island closes on real refined grid points where peak_N crosses 3 (config_mass_grid 3.62-3.70): "
-        "~3.62 GeV (Ue/Umu), ~3.69 GeV (Utau) -- no extrapolation/synthetic pinch."
+        "~3.62 GeV (Ue/Umu), ~3.69 GeV (Utau) -- no extrapolation/synthetic pinch.  "
+        "Nuisance-induced topology changes are recorded in the bundle but not drawn as ordinary ribbons."
     )
 
 
@@ -62,14 +68,22 @@ def _dex_densify(bm, b_cen, b_lo, b_hi, cm, c_edge):
     """
     ok = (np.isfinite(b_cen) & (b_cen > 0) & np.isfinite(b_lo) & (b_lo > 0)
           & np.isfinite(b_hi) & (b_hi > 0))
-    if ok.sum() >= 2:
-        dex_lo = np.log10(b_cen[ok] / b_lo[ok])     # downward half-width [dex]
-        dex_hi = np.log10(b_hi[ok] / b_cen[ok])     # upward half-width   [dex]
-        lo = c_edge * 10.0 ** (-np.interp(cm, bm[ok], dex_lo))
-        hi = c_edge * 10.0 ** (+np.interp(cm, bm[ok], dex_hi))
-    else:
-        lo = np.full(len(cm), np.nan)
-        hi = np.full(len(cm), np.nan)
+    lo = np.full(len(cm), np.nan)
+    hi = np.full(len(cm), np.nan)
+    # Interpolate each contiguous finite anchor segment independently.  In
+    # particular, do not extrapolate the last ordinary ribbon through a point
+    # where a nuisance variation creates or destroys the exclusion island.
+    valid = np.flatnonzero(ok)
+    for run in np.split(valid, np.flatnonzero(np.diff(valid) > 1) + 1):
+        if len(run) < 2:
+            continue
+        support = (cm >= bm[run[0]]) & (cm <= bm[run[-1]])
+        dex_lo = np.log10(b_cen[run] / b_lo[run])
+        dex_hi = np.log10(b_hi[run] / b_cen[run])
+        lo[support] = c_edge[support] * 10.0 ** (
+            -np.interp(cm[support], bm[run], dex_lo))
+        hi[support] = c_edge[support] * 10.0 ** (
+            +np.interp(cm[support], bm[run], dex_hi))
     return cm, lo, hi
 
 
@@ -82,17 +96,32 @@ def _ribbon(ax, m, lo, hi, color, label, zorder):
 
 
 
-def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
+def _metadata(run, l_int_fb, p_cut_mev, have_fonll, have_kaon):
     in_band = ["HNL total-width/lifetime duality (decay-model band)",
                "direct Bc normalization (B4)"]
     if have_fonll:
         in_band.insert(0, "FONLL heavy-flavor production (scale/PDF/m_Q)")
+    if have_kaon:
+        in_band.append("charged-kaon transport escape length d_esc in [1,3] m")
     lim = ["production form factors (B3)", "absolute visible-BR normalization (B5)",
-           "kaon flux/transport (B7)", "FONLL alpha_s (sub-dominant)"]
+           "neutral-kaon contribution (B7)",
+           "detailed material/magnetic transport beyond the d_esc proxy (B7)",
+           "FONLL alpha_s (sub-dominant)"]
     if not have_fonll:
         lim.insert(0, "FONLL scale/PDF/m_Q band -- PENDING, not on this figure")
+    if not have_kaon:
+        lim.insert(0, "charged-kaon d_esc transport band -- PENDING, not on this figure")
+    band_sources = {
+        "fonll_lower_edge": ("hnl_band_fonll.csv (run_variation_band + combine_band)"
+                             if have_fonll else "PENDING"),
+        "decay_model_upper_edge": "decay_model_band.csv (width_band delta(m))",
+        "bc_lower_edge": "bc_nuisance_band.csv (SIGMA_BC_REL_UNCERT=0.40)",
+    }
+    if have_kaon:
+        band_sources["kaon_lower_edge"] = (
+            "kaon_desc_band.csv (d_esc=1/1.5/3 m; nominal 1.5 m)")
     return {
-        "result": "GRENDEL HNL sensitivity projection (single-flavor)",
+        "result": "GRENDEL HNL theory/model variation diagnostic (single-flavor)",
         "hypothesis": {"mixing": "single-flavor", "flavors": ["Ue", "Umu", "Utau"],
                        "observable": "|U_alpha|^2", "nature": "Majorana",
                        "charge_conjugate_counting": "included (NDecayWidth x2/channel; production both charges)",
@@ -101,13 +130,11 @@ def _metadata(run, l_int_fb, p_cut_mev, have_fonll):
         "limit": {"method": "background-free", "criterion": "N_signal >= 3",
                   "track_momentum_cut_MeV": p_cut_mev},
         "scope": {"in_band": in_band,
+                  "interpretation": "theory/model variation diagnostic, not a statistical confidence band",
                   "idealized_partner_handoff": ["reconstruction", "detector response",
                                                 "background", "statistics"]},
         "central_run": run,
-        "band_sources": {"fonll_lower_edge": "hnl_band.csv (run_variation_band + combine_band)"
-                                             if have_fonll else "PENDING",
-                         "decay_model_upper_edge": "decay_model_band_combined.csv (width_band delta(m))",
-                         "bc_lower_edge": "bc_nuisance_band.csv (SIGMA_BC_REL_UNCERT=0.40)"},
+        "band_sources": band_sources,
         "limitations_not_banded": lim,
         "known_features": ["Umu/Utau low-mass step where N->l pi closes (m_mu+m_pi=0.245 GeV) -- "
                            "real physics (REMAINING_WORK item 15)",
@@ -136,6 +163,7 @@ def main(argv=None) -> int:
     ap.add_argument("--fonll-band", default=str(BUNDLE / "hnl_band_fonll.csv"))
     ap.add_argument("--decay-band", default=str(BUNDLE / "decay_model_band.csv"))
     ap.add_argument("--bc-band", default=str(BUNDLE / "bc_nuisance_band.csv"))
+    ap.add_argument("--kaon-band", default=str(BUNDLE / "kaon_desc_band.csv"))
     ap.add_argument("--breakdown", default=str(BUNDLE / "channel_breakdown_u2min.csv"))
     ap.add_argument("--l-int-fb", type=float, default=3000.0)
     ap.add_argument("--p-cut-mev", type=int, default=100)
@@ -145,9 +173,11 @@ def main(argv=None) -> int:
     central_csv = a.central_csv or str(PUBLISHED / "grendel_hnl_sensitivity.csv")
     cen = pd.read_csv(central_csv)
     have_fonll = Path(a.fonll_band).exists()
+    have_kaon = Path(a.kaon_band).exists()
     fonll = pd.read_csv(a.fonll_band) if have_fonll else None
     dm = pd.read_csv(a.decay_band) if Path(a.decay_band).exists() else None
     bc = pd.read_csv(a.bc_band) if Path(a.bc_band).exists() else None
+    kb = pd.read_csv(a.kaon_band) if have_kaon else None
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5.6), sharey=True)
     for ax, fl in zip(axes, ["Ue", "Umu", "Utau"]):
@@ -173,7 +203,7 @@ def main(argv=None) -> int:
                     bsub[f"{col}_band_hi"].to_numpy(float),
                     cm, c_edge)
                 _ribbon(ax, m, lo, hi, "orange",
-                        None if labelled else "FONLL theory band", zorder=4)
+                        None if labelled else "FONLL production variation", zorder=4)
                 labelled = True
 
         # Decay-model width band (upper edge) and Bc normalization band (lower edge).
@@ -183,14 +213,31 @@ def main(argv=None) -> int:
                 dmf["mass_GeV"].to_numpy(float), dmf["u2_max"].to_numpy(float),
                 dmf["u2_max_dm_lo"].to_numpy(float), dmf["u2_max_dm_hi"].to_numpy(float),
                 cm, c_max)
-            _ribbon(ax, m, lo, hi, "steelblue", "decay-model band (upper)", zorder=4)
+            _ribbon(ax, m, lo, hi, "steelblue", "decay-model variation (upper)", zorder=4)
         if bc is not None:
             bcf = bc[bc.flavor == fl].sort_values("mass_GeV")
             m, lo, hi = _dex_densify(
                 bcf["mass_GeV"].to_numpy(float), bcf["u2_min"].to_numpy(float),
-                bcf["u2_min_bc_lo"].to_numpy(float), bcf["u2_min_bc_hi"].to_numpy(float),
+                # Bc-up strengthens the limit (lower boundary); Bc-down weakens
+                # it (upper boundary).  The historical column suffixes name the
+                # nuisance direction, not the plotted vertical ordering.
+                bcf["u2_min_bc_hi"].to_numpy(float), bcf["u2_min_bc_lo"].to_numpy(float),
                 cm, c_min)
-            _ribbon(ax, m, lo, hi, "teal", "Bc band (lower)", zorder=4)
+            _ribbon(ax, m, lo, hi, "teal", "Bc normalization variation (lower)", zorder=4)
+
+        # Charged-kaon transport d_esc in [1, 3] m (nominal 1.5 m): the dominant
+        # low-mass systematic (Ue/Umu below the K->l N threshold). Lower edge only.
+        if kb is not None:
+            kbf = kb[kb.flavor == fl].sort_values("mass_GeV")
+            if len(kbf):
+                m, lo, hi = _dex_densify(
+                    kbf["mass_GeV"].to_numpy(float),
+                    kbf["u2_min_desc1p5"].to_numpy(float),   # nominal d_esc = 1.5 m
+                    kbf["u2_min_desc3p0"].to_numpy(float),   # d_esc = 3 m strengthens (lower)
+                    kbf["u2_min_desc1p0"].to_numpy(float),   # d_esc = 1 m weakens (upper)
+                    cm, c_min)
+                _ribbon(ax, m, lo, hi, "purple",
+                        "kaon transport d_esc [1,3] m (lower)", zorder=5)
 
         ax.set_title(f"HNL {LAB[fl]}", fontsize=13)
         if fl in ("Umu", "Utau"):
@@ -198,9 +245,9 @@ def main(argv=None) -> int:
                         xytext=(0.33, 5e-5), fontsize=7, color="dimgray",
                         arrowprops=dict(arrowstyle="->", color="dimgray", lw=0.8))
         ax.legend(fontsize=7, loc="lower right")
-    fig.suptitle("GRENDEL HNL sensitivity projection (single-flavor, Majorana, 14 TeV, "
+    fig.suptitle("GRENDEL HNL theory/model variation diagnostics (single-flavor, Majorana, 14 TeV, "
                  f"{a.l_int_fb:.0f} fb$^{{-1}}$, P>{a.p_cut_mev} MeV)", y=1.0, fontsize=13)
-    fig.text(0.5, 0.005, _provenance(have_fonll), ha="center", va="bottom",
+    fig.text(0.5, 0.005, _provenance(have_fonll, have_kaon), ha="center", va="bottom",
              fontsize=6.2, style="italic", wrap=True)
     plt.tight_layout(rect=[0, 0.075, 1, 0.97])
 
@@ -208,15 +255,18 @@ def main(argv=None) -> int:
     fig.savefig(out / "money_plot.png", dpi=130, bbox_inches="tight")
     fig.savefig(out / "money_plot.pdf", bbox_inches="tight")
     (out / "run_metadata.json").write_text(json.dumps(
-        _metadata(a.run, a.l_int_fb, a.p_cut_mev, have_fonll), indent=2))
+        _metadata(a.run, a.l_int_fb, a.p_cut_mev, have_fonll, have_kaon), indent=2))
     for src, name in [(central_csv, "hnl_sensitivity_central.csv"),
                       (a.fonll_band, "hnl_band_fonll.csv"),
                       (a.decay_band, "decay_model_band.csv"),
                       (a.bc_band, "bc_nuisance_band.csv"),
+                      (a.kaon_band, "kaon_desc_band.csv"),
                       (a.breakdown, "channel_breakdown_u2min.csv")]:
         if Path(src).exists():
             shutil.copy2(src, out / name)
-    print(f"money plot + bundle -> {out}/  (FONLL band: {'YES' if have_fonll else 'PENDING'})")
+    print(f"money plot + bundle -> {out}/  "
+          f"(FONLL band: {'YES' if have_fonll else 'PENDING'}; "
+          f"kaon band: {'YES' if have_kaon else 'PENDING'})")
     return 0
 
 
