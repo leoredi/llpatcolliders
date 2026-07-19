@@ -47,6 +47,9 @@ from analysis._engine import (                                # noqa: E402
 # low-mass -> high-mass production ordering (for stacked plots)
 CHANNELS = ["Kmeson", "Dmeson", "tau", "induced_tau", "Bmeson", "Bbaryon", "Bc", "WZ"]
 BOUNDS = ["u2_min", "peak_u2", "u2_max"]
+# 0.2 GeV is listed for completeness but is EXCLUDED from the published bundle:
+# below ~0.3 GeV the accepted-hit statistics are too sparse for a stable channel
+# breakdown, so data/published/bundle/channel_breakdown_u2min.csv starts at 0.305 GeV.
 DEFAULT_MASSES = [0.2, 0.305, 0.5, 0.8, 1.0, 1.4, 1.8, 2.0, 2.4, 2.8, 3.2, 3.6]
 
 

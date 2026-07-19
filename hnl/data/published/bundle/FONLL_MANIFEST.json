@@ -68,11 +68,11 @@
   "files": {
     "raw_table": {
       "file": "hnl_band_fonll_raw.csv",
-      "sha256": "7a3d158ca735a2d9fbe2ea5d537cb64f0bc7a0a112a4c0009c2336e47f4a3417"
+      "sha256": "4bbc22014257a1c2dd87d157982d87edd6ae9b9a262d3b0ff3acd44697657725"
     },
     "combined_band": {
       "file": "hnl_band_fonll.csv",
-      "sha256": "e3d78184ece1ba201c7debd617c512fa29a870b6a62fab8d3d78769db45c9fc4"
+      "sha256": "ab812c5b6a29e1201bd08fc19202781e6beec10c5fa4cc2d1e3525524168c561"
     }
   },
   "variations": [
@@ -1408,5 +1408,6 @@
       "n_sensitive": 54,
       "sensitivity_sha256": "d747a70252b589b9056031318f76d0fa9b8898b189e9f849173ab3532b9111c7"
     }
-  ]
+  ],
+  "kaon_0p305_recompute": "The 0.305 GeV Ue/Umu rows were recomputed 2026-07-18 with the Pythia 8.315 + transport kaon model (campaign cfg769a8d0e), superseding the original cfg81825753 values at that mass; all other masses and all Utau rows are the original campaign. The FONLL RIBBON at 0.305 (u2_min_band_lo/hi in combined_band) is intentionally OMITTED (set to NaN): at ~99.85% kaon dominance the 111-member spread is acceptance-MC noise (pdf_sigma ~ 0.4%), not a resolvable bottom/charm FONLL uncertainty. The physical low-mass systematic is the charged-kaon transport band (kaon_desc_band.csv). The per-member raw rows and the central/dex components are retained for transparency."
 }

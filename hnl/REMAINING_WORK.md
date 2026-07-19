@@ -337,16 +337,21 @@ also normalizes `Bc -> tau nu`.
 **Completion test:** a versioned grid and uncertainty set replace both the
 shape reuse and `SIGMA_BC_PB`, with independent cross-section benchmarks.
 
-### 10. Replace the kaon production and transport model
+### 10. Replace the kaon production and transport model -- DONE (2026-07-18)
 
-**Current code:** `generate_kaon_csvs.py` samples only charged kaons using a
-Tsallis `pT` model and a Gaussian rapidity with
-`SIGMA_KAON_PB = 3.0e11 pb`. Neutral `K_S/K_L -> pi l N` modes available in
-HNLCalc are omitted. Every kaon is decayed immediately, only the HNL momentum
-is stored, and analysis rays every HNL from IP5. Parent lifetime, magnetic
-bending, material survival, interaction losses, and the displaced HNL
-production vertex are therefore absent. This model can dominate the
-lowest-mass result.
+**Status:** the default `generate_kaon_csvs.py` now uses the Pythia 8.315 SoftQCD
+spectrum (`SIGMA_KAON_PB = 6.535e11 pb`) plus a charged-kaon transport survival
+weight (`d_esc`), and BC6/BC7 low-mass was rerun and republished with it (see the
+transport bullet above and `data/published/`). The paragraphs below record the
+original (pre-2026-07-18) state and the decision gate that led here.
+
+**Original code (superseded):** `generate_kaon_csvs.py` sampled only charged kaons
+using a Tsallis `pT` model and a Gaussian rapidity with `SIGMA_KAON_PB = 3.0e11 pb`
+(now the legacy `--spectrum tsallis` fallback). Neutral `K_S/K_L -> pi l N` modes
+available in HNLCalc are omitted. Every kaon was decayed immediately, only the HNL
+momentum stored, and analysis rayed every HNL from IP5. Parent lifetime, magnetic
+bending, material survival, interaction losses, and the displaced HNL production
+vertex were therefore absent. This model can dominate the lowest-mass result.
 
 **Decision gate (measured 2026-07-17): transport dominates; do NOT ship a
 spectrum-only fix.** A Pythia 8.315 `SoftQCD:inelastic` run at 14 TeV

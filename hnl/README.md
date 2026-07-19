@@ -493,8 +493,9 @@ compatibility module.
 - The charged-kaon flux uses a Pythia 8.315 SoftQCD spectrum and a
   decay-before-absorption transport weight (see `REMAINING_WORK.md`); it
   dominates the normalization uncertainty at the lightest masses. The BC6/BC7
-  low-mass curves have not yet been rerun with this model, and the transport
-  escape length is still a proxy pending a real material map.
+  low-mass curves were rerun and republished with this model (2026-07-18,
+  `d_esc = 1.5 m`; the transport band is `data/published/bundle/kaon_desc_band.csv`).
+  The transport escape length remains a proxy pending a real material map.
 - Meson, baryon, and tau three-body energy/`q^2` distributions are
   HNLCalc-weighted, but complete multidimensional matrix-element spin
   correlations are not modeled (see `REMAINING_WORK.md`).

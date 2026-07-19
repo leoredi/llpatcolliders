@@ -226,8 +226,8 @@
   },
   "files": {
     "hnl_band_fonll.csv": {
-      "sha256": "853321885463a43e316e0e642fa0d30071f9d8b57587bc709bc5eb075dfa5b1b",
-      "bytes": 17733,
+      "sha256": "ab812c5b6a29e1201bd08fc19202781e6beec10c5fa4cc2d1e3525524168c561",
+      "bytes": 17642,
       "rows": 54,
       "columns": [
         "flavor",
@@ -399,8 +399,8 @@
       "bytes": 109748
     },
     "FONLL_MANIFEST.json": {
-      "sha256": "79f4696318096ade19d66de1727a3c0f81c58f4606e00d9b0ff516cc83f7483a",
-      "bytes": 43305
+      "sha256": "7857aad89979397e8b5b9adce98b019051c974d4db282ba74740b22d97f47d22",
+      "bytes": 43994
     },
     "NUMERICAL_CONTROLS.json": {
       "sha256": "12c7cd1f36efee54bbb95e4de3812e56cc1aab9e4348368ec2773d26395f9b7c",
@@ -420,5 +420,5 @@
       "note": "charged-kaon transport d_esc = 1/1.5/3 m diagnostic band on the low-mass Ue/Umu edge (nominal 1.5 m; same seed -> pure systematic)"
     }
   },
-  "kaon_0p305_update": "2026-07-18: the mass=0.305 GeV Ue/Umu points of hnl_band_fonll(.csv/_raw), channel_breakdown_u2min, and decay_model_band were recomputed with the Pythia 8.315 + transport kaon model (0.305 is the only band mass <= the K->lN threshold). All other masses and all Utau points are unchanged; the bundle is now consistent with the kaon-rerun central curve."
+  "kaon_0p305_update": "2026-07-18/19: the 0.305 GeV Ue/Umu points of the FONLL band, channel_breakdown, and decay_model_band were recomputed with the Pythia 8.315 + transport kaon model (0.305 is the only band mass <= the K->lN threshold). The FONLL ribbon at 0.305 is OMITTED (band_lo/hi = NaN) because at ~99.85% kaon dominance the member spread is acceptance-MC noise, not resolvable FONLL (see FONLL_MANIFEST.json kaon_0p305_recompute; the low-mass systematic is kaon_desc_band.csv). All other masses and all Utau points are unchanged; the bundle is consistent with the republished central."
 }

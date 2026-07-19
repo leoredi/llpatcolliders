@@ -146,6 +146,7 @@ def main(argv=None) -> int:
     ap.add_argument("--fonll-band", default=str(BUNDLE / "hnl_band_fonll.csv"))
     ap.add_argument("--decay-band", default=str(BUNDLE / "decay_model_band.csv"))
     ap.add_argument("--bc-band", default=str(BUNDLE / "bc_nuisance_band.csv"))
+    ap.add_argument("--kaon-band", default=str(BUNDLE / "kaon_desc_band.csv"))
     ap.add_argument("--breakdown", default=str(BUNDLE / "channel_breakdown_u2min.csv"))
     ap.add_argument("--l-int-fb", type=float, default=3000.0)
     ap.add_argument("--p-cut-mev", type=int, default=100)
@@ -158,6 +159,7 @@ def main(argv=None) -> int:
     fonll = pd.read_csv(a.fonll_band) if have_fonll else None
     dm = pd.read_csv(a.decay_band) if Path(a.decay_band).exists() else None
     bc = pd.read_csv(a.bc_band) if Path(a.bc_band).exists() else None
+    kb = pd.read_csv(a.kaon_band) if Path(a.kaon_band).exists() else None
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5.6), sharey=True)
     for ax, fl in zip(axes, ["Ue", "Umu", "Utau"]):
@@ -204,6 +206,20 @@ def main(argv=None) -> int:
                 bcf["u2_min_bc_hi"].to_numpy(float), bcf["u2_min_bc_lo"].to_numpy(float),
                 cm, c_min)
             _ribbon(ax, m, lo, hi, "teal", "Bc normalization variation (lower)", zorder=4)
+
+        # Charged-kaon transport d_esc in [1, 3] m (nominal 1.5 m): the dominant
+        # low-mass systematic (Ue/Umu below the K->l N threshold). Lower edge only.
+        if kb is not None:
+            kbf = kb[kb.flavor == fl].sort_values("mass_GeV")
+            if len(kbf):
+                m, lo, hi = _dex_densify(
+                    kbf["mass_GeV"].to_numpy(float),
+                    kbf["u2_min_desc1p5"].to_numpy(float),   # nominal d_esc = 1.5 m
+                    kbf["u2_min_desc3p0"].to_numpy(float),   # d_esc = 3 m strengthens (lower)
+                    kbf["u2_min_desc1p0"].to_numpy(float),   # d_esc = 1 m weakens (upper)
+                    cm, c_min)
+                _ribbon(ax, m, lo, hi, "purple",
+                        "kaon transport d_esc [1,3] m (lower)", zorder=5)
 
         ax.set_title(f"HNL {LAB[fl]}", fontsize=13)
         if fl in ("Umu", "Utau"):

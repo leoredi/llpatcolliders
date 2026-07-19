@@ -10,7 +10,7 @@
   "correction": "Supersedes the 2026-07-07 beta=p/E curve at low mass by replacing the old parametric kaon stub (Tsallis spectrum, sigma_kaon=3.0e11 pb, prompt-at-IP) with the Pythia 8.315 SoftQCD spectrum + charged-kaon transport survival weight (sigma_kaon=6.535e11 pb, d_esc=1.5 m). This weakens the low-mass reach: Ue m_N=0.2-0.485 by x1.71-1.91 (deepest 5.91e-9 -> 1.048e-8 @0.395 GeV), Umu m_N=0.2-0.38 by x1.61-1.82. The Umu peak sensitivity relocates OUT of the kaon window: best reach was 8.40e-9 @0.365 GeV and is now 1.297e-8 @1.5 GeV (D-meson region, unchanged). Utau (m_tau>m_K) and all m_N>0.5 GeV points are unchanged. The dominant kaon-sector systematic (transport d_esc) is quantified in bundle/kaon_desc_band.csv. See prior_correction for the earlier beta=p/E fix.",
   "diagnostic_bundle": {
     "path": "bundle/MANIFEST.json",
-    "status": "fully re-derived after the beta=p/E fix; the mass=0.305 GeV Ue/Umu band points were re-derived 2026-07-18 for the kaon rerun (0.305 is the only band mass in the K->lN window), so the bundle is consistent with the published central",
+    "status": "fully re-derived after the beta=p/E fix; the mass=0.305 GeV Ue/Umu band points were re-derived 2026-07-18 for the kaon rerun (0.305 is the only band mass in the K->lN window). At that kaon-dominated point the FONLL ribbon is omitted (band_lo/hi = NaN, acceptance-MC-noise-limited; see bundle FONLL_MANIFEST.json); the low-mass systematic is the kaon transport band. Otherwise consistent with the published central.",
     "campaign_git_sha": "6482484dc928342cf3cb132a63d8df0f364dde17",
     "postprocessing_git_sha": "2ab1f98bc636ca30e3848f1525c0542bd1a01710",
     "fonll_variations": 111,

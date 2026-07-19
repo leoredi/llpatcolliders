@@ -71,9 +71,10 @@ SIGMA_KAON_PB_TSALLIS = 3.0e11  # legacy stub normalization (~80 mb x ~4 K+-)
 # change is applied). KAON_D_ESC is the escape path length
 # before dense material -- a proxy for the CMS material budget (calorimeter front
 # ~1.3 m; the tracker is largely transparent to a decaying kaon). The default and
-# the declared [1, 3] m range (KAON_D_ESC_RANGE, reserved for the pending BC6/BC7
-# uncertainty pass -- not yet propagated into a band) are the dominant kaon-sector
-# uncertainty pending a real material map. Set KAON_D_ESC = None (or --no-transport)
+# the declared [1, 3] m range (KAON_D_ESC_RANGE) are the dominant kaon-sector
+# uncertainty; the range is published as the BC6/BC7 transport band
+# data/published/bundle/kaon_desc_band.csv (2026-07-18), and d_esc itself remains a
+# proxy pending a real material map. Set KAON_D_ESC = None (or --no-transport)
 # for the legacy prompt-at-IP behaviour.
 KAON_D_ESC = 1.5        # m, central escape distance before dense material
 KAON_D_ESC_RANGE = (1.0, 3.0)   # m, reserved for the pending BC6/BC7 uncertainty pass (not yet propagated)
