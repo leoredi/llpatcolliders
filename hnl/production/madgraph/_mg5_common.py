@@ -65,8 +65,18 @@ LHAPDF_DATA_DIR = Path(os.environ.get(
 
 
 def mg5_subprocess_env():
-    """Inject LHAPDF libdir + PDF data path for MG5 subprocesses."""
+    """Inject the runner's Python, LHAPDF libdir, and PDF data path for MG5.
+
+    Generated MadEvent helpers use ``#!/usr/bin/env python3``. Pinning PATH
+    to the interpreter that launched the runner avoids silently selecting a
+    different Python without MadGraph's dependencies.
+    """
     env = os.environ.copy()
+    existing_path = env.get("PATH", "")
+    env["PATH"] = (
+        f"{PYTHON_EXE.parent}:{existing_path}" if existing_path
+        else str(PYTHON_EXE.parent)
+    )
     for key in ("DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"):
         existing = env.get(key, "")
         env[key] = f"{LHAPDF_LIBDIR}:{existing}" if existing else str(LHAPDF_LIBDIR)
@@ -100,11 +110,8 @@ def patch_me5_configuration(cards_dir):
     new_text = set_option(new_text, "automatic_html_opening", "False")
     new_text = set_option(new_text, "notification_center", "False")
 
-    lhapdf_line = f"lhapdf_py3 = {LHAPDF_CONFIG}"
-    if "# lhapdf_py3 = lhapdf-config" in new_text:
-        new_text = new_text.replace("# lhapdf_py3 = lhapdf-config", lhapdf_line)
-    elif "lhapdf_py3 =" not in new_text:
-        new_text += f"\n{lhapdf_line}\n"
+    # Replace stale cached paths as well as the generated default.
+    new_text = set_option(new_text, "lhapdf_py3", str(LHAPDF_CONFIG))
 
     if new_text != text:
         cfg.write_text(new_text)

@@ -18,6 +18,17 @@ from production.madgraph._mg5_common import (
 )
 
 
+def _has_compiled_subprocesses(process_dir: Path) -> bool:
+    """Whether all generated matrix-element subprocesses have binaries."""
+    subprocesses = [
+        sub for sub in (process_dir / "SubProcesses").glob("P*_*")
+        if sub.is_dir() and (sub / "Makefile").exists()
+    ]
+    return bool(subprocesses) and all(
+        (sub / "madevent").exists() for sub in subprocesses
+    )
+
+
 def ensure_process_dir(
     *,
     label: str,
@@ -32,6 +43,7 @@ def ensure_process_dir(
     if (
         (process_dir / "bin" / "generate_events").exists()
         and has_five_flavor_proton(process_dir)
+        and _has_compiled_subprocesses(process_dir)
     ):
         return process_dir
 
