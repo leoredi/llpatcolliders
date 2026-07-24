@@ -1,0 +1,31 @@
+# BC1 dark-photon Drell--Yan run-card template.
+# Filled by dy_madgraph.py for each mass point.  This follows the HNL
+# template-card workflow rather than mutating MadGraph's generated default.
+
+  tag_1 = run_tag
+  N_EVENTS_PLACEHOLDER = nevents
+  SEED_PLACEHOLDER = iseed
+  sum = event_norm
+
+  1 = lpp1
+  1 = lpp2
+  7000.0 = ebeam1
+  7000.0 = ebeam2
+
+  lhapdf = pdlabel
+  331700 = lhaid
+
+  True = fixed_ren_scale
+  True = fixed_fac_scale
+  SCALE_PLACEHOLDER = scale
+  SCALE_PLACEHOLDER = dsqrt_q2fact1
+  SCALE_PLACEHOLDER = dsqrt_q2fact2
+  -1 = dynamical_scale_choice
+  1.0 = scalefact
+
+  0 = ickkw
+  False = gridpack
+  15.0 = bwcutoff
+  5 = maxjetflavor
+  1 = sde_strategy
+  False = use_syst

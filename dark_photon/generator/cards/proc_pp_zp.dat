@@ -1,0 +1,5 @@
+# Inclusive dark-photon Drell--Yan production at 14 TeV.
+# Keep this card separate from the driver so the generated process is
+# inspectable and uses the same five-flavour proton convention as HNL.
+define p = g u c d s b u~ c~ d~ s~ b~
+generate p p > zp

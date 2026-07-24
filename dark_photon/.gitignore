@@ -1,0 +1,14 @@
+# Local generation/reconstruction products. Some existing campaigns are large;
+# keep them out of an eventual `git add dark_photon/`.
+tmp/
+__pycache__/
+generator/__pycache__/
+data/spectra/dy_madgraph_validation/
+
+# These small, source-pinned spectra are model inputs and must override the
+# repository-wide `*.npz` cache rule.
+!data/spectra/meson_softqcd.npz
+!data/spectra/dy/
+!data/spectra/dy/*.npz
+!data/constraints/
+!data/constraints/*.npz
